@@ -343,6 +343,10 @@ jobs:
           Add-Content -Path $env:GITHUB_ENV -Value "SDKROOT=$sdkRoot" -Encoding utf8
           Add-Content -Path $env:GITHUB_PATH -Value $swiftBin -Encoding utf8
           Add-Content -Path $env:GITHUB_PATH -Value $swiftRuntimeBin -Encoding utf8
+          # Workflow exports apply to later steps; the current probe needs them now.
+          # Export workflow chỉ có hiệu lực step sau; probe hiện tại cần env trực tiếp.
+          $env:SDKROOT = $sdkRoot
+          $env:Path = "$swiftBin;$swiftRuntimeBin;$env:Path"
           & (Join-Path $swiftBin "swift.exe") --version
 
       - name: Restore Python runtime after Swift installer (Windows)
@@ -382,7 +386,17 @@ jobs:
         run: python stress-test/test/test_stress_matrix.py
 
       - name: Build MagiCore CLI
-        run: cargo build --locked --bin mgc
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${RUNNER_OS}" == "macOS" ]]; then
+            # Swift probes must not replace the Apple C compiler used by Go's C archive.
+            # Probe Swift không được đổi compiler C dùng để build thư viện Go của esbuild.
+            export CC="$(xcrun --toolchain default --find clang)"
+            export CXX="$(xcrun --toolchain default --find clang++)"
+            export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+          fi
+          cargo build --locked --bin mgc
 
       - name: Freeze the full-core CLI for lifecycle and strict evidence
         shell: bash

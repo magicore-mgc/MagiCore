@@ -107,6 +107,10 @@ const WINDOWS_COMMAND_LINE_RETRIES: usize = 20;
 /// Giới hạn số lần liệt kê lại Job Object khi descendants thay đổi trong lúc kiểm tra.
 #[cfg(any(windows, test))]
 const WINDOWS_JOB_MEMBER_SNAPSHOT_RETRIES: usize = 20;
+#[cfg(windows)]
+const WINDOWS_JOB_INITIAL_PROCESS_CAPACITY: usize = 128;
+#[cfg(windows)]
+const WINDOWS_JOB_MAX_PROCESS_CAPACITY: usize = 8192;
 #[cfg(any(windows, test))]
 const WINDOWS_COMMAND_LINE_RETRY_DELAY_MS: u64 = 25;
 #[cfg(any(windows, test))]
@@ -2527,8 +2531,9 @@ impl ProcessTreeGuard {
             process_ids: [usize; 1],
         }
 
-        let mut capacity = 32usize;
-        for _ in 0..4 {
+        let mut capacity = WINDOWS_JOB_INITIAL_PROCESS_CAPACITY;
+        let mut last_counts = (0usize, 0usize);
+        for _ in 0..WINDOWS_JOB_MEMBER_SNAPSHOT_RETRIES {
             let word_count = 2usize.saturating_add(capacity);
             let mut buffer = vec![0usize; word_count];
             let list = buffer.as_mut_ptr().cast::<ProcessIdListBuffer>();
@@ -2553,7 +2558,10 @@ impl ProcessTreeGuard {
             if queried == 0 {
                 let error = windows_last_error();
                 if error == 234 {
-                    capacity = capacity.saturating_mul(2);
+                    capacity = capacity
+                        .saturating_mul(2)
+                        .min(WINDOWS_JOB_MAX_PROCESS_CAPACITY);
+                    std::thread::sleep(Duration::from_millis(WINDOWS_COMMAND_LINE_RETRY_DELAY_MS));
                     continue;
                 }
                 bail!("failed to inspect Windows job process IDs (error {error})");
@@ -2563,11 +2571,20 @@ impl ProcessTreeGuard {
             // AN TOÀN: truy vấn thành công đã ghi header theo tài liệu vào buffer được căn chỉnh.
             let (assigned, listed) =
                 unsafe { ((*list).assigned as usize, (*list).listed as usize) };
+            last_counts = (assigned, listed);
             if listed > capacity {
                 bail!("Windows job returned an invalid process ID count");
             }
             if assigned > listed {
-                capacity = assigned.max(capacity.saturating_mul(2));
+                if assigned > WINDOWS_JOB_MAX_PROCESS_CAPACITY {
+                    bail!("Windows job process ID list exceeds bounded capacity: {assigned}");
+                }
+                // Compiler fan-out can change the snapshot while the API enumerates it.
+                // Compiler tạo process nhanh có thể đổi snapshot ngay trong lúc liệt kê.
+                capacity = assigned
+                    .max(capacity.saturating_mul(2))
+                    .min(WINDOWS_JOB_MAX_PROCESS_CAPACITY);
+                std::thread::sleep(Duration::from_millis(WINDOWS_COMMAND_LINE_RETRY_DELAY_MS));
                 continue;
             }
 
@@ -2588,7 +2605,11 @@ impl ProcessTreeGuard {
                 })
                 .collect();
         }
-        bail!("Windows job process ID list remained incomplete after bounded retries")
+        bail!(
+            "Windows job process ID list remained incomplete after bounded retries (assigned={}, listed={}, capacity={capacity})",
+            last_counts.0,
+            last_counts.1
+        )
     }
 
     #[allow(unsafe_code)]

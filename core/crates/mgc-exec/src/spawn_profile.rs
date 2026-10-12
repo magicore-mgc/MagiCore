@@ -148,13 +148,19 @@ pub fn record_subtree(
     interval: std::time::Duration,
 ) -> Vec<(String, Vec<String>)> {
     use std::collections::{HashMap, HashSet};
-    use sysinfo::{Pid, ProcessesToUpdate, System};
+    use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
     let mut seen: HashSet<(String, Vec<String>)> = HashSet::new();
     let deadline = std::time::Instant::now() + duration;
     let mut system = System::new();
     while std::time::Instant::now() < deadline {
-        system.refresh_processes(ProcessesToUpdate::All, true);
+        // Capture argv explicitly; default refresh can omit it and merge distinct commands.
+        // Refresh mặc định có thể thiếu argv, làm gộp nhầm các invocation khác nhau.
+        system.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always),
+        );
         // Parent map first so short-lived children still resolve.
         // (Map parent trước để child ngắn ngủi vẫn resolve được.)
         let mut parent_of: HashMap<Pid, Pid> = HashMap::new();

@@ -940,6 +940,21 @@ fn main() {
 
 
 class LanePreparationFailure(unittest.TestCase):
+    def test_failed_create_preserves_unsupported_install_without_promoting_native(self):
+        lane = {
+            "core": "app", "language": "objc",
+            "scaffold": ["create-app", "objc", "fixture"],
+            "steps": [("install", ["install"])],
+            "install_owner": "unsupported",
+        }
+        for owner, expected in (("unsupported", STATUS_UNSUPPORTED), ("native-engine", STATUS_UNVERIFIED)):
+            with self.subTest(owner=owner):
+                lane["install_owner"] = owner
+                with patch("lifecycle_capability_matrix.subprocess.run", return_value=subprocess.CompletedProcess([], 1, "unsupported scaffold", "")):
+                    result = run_lane("/tmp/fake-mgc", lane)
+                self.assertEqual(result["dims"]["create"], STATUS_FAILED)
+                self.assertEqual(result["dims"]["install"], expected)
+
     def test_failed_real_dependency_fixture_cannot_be_laundered_by_empty_install(self):
         calls = []
 

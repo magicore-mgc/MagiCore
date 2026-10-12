@@ -2011,18 +2011,26 @@ fn root_exit_completion_inspects_and_terminates_a_forbidden_job_child()
         "test root command must exit successfully"
     );
 
-    let result = finish_monitored_root_exit(&mut root, guard, &[], &shadow_path, |child, _| {
-        (
-            ExecOutcome {
-                status: child
-                    .wait()
-                    .expect("root process status must remain readable"),
-                stdout: Vec::new(),
-                stderr: Vec::new(),
-            },
-            true,
-        )
-    });
+    let result = finish_monitored_root_exit(
+        &mut root,
+        guard,
+        &[],
+        &shadow_path,
+        None,
+        None,
+        |child, _| {
+            (
+                ExecOutcome {
+                    status: child
+                        .wait()
+                        .expect("root process status must remain readable"),
+                    stdout: Vec::new(),
+                    stderr: Vec::new(),
+                },
+                true,
+            )
+        },
+    );
     let error = match result {
         Ok(_) => return Err("root-exit completion accepted a forbidden child".into()),
         Err(error) => error.to_string(),

@@ -437,6 +437,7 @@ fn is_project_local_executable(name: &str, project_root: &Path) -> bool {
     }
     #[cfg(windows)]
     {
+        let _ = metadata;
         executable
             .extension()
             .is_some_and(|extension| extension.eq_ignore_ascii_case("exe"))

@@ -3467,12 +3467,13 @@ def run_lane(mgc_bin: str, lane: dict) -> dict:
             detail[f"{step}_output"] = blocked_lifecycle_steps[step]
             continue
         if dims.get("create") != STATUS_NATIVE:
-            # The lane broke before this step: SKIPPED, never a pass —
-            # a skip records `unverified`, which satisfies nothing
-            # (fail-closed, schema v7).
-            # (Lane vỡ trước bước này: SKIP, không bao giờ là pass — skip
-            # ghi `unverified`, không thỏa điều gì (fail-closed, schema v7).)
-            dims[step] = STATUS_UNVERIFIED
+            # Preserve explicit unsupported ownership; other skipped steps stay unverified.
+            # Bước đã khai unsupported giữ đúng trạng thái; skip khác không được coi là pass.
+            dims[step] = (
+                STATUS_UNSUPPORTED
+                if lifecycle_owner_for(lane, step) == "unsupported"
+                else STATUS_UNVERIFIED
+            )
             continue
         rc, out = run_step(argv, subdir=project_dir, lifecycle_step=step)
         if rc != 0:
