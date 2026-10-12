@@ -1002,6 +1002,27 @@ fn validate_args_no_traversal(args: &[String], project_root: Option<&Path>) -> R
     Ok(())
 }
 
+/// Convert canonical Windows drive/UNC paths for ecosystem tools without UTF-16 loss.
+/// Bỏ prefix verbatim ở drive/UNC cho tool, giữ nguyên Unicode và namespace khác.
+#[cfg(any(windows, test))]
+fn windows_tool_path_units(path: &[u16]) -> Vec<u16> {
+    let unc_prefix = r"\\?\UNC\".encode_utf16().collect::<Vec<_>>();
+    if let Some(tail) = path.strip_prefix(unc_prefix.as_slice()) {
+        return r"\\".encode_utf16().chain(tail.iter().copied()).collect();
+    }
+    let disk_prefix = r"\\?\".encode_utf16().collect::<Vec<_>>();
+    if let Some(tail) = path.strip_prefix(disk_prefix.as_slice())
+        && tail.len() >= 3
+        && ((b'A' as u16..=b'Z' as u16).contains(&tail[0])
+            || (b'a' as u16..=b'z' as u16).contains(&tail[0]))
+        && tail[1] == b':' as u16
+        && tail[2] == b'\\' as u16
+    {
+        return tail.to_vec();
+    }
+    path.to_vec()
+}
+
 fn execute_command(
     cmd: &str,
     args: &[String],
@@ -1025,6 +1046,15 @@ fn execute_command(
         .cwd
         .clone()
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    // Expand 8.3 aliases before Node/Vite compare cwd with filesystem realpaths.
+    // Mở rộng tên ngắn 8.3 trước khi Node/Vite đối chiếu cwd với realpath.
+    #[cfg(windows)]
+    let cwd = {
+        use std::os::windows::ffi::{OsStrExt, OsStringExt};
+        let canonical = std::fs::canonicalize(&cwd).context("canonicalize execution directory")?;
+        let units = canonical.as_os_str().encode_wide().collect::<Vec<_>>();
+        PathBuf::from(OsString::from_wide(&windows_tool_path_units(&units)))
+    };
 
     // Audit the declared exception before any command or child process can
     // start. Missing log configuration therefore cannot silently enable the
@@ -2996,9 +3026,24 @@ fn inspect_windows_job_processes_with_policy_metadata(
             exempt,
             observed_env,
         )
-        .map(|(name, _, _, _)| name)
-        .filter(|name| name != "npm" || !npm_probe_allowed);
-        inspected.descendants.push((process_id, forbidden));
+        .filter(|(name, _, _, _)| name != "npm" || !npm_probe_allowed);
+        let forbidden_name = forbidden.as_ref().map(|(name, _, _, _)| name.clone());
+        if inspected.first_forbidden.is_none()
+            && let Some((name, match_source, matched_token, matched_token_index)) = forbidden
+        {
+            let matched_operation =
+                matched_invocation_shape_argv(&name, &process.command, matched_token_index);
+            inspected.first_forbidden = Some(ForbiddenProcess {
+                pid: process_id,
+                name,
+                image_name: Some(image_name),
+                match_source,
+                matched_token,
+                matched_token_index,
+                matched_operation,
+            });
+        }
+        inspected.descendants.push((process_id, forbidden_name));
     }
     Ok(inspected)
 }
@@ -3033,10 +3078,16 @@ struct CapturedWindowsJobSnapshots<T> {
 struct WindowsJobInspection {
     descendants: Vec<(u32, Option<String>)>,
     missing_command_line: Option<(u32, String)>,
+    // Retain classified evidence without printing raw child arguments.
+    // Giữ bằng chứng đã phân loại, không in đối số child có thể chứa secret.
+    first_forbidden: Option<ForbiddenProcess>,
 }
 
 #[cfg(any(windows, test))]
 fn windows_job_scan_from_inspection(inspection: WindowsJobInspection) -> WindowsProcessScan {
+    if let Some(forbidden) = inspection.first_forbidden {
+        return WindowsProcessScan::Forbidden(forbidden);
+    }
     if let Some((pid, Some(name))) = inspection
         .descendants
         .into_iter()
@@ -4195,6 +4246,18 @@ fn find_forbidden_descendant(
     Ok(None)
 }
 
+/// Compare argv[0] with a separately authenticated image; this is not authorization.
+/// Đối chiếu argv[0] với image đã xác thực riêng; helper này không cấp quyền chạy.
+#[cfg(any(windows, test))]
+fn windows_probe_argv0_matches_image(program: &std::ffi::OsStr, image: &Path) -> bool {
+    if program.eq_ignore_ascii_case(std::ffi::OsStr::new("npm"))
+        || program.eq_ignore_ascii_case(std::ffi::OsStr::new("npm.exe"))
+    {
+        return true;
+    }
+    std::fs::canonicalize(program).is_ok_and(|path| path == image)
+}
+
 #[cfg(windows)]
 fn is_shadow_windows_npm_version_probe(
     process: &WindowsProcessSnapshot,
@@ -4216,13 +4279,10 @@ fn is_shadow_windows_npm_version_probe(
     let Some(program) = process.command.first() else {
         return false;
     };
-    let (Ok(program_path), Ok(image_path)) = (
-        std::fs::canonicalize(program),
-        std::fs::canonicalize(executable_path),
-    ) else {
+    let Ok(image_path) = std::fs::canonicalize(executable_path) else {
         return false;
     };
-    if program_path != image_path
+    if !windows_probe_argv0_matches_image(program, &image_path)
         || !image_path
             .file_name()
             .is_some_and(|name| name.eq_ignore_ascii_case(OsStr::new("npm.exe")))

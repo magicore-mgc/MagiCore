@@ -1164,6 +1164,46 @@ Options:
                 [["mgc", "run", "--core", "lib", "mgc_language_runtime_probe_1"]],
             )
 
+    def test_macos_compiler_probes_keep_declared_apple_compiler_and_sdk(self) -> None:
+        import tomllib
+        for language in ("C", "C++", "Objective-C", "Objective-C++"):
+            with self.subTest(language=language), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                project = root / "project"
+                project.mkdir()
+                (project / "mgc.toml").write_text('name = "probe"\necosystem = "lib"\n', encoding="utf-8")
+                env = stress_matrix.isolated_environment(root)
+                env.update(CC="/Apple toolchain/clang", CXX="/Apple toolchain/clang++", SDKROOT="/Apple SDK")
+                compiler = env["CXX" if language in {"C++", "Objective-C++"} else "CC"]
+                calls = []
+
+                def fake_which(executable, **kwargs):
+                    self.assertEqual(executable, compiler)
+                    return compiler
+
+                def fake_run(argv, **kwargs):
+                    calls.append(argv)
+                    scripts = tomllib.loads((Path(kwargs["cwd"]) / "mgc.toml").read_text())["scripts"]
+                    command = scripts[argv[-1]]
+                    if argv[-1].endswith("_1"):
+                        self.assertIn("SDKROOT='/Apple SDK'", command)
+                        self.assertIn(stress_matrix.shlex.quote(compiler), command)
+                        self.assertTrue(command.startswith("TMPDIR="))
+                    else:
+                        self.assertNotIn("SDKROOT=", command)
+                    return subprocess.CompletedProcess(argv, 0, f"MGC_STRESS_LANGUAGE_RUNTIME:{language}\n")
+
+                with (
+                    patch.object(stress_matrix.sys, "platform", "darwin"),
+                    patch.object(stress_matrix.shutil, "which", side_effect=fake_which),
+                    patch.object(stress_matrix, "run_command", side_effect=fake_run),
+                ):
+                    result = stress_matrix._run_framework_language_probe_for_language(
+                        Path("mgc"), "lib", "c", project, env, language,
+                    )
+                self.assertTrue(result.passed, result.detail)
+                self.assertEqual(len(calls), 2)
+
     def test_compiled_language_probe_splits_compile_and_execution_into_mgc_runs(self) -> None:
         compiler = "clang" if stress_matrix.sys.platform == "darwin" else "gcc"
         output = ".mgc-stress-language-c.exe" if stress_matrix.os.name == "nt" else ".mgc-stress-language-c"

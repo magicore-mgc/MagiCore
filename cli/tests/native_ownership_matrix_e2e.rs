@@ -11,6 +11,32 @@ use std::process::Command;
 use std::sync::OnceLock;
 use tempfile::TempDir;
 
+mod common;
+
+#[test]
+fn framework_npm_version_probe_uses_mgc_shim_with_canonical_windows_cwd() {
+    let root = tempfile::tempdir().expect("create framework probe project");
+    std::fs::write(
+        root.path().join("mgc.toml"),
+        "name = \"framework-probe\"\necosystem = \"web\"\n",
+    )
+    .expect("write framework probe project config");
+    let script = r#"
+const assert = require('node:assert/strict');
+if (process.platform === 'win32') {
+  assert.equal(process.cwd().toLowerCase(), require('node:fs').realpathSync(process.cwd()).toLowerCase());
+}
+const version = require('node:child_process').execSync('npm --version', { encoding: 'utf8' }).trim();
+assert.equal(version, '0.0.0');
+console.log('MGC_AUTHENTICATED_NPM_PROBE_OK');
+"#;
+    let (ok, output) = common::mgc_in(root.path(), &["exec", "node", "--", "-e", script]);
+    assert!(
+        ok && output.contains("MGC_AUTHENTICATED_NPM_PROBE_OK"),
+        "{output}"
+    );
+}
+
 const ALL_TOOLS: &[&str] = &[
     "cargo",
     "rustc",

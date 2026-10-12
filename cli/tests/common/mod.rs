@@ -339,13 +339,14 @@ pub fn assert_native_web_framework_lifecycle(framework: &str, project: &Path, su
     assert!(ok, "{framework} frozen install failed:\n{output}");
     if framework == "nuxt" {
         let probe = project.join(".magicore").join("nuxt-ignore-probe.mjs");
-        std::fs::create_dir_all(probe.parent().unwrap()).unwrap();
-        std::fs::write(&probe, NUXT_WATCH_IGNORE_PROBE).unwrap();
+        std::fs::create_dir_all(probe.parent().expect("Nuxt probe has a parent directory"))
+            .expect("create Nuxt watcher probe directory");
+        std::fs::write(&probe, NUXT_WATCH_IGNORE_PROBE).expect("write Nuxt watcher probe");
         let (ok, output) = mgc_in(
             project,
             &["exec", "node", "--", ".magicore/nuxt-ignore-probe.mjs"],
         );
-        std::fs::remove_file(&probe).unwrap();
+        std::fs::remove_file(&probe).expect("remove Nuxt watcher probe");
         assert!(
             ok && output.contains("MGC_NUXT_CACHE_WATCH_IGNORE_OK"),
             "Nuxt watcher filter failed:\n{output}"

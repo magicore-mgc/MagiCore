@@ -1,5 +1,117 @@
 //! Tests for process runner isolation — kiểm tra biên cô lập của process runner.
 
+#[cfg(windows)]
+#[test]
+fn windows_bare_npm_probe_requires_exact_arguments_and_authenticated_image() {
+    use std::ffi::OsString;
+    let root = tempfile::tempdir().expect("create authenticated alias fixture");
+    let image = root.path().join("npm.exe");
+    std::fs::copy(std::env::current_exe().expect("current executable"), &image)
+        .expect("copy trusted executable fixture");
+    let shadow = super::ShadowPath {
+        dir: root.path().to_path_buf(),
+    };
+    let mut process = super::WindowsProcessSnapshot {
+        pid: 101,
+        parent_pid: Some(100),
+        creation_time: Some(101),
+        image_name: "npm.exe".to_owned(),
+        command: vec![OsString::from("npm"), OsString::from("--version")],
+    };
+    assert!(super::is_shadow_windows_npm_version_probe(
+        &process, &image, &shadow
+    ));
+    process.command[1] = OsString::from("install");
+    assert!(!super::is_shadow_windows_npm_version_probe(
+        &process, &image, &shadow
+    ));
+    process.command[1] = OsString::from("--version");
+    std::fs::write(&image, b"spoofed binary").expect("replace image fixture");
+    assert!(!super::is_shadow_windows_npm_version_probe(
+        &process, &image, &shadow
+    ));
+}
+
+#[test]
+fn windows_probe_argv0_accepts_bare_alias_but_rejects_different_path() {
+    use std::ffi::OsStr;
+    let root = tempfile::tempdir().expect("probe alias directory");
+    let image = root.path().join("npm.exe");
+    std::fs::write(&image, b"image identity is authenticated separately")
+        .expect("create image fixture");
+    let canonical = image.canonicalize().expect("canonical image fixture");
+    for alias in ["npm", "npm.exe", "NPM.EXE"] {
+        assert!(super::windows_probe_argv0_matches_image(
+            OsStr::new(alias),
+            &canonical
+        ));
+    }
+    assert!(super::windows_probe_argv0_matches_image(
+        image.as_os_str(),
+        &canonical
+    ));
+    assert!(!super::windows_probe_argv0_matches_image(
+        OsStr::new("evil"),
+        &canonical
+    ));
+    let other = root.path().join("different-npm.exe");
+    std::fs::write(&other, b"different image").expect("create different image fixture");
+    assert!(!super::windows_probe_argv0_matches_image(
+        other.as_os_str(),
+        &canonical
+    ));
+}
+
+#[test]
+fn windows_tool_cwd_preserves_drive_unc_unicode_and_other_namespaces() {
+    for (input, expected) in [
+        (
+            r"\\?\C:\Users\runneradmin\project",
+            r"C:\Users\runneradmin\project",
+        ),
+        (r"\\?\UNC\server\share\project", r"\\server\share\project"),
+        (r"\\?\C:\ứng dụng\项目", r"C:\ứng dụng\项目"),
+        (r"C:\project", r"C:\project"),
+        (
+            r"\\?\Volume{identity}\project",
+            r"\\?\Volume{identity}\project",
+        ),
+    ] {
+        let input = input.encode_utf16().collect::<Vec<_>>();
+        let expected = expected.encode_utf16().collect::<Vec<_>>();
+        assert_eq!(super::windows_tool_path_units(&input), expected);
+    }
+    let mut units = r"\\?\C:\project\".encode_utf16().collect::<Vec<_>>();
+    units.push(0xD800);
+    assert_eq!(super::windows_tool_path_units(&units), units[4..]);
+}
+
+#[test]
+fn windows_job_denial_preserves_safe_invocation_evidence() {
+    use std::ffi::OsString;
+    let process = super::WindowsProcessSnapshot {
+        pid: 101,
+        parent_pid: Some(100),
+        creation_time: Some(101),
+        image_name: "npm.exe".to_owned(),
+        command: ["npm.exe", "install", "private-package-secret"]
+            .into_iter()
+            .map(OsString::from)
+            .collect(),
+    };
+    let inspection =
+        super::inspect_windows_job_processes_with_shadow(100, &[101], &[process], &[], None)
+            .expect("inspect forbidden child");
+    let super::WindowsProcessScan::Forbidden(found) =
+        super::windows_job_scan_from_inspection(inspection)
+    else {
+        panic!("expected a forbidden process");
+    };
+    assert_eq!(found.image_name.as_deref(), Some("npm.exe"));
+    assert!(found.matched_operation.contains("dependency-mutation"));
+    assert!(!found.matched_operation.contains("private-package-secret"));
+}
+
 #[cfg(unix)]
 use super::{
     ShadowPath, find_forbidden_descendant_with_program, inspect_forbidden_process_table,

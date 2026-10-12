@@ -1305,6 +1305,19 @@ def _run_framework_language_probe_for_language(
         )
 
     executable, filename, source, commands = profile
+    # Swift provisioning may shadow clang; carry the declared Apple tool and SDK
+    # into the MGC script because the executor deliberately starts with a clean env.
+    # Swift có thể che clang trong PATH; truyền compiler/SDK Apple đã khai báo vào
+    # script MGC vì executor chủ động làm sạch env của process con.
+    if sys.platform == "darwin" and language in {"C", "C++", "Objective-C", "Objective-C++"}:
+        compiler_key = "CXX" if language in {"C++", "Objective-C++"} else "CC"
+        configured_compiler = env.get(compiler_key)
+        if configured_compiler:
+            commands = (shlex.quote(configured_compiler) + commands[0][len(executable):], *commands[1:])
+            executable = configured_compiler
+        sdk_root = env.get("SDKROOT")
+        if sdk_root:
+            commands = (f"SDKROOT={shlex.quote(sdk_root)} {commands[0]}", *commands[1:])
     search_path = env.get("PATH") or env.get("Path")
     if shutil.which(executable, path=search_path) is None:
         return Result(
