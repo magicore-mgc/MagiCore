@@ -698,7 +698,7 @@ Options:
 
     def test_native_web_dev_ports_are_unique_rule_permutations(self) -> None:
         import re
-        source = (SOURCE.parents[2] / "cli/tests/common/mod.rs").read_text()
+        source = (SOURCE.parents[2] / "cli/tests/common/mod.rs").read_text(encoding="utf-8")
         block = source.split("pub fn native_web_dev_port", 1)[1].split("/// Run a real", 1)[0]
         ports = re.findall(r'"[^"\n]+" => (\d+)', block)
         self.assertGreaterEqual(len(ports), 18)
@@ -728,7 +728,7 @@ Options:
         self.assertIn("flutter_offline_replay_imports_package_with_real_dart", block)
         self.assertIn("-- --ignored --test-threads=1", block)
         self.assertNotIn("MGC_TEST_CLI_BINARY", block)
-        source = (SOURCE.parents[2] / "cli/tests/app_native_install_e2e.rs").read_text()
+        source = (SOURCE.parents[2] / "cli/tests/app_native_install_e2e.rs").read_text(encoding="utf-8")
         self.assertIn('std::env::var("MGC_E2E_DART_BINARY").expect', source)
         self.assertIn('import \'package:meta/meta.dart\'', source)
         self.assertRegex(source, r'assert_eq!\(\s*code,\s*Some\(0\),\s*"Dart package import failed')
