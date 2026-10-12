@@ -605,6 +605,15 @@ class ScanBoundaryCoverage(unittest.TestCase):
 class PythonProcessInventory(unittest.TestCase):
     """Python process APIs are inventoried without treating prose as execution."""
 
+    def test_portable_ast_dump_omits_only_empty_structural_fields(self):
+        call = ast.parse('subprocess.run(["tool", "keywords=[]", "None"])').body[0].value
+        self.assertEqual(
+            gate._portable_ast_dump(call),
+            "Call(func=Attribute(value=Name(id='subprocess', ctx=Load()), attr='run', ctx=Load()), args=[List(elts=[Constant(value='tool'), Constant(value='keywords=[]'), Constant(value='None')], ctx=Load())])",
+        )
+        changed = ast.parse('subprocess.run(["tool", "keywords=[]", "None"], shell=True)').body[0].value
+        self.assertNotEqual(gate._portable_ast_dump(call), gate._portable_ast_dump(changed))
+
     def test_python_process_helper_review_binds_the_selected_executable(self):
         source = (
             "def select_shell():\n"

@@ -1296,8 +1296,12 @@ fn inherited_project_binary_blocks_script_that_executes_forbidden_pm() {
     };
     let err = run_project_binary_inherited(&fake_bin, &[], &opts).unwrap_err();
     assert!(
-        err.to_string()
-            .contains("MagiCore blocked forbidden package manager: npm")
+        // An inherited child may exit through the deny shim before monitoring.
+        // Child inherited có thể bị deny shim chặn trước lượt quét monitor.
+        err.to_string().contains("exited with code 126")
+            || err
+                .to_string()
+                .contains("MagiCore blocked forbidden package manager: npm")
             || err
                 .to_string()
                 .contains("forbidden package manager 'npm' spawned"),

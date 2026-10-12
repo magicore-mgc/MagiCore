@@ -467,6 +467,7 @@ AUDITED_EXECUTOR_ROUTES = {
     # allowlist; package managers remain denied and build resolvers are offline.
     # (Compiler/runtime do MGC sở hữu đi qua allowlist mgc-exec; PM bị cấm và build chạy offline.)
     ("cli/src/commands/build.rs", "build_ai", "go"):         "mgc-exec BuildRunner; Go build uses -mod=readonly and offline environment",
+    ("cli/src/commands/build.rs", "build_web_go_backend", "go"): "mgc-exec BuildRunner; Go web build uses -mod=readonly and offline environment",
     ("cli/src/commands/build.rs", "build_lib", "go"):         "mgc-exec BuildRunner; Go build uses -mod=readonly and offline environment",
     ("cli/src/commands/build.rs", "build_app", "gradle"):         "mgc-exec BuildRunner; Gradle build is --offline",
     ("cli/src/commands/build.rs", "build_app", "swift"):         "mgc-exec BuildRunner; Swift build disables package resolution",
@@ -3375,6 +3376,22 @@ def review_python_process_helpers(sources: dict, expected_files=None) -> list:
     return reviewed
 
 
+def _portable_ast_dump(node):
+    """Match the reviewed AST representation across Python versions.
+    Giữ fingerprint chính xác khi Python 3.12/3.14 khác cách in list rỗng.
+    """
+    if isinstance(node, ast.AST):
+        fields = [
+            f"{name}={_portable_ast_dump(value)}"
+            for name, value in ast.iter_fields(node)
+            if value is not None and not (isinstance(value, list) and not value)
+        ]
+        return f"{type(node).__name__}({', '.join(fields)})"
+    if isinstance(node, list):
+        return f"[{', '.join(_portable_ast_dump(value) for value in node)}]"
+    return repr(node)
+
+
 def scan_python_text(rel_path: str, text: str) -> list:
     """Inventory known Python stdlib process calls; findings need review.
     (Kiểm kê lời gọi process stdlib đã biết; mọi finding cần review.)"""
@@ -3433,7 +3450,7 @@ def scan_python_text(rel_path: str, text: str) -> list:
             "api": api,
             "executable": _python_executable(node, api),
             "call_fingerprint": hashlib.sha256(
-                ast.dump(node, include_attributes=False).encode("utf-8")
+                _portable_ast_dump(node).encode("utf-8")
             ).hexdigest(),
             "review_status": "unreviewed",
             "review_reason": None,

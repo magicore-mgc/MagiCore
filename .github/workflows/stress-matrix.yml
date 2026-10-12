@@ -111,10 +111,23 @@ jobs:
           & $compilerLauncher -version
 
       - name: Set up PHP for PHP runtime probes
+        if: runner.os != 'macOS'
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
           php-version: "8.5"
           tools: none
+
+      # Use Homebrew directly on macOS instead of the failing setup-php installer.
+      # macOS dùng Homebrew trực tiếp, kiểm tra binary trước khi chạy probe.
+      - name: Set up PHP for PHP runtime probes (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install php
+          php_bin="$(brew --prefix php)/bin"
+          echo "${php_bin}" >> "${GITHUB_PATH}"
+          "${php_bin}/php" --version
 
       - name: Set up .NET for C# runtime probes
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -175,7 +188,7 @@ jobs:
           PY
           unzip -q "${archive_path}" -d "${install_dir}"
           echo "${install_dir}" >> "${GITHUB_PATH}"
-          terraform version
+          "${install_dir}/terraform" version
 
       - name: Set up Terraform for HCL syntax probes (Windows)
         if: runner.os == 'Windows'
@@ -269,12 +282,19 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $gccBin = 'C:\msys64\ucrt64\bin'
-          if (!(Test-Path -LiteralPath (Join-Path $gccBin 'gcc.exe'))) { throw "GCC is missing from $gccBin" }
-          if (!(Test-Path -LiteralPath (Join-Path $gccBin 'g++.exe'))) { throw "G++ is missing from $gccBin" }
+          $gccCommand = Get-Command gcc.exe -CommandType Application -ErrorAction SilentlyContinue
+          $gccCandidates = @('C:\mingw64\bin', 'C:\msys64\mingw64\bin', 'C:\msys64\ucrt64\bin')
+          if ($gccCommand) {
+            $gccCandidates = @((Split-Path -Parent $gccCommand.Source)) + $gccCandidates
+          }
+          $gccBin = $gccCandidates | Where-Object {
+            (Test-Path -LiteralPath (Join-Path $_ 'gcc.exe') -PathType Leaf) -and
+            (Test-Path -LiteralPath (Join-Path $_ 'g++.exe') -PathType Leaf)
+          } | Select-Object -First 1
+          if (!$gccBin) { throw 'GCC and G++ are missing from the hosted runner' }
           Add-Content -Path $env:GITHUB_PATH -Value $gccBin -Encoding utf8
-          gcc --version
-          g++ --version
+          & (Join-Path $gccBin 'gcc.exe') --version
+          & (Join-Path $gccBin 'g++.exe') --version
 
       - name: Set up Flutter and Dart for app runtime probes
         uses: subosito/flutter-action@44ac965b96f18d999802d4b807e3256d5a3f9fa1 # v2.16.0

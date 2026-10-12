@@ -3,6 +3,8 @@ use colored::Colorize;
 use mgc_ui::info;
 use std::path::{Path, PathBuf};
 
+const GO_BACKEND_LANGUAGE: &str = "go";
+
 /// Prevent Go's compiler driver from downloading/updating dependency metadata
 /// during a MagiCore build. Dependencies must already be present and verified
 /// by the selected install path.
@@ -69,12 +71,15 @@ pub async fn run(
                 && !project_manifest_present(&root, "package.json")?
             {
                 if target.is_some() {
-                    return Err(crate::error::web_backend_flag_unsupported("--target", "go"));
+                    return Err(crate::error::web_backend_flag_unsupported(
+                        "--target",
+                        GO_BACKEND_LANGUAGE,
+                    ));
                 }
                 if compat_runner.is_some() {
                     return Err(crate::error::web_backend_flag_unsupported(
                         "--compat-runner",
-                        "go",
+                        GO_BACKEND_LANGUAGE,
                     ));
                 }
                 return build_web_go_backend(&root);

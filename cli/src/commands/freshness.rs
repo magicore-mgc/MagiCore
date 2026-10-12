@@ -320,28 +320,19 @@ pub fn declared_python_deps(pyproject_toml: &str) -> Vec<String> {
         return Vec::new();
     };
     let mut names = Vec::new();
-    if let Some(project) = table.get("project").and_then(|v| v.as_table()) {
-        if let Some(deps) = project.get("dependencies").and_then(|v| v.as_array()) {
-            names.extend(
-                deps.iter()
-                    .filter_map(|v| v.as_str())
-                    .map(pep508_name)
-                    .filter(|n| !n.is_empty()),
-            );
-        }
-        if let Some(groups) = project
-            .get("optional-dependencies")
-            .and_then(|v| v.as_table())
-        {
-            for deps in groups.values().filter_map(|v| v.as_array()) {
-                names.extend(
-                    deps.iter()
-                        .filter_map(|v| v.as_str())
-                        .map(pep508_name)
-                        .filter(|n| !n.is_empty()),
-                );
-            }
-        }
+    // Unselected optional extras are not roots in the default install graph.
+    // Extra chưa được chọn không thuộc root graph của install mặc định.
+    if let Some(deps) = table
+        .get("project")
+        .and_then(|v| v.get("dependencies"))
+        .and_then(|v| v.as_array())
+    {
+        names.extend(
+            deps.iter()
+                .filter_map(|v| v.as_str())
+                .map(pep508_name)
+                .filter(|n| !n.is_empty()),
+        );
     }
     names.sort();
     names.dedup();

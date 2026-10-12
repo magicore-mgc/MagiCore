@@ -801,10 +801,8 @@ async fn pypi_resolve_download_verify_store_ref_full_path() {
 
 #[tokio::test]
 async fn pypi_foreign_wheel_loses_to_sdist() {
-    // V1.2 (D0): no "any wheel" fallback — a wheel built for another
-    // platform must never install silently. `win_amd64` matches no host
-    // branch on any CI OS (macos-aarch64 / linux-aarch64 / windows all
-    // reject it), so the sdist must win everywhere.
+    // FreeBSD wheels are foreign on every Linux/macOS/Windows CI runner.
+    // Wheel FreeBSD không phù hợp các OS CI; phải chọn sdist thay vì cài lặng lẽ.
     let Some(mut server) = mock_server().await else {
         return;
     };
@@ -814,8 +812,8 @@ async fn pypi_foreign_wheel_loses_to_sdist() {
     let releases = format!(
         r#""1.0.0": [{w}, {s}]"#,
         w = file_entry(
-            "demo-1.0.0-cp312-cp312-win_amd64.whl",
-            &format!("{base}/files/demo-1.0.0-cp312-cp312-win_amd64.whl"),
+            "demo-1.0.0-cp312-cp312-freebsd_13_0_x86_64.whl",
+            &format!("{base}/files/demo-1.0.0-cp312-cp312-freebsd_13_0_x86_64.whl"),
             &wheel_sha,
             "bdist_wheel"
         ),
@@ -861,8 +859,8 @@ async fn pypi_only_foreign_wheel_fails_closed() {
     let releases = format!(
         r#""1.0.0": [{w}]"#,
         w = file_entry(
-            "demo-1.0.0-cp312-cp312-win_amd64.whl",
-            &format!("{base}/files/demo-1.0.0-cp312-cp312-win_amd64.whl"),
+            "demo-1.0.0-cp312-cp312-freebsd_13_0_x86_64.whl",
+            &format!("{base}/files/demo-1.0.0-cp312-cp312-freebsd_13_0_x86_64.whl"),
             &wheel_sha,
             "bdist_wheel"
         ),

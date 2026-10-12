@@ -101,6 +101,39 @@ fn python_projection() {
     assert!(broken.is_empty());
 }
 
+// Unselected model extras must not invalidate the default Python lock graph.
+// Extra model chưa được chọn không được làm default lock bị coi là stale.
+#[test]
+fn python_freshness_uses_default_dependency_roots_without_unselected_extras() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::write(
+        dir.path().join("pyproject.toml"),
+        "[project]\nname = 'agent'\ndependencies = ['six']\n[project.optional-dependencies]\nmodel = ['torch', 'transformers', 'accelerate', 'safetensors']\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("mgc.lock"),
+        lock_with_owner(
+            &[("six", "1.17.0")],
+            "ai",
+            mgc_lockfile::EcosystemTag::Python,
+        ),
+    )
+    .unwrap();
+    check_python_freshness(dir.path()).unwrap();
+    std::fs::write(
+        dir.path().join("pyproject.toml"),
+        "[project]\nname = 'agent'\ndependencies = ['six', 'torch']\n",
+    )
+    .unwrap();
+    assert!(
+        check_python_freshness(dir.path())
+            .unwrap_err()
+            .to_string()
+            .contains("torch")
+    );
+}
+
 // pubspec top-level dependency mapping.
 // (Mapping dependency top-level pubspec.)
 #[test]

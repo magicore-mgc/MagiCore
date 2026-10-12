@@ -730,6 +730,7 @@ fn windows_npm_probe_exemption_requires_exact_native_shim_and_arguments() {
         &[],
         Some(&shadow_path),
         &image_paths,
+        None,
     )
     .expect("inspect verified Windows probe");
     assert_eq!(inspected.descendants, [(201, None)]);
@@ -742,6 +743,7 @@ fn windows_npm_probe_exemption_requires_exact_native_shim_and_arguments() {
         &[],
         Some(&shadow_path),
         &spoofed_image_paths,
+        None,
     )
     .expect("inspect process with spoofed argv[0]");
     assert_eq!(inspected.descendants, [(201, Some("npm".to_owned()))]);
