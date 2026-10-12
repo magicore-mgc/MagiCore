@@ -148,7 +148,7 @@ async fn flutter_package_config_expands_windows_short_project_path() {
     let expected_project = windows_path_form(&short_project, false);
 
     mgc_app_adapter::install::run_install(
-        mgc_app_adapter::language::AppLanguage::Flutter,
+        mgc_app_adapter::AppLanguage::Flutter,
         &ResolvedGraph::empty(),
         &short_project,
         InstallOptions {
