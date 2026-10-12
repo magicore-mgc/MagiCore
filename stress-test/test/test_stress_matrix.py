@@ -703,6 +703,7 @@ Options:
         ports = re.findall(r'"[^"\n]+" => (\d+)', block)
         self.assertGreaterEqual(len(ports), 18)
         self.assertEqual(len(ports), len(set(ports)))
+        self.assertNotIn("4315", ports, "registry port must remain reserved in seeded CI")
         for port in ports:
             self.assertEqual(sorted(port), sorted("4315"), port)
 

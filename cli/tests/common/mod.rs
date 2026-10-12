@@ -406,7 +406,7 @@ fn record_web_lifecycle_evidence(framework: &str, suite: &str, category: &str, d
 /// Cấp cổng duy nhất, thuộc RULE §13, cho từng framework web native được hỗ trợ.
 pub fn native_web_dev_port(framework: &str) -> Option<u16> {
     Some(match framework {
-        "vanilla" => 4315,
+        "vanilla" => 5143,
         "ts" => 4351,
         "node" => 4153,
         "angular" => 4531,
