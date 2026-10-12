@@ -1216,6 +1216,10 @@ Options:
             )
             (project / "main.c").write_text("int main(void) { return 0; }\n", encoding="utf-8")
             env = stress_matrix.isolated_environment(root)
+            # Keep the default-profile fixture independent of hosted Apple exports.
+            # Tách env của fixture mặc định khỏi CC/CXX/SDKROOT do CI cấu hình.
+            for variable in ("CC", "CXX", "SDKROOT"):
+                env.pop(variable, None)
             calls: list[list[str]] = []
 
             def fake_run(argv, **kwargs):
