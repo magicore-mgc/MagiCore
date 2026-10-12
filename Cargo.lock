@@ -2833,6 +2833,7 @@ dependencies = [
  "toml_edit",
  "url",
  "which",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

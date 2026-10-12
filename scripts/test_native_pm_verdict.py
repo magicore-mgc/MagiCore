@@ -582,6 +582,7 @@ fn main() {
 
         self.assertEqual(env["PULUMI_BACKEND_URL"], Path(root, ".pulumi-backend").as_uri())
         self.assertEqual(env["PULUMI_HOME"], os.path.join(root, ".pulumi-home"))
+        self.assertEqual(env["PULUMI_STACK"], matrix_module.PULUMI_LIFECYCLE_STACK)
         self.assertTrue(env["PULUMI_CONFIG_PASSPHRASE"])
         self.assertEqual(env["AWS_EC2_METADATA_DISABLED"], "true")
         for name in ("PULUMI_ACCESS_TOKEN", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_PROFILE"):
@@ -1122,6 +1123,10 @@ class LanePreparationFailure(unittest.TestCase):
                 ["pulumi", "stack", "select"],
             ):
                 return subprocess.CompletedProcess(argv, 0, "local stack", "")
+            if args == ["pulumi", "stack", "get", "--show-name"]:
+                return subprocess.CompletedProcess(
+                    argv, 0, matrix_module.PULUMI_LIFECYCLE_STACK + "\n", ""
+                )
             if args[0] in {"build", "optimizer"}:
                 return subprocess.CompletedProcess(argv, 0, "ok", "")
             raise AssertionError(f"Unexpected Pulumi lifecycle command: {args}")
@@ -1148,14 +1153,68 @@ class LanePreparationFailure(unittest.TestCase):
         )
         self.assertEqual(
             [call[1:3] for call in pulumi_calls[1:]],
-            [["stack", "init"], ["stack", "select"]],
+            [
+                ["stack", "init"],
+                ["stack", "select"],
+                ["stack", "get"],
+            ],
         )
+        self.assertEqual(calls[0][1]["PULUMI_STACK"], matrix_module.PULUMI_LIFECYCLE_STACK)
         build_index = next(index for index, call in enumerate(calls) if call[0] == ["build"])
         select_index = next(
             index for index, call in enumerate(calls)
             if call[0][:3] == ["pulumi", "stack", "select"]
         )
+        verify_index = next(
+            index for index, call in enumerate(calls)
+            if call[0] == ["pulumi", "stack", "get", "--show-name"]
+        )
         self.assertLess(select_index, build_index)
+        self.assertLess(verify_index, build_index)
+
+    def test_wrong_reported_pulumi_stack_blocks_build(self):
+        calls = []
+
+        def fake_run(argv, **kwargs):
+            args = argv[1:] if argv[0] == "/tmp/fake-mgc" else argv
+            calls.append(args)
+            if args[0] == "create-test":
+                project = os.path.join(kwargs["cwd"], args[-1])
+                os.mkdir(project)
+                Path(project, "package.json").write_text("{}\n", encoding="utf-8")
+                Path(project, "Pulumi.yaml").write_text(
+                    "name: fixture\nruntime: nodejs\n", encoding="utf-8"
+                )
+                return subprocess.CompletedProcess(argv, 0, "created", "")
+            if args[:2] == ["pulumi", "login"]:
+                return subprocess.CompletedProcess(argv, 0, "local login", "")
+            if args[:3] in (
+                ["pulumi", "stack", "init"],
+                ["pulumi", "stack", "select"],
+            ):
+                return subprocess.CompletedProcess(argv, 0, "selected", "")
+            if args == ["pulumi", "stack", "get", "--show-name"]:
+                return subprocess.CompletedProcess(argv, 0, "unexpected-stack\n", "")
+            if args[0] == "optimizer":
+                return subprocess.CompletedProcess(argv, 0, "Optimizer skipped", "")
+            raise AssertionError(f"Build ran without the expected Pulumi stack: {args}")
+
+        lane = {
+            "core": "clo",
+            "language": "pulumi",
+            "scaffold": ["create-test", "fixture"],
+            "pre_steps": ["initialize_local_pulumi_stack"],
+            "steps": [("build", ["build"])],
+            "delegated": [],
+            "install_owner": "native-engine",
+        }
+
+        with patch("lifecycle_capability_matrix.subprocess.run", side_effect=fake_run):
+            result = run_lane("/tmp/fake-mgc", lane)
+
+        self.assertEqual(result["dims"]["build"], STATUS_UNVERIFIED, result)
+        self.assertIn("unexpected-stack", result["detail"]["pulumi_stack_setup_output"])
+        self.assertNotIn(["build"], calls)
 
 
 class CommandOutputExcerpt(unittest.TestCase):

@@ -1168,6 +1168,7 @@ LIFECYCLE_VERDICTS = frozenset(
 # và inventory qualification framework đầy đủ lấy từ binary đã biên dịch.)
 SCHEMA_VERSION = 7
 COMMAND_OUTPUT_EXCERPT_LIMIT = 2000
+PULUMI_LIFECYCLE_STACK = "lifecycle"
 
 
 def command_output_excerpt(output: str, limit: int = COMMAND_OUTPUT_EXCERPT_LIMIT) -> str:
@@ -3152,6 +3153,11 @@ def pulumi_local_environment(sandbox: str, environment: dict[str, str]) -> dict[
     os.makedirs(pulumi_home, exist_ok=True)
     env["PULUMI_BACKEND_URL"] = Path(backend_root).as_uri()
     env["PULUMI_HOME"] = pulumi_home
+    # Select the stack explicitly for child processes; workspace selection can
+    # be keyed differently after Windows path normalization.
+    # Chỉ định stack cho tiến trình con; Windows có thể chuẩn hóa path khác
+    # khiến lựa chọn lưu trong workspace không còn khớp project.
+    env["PULUMI_STACK"] = PULUMI_LIFECYCLE_STACK
     env["PULUMI_CONFIG_PASSPHRASE"] = secrets.token_urlsafe(32)
     env["PULUMI_SKIP_UPDATE_CHECK"] = "true"
     for name in tuple(env):
@@ -3497,8 +3503,9 @@ def run_lane(mgc_bin: str, lane: dict) -> dict:
                 _fail("Pulumi lifecycle requires an isolated file backend URL")
             commands = (
                 ["pulumi", "login", backend_url, "--non-interactive"],
-                ["pulumi", "stack", "init", "lifecycle", "--non-interactive"],
-                ["pulumi", "stack", "select", "lifecycle", "--non-interactive"],
+                ["pulumi", "stack", "init", PULUMI_LIFECYCLE_STACK, "--non-interactive"],
+                ["pulumi", "stack", "select", PULUMI_LIFECYCLE_STACK, "--non-interactive"],
+                ["pulumi", "stack", "get", "--show-name"],
             )
             setup_output = []
             setup_failed = False
@@ -3517,7 +3524,10 @@ def run_lane(mgc_bin: str, lane: dict) -> dict:
                 except subprocess.TimeoutExpired:
                     _fail("Pulumi local backend setup timed out")
                 setup_output.append((proc.stdout or "") + (proc.stderr or ""))
-                if proc.returncode != 0:
+                if proc.returncode != 0 or (
+                    command[:4] == ["pulumi", "stack", "get", "--show-name"]
+                    and (proc.stdout or "").strip() != PULUMI_LIFECYCLE_STACK
+                ):
                     setup_failed = True
                     break
             if setup_failed:

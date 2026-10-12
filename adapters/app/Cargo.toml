@@ -50,6 +50,9 @@ which = "6.0"
 reqwest = { version = "0.12", features = ["json"] }
 mgc-lib-adapter = { path = "../lib" }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+
 [dev-dependencies]
 criterion = { workspace = true }
 tempfile = { workspace = true }

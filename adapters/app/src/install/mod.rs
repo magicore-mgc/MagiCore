@@ -249,9 +249,44 @@ fn flutter_project_root_uri(project_root: &Path, current_dir: Option<&Path>) -> 
             })?
             .join(project_root)
     };
+    #[cfg(windows)]
+    let absolute_root = expand_windows_short_path(&absolute_root)?;
     url::Url::from_directory_path(absolute_root)
         .map(|uri| uri.to_string())
         .map_err(|_| MgError::Other("cannot encode Flutter project root URI".to_string()))
+}
+
+#[cfg(windows)]
+fn expand_windows_short_path(path: &Path) -> MgResult<PathBuf> {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    use windows_sys::Win32::Storage::FileSystem::GetLongPathNameW;
+
+    // Expand DOS 8.3 aliases before Flutter compares the package root URI.
+    // Bung tên DOS 8.3 trước khi Flutter so khớp URI root của package.
+    let encoded = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let required = unsafe { GetLongPathNameW(encoded.as_ptr(), std::ptr::null_mut(), 0) };
+    if required == 0 {
+        return Err(MgError::Other(format!(
+            "expand Windows Flutter project path: {}",
+            std::io::Error::last_os_error()
+        )));
+    }
+    let mut buffer = vec![0_u16; required as usize];
+    let written = unsafe { GetLongPathNameW(encoded.as_ptr(), buffer.as_mut_ptr(), required) };
+    if written == 0 || written >= required {
+        return Err(MgError::Other(format!(
+            "read expanded Windows Flutter project path: {}",
+            std::io::Error::last_os_error()
+        )));
+    }
+    Ok(PathBuf::from(OsString::from_wide(
+        &buffer[..written as usize],
+    )))
 }
 
 fn write_flutter_package_config(
@@ -299,8 +334,8 @@ fn write_flutter_package_config_with_sdk_root(
             "Flutter package config contains duplicate package name '{root_name}'"
         )));
     }
-    // Preserve the caller-visible path because Flutter matches this URI to its current directory exactly.
-    // Giữ URI theo đường dẫn caller thấy vì Flutter so khớp chính xác với thư mục làm việc hiện tại.
+    // Match the directory identity Flutter exposes, including Windows 8.3 expansion above.
+    // Khớp danh tính thư mục Flutter thấy, gồm bước bung tên 8.3 ở Windows bên trên.
     let current_dir = if project_root.is_absolute() {
         None
     } else {
