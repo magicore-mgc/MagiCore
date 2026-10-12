@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to build (e.g., 1.1.0-rc.9)"
+        description: "Version to build (e.g., 1.1.0-rc.10)"
         required: true
         type: string
 
@@ -35,9 +35,13 @@ jobs:
 
       - name: Resolve version and context
         id: resolve
+        # Keep dispatch input out of shell source to prevent interpolation attacks.
+        # Không chèn input dispatch vào mã shell để ngăn tấn công nội suy.
+        env:
+          RELEASE_VERSION_INPUT: ${{ inputs.version }}
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            VERSION="${{ inputs.version }}"
+            VERSION="$RELEASE_VERSION_INPUT"
             IS_TAG="false"
             PUBLISH="false"
           else
@@ -579,7 +583,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Test release manifest builder (stable + RC names)
-        # P0: RC versions carry dashes (1.1.0-rc.9) — a left-split name
+        # P0: RC versions carry dashes (1.1.0-rc.10) — a left-split name
         # parser silently drops them from manifest.json. This test pins
         # the right-parse contract before any asset is published.
         # Test builder manifest (stable + RC): parser tách trái từng lặng
@@ -903,10 +907,15 @@ jobs:
           name: release-audit-capability-matrix
           path: docs/specs/auditCapabilityMatrix.json
 
+  release-universal-support-evidence-gate:
+    name: Release universal framework and language evidence gate
+    needs: [resolve-version]
+    uses: ./.github/workflows/stress-matrix.yml
+
   publish-github-release:
     name: Create GitHub Release
-    needs: [resolve-version, pre-publish-verification, audit-capability-gate]
-    if: ${{ needs.resolve-version.outputs.publish == 'true' }}
+    needs: [resolve-version, pre-publish-verification, audit-capability-gate, release-universal-support-evidence-gate]
+    if: ${{ always() && needs.resolve-version.outputs.publish == 'true' && needs.release-universal-support-evidence-gate.result == 'success' && needs.pre-publish-verification.result == 'success' && needs.audit-capability-gate.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write # Required to create release and upload assets
@@ -947,9 +956,9 @@ jobs:
       # archive (version/variant/os/arch/digest/size) and sign it with
       # the Ed25519 release key. Client `mgc self-update` verifies the
       # manifest + signature against --trust-root/MGC_RELEASE_TRUST_ROOTS.
-      # Key setup (repo Settings → Secrets → Actions):
+      # Key setup (repo Settings → Secrets/Variables → Actions):
       #   MGC_RELEASE_SIGNING_KEY = 64-hex-char Ed25519 seed.
-      #   Publish the matching pubkey wherever users can pin it.
+      #   MGC_RELEASE_TRUST_ROOTS = comma-separated 64-hex public key pin(s).
       # Signing is mandatory for publication: MGC_RELEASE_REQUIRE_SIGNED
       # makes the release fail closed when the signing secret is absent.
       # No unsigned manifest is published by this workflow.
@@ -979,6 +988,17 @@ jobs:
           tar -xzf release-assets/magicore-"$VERSION"-linux-x64.tar.gz -C "$BOOTSTRAP_DIR"
           "$BOOTSTRAP_DIR/mgc" sign-release --manifest release-assets/manifest.json
           rm -rf "$BOOTSTRAP_DIR"
+
+      - name: Verify signed release manifest using public trust roots
+        env:
+          MGC_RELEASE_TRUST_ROOTS: ${{ vars.MGC_RELEASE_TRUST_ROOTS }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.resolve-version.outputs.version }}"
+          shopt -s nullglob
+          archives=(release-assets/magicore-*.tar.gz release-assets/magicore-*.zip)
+          python3 scripts/verify-release-manifest-signature.py \
+            release-assets "$VERSION" "${archives[@]}"
 
       # Note: Attestations already generated in pre-publish-verification
       # No need to regenerate here (P1 finding #6)

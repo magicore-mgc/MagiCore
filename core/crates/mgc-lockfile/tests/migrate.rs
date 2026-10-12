@@ -35,6 +35,12 @@ lockfile_hash = ""
 }
 
 #[test]
+fn detects_additive_v4_revisions_as_v4_for_existing_dispatch_callers() {
+    let toml = "version = \"4.1\"\n";
+    assert_eq!(detect_lockfile_version(toml).unwrap(), 4);
+}
+
+#[test]
 fn test_parse_lockfile_v1() {
     let toml = r#"
 version = "1"

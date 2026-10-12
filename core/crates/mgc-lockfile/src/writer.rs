@@ -74,8 +74,10 @@ pub fn ensure_lockfile_mutation_allowed(path: &Path) -> LockfileResult<()> {
                     path.display()
                 )));
             }
-            if document.get("version").and_then(toml::Value::as_str)
-                == Some(crate::v4::LOCKFILE_SCHEMA_V4)
+            if document
+                .get("version")
+                .and_then(toml::Value::as_str)
+                .is_some_and(crate::v4::is_v4_schema_version)
             {
                 return Err(LockfileError::WriteFailed(format!(
                     "legacy lockfile writer cannot mutate v4 lock '{}'; use the schema-preserving v4 API",
@@ -183,4 +185,23 @@ pub fn sign_lockfile_with_default_key(
     })?;
 
     sign_and_write_lockfile(lockfile, lockfile_path, key_pair)
+}
+
+/// Finalize a v4 document for disk: fill the payload digest, serialize,
+/// and re-parse to prove the emitted text round-trips identically (no
+/// serializer drift). The caller atomically writes the returned bytes
+/// with its own staging protocol.
+/// (Hoàn thiện tài liệu v4 để ghi đĩa: điền digest payload, serialize và
+/// parse lại chứng minh text round-trip y hệt. Caller tự ghi atomic bytes
+/// trả về bằng protocol staging của mình.)
+pub fn finalize_v4_document(doc: &mut crate::canonical::LockfileV4) -> LockfileResult<String> {
+    doc.metadata.lockfile_hash = crate::canonical::payload_digest(&doc.payload());
+    let text = crate::canonical::write_v4_document(doc)?;
+    let round_trip = crate::canonical::parse_v4_document(&text)?;
+    if round_trip != *doc {
+        return Err(LockfileError::WriteFailed(
+            "v4 serializer drift: emitted document does not round-trip".to_string(),
+        ));
+    }
+    Ok(text)
 }

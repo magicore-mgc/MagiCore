@@ -167,7 +167,7 @@ fn test_web_full_lifecycle() {
 
 #[test]
 fn test_lib_full_lifecycle() {
-    // FULL E2E: lib core - create → build → test
+    // FULL E2E: lib core - create → install → build → test
     // REQUIRES: cargo/rustc (should be available in Rust project)
 
     let temp = TempDir::new().unwrap();
@@ -175,6 +175,14 @@ fn test_lib_full_lifecycle() {
     let project_path = temp.path().join(project_name);
     let mgc = find_mgc_binary();
     let cargo_target_dir = project_path.join(".mgc-test-target");
+    let mgc_home = temp.path().join(".mgc-home");
+    let mgc_data = mgc_home.join("data");
+    let mgc_cache = mgc_home.join("cache");
+    let mgc_templates = mgc_home.join("templates");
+    let mgc_store = mgc_home.join("store");
+    for path in [&mgc_data, &mgc_cache, &mgc_templates, &mgc_store] {
+        std::fs::create_dir_all(path).unwrap();
+    }
 
     // === STEP 1: CREATE ===
     println!("\n=== STEP 1: mgc create-lib ===");
@@ -183,6 +191,12 @@ fn test_lib_full_lifecycle() {
         .arg("rust")
         .arg(project_name)
         .current_dir(temp.path())
+        .env("HOME", &mgc_home)
+        .env("USERPROFILE", &mgc_home)
+        .env("MGC_DATA_DIR", &mgc_data)
+        .env("MGC_CACHE_DIR", &mgc_cache)
+        .env("MGC_TEMPLATES_DIR", &mgc_templates)
+        .env("MAGICORE_STORE_ROOT", &mgc_store)
         .output()
         .expect("mgc create-lib failed to execute");
 
@@ -201,11 +215,40 @@ fn test_lib_full_lifecycle() {
         "deterministic empty Cargo.lock not created"
     );
 
-    // === STEP 2: BUILD ===
-    println!("\n=== STEP 2: mgc build ===");
+    // === STEP 2: INSTALL ===
+    println!("\n=== STEP 2: mgc install-lib ===");
+    let install_output = Command::new(&mgc)
+        .arg("install-lib")
+        .current_dir(&project_path)
+        .env("HOME", &mgc_home)
+        .env("USERPROFILE", &mgc_home)
+        .env("MGC_DATA_DIR", &mgc_data)
+        .env("MGC_CACHE_DIR", &mgc_cache)
+        .env("MGC_TEMPLATES_DIR", &mgc_templates)
+        .env("MAGICORE_STORE_ROOT", &mgc_store)
+        .output()
+        .expect("mgc install-lib failed to execute");
+    assert!(
+        install_output.status.success(),
+        "INSTALL FAILED:\n{}",
+        String::from_utf8_lossy(&install_output.stderr)
+    );
+    assert!(
+        project_path.join("mgc.lock").exists(),
+        "mgc.lock not created by install-lib"
+    );
+
+    // === STEP 3: BUILD ===
+    println!("\n=== STEP 3: mgc build ===");
     let build_output = Command::new(&mgc)
         .arg("build")
         .env("CARGO_TARGET_DIR", &cargo_target_dir)
+        .env("HOME", &mgc_home)
+        .env("USERPROFILE", &mgc_home)
+        .env("MGC_DATA_DIR", &mgc_data)
+        .env("MGC_CACHE_DIR", &mgc_cache)
+        .env("MGC_TEMPLATES_DIR", &mgc_templates)
+        .env("MAGICORE_STORE_ROOT", &mgc_store)
         .current_dir(&project_path)
         .output()
         .expect("mgc build failed to execute");
@@ -222,11 +265,17 @@ fn test_lib_full_lifecycle() {
         "configured Cargo target directory not created after build"
     );
 
-    // === STEP 3: TEST ===
-    println!("\n=== STEP 3: mgc test ===");
+    // === STEP 4: TEST ===
+    println!("\n=== STEP 4: mgc test ===");
     let test_output = Command::new(&mgc)
         .arg("test")
         .env("CARGO_TARGET_DIR", &cargo_target_dir)
+        .env("HOME", &mgc_home)
+        .env("USERPROFILE", &mgc_home)
+        .env("MGC_DATA_DIR", &mgc_data)
+        .env("MGC_CACHE_DIR", &mgc_cache)
+        .env("MGC_TEMPLATES_DIR", &mgc_templates)
+        .env("MAGICORE_STORE_ROOT", &mgc_store)
         .current_dir(&project_path)
         .output()
         .expect("mgc test failed to execute");
@@ -251,7 +300,7 @@ fn test_lib_full_lifecycle() {
         test_combined
     );
 
-    println!("Lib full lifecycle VERIFIED: create → build → test");
+    println!("Lib full lifecycle VERIFIED: create → install → build → test");
 }
 
 #[test]

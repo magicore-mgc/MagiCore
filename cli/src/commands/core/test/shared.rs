@@ -316,6 +316,7 @@ async fn why_rejects_v4_graph_with_a_dangling_root_pin() {
             variant: mgc_lockfile::VariantKey::default(),
         },
         edges: Vec::new(),
+        markers: None,
         artifact: None,
         provenance: None,
         toolchain: None,
@@ -468,6 +469,94 @@ async fn mutation_gateway_rejects_signed_lock_before_creating_a_journal() {
         !root
             .join(".magicore/journal/dependency-mutation/journal.json")
             .exists()
+    );
+}
+
+#[tokio::test]
+#[cfg(feature = "lib")]
+async fn mutation_gateway_rejects_signed_v4_lock_before_any_staging() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    python_fixture(root);
+    let lock_path = root.join("mgc.lock");
+    let mut signed = mgc_lockfile::canonical::LockfileV4::new("mgc/test");
+    signed.metadata.lockfile_hash = mgc_lockfile::canonical::payload_digest(&signed.payload());
+    let key = mgc_crypto::keyring::KeyPair::generate().unwrap();
+    signed.metadata.signature = Some(
+        mgc_lockfile::policy::sign_payload_digest(&signed.metadata.lockfile_hash, &key).unwrap(),
+    );
+    let lock_before = mgc_lockfile::canonical::write_v4_document(&signed).unwrap();
+    std::fs::write(&lock_path, &lock_before).unwrap();
+    let manifest_before = std::fs::read(root.join("pyproject.toml")).unwrap();
+    let adapter = mgc_lib_adapter::adapter_for(root, None, None)
+        .unwrap()
+        .expect("pyproject must detect a python lib adapter");
+
+    let error = begin_dependency_mutation(&adapter, root, MutationOperation::Add)
+        .await
+        .unwrap_err();
+
+    assert!(
+        error.to_string().contains("signed v4 mgc.lock"),
+        "{error:#}"
+    );
+    assert_eq!(std::fs::read_to_string(&lock_path).unwrap(), lock_before);
+    assert_eq!(
+        std::fs::read(root.join("pyproject.toml")).unwrap(),
+        manifest_before
+    );
+    assert!(
+        !root
+            .join(".magicore/journal/dependency-mutation/journal.json")
+            .exists(),
+        "a signed v4 mutation must fail before journal staging"
+    );
+
+    let read_only = begin_dependency_mutation(&adapter, root, MutationOperation::Install)
+        .await
+        .expect("the install gateway must still admit signed lock reuse");
+    drop(read_only);
+
+    let downgraded = lock_before.replacen("version = \"4\"", "version = \"3\"", 1);
+    std::fs::write(&lock_path, &downgraded).unwrap();
+    let error = begin_dependency_mutation(&adapter, root, MutationOperation::Add)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("signed"), "{error:#}");
+    assert_eq!(std::fs::read_to_string(&lock_path).unwrap(), downgraded);
+}
+
+#[tokio::test]
+#[cfg(feature = "lib")]
+async fn mutation_gateway_rejects_tampered_v4_before_any_staging() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    python_fixture(root);
+    let lock_path = root.join("mgc.lock");
+    let mut document = mgc_lockfile::canonical::LockfileV4::new("mgc/test");
+    let bytes = mgc_lockfile::writer::finalize_v4_document(&mut document).unwrap();
+    let tampered = bytes.replace("mgc/test", "mgc/evil");
+    std::fs::write(&lock_path, &tampered).unwrap();
+    let manifest_before = std::fs::read(root.join("pyproject.toml")).unwrap();
+    let adapter = mgc_lib_adapter::adapter_for(root, None, None)
+        .unwrap()
+        .expect("pyproject must detect a python lib adapter");
+
+    let error = begin_dependency_mutation(&adapter, root, MutationOperation::Add)
+        .await
+        .unwrap_err();
+
+    assert!(error.to_string().contains("digest"), "{error:#}");
+    assert_eq!(std::fs::read_to_string(&lock_path).unwrap(), tampered);
+    assert_eq!(
+        std::fs::read(root.join("pyproject.toml")).unwrap(),
+        manifest_before
+    );
+    assert!(
+        !root
+            .join(".magicore/journal/dependency-mutation/journal.json")
+            .exists(),
+        "a tampered v4 mutation must fail before journal staging"
     );
 }
 
@@ -1608,6 +1697,7 @@ fn v4_sample_doc() -> mgc_lockfile::canonical::LockfileV4 {
             downloaded_from: "https://registry.npmjs.org".to_string(),
             integrity_sri: Some("sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==".to_string()),
         }),
+        markers: None,
         provenance: None,
         toolchain: None,
         scripts_policy: None,
@@ -1649,22 +1739,17 @@ fn v4_sample_doc() -> mgc_lockfile::canonical::LockfileV4 {
 
 fn v4_sample_manifest() -> Manifest {
     let mut manifest = Manifest::new("demo", Ecosystem::Web);
-    for (name, range) in [
-        ("app", "=1.0.0"),
-        ("leftpad", "^1.0.0"),
-        ("react", "^18.0.0"),
-        ("devonly", "^2.0.0"),
-    ] {
-        manifest.add_dep(
-            DependencySpec::new(
-                PackageName::new(name).unwrap(),
-                VersionRange::parse(range).unwrap(),
-            ),
-            false,
-            false,
-            false,
-        );
-    }
+    // Only app is a declared root; other pins are its transitive closure.
+    // Chỉ app là root đã khai báo; các pin khác thuộc closure transitive.
+    manifest.add_dep(
+        DependencySpec::new(
+            PackageName::new("app").unwrap(),
+            VersionRange::parse("=1.0.0").unwrap(),
+        ),
+        false,
+        false,
+        false,
+    );
     manifest
 }
 
@@ -1748,20 +1833,22 @@ fn v4_closure_supports_rootless_web_locks_with_unique_manifest_anchors() {
     let mut doc = v4_sample_doc();
     doc.root_dependencies_by_owner.clear();
     doc.root_dependencies.clear();
-    assert!(v4_graph_matches_manifest_closure(
-        &doc,
-        &v4_sample_manifest(),
-        "web"
-    ));
+    let mut manifest = v4_sample_manifest();
+    manifest.add_dep(
+        DependencySpec::new(
+            PackageName::new("leftpad").unwrap(),
+            VersionRange::parse("^1.0.0").unwrap(),
+        ),
+        false,
+        false,
+        false,
+    );
+    assert!(v4_graph_matches_manifest_closure(&doc, &manifest, "web"));
     // Ambiguity fails closed: two leftpad versions, one manifest range.
     let mut twin = doc.packages[1].clone();
     twin.key.version = "1.4.0".to_string();
     doc.packages.push(twin);
-    assert!(!v4_graph_matches_manifest_closure(
-        &doc,
-        &v4_sample_manifest(),
-        "web"
-    ));
+    assert!(!v4_graph_matches_manifest_closure(&doc, &manifest, "web"));
 }
 
 #[test]
@@ -1776,6 +1863,7 @@ fn v4_closure_rejects_orphans_and_manifest_mismatch() {
             variant: mgc_lockfile::VariantKey::default(),
         },
         edges: Vec::new(),
+        markers: None,
         artifact: None,
         provenance: None,
         toolchain: None,

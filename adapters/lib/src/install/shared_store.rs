@@ -49,6 +49,16 @@ impl SharedStoreRun {
         })
     }
 
+    /// Return the Cargo layout root without creating it. Offline reinstall
+    /// must prove every cached crate exists before creating or changing store
+    /// directories. (Tìm gốc Cargo nhưng không tạo thư mục: offline phải
+    /// kiểm tra đủ cache trước khi tạo hoặc sửa store.)
+    pub fn cargo_path() -> MgResult<Self> {
+        Ok(Self {
+            install_root: shared_root_path("cargo")?,
+        })
+    }
+
     /// Return the MagiCore-owned Python artifact/materialization root.
     /// Trả gốc artifact/materialize Python do MagiCore quản lý.
     pub fn pypi() -> MgResult<Self> {

@@ -38,6 +38,9 @@ pub struct Plugin {
     pub template: Arc<dyn TemplateGenerator>,
     pub cache: Arc<dyn CacheBackend>,
     adapter: Option<Arc<dyn PackageAdapter>>,
+    // Built-in adapter configuration belongs to one project context.
+    // Adapter native đã gắn context không được tái dùng cho project khác.
+    context_scoped: bool,
 }
 
 impl Plugin {
@@ -58,7 +61,22 @@ impl Plugin {
                 ecosystem: adapter.ecosystem(),
             }),
             adapter: Some(adapter),
+            context_scoped: false,
         }
+    }
+
+    /// Register a native bridge without making its adapter a global context cache.
+    /// Giữ bridge trong registry; mỗi project phải tạo lại adapter theo cấu hình riêng.
+    pub fn from_project_adapter(adapter: Arc<dyn PackageAdapter>) -> Self {
+        let mut plugin = Self::from_adapter(adapter);
+        plugin.context_scoped = true;
+        plugin
+    }
+
+    /// Whether factory callers must bind a fresh adapter to their own project.
+    /// Không tái dùng back-reference chứa registry/ngôn ngữ của context khác.
+    pub fn is_context_scoped(&self) -> bool {
+        self.context_scoped
     }
 
     /// Registry lookup miss → thử adapter backend map từ PackageAdapter (không đăng ký lại).

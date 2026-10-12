@@ -52,7 +52,9 @@ fn runtime_probe_wheel() -> Vec<u8> {
 fn mgc_run_exposes_only_verified_mgc_python_materialization_to_python() {
     let project = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
-    let wheels_root = home.path().join(".magicore/store/pypi/wheels");
+    // Materialize into the centralized data root (MGC_DATA_DIR or ~/MagiCore-SystemData).
+    // Materialize vào root dữ liệu tập trung (MGC_DATA_DIR hoặc ~/MagiCore-SystemData).
+    let wheels_root = home.path().join("MagiCore-SystemData/store/pypi/wheels");
     std::fs::create_dir_all(&wheels_root).unwrap();
     let wheel_name = "mgc_runtime_probe-2.0.0-py3-none-any.whl";
     let wheel_url = format!("https://files.pythonhosted.org/packages/{wheel_name}");
@@ -131,6 +133,7 @@ fn mgc_run_exposes_only_verified_mgc_python_materialization_to_python() {
             .current_dir(project.path())
             .env("HOME", home.path())
             .env("USERPROFILE", home.path())
+            .env("MGC_DATA_DIR", home.path().join("MagiCore-SystemData"))
             .env_remove("PYTHONPATH");
         let output = command.output().expect("spawn mgc");
         assert!(

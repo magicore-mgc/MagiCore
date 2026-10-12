@@ -56,6 +56,10 @@ NATIVE_ALL = cells(native=ALL_DEPENDENCY_OPERATIONS)
 NATIVE_WITHOUT_GC = cells(
     native=set(ALL_DEPENDENCY_OPERATIONS) - {"gc"}, unsupported={"gc"}
 )
+NATIVE_WITHOUT_LIST_GC = cells(
+    native=set(ALL_DEPENDENCY_OPERATIONS) - {"list", "gc"},
+    unsupported={"list", "gc"},
+)
 NATIVE_WITHOUT_GC_OFFLINE = cells(
     native=set(ALL_DEPENDENCY_OPERATIONS) - {"gc", "offline-reinstall"},
     unsupported={"gc", "offline-reinstall"},
@@ -97,7 +101,7 @@ BINARY = {
         "operations": NO_OPERATIONS,
         "languages": {
         "ts": NATIVE_WITHOUT_GC,
-            "rust": NATIVE_WITHOUT_LIST_GC_OFFLINE,
+            "rust": NATIVE_WITHOUT_LIST_GC,
             "python": NATIVE_WITHOUT_GC,
             "go": NATIVE_WITHOUT_LIST_GC_OFFLINE,
             "java": NATIVE_WITHOUT_LIST_GC_OFFLINE,
@@ -105,18 +109,18 @@ BINARY = {
         },
         "frameworks": {
             "ts": NATIVE_WITHOUT_GC,
-            "rust": NATIVE_WITHOUT_LIST_GC_OFFLINE,
+            "rust": NATIVE_WITHOUT_LIST_GC,
             "python": NATIVE_WITHOUT_GC,
             "go": NATIVE_WITHOUT_LIST_GC_OFFLINE,
             "java": NATIVE_WITHOUT_LIST_GC_OFFLINE,
             "dotnet": NATIVE_WITHOUT_LIST_GC_OFFLINE,
         },
     },
-    "ai": {"operations": NO_OPERATIONS, "languages": {"python": NATIVE_WITHOUT_GC_OFFLINE}},
+    "ai": {"operations": NO_OPERATIONS, "languages": {"python": NATIVE_WITHOUT_GC}},
     "app": {
         "operations": NO_OPERATIONS,
         "languages": {
-            "flutter": NATIVE_WITHOUT_LIST_GC_OFFLINE,
+            "flutter": NATIVE_WITHOUT_LIST_GC,
             "swift": NATIVE_INSTALL_ONLY,
             "objc": NO_OPERATIONS,
             "rn": NO_OPERATIONS,
@@ -175,6 +179,8 @@ class ConsistencyDirections(unittest.TestCase):
             ("web", "typescript"),
             ("lib", "typescript"),
             ("lib", "python"),
+            ("ai", "python"),
+            ("app", "flutter"),            ("lib", "rust"),
             ("clo", "cdk"),
             ("clo", "pulumi"),
         }
@@ -189,7 +195,7 @@ class ConsistencyDirections(unittest.TestCase):
     def test_agreement_passes(self):
         rows = [
             ("web", "javascript", "mgc-native", NATIVE_ALL),
-            ("ai", "python", "mgc-native", NATIVE_WITHOUT_GC_OFFLINE),
+            ("ai", "python", "mgc-native", NATIVE_WITHOUT_GC),
             ("hardware", "benchmark", "scaffold-only", cells(scaffold={"list"})),
             ("cicd", "github-actions", "unsupported", NO_OPERATIONS),
         ]
@@ -244,6 +250,13 @@ class MissingBinaryPolicy(unittest.TestCase):
 
 
 class RealLanesShape(unittest.TestCase):
+    def test_ai_python_offline_owner_matches_verified_native_route(self):
+        # Offline ownership is explicit; runtime evidence remains a separate gate.
+        # Ownership offline khai báo riêng; bằng chứng runtime vẫn qua gate riêng.
+        ai = next(lane for lane in LANES if (lane["core"], lane["language"]) == ("ai", "python"))
+        self.assertEqual(ai["owner_by_operation"]["offline-reinstall"], "mgc")
+        self.assertEqual(ai["owner_by_operation"]["gc"], "unsupported-no-runner")
+
     def test_every_lane_has_closed_vocabulary_owner(self):
         self.assertGreater(len(LANES), 0)
         for lane in LANES:

@@ -12,7 +12,7 @@
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
 use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::Instant;
 
 use crate::bundler::{Bundler, BundlerConfig};
@@ -24,6 +24,7 @@ pub(super) async fn build_web(
     execution: &ProjectExecutionConfig,
     target: Option<String>,
     compat: &crate::commands::compat::CompatMode,
+    compat_runner: Option<&str>,
 ) -> Result<()> {
     let start_time = Instant::now();
 
@@ -50,7 +51,7 @@ pub(super) async fn build_web(
         }
     }
 
-    if run_framework_build_if_supported(root, compat)? {
+    if run_framework_build_if_supported(root, compat, compat_runner)? {
         let elapsed = start_time.elapsed();
         mgc_ui::blank_line();
         mgc_ui::success(&format!("Framework build completed in {:?}", elapsed));
@@ -164,6 +165,7 @@ pub(crate) fn resolve_web_build_target(
 fn run_framework_build_if_supported(
     root: &Path,
     compat: &crate::commands::compat::CompatMode,
+    compat_runner: Option<&str>,
 ) -> Result<bool> {
     let package_json = root.join("package.json");
     if !package_json.exists() {
@@ -180,8 +182,8 @@ fn run_framework_build_if_supported(
         return Ok(false);
     };
 
-    reject_external_package_manager_script(script, &package_json)?;
-    let Some(launches) = map_framework_build_chain(root, script, compat)? else {
+    reject_external_package_manager_script(script, &package_json, compat_runner)?;
+    let Some(launches) = map_framework_build_chain(root, script, compat, compat_runner)? else {
         return Ok(false);
     };
     for (program, args, envs) in launches {
@@ -216,11 +218,20 @@ fn run_framework_build_if_supported(
             crate::commands::compat::CompatMode::Native => None,
             crate::commands::compat::CompatMode::Explicit(runtime) => Some(runtime.clone()),
         };
+        // Exact-manifest lane context for this operation (exact-match only).
+        // (Ngữ cảnh lane cho manifest exception của operation này (chỉ khớp chính xác).)
+        let (policy_manifest, policy_context, policy_profile) =
+            crate::commands::policy::load_policy_for_run(root, "build");
         let opts = mgc_exec::prelude::ExecOptions {
             cwd: Some(root.to_path_buf()),
+            log_path: Some(root.join(".magicore").join("exec.log")),
             env,
             clean_env: true,
             compat_runtime,
+            compat_runner: compat_runner.map(str::to_string),
+            policy_manifest,
+            policy_context,
+            policy_profile,
             execution_scope: Some(mgc_exec::allowlist::ExecutionScope::BuildRunner),
             ..Default::default()
         };
@@ -237,6 +248,7 @@ pub(crate) fn map_framework_build_chain(
     root: &Path,
     script: &str,
     compat: &crate::commands::compat::CompatMode,
+    compat_runner: Option<&str>,
 ) -> Result<Option<Vec<BuildLaunch>>> {
     // Map every AND-linked command before executing any of them; never pass
     // shell operators to a framework or invoke a shell to interpret them.
@@ -245,10 +257,18 @@ pub(crate) fn map_framework_build_chain(
     let invocations = mgc_exec::allowlist::parse_script_chain(script)?;
     let compound = invocations.len() > 1;
     for invocation in invocations {
-        crate::commands::compat::gate_runtime_spawn(compat, &invocation.program)?;
+        // Spec rev4 §7/§9: the declared `--compat-runner` manager skips the
+        // rival-runtime gate; its launches run compat-audit downstream.
+        // (Spec rev4 §7/§9: manager `--compat-runner` đã khai báo bỏ qua
+        // cổng rival-runtime; launch của nó chịu compat-audit phía sau.)
+        if !mgc_exec::prelude::compat_runner_allows(&invocation.program, compat_runner) {
+            crate::commands::compat::gate_runtime_spawn(compat, &invocation.program)?;
+        }
         let mut words = vec![invocation.program.as_str()];
         words.extend(invocation.args.iter().map(String::as_str));
-        let Some((program, args, mut envs)) = map_framework_build_script(root, &words)? else {
+        let Some((program, args, mut envs)) =
+            map_framework_build_script(root, &words, compat_runner)?
+        else {
             if compound {
                 anyhow::bail!(
                     "unsupported command in framework build chain: {}",
@@ -271,6 +291,7 @@ pub(crate) fn map_framework_build_chain(
 pub(crate) fn map_framework_build_script(
     root: &Path,
     tokens: &[&str],
+    compat_runner: Option<&str>,
 ) -> Result<Option<BuildLaunch>> {
     // Compat lane (P0-1): bun/deno build scripts spawn the rival runtime
     // DIRECTLY — only reachable when the compat gate above already passed
@@ -291,7 +312,33 @@ pub(crate) fn map_framework_build_script(
             vec![],
         )));
     }
+    // Spec rev4 §7/§9: a declared compat runner maps to a direct launch of
+    // itself (same shape as the bun/deno arms above); the exec layer applies
+    // compat-audit instead of native-deny. Undeclared PM tokens fall through
+    // to Ok(None) → unsupported-chain handling by the caller.
+    // (Spec rev4 §7/§9: runner compat đã khai báo map thành launch trực tiếp
+    // chính nó (giống arm bun/deno trên); exec layer áp compat-audit thay vì
+    // native-deny. Token PM không khai báo rơi xuống Ok(None).)
+    if let [first, rest @ ..] = tokens
+        && mgc_exec::prelude::compat_runner_allows(first, compat_runner)
+    {
+        return Ok(Some((
+            PathBuf::from(first),
+            rest.iter().map(OsString::from).collect(),
+            vec![],
+        )));
+    }
     let launch = match tokens {
+        ["node", "--check", source] => {
+            let Some(source_path) = resolve_project_source_file(root, source) else {
+                return Ok(None);
+            };
+            (
+                node_runner(),
+                vec![OsString::from("--check"), source_path.into_os_string()],
+                vec![],
+            )
+        }
         [tool @ ("tsc" | "vue-tsc"), rest @ ..] => {
             (node_runner(), node_bin_args(root, tool, rest)?, vec![])
         }
@@ -342,12 +389,12 @@ pub(crate) fn map_framework_build_script(
         ),
         ["remix", "vite:build"] => (
             node_runner(),
-            node_bin_args(root, "remix", &["vite:build"])?,
+            node_bin_args_plain(root, "remix", &["vite:build"])?,
             vec![],
         ),
         ["remix", "build"] => (
             node_runner(),
-            node_bin_args(root, "remix", &["build"])?,
+            node_bin_args_plain(root, "remix", &["build"])?,
             vec![],
         ),
         ["ng", "build"] => (
@@ -364,11 +411,37 @@ pub(crate) fn map_framework_build_script(
     Ok(Some(launch))
 }
 
+fn resolve_project_source_file(root: &Path, source: &str) -> Option<PathBuf> {
+    // Build syntax checks may inspect only regular files contained in this project.
+    // Kiểm tra cú pháp chỉ được đọc file thường nằm bên trong project hiện tại.
+    let relative = Path::new(source);
+    if relative.as_os_str().is_empty()
+        || relative.is_absolute()
+        || relative
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_) | Component::CurDir))
+    {
+        return None;
+    }
+
+    let canonical_root = root.canonicalize().ok()?;
+    let canonical_source = canonical_root.join(relative).canonicalize().ok()?;
+    (canonical_source.is_file() && canonical_source.starts_with(&canonical_root))
+        .then_some(canonical_source)
+}
+
 pub(crate) fn reject_external_package_manager_script(
     script: &str,
     manifest_path: &Path,
+    compat_runner: Option<&str>,
 ) -> Result<()> {
-    if let Some(pm) = mgc_exec::allowlist::find_forbidden_tool_in_script(script) {
+    // Spec rev4 §7/§9: the declared `--compat-runner` manager is exempt from
+    // the script-token check; its subtree runs compat-audit downstream.
+    // (Spec rev4 §7/§9: manager `--compat-runner` đã khai báo được miễn
+    // check token script; subtree của nó chịu compat-audit phía sau.)
+    if let Some(pm) = mgc_exec::allowlist::find_forbidden_tool_in_script(script)
+        && !mgc_exec::prelude::compat_runner_allows(pm, compat_runner)
+    {
         // P0-1 (2026-09-10): "bun run x"/"deno run|task x" là runtime usage —
         // gate_runtime_spawn phía caller đã xử lý bun/deno (native fail,
         // compat mở đúng runtime). Chỉ từ chối khi token là PM THẬT
@@ -379,12 +452,7 @@ pub(crate) fn reject_external_package_manager_script(
             ["bun", "run", ..] | ["deno", "run", ..] | ["deno", "task", ..]
         );
         if !is_runtime_usage {
-            bail!(
-                "Unsupported script '{}' in '{}': it delegates to '{}'. Core-web must execute natively through MagiCore or framework-local binaries, not through another package manager.",
-                script,
-                manifest_path.display(),
-                pm
-            );
+            return Err(crate::error::web_forbidden_pm(script, manifest_path, pm));
         }
     }
     Ok(())
@@ -704,5 +772,47 @@ pub(crate) fn build_rust_with_env(
 
     let elapsed = start.elapsed();
     mgc_ui::success(&format!("Rust build completed in {:?}", elapsed));
+    Ok(())
+}
+
+/// Build a library Rust project using only Cargo sources materialized by MGC.
+/// Build Rust library bằng Cargo nhưng chỉ đọc source MGC đã materialize.
+pub(crate) fn build_rust_with_managed_source(
+    root: &Path,
+    optimizer_envs: std::collections::HashMap<String, String>,
+    source_root: &Path,
+) -> Result<()> {
+    let start = Instant::now();
+    info("Detected Rust library — building from the MagiCore-managed offline source...");
+    if let Some(rustflags) = optimizer_envs.get("RUSTFLAGS") {
+        mgc_ui::info(&format!("Applying RUSTFLAGS: {rustflags}"));
+    }
+    let source_path = source_root.to_str().ok_or_else(|| {
+        anyhow::anyhow!("MagiCore Cargo source path must be valid UTF-8 on this platform")
+    })?;
+    let directory_value = toml::Value::String(source_path.to_string()).to_string();
+    let source_config = format!("source.mgc-managed.directory={directory_value}");
+    let args = [
+        "--config".to_string(),
+        "source.crates-io.replace-with=\"mgc-managed\"".to_string(),
+        "--config".to_string(),
+        source_config,
+        "build".to_string(),
+        "--locked".to_string(),
+        "--offline".to_string(),
+    ];
+    let opts = mgc_exec::prelude::ExecOptions {
+        cwd: Some(root.to_path_buf()),
+        log_path: Some(root.join(".magicore").join("exec.log")),
+        env: optimizer_envs.into_iter().collect(),
+        clean_env: false,
+        execution_scope: Some(mgc_exec::allowlist::ExecutionScope::BuildRunner),
+        ..Default::default()
+    };
+    mgc_exec::prelude::run("cargo", &args, &opts)?;
+    mgc_ui::success(&format!(
+        "Rust library build completed in {:?}",
+        start.elapsed()
+    ));
     Ok(())
 }

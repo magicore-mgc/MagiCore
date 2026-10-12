@@ -36,27 +36,38 @@ impl ProjectContext {
         let ecosystem = Ecosystem::from_str(&config.ecosystem)
             .ok_or_else(|| crate::error::unknown_ecosystem(&config.ecosystem))?;
 
-        // Registry chain hợp nhất (ITEM 2): env override → mgc.toml [[registries]]
-        // (priority) → .npmrc registry= → npmjs default. entry 0 = primary.
-        let chain = mgc_config::chain::registry_chain(Some(&root), Some(&config));
-        let primary = chain
-            .first()
-            .map(|r| r.url.clone())
-            .ok_or_else(crate::error::no_registry_configured)?;
-        let primary_token = chain.first().and_then(|r| r.token.clone());
-        let fallbacks: Vec<(String, Option<String>)> = chain
-            .iter()
-            .skip(1)
-            .map(|r| (r.url.clone(), r.token.clone()))
-            .collect();
+        let adapter = if crate::factory::project_uses_npm_registry(&root, &ecosystem) {
+            let chain =
+                mgc_config::chain::registry_chain_scoped_checked(Some(&root), Some(&config))?;
+            crate::factory::create_adapter_for_scoped(&root, &ecosystem, chain)?
+        } else if ecosystem == Ecosystem::Web {
+            // Native backend context does not consume project npm credentials.
+            // Backend native không bị npmrc không dùng chặn trước đường build/dev.
+            crate::factory::create_adapter_for(&root, &ecosystem, None, None, &[])?
+        } else {
+            // Registry chain hợp nhất (ITEM 2): env override → mgc.toml [[registries]]
+            // (priority) → .npmrc registry= → npmjs default. entry 0 = primary.
+            let chain = mgc_config::chain::registry_chain(Some(&root), Some(&config));
+            let primary = chain
+                .first()
+                .map(|r| r.url.clone())
+                .ok_or_else(crate::error::no_registry_configured)?;
+            let primary_token = chain.first().and_then(|r| r.token.clone());
+            let fallbacks: Vec<(String, Option<String>)> = chain
+                .iter()
+                .skip(1)
+                .map(|r| (r.url.clone(), r.token.clone()))
+                .collect();
 
-        let adapter = crate::factory::create_adapter_for(
-            &root,
-            &ecosystem,
-            Some(&primary),
-            primary_token.as_deref(),
-            &fallbacks,
-        )?;
+            crate::factory::create_adapter_for(
+                &root,
+                &ecosystem,
+                Some(&primary),
+                primary_token.as_deref(),
+                &fallbacks,
+            )?
+        };
+
         Ok(Self {
             root,
             config,

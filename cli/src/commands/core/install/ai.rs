@@ -9,6 +9,7 @@ pub async fn install(
     dry_run: bool,
     compat_runtime: Option<String>,
     frozen: bool,
+    offline: bool,
 ) -> Result<()> {
     let root = shared::ai_project_root()?;
     shared::require_native_ai_python(&root, "install")?;
@@ -33,7 +34,11 @@ pub async fn install(
             Some(crate::commands::dep_gate::eco::PYTHON),
             None,
             None,
-            crate::commands::dep_gate::DepOp::Install,
+            if offline {
+                crate::commands::dep_gate::DepOp::OfflineReinstall
+            } else {
+                crate::commands::dep_gate::DepOp::Install
+            },
         ),
         &*adapter,
         &compat,
@@ -45,6 +50,7 @@ pub async fn install(
         frozen,
         mgc_types::adapter::InstallOptions {
             legacy_flat: false,
+            offline,
             ..Default::default()
         },
     )

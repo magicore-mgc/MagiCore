@@ -101,6 +101,23 @@ pub fn read_web_lockfile_checked(project_root: &Path) -> MgResult<Option<Lockfil
     Ok(lockfile)
 }
 
+/// True when mgc.lock on disk declares schema version 4 (any content).
+/// Used to skip legacy readers that would misparse it, after the v4 path
+/// already ran: a v4 miss means re-resolve, never a legacy parse error.
+/// (Đúng khi mgc.lock trên đĩa khai báo schema 4 (mọi nội dung). Dùng để bỏ
+/// qua reader legacy có thể parse sai, sau khi đường v4 đã chạy: v4 miss
+/// nghĩa là resolve mới, không bao giờ là lỗi parse legacy.)
+pub(crate) fn lock_on_disk_is_v4(project_root: &Path) -> bool {
+    let lock_path = project_root.join("mgc.lock");
+    let Ok(bytes) = mgc_lockfile::read_lockfile_bytes(&lock_path) else {
+        return false;
+    };
+    let Ok(content) = String::from_utf8(bytes) else {
+        return false;
+    };
+    mgc_lockfile::detect_lockfile_version(&content).is_ok_and(|version| version == 4)
+}
+
 /// Read the complete shared lock document. Only lock publication uses this;
 /// operation readers must use `read_web_lockfile_checked` so sibling-core
 /// Web entries cannot satisfy this project's dependency graph.
@@ -200,6 +217,102 @@ fn fresh_v3_lockfile() -> Lockfile {
     }
 }
 
+/// Write-target schema for new locks: v4 only with explicit
+/// `mgc.toml [lock] schema = "4"`. Readers accept all schemas regardless.
+/// Shared rule lives in `mgc-config` so lanes cannot drift.
+/// (Schema đích ghi cho lock mới: chỉ v4 khi tường minh. Luật dùng chung
+/// nằm ở `mgc-config` để các lane không lệch.)
+pub(crate) fn web_lock_schema_is_v4(project_root: &Path) -> MgResult<bool> {
+    mgc_config::project::lock_schema_is_v4(project_root)
+        .map_err(|error| MgError::Other(error.to_string()))
+}
+
+/// v4 install write path: build the document straight from the resolved
+/// graph (no lossy v3 detour), fill digest + timestamp, prove round-trip,
+/// and atomically replace the lock. A matching v4 already on disk is kept
+/// byte-identical (replay, not rewrite).
+/// (Đường ghi v4 của install: dựng tài liệu thẳng từ graph đã resolve
+/// (không vòng v3 hao hụt), điền digest + timestamp, chứng minh round-trip
+/// và thay atomic. v4 khớp trên đĩa được giữ nguyên byte.)
+fn write_web_lockfile_v4(
+    project_root: &Path,
+    lock_path: &Path,
+    graph: &ResolvedGraph,
+    registry_url: &str,
+    owner_core: &str,
+) -> MgResult<()> {
+    // A matching v4 on disk stays untouched (replay parity with the v3
+    // short-circuit below). Anything else is rebuilt from the graph.
+    // (v4 khớp trên đĩa giữ nguyên (parity replay với short-circuit v3).)
+    if let Some(doc) = read_v4_document_if_present(project_root)?
+        && (doc.root_dependencies_by_owner.is_empty()
+            || doc.root_dependencies_by_owner.contains_key(owner_core))
+        && let Ok(replayed) = mgc_lockfile::v4_graph::graph_from_v4_lockfile(&doc, owner_core)
+        && resolved_graphs_match_material(&replayed, graph)
+    {
+        return Ok(());
+    }
+    // Unreplayable verified bases are merged from the fresh graph, with signature guards below.
+    // Base đã verify nhưng không replay được sẽ merge graph mới, vẫn qua cổng chữ ký bên dưới.
+    // Signed v4 on disk is never rewritten without explicit re-signing;
+    // unsigned v4 mutates through the schema-aware path (the legacy gate
+    // below would refuse every v4 document, signed or not).
+    // (v4 đã ký trên đĩa không bao giờ bị ghi đè nếu không ký lại tường
+    // minh; v4 không ký mutate qua đường schema-aware (cổng legacy dưới
+    // từ chối mọi v4, ký hay không).)
+    if let Some(doc) = read_v4_document_if_present(project_root)? {
+        mgc_lockfile::atomic::ensure_v4_unsigned_for_rewrite(&doc)
+            .map_err(|error| MgError::Other(error.to_string()))?;
+    }
+    // Lane-first merge (parity with app/lib): sibling v4 rows on disk are
+    // preserved; legacy rows cannot follow and are reported, never silent.
+    // (Merge lane trước (parity với app/lib): giữ row v4 khác trên đĩa;
+    // row legacy không theo được thì báo, không lặng.)
+    let generator = format!("mgc/{}", env!("CARGO_PKG_VERSION"));
+    let lane = mgc_lockfile::v4_graph::build_v4_from_resolved_graph(
+        graph,
+        registry_url,
+        mgc_lockfile::EcosystemTag::Web,
+        owner_core,
+        &generator,
+    )
+    .map_err(|error| MgError::Other(error.to_string()))?;
+    let (base, had_legacy_rows) = mgc_lockfile::migrate::read_v4_merge_base(lock_path)
+        .map_err(|error| MgError::Other(error.to_string()))?;
+    let base_material = base.clone();
+    let (mut doc, dropped) = mgc_lockfile::v4_graph::merge_v4_lane_packages(
+        base,
+        lane.packages,
+        lane.sources,
+        lane.root_dependencies,
+        owner_core,
+        &generator,
+    );
+    if had_legacy_rows || dropped {
+        eprintln!(
+            "WARNING: non-v4 mgc.lock rows were replaced by the v4 lane write (sibling pins need `mgc migrate lock --to v4` or re-install under v4 schema)"
+        );
+    }
+    // Signed v4 on disk is never rewritten without explicit re-signing.
+    // (v4 đã ký trên đĩa không bao giờ bị ghi đè nếu không ký lại tường minh.)
+    if let Some(base_doc) = &base_material {
+        mgc_lockfile::atomic::ensure_v4_unsigned_for_rewrite(base_doc)
+            .map_err(|error| MgError::Other(error.to_string()))?;
+    }
+    if let Some(base_doc) = &base_material
+        && mgc_lockfile::v4_graph::v4_docs_match_material(base_doc, &doc)
+        && !dropped
+    {
+        return Ok(());
+    }
+    doc.metadata.generated_at = chrono::Utc::now().to_rfc3339();
+    let text = mgc_lockfile::writer::finalize_v4_document(&mut doc)
+        .map_err(|error| MgError::Other(error.to_string()))?;
+    mgc_lockfile::atomic::atomic_write_v4_bytes(lock_path, text.as_bytes())
+        .map_err(|error| MgError::Other(error.to_string()))?;
+    Ok(())
+}
+
 /// v4 document on disk, if the lockfile parses as version 4 — `None`
 /// for missing/legacy/unreadable-version locks (legacy reader owns them).
 /// (Tài liệu v4 trên đĩa — `None` cho lock thiếu/legacy.)
@@ -217,7 +330,7 @@ pub(crate) fn verify_v4_document_integrity(
     Ok(report)
 }
 
-fn read_v4_document_if_present(
+pub(crate) fn read_v4_document_if_present(
     project_root: &Path,
 ) -> MgResult<Option<mgc_lockfile::canonical::LockfileV4>> {
     let lock_path = project_root.join("mgc.lock");
@@ -279,6 +392,15 @@ pub fn write_web_lockfile_with_state(
 ) -> MgResult<()> {
     let lock_path = project_root.join("mgc.lock");
     let owner_core = web_lock_owner_core(project_root)?;
+    // Schema write target (Spec: easy config): `mgc.toml [lock] schema`
+    // chooses `"4"`; anything else (including absent) keeps the v3 path
+    // byte-identical to before. Unknown values fail closed here, never
+    // silently fall back.
+    // (Đích schema ghi (Spec: cấu hình dễ): `mgc.toml [lock] schema` chọn
+    // `"4"`; còn lại giữ nguyên đường v3. Giá trị lạ fail-closed tại đây.)
+    if web_lock_schema_is_v4(project_root)? {
+        return write_web_lockfile_v4(project_root, &lock_path, graph, registry_url, &owner_core);
+    }
     // v4 on disk: a replayed graph must round-trip byte-identically
     // instead of being rewritten (rebuilding v4 from ResolvedGraph would
     // drop variant/source identity — forbidden flattening). A diverged
@@ -287,6 +409,7 @@ pub fn write_web_lockfile_with_state(
     // (Lock v4 trên đĩa: graph replay phải giữ nguyên byte; graph lệch
     // thì ghi mới v3 kèm cảnh báo DOWNGRADE rõ ràng, không bao giờ lặng.)
     let v4_on_disk = read_v4_document_if_present(project_root)?;
+    let had_v4_on_disk = v4_on_disk.is_some();
     if let Some(doc) = &v4_on_disk {
         let replayed = mgc_lockfile::v4_graph::graph_from_v4_lockfile(doc, &owner_core)
             .map_err(|error| MgError::Other(error.to_string()))?;
@@ -307,7 +430,7 @@ pub fn write_web_lockfile_with_state(
 
     let mut scoped_lock = lockfile.clone();
     scope_web_lock_packages(&mut scoped_lock, &owner_core);
-    if web_lockfile_matches_graph(&scoped_lock, graph) {
+    if !had_v4_on_disk && lock_path.is_file() && web_lockfile_matches_graph(&scoped_lock, graph) {
         return Ok(());
     }
     mgc_lockfile::ensure_lockfile_mutation_allowed(&lock_path)

@@ -115,7 +115,7 @@ fn ai_python_ownership_requires_the_mgc_owned_pyproject_lane() {
         );
         let owned = DepContext::new("ai", Some(eco::PYTHON), None, None, *op)
             .with_manifest_format(Some("mgc-pyproject"));
-        let expected_native = !matches!(op, DepOp::OfflineReinstall | DepOp::Gc);
+        let expected_native = !matches!(op, DepOp::Gc);
         assert_eq!(
             matches!(owner_for(&owned), DepOwner::Native),
             expected_native,
@@ -314,9 +314,7 @@ fn store_gc_is_not_inherited_from_an_install_owner() {
 #[test]
 fn offline_reinstall_is_not_inherited_from_online_install() {
     for (core, ecosystem) in [
-        ("app", Some(eco::FLUTTER)),
         ("app", Some(eco::SWIFT)),
-        ("lib", Some(eco::RUST)),
         ("lib", Some(eco::GO)),
         ("lib", Some(eco::JAVA)),
         ("lib", Some(eco::DOTNET)),
@@ -352,6 +350,20 @@ fn offline_reinstall_is_not_inherited_from_online_install() {
     assert!(matches!(owner_for(&lib_python_native), DepOwner::Native));
     assert!(gate(&lib_python_native, None, &native(), None).is_ok());
 
+    let lib_rust_native =
+        DepContext::new("lib", Some(eco::RUST), None, None, DepOp::OfflineReinstall)
+            .with_manifest_format(Some("cargo-toml"));
+    assert!(matches!(owner_for(&lib_rust_native), DepOwner::Native));
+    assert!(gate(&lib_rust_native, None, &native(), None).is_ok());
+    assert!(matches!(
+        owner_for(&lib_ctx(
+            eco::RUST,
+            Some("maven-pom"),
+            DepOp::OfflineReinstall
+        )),
+        DepOwner::Unsupported
+    ));
+
     let lib_python_foreign = DepContext::new(
         "lib",
         Some(eco::PYTHON),
@@ -368,13 +380,11 @@ fn offline_reinstall_is_not_inherited_from_online_install() {
     let ai_python_native =
         DepContext::new("ai", Some(eco::PYTHON), None, None, DepOp::OfflineReinstall)
             .with_manifest_format(Some("mgc-pyproject"));
-    assert!(matches!(
-        owner_for(&ai_python_native),
-        DepOwner::Unsupported
-    ));
-    assert!(gate(&ai_python_native, None, &native(), None).is_err());
+    assert!(matches!(owner_for(&ai_python_native), DepOwner::Native));
+    assert!(gate(&ai_python_native, None, &native(), None).is_ok());
 
     for (core, ecosystem) in [
+        ("app", Some(eco::FLUTTER)),
         ("web", Some(eco::JS)),
         ("web", Some(eco::TS)),
         ("lib", Some(eco::TS)),

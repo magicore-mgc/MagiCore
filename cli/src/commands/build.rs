@@ -18,10 +18,14 @@ pub async fn run(
     core: Option<&str>,
     target: Option<String>,
     compat_runtime: Option<&str>,
+    compat_runner: Option<&str>,
 ) -> Result<()> {
     // Reject legacy rival-runtime flags before project discovery for every core.
     // (Từ chối cờ runtime đối thủ trước khi dò project, áp dụng đồng nhất mọi core.)
     let compat = crate::commands::compat::CompatMode::from_flag(compat_runtime)?;
+    // Delegated runner lane (Spec rev4 §7/§9): qualified only, warned loudly.
+    // (Lane runner ủy quyền (Spec rev4 §7/§9): chỉ qualified, cảnh báo lớn.)
+    let compat_runner = crate::commands::compat::parse_compat_runner(compat_runner)?;
     ensure_native_build_mode(&compat)?;
     let root = find_root()?;
 
@@ -47,8 +51,43 @@ pub async fn run(
 
     let ctx = ProjectContext::load_with_core(core)?;
     info(&format!("Execution profile: {}", ctx.execution_summary()));
+    // Spec rev4 §9/§11: compat contracts exist for web only; other cores
+    // fail loudly instead of silently ignoring the flag.
+    // (Spec rev4 §9/§11: mới web có compat contract; core khác fail rõ ràng
+    // thay vì lặng lẽ bỏ qua flag.)
+    if compat_runner.is_some() && ctx.adapter().name() != "web" {
+        return Err(crate::error::compat_runner_unsupported_core(
+            ctx.adapter().name(),
+        ));
+    }
     match ctx.adapter().name() {
-        "web" => build_web(&root, ctx.execution(), target, &compat).await,
+        "web" => {
+            // Native Go web backends use the Go compiler instead of the JS bundler.
+            // Backend Go dùng compiler Go, không bị rơi sang JS bundler.
+            #[cfg(feature = "web")]
+            if project_manifest_present(&root, "go.mod")?
+                && !project_manifest_present(&root, "package.json")?
+            {
+                if target.is_some() {
+                    return Err(crate::error::web_backend_flag_unsupported("--target", "go"));
+                }
+                if compat_runner.is_some() {
+                    return Err(crate::error::web_backend_flag_unsupported(
+                        "--compat-runner",
+                        "go",
+                    ));
+                }
+                return build_web_go_backend(&root);
+            }
+            build_web(
+                &root,
+                ctx.execution(),
+                target,
+                &compat,
+                compat_runner.as_deref(),
+            )
+            .await
+        }
         #[cfg(feature = "app")]
         "app" => build_app(&root).await,
         #[cfg(not(feature = "app"))]
@@ -110,6 +149,121 @@ fn should_use_legacy_rust_build(root: &Path) -> Result<bool> {
 /// Chỉ cho bộ chọn backend nhận manifest là file thường, không theo symlink.
 fn project_manifest_present(root: &Path, name: &str) -> Result<bool> {
     Ok(mgc_config::project::read_regular_project_text(&root.join(name), name)?.is_some())
+}
+
+/// Compile a Go backend using MGC's verified module store and shared cache.
+/// Build backend Go từ module store đã cài và cache tập trung của MGC.
+#[cfg(feature = "web")]
+fn build_web_go_backend(root: &Path) -> Result<()> {
+    if tool_unavailable("go") {
+        return Err(crate::error::build_toolchain_missing("go"));
+    }
+    crate::commands::freshness::check_any_freshness(root)?;
+    crate::commands::freshness::check_web_go_build_freshness(root)?;
+
+    let runtime = crate::commands::optimizer::runtime_detect::DetectedRuntime::GoLib;
+    let optimizer_env = crate::commands::optimizer::env_loader::load_optimizer_env(root, &runtime)?;
+    let global_paths = mgc_platform::paths::GlobalPaths::new()?;
+    let go_modules = global_paths.store.join("go");
+    let go_build_cache = global_paths.cache.join("go").join("build");
+    std::fs::create_dir_all(&go_modules)?;
+    std::fs::create_dir_all(&go_build_cache)?;
+
+    let output_dir = ensure_go_build_output_dir(root)?;
+    let output_name = if cfg!(windows) {
+        "server.exe"
+    } else {
+        "server"
+    };
+    let output_path = output_dir.join(output_name);
+    ensure_go_build_output_file(&output_path)?;
+
+    let module_root = if root.join("cmd/server").is_dir() {
+        "./cmd/server"
+    } else {
+        "."
+    };
+    let relative_output = format!(".magicore/build/go/{output_name}");
+    let mut env: Vec<(String, String)> = optimizer_env.into_iter().collect();
+    // Optimizer files cannot redirect dependency or compiled-artifact caches.
+    // Optimizer không được chuyển hướng module store hoặc build cache của MGC.
+    env.extend([
+        ("GOMODCACHE".to_string(), go_modules.display().to_string()),
+        ("GOCACHE".to_string(), go_build_cache.display().to_string()),
+    ]);
+    env.extend(go_offline_env());
+
+    info(&format!(
+        "Building Go Web backend: go build -mod=readonly -o {relative_output} {module_root}"
+    ));
+    run_allowlisted_tool_with_env(
+        root,
+        "go",
+        &[
+            "build",
+            "-mod=readonly",
+            "-o",
+            &relative_output,
+            module_root,
+        ],
+        Some(env),
+    )
+    .map_err(|error| crate::error::go_build_failed(&error))?;
+    mgc_ui::success(&format!(
+        "Go Web backend build completed: {}",
+        output_path.display()
+    ));
+    Ok(())
+}
+
+/// Create the project build-output path one component at a time, refusing symlinks.
+/// Tạo thư mục build từng phần và từ chối symlink trong đường dẫn.
+#[cfg(feature = "web")]
+fn ensure_go_build_output_dir(root: &Path) -> Result<PathBuf> {
+    let canonical_root = root.canonicalize()?;
+    let mut current = canonical_root;
+    for component in [".magicore", "build", "go"] {
+        current.push(component);
+        loop {
+            match std::fs::symlink_metadata(&current) {
+                Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
+                    break;
+                }
+                Ok(_) => {
+                    return Err(crate::error::build_output_path_unsafe(
+                        &current,
+                        "expected a real directory, found a file or symlink",
+                    ));
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    match std::fs::create_dir(&current) {
+                        Ok(()) => continue,
+                        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                            continue;
+                        }
+                        Err(error) => return Err(error.into()),
+                    }
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
+    }
+    Ok(current)
+}
+
+/// Do not let the compiler follow a planted symlink at the executable path.
+/// Không để compiler đi theo symlink có sẵn tại đường dẫn executable.
+#[cfg(feature = "web")]
+fn ensure_go_build_output_file(path: &Path) -> Result<()> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => Ok(()),
+        Ok(_) => Err(crate::error::build_output_path_unsafe(
+            path,
+            "expected a regular file or a missing output",
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
 }
 
 /// Build an AI project with its native language toolchain — build project AI bằng toolchain gốc.
@@ -277,7 +431,12 @@ async fn build_lib(root: &Path) -> Result<()> {
         })
         .unwrap_or_default();
     if project_manifest_present(root, "Cargo.toml")? {
-        return build_rust_with_env(root, optimizer_envs);
+        crate::commands::freshness::check_lib_cargo_freshness(root)?;
+        let store_source = mgc_lib_adapter::install::cargo_compat::validate_build(root)?;
+        return match store_source {
+            Some(source) => build_rust_with_managed_source(root, optimizer_envs, &source),
+            None => build_rust_with_env(root, optimizer_envs),
+        };
     }
     if project_manifest_present(root, "pyproject.toml")? {
         let python = python_cmd();
@@ -819,8 +978,9 @@ use crate::context::ProjectContext;
 #[cfg(test)]
 pub(crate) use web_engine::*;
 use web_engine::{
-    build_rust_with_env, build_web, detect_app_runtime, detect_lib_runtime, node_bin_args,
-    prepend_path, run_allowlisted_tool, run_allowlisted_tool_with_env,
+    build_rust_with_env, build_rust_with_managed_source, build_web, detect_app_runtime,
+    detect_lib_runtime, node_bin_args, prepend_path, run_allowlisted_tool,
+    run_allowlisted_tool_with_env,
 };
 
 #[cfg(test)]

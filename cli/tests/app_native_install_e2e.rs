@@ -30,16 +30,22 @@ impl NoSpawnSandbox {
         std::fs::create_dir_all(&log_dir).unwrap();
         let log = log_dir.join("spawned.log");
         for tool in tools {
+            // Platform canaries record forbidden SDK delegation — ghi lại mọi lần gọi SDK.
+            #[cfg(windows)]
+            let sh = bin_dir.path().join(format!("{tool}.cmd"));
+            #[cfg(not(windows))]
             let sh = bin_dir.path().join(tool);
-            std::fs::write(
-                &sh,
-                format!(
-                    "#!/bin/sh\nprintf '%s\\n' \"{} $*\" >> {}\nexit 0\n",
-                    tool,
-                    log.display()
-                ),
-            )
-            .unwrap();
+            #[cfg(windows)]
+            let script = format!(
+                "@echo off\r\necho {tool} %* >> \"{}\"\r\nexit /b 126\r\n",
+                log.display()
+            );
+            #[cfg(not(windows))]
+            let script = format!(
+                "#!/bin/sh\nprintf '%s\\n' \"{tool} $*\" >> '{}'\nexit 126\n",
+                log.to_string_lossy().replace('\'', "'\"'\"'")
+            );
+            std::fs::write(&sh, script).unwrap();
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
@@ -70,6 +76,11 @@ impl NoSpawnSandbox {
             .current_dir(cwd)
             .env("PATH", self.path_env())
             .env("HOME", self.home_dir.path())
+            .env("USERPROFILE", self.home_dir.path())
+            .env("MGC_DATA_DIR", self.home_dir.path().join("data"))
+            .env("MGC_CACHE_DIR", self.home_dir.path().join("cache"))
+            .env_remove("MAGICORE_STORE_ROOT")
+            .env_remove("MGC_COMPAT_RUNNER")
             .env_remove("MGC_COMPAT_RUNTIME");
         for (key, value) in envs {
             cmd.env(key, value);
@@ -95,6 +106,25 @@ impl NoSpawnSandbox {
     }
 }
 
+#[test]
+fn sdk_canary_records_and_rejects_delegation() {
+    let sandbox = NoSpawnSandbox::multi(&["flutter"]);
+    #[cfg(windows)]
+    let output = Command::new("cmd")
+        .args(["/D", "/C"])
+        .arg(sandbox.bin_dir.path().join("flutter.cmd"))
+        .arg("--version")
+        .output()
+        .unwrap();
+    #[cfg(not(windows))]
+    let output = Command::new(sandbox.bin_dir.path().join("flutter"))
+        .arg("--version")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(126));
+    assert!(sandbox.marker_text().contains("flutter --version"));
+}
+
 fn fixture_pub_archive(package: &str, version: &str) -> Vec<u8> {
     use flate2::Compression;
     use flate2::write::GzEncoder;
@@ -110,6 +140,17 @@ fn fixture_pub_archive(package: &str, version: &str) -> Vec<u8> {
         header.set_cksum();
         tar.append_data(&mut header, "pubspec.yaml", Cursor::new(content.as_bytes()))
             .unwrap();
+        let library = b"String magicoreOfflineMarker() => 'MGC_DART_OFFLINE_IMPORT_OK';\n";
+        let mut header = tar::Header::new_gnu();
+        header.set_size(library.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        tar.append_data(
+            &mut header,
+            format!("lib/{package}.dart"),
+            Cursor::new(library),
+        )
+        .unwrap();
         tar.finish().unwrap();
     }
     gzip.finish().unwrap()
@@ -160,6 +201,12 @@ fn flutter_install_app_runs_inside_mgc_without_spawning_flutter() {
 
 #[test]
 fn flutter_sdk_only_manifest_still_resolves_registry_dependencies_natively() {
+    for schema in ["3", "v4"] {
+        verify_flutter_sdk_manifest_replay_and_freshness(schema);
+    }
+}
+
+fn verify_flutter_sdk_manifest_replay_and_freshness(schema: &str) {
     let mut server = mockito::Server::new();
     let base = server.url();
     let archive = fixture_pub_archive("characters", "1.4.0");
@@ -276,6 +323,17 @@ fn flutter_sdk_only_manifest_still_resolves_registry_dependencies_natively() {
     )
     .unwrap();
 
+    let mut config = std::fs::read_to_string(project.path().join("mgc.toml")).unwrap();
+    config.push_str(&format!(
+        "\n[lock]\nschema = \"{schema}\"\n[scripts]\ntest = \"node freshness-probe.js\"\n"
+    ));
+    std::fs::write(project.path().join("mgc.toml"), config).unwrap();
+    std::fs::write(
+        project.path().join("freshness-probe.js"),
+        "console.log('MGC_FLUTTER_FRESHNESS_OK');\n",
+    )
+    .unwrap();
+
     let sdk_root = TempDir::new().unwrap();
     let flutter_package = sdk_root.path().join("packages/flutter");
     let flutter_test_package = sdk_root.path().join("packages/flutter_test");
@@ -307,6 +365,93 @@ fn flutter_sdk_only_manifest_still_resolves_registry_dependencies_natively() {
         Some(0),
         "implicit Flutter dependencies must resolve:\n{output}"
     );
+    let before_replay = std::fs::read(project.path().join("mgc.lock")).unwrap();
+    for _ in 0..2 {
+        let (code, stdout, stderr) = sandbox.run_mgc_with_env(
+            &["install", "--core", "app", "--frozen"],
+            project.path(),
+            &[("MGC_PUB_INDEX_URL", &base), ("FLUTTER_ROOT", &sdk_root)],
+        );
+        assert_eq!(
+            code,
+            Some(0),
+            "SDK dependency replay must succeed: {stdout}{stderr}"
+        );
+        assert_eq!(
+            std::fs::read(project.path().join("mgc.lock")).unwrap(),
+            before_replay,
+            "frozen replay must preserve package rows and exact lock bytes"
+        );
+    }
+    let envs = [
+        ("MGC_PUB_INDEX_URL", base.as_str()),
+        ("FLUTTER_ROOT", sdk_root.as_str()),
+    ];
+    let (code, stdout, stderr) =
+        sandbox.run_mgc_with_env(&["test", "--core", "app"], project.path(), &envs);
+    assert_eq!(
+        code,
+        Some(0),
+        "SDK-expanded freshness must allow the configured test: {stdout}{stderr}"
+    );
+    assert!(
+        stdout.contains("MGC_FLUTTER_FRESHNESS_OK"),
+        "test script must execute after freshness: {stdout}{stderr}"
+    );
+
+    // Changes to SDK requirements must be rejected before the script starts.
+    // Đổi range SDK phải bị từ chối trước khi chạy script, không cho fetch bù.
+    let sdk_manifest_path = flutter_package.join("pubspec.yaml");
+    let sdk_manifest = std::fs::read_to_string(&sdk_manifest_path).unwrap();
+    std::fs::write(&sdk_manifest_path, sdk_manifest.replace("^1.4.0", "^2.0.0")).unwrap();
+    let (code, stdout, stderr) =
+        sandbox.run_mgc_with_env(&["test", "--core", "app"], project.path(), &envs);
+    assert_ne!(
+        code,
+        Some(0),
+        "changed SDK requirements must fail: {stdout}{stderr}"
+    );
+    assert!(!stdout.contains("MGC_FLUTTER_FRESHNESS_OK"));
+    assert!(
+        stderr.contains("characters") && stderr.contains("locked version"),
+        "range error must identify the stale dependency: {stderr}"
+    );
+    assert_eq!(
+        std::fs::read(project.path().join("mgc.lock")).unwrap(),
+        before_replay
+    );
+    std::fs::write(&sdk_manifest_path, sdk_manifest).unwrap();
+
+    let project_manifest_path = project.path().join("pubspec.yaml");
+    let project_manifest = std::fs::read_to_string(&project_manifest_path).unwrap();
+    for stale in [
+        project_manifest.replacen(
+            "dependencies:\n",
+            "dependencies:\n  missing_package: ^1.0.0\n",
+            1,
+        ),
+        project_manifest.replace(
+            "dev_dependencies:\n  flutter_test:\n    sdk: flutter\n",
+            "dev_dependencies: {}\n",
+        ),
+        "invalid: [".to_string(),
+    ] {
+        std::fs::write(&project_manifest_path, stale).unwrap();
+        let (code, stdout, stderr) =
+            sandbox.run_mgc_with_env(&["test", "--core", "app"], project.path(), &envs);
+        assert_ne!(
+            code,
+            Some(0),
+            "stale or invalid pubspec must fail: {stdout}{stderr}"
+        );
+        assert!(!stdout.contains("MGC_FLUTTER_FRESHNESS_OK"));
+        assert_eq!(
+            std::fs::read(project.path().join("mgc.lock")).unwrap(),
+            before_replay
+        );
+    }
+    std::fs::write(&project_manifest_path, project_manifest).unwrap();
+
     assert!(
         sandbox.marker_text().is_empty(),
         "Flutter/Dart must not spawn"
@@ -778,4 +923,178 @@ fn kotlin_update_fails_closed_without_mutating_catalog() {
         "ZERO toolchain spawn allowed, got:\n{}",
         sandbox.marker_text()
     );
+}
+
+// Replay pinned Flutter archives without a registry listener or SDK process.
+// Replay archive Flutter đã khóa, không listener registry hoặc spawn SDK.
+#[test]
+fn flutter_offline_reinstall_replays_verified_v3_and_v4_archives() {
+    verify_flutter_offline_replay(None);
+}
+
+#[test]
+#[ignore = "requires an explicitly configured real Dart SDK"]
+fn flutter_offline_replay_imports_package_with_real_dart() {
+    let sdk = std::env::var("MGC_E2E_DART_BINARY").expect("MGC_E2E_DART_BINARY is required");
+    assert!(
+        std::path::Path::new(&sdk).is_file(),
+        "Dart SDK executable is missing"
+    );
+    verify_flutter_offline_replay(Some(&sdk));
+}
+
+fn verify_flutter_offline_replay(dart_sdk: Option<&str>) {
+    for schema in ["3", "v4"] {
+        let project = TempDir::new().unwrap();
+        let data = TempDir::new().unwrap();
+        flutter_project(project.path());
+        let config = project.path().join("mgc.toml");
+        let mut text = std::fs::read_to_string(&config).unwrap();
+        text.push_str(&format!("\n[lock]\nschema = \"{schema}\"\n"));
+        std::fs::write(config, text).unwrap();
+        let archive = fixture_pub_archive("meta", "1.12.0");
+        let digest = sha256_hex(&archive);
+        let path = data
+            .path()
+            .join("store/pub/archives")
+            .join(format!("{digest}.tar.gz"));
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, &archive).unwrap();
+        let mut lock = mgc_lockfile::Lockfile::new();
+        let mut package = mgc_lockfile::Package::new(
+            "meta".into(),
+            "1.12.0".into(),
+            "https://pub.dev/archives/meta-1.12.0.tar.gz".into(),
+            format!("sha256-{digest}"),
+        );
+        package.ecosystem = mgc_lockfile::EcosystemTag::Dart;
+        package.owner_core = Some("app".into());
+        package.registry = Some("https://pub.dev".into());
+        lock.add_package(package);
+        mgc_lockfile::update_owner_root_pins(
+            &mut lock,
+            "app",
+            mgc_lockfile::EcosystemTag::Dart,
+            ["meta@1.12.0".to_string()],
+        );
+        let bytes = if schema == "v4" {
+            mgc_lockfile::migrate::finalize_migrated_v4(lock, "mgc-test", "2026-10-10T00:00:00Z")
+                .unwrap()
+        } else {
+            mgc_lockfile::writer::serialize_lockfile(&lock).unwrap()
+        };
+        let lock_path = project.path().join("mgc.lock");
+        std::fs::write(&lock_path, &bytes).unwrap();
+        let sandbox = NoSpawnSandbox::multi(&["flutter", "dart"]);
+        let data_root = data.path().to_string_lossy().to_string();
+        let home = sandbox.home_dir.path().to_string_lossy().to_string();
+        let envs = [
+            ("MGC_DATA_DIR", data_root.as_str()),
+            ("USERPROFILE", home.as_str()),
+            ("MGC_PUB_INDEX_URL", "http://127.0.0.1:4315"),
+        ];
+        // Cache presence must not bypass manifest/lock freshness.
+        // Có archive cache không cho phép manifest lệch lock vượt preflight.
+        let manifest_path = project.path().join("pubspec.yaml");
+        let manifest = std::fs::read_to_string(&manifest_path).unwrap();
+        for stale in [
+            manifest.replace("meta: ^1.12.0", "meta: ^2.0.0"),
+            manifest.replace("meta: ^1.12.0", "meta: ^1.12.0\n  unknown_package: ^1.0.0"),
+            manifest.replace("dependencies:\n  meta: ^1.12.0", "dependencies: {}"),
+        ] {
+            assert_ne!(stale, manifest);
+            std::fs::write(&manifest_path, stale).unwrap();
+            let (code, stdout, stderr) =
+                sandbox.run_mgc_with_env(&["install-app", "--offline"], project.path(), &envs);
+            assert_ne!(
+                code,
+                Some(0),
+                "stale Flutter lock must fail: {stdout}{stderr}"
+            );
+            assert_eq!(std::fs::read_to_string(&lock_path).unwrap(), bytes);
+            assert_eq!(std::fs::read(&path).unwrap(), archive);
+            assert!(!project.path().join(".dart_tool").exists());
+        }
+        std::fs::write(&manifest_path, manifest).unwrap();
+        std::fs::remove_file(&lock_path).unwrap();
+        let (code, stdout, stderr) =
+            sandbox.run_mgc_with_env(&["install-app", "--offline"], project.path(), &envs);
+        assert_ne!(
+            code,
+            Some(0),
+            "missing Flutter lock must fail: {stdout}{stderr}"
+        );
+        assert!(!lock_path.exists());
+        std::fs::write(&lock_path, &bytes).unwrap();
+        for args in [
+            ["install", "--core", "app", "--offline"].as_slice(),
+            ["install-app", "--offline"].as_slice(),
+        ] {
+            let (code, stdout, stderr) = sandbox.run_mgc_with_env(args, project.path(), &envs);
+            assert_eq!(
+                code,
+                Some(0),
+                "Flutter offline replay failed: {stdout}{stderr}"
+            );
+            assert_eq!(std::fs::read_to_string(&lock_path).unwrap(), bytes);
+            assert!(
+                project
+                    .path()
+                    .join(".dart_tool/package_config.json")
+                    .is_file()
+            );
+            assert!(
+                data.path()
+                    .join("store/pub/hosted/pub.dev/meta-1.12.0/pubspec.yaml")
+                    .is_file()
+            );
+        }
+        if let Some(sdk) = dart_sdk {
+            std::fs::write(
+                project.path().join("check.dart"),
+                "import 'package:meta/meta.dart';\nvoid main() { print(magicoreOfflineMarker()); }\n",
+            ).unwrap();
+            let script = format!(
+                "\"{}\" --packages=.dart_tool/package_config.json check.dart",
+                sdk.replace('\\', "/")
+            );
+            let mut config = std::fs::read_to_string(project.path().join("mgc.toml")).unwrap();
+            config.push_str(&format!(
+                "\n[scripts]\ncheck = {}\n",
+                toml::Value::String(script)
+            ));
+            std::fs::write(project.path().join("mgc.toml"), config).unwrap();
+            let (code, stdout, stderr) =
+                sandbox.run_mgc_with_env(&["run", "--core", "app", "check"], project.path(), &envs);
+            assert_eq!(
+                code,
+                Some(0),
+                "Dart package import failed: {stdout}{stderr}"
+            );
+            assert!(
+                stdout.contains("MGC_DART_OFFLINE_IMPORT_OK"),
+                "Dart import marker missing: {stdout}{stderr}"
+            );
+            assert_eq!(std::fs::read_to_string(&lock_path).unwrap(), bytes);
+        }
+        std::fs::remove_file(&path).unwrap();
+        let (code, stdout, stderr) =
+            sandbox.run_mgc_with_env(&["install-app", "--offline"], project.path(), &envs);
+        assert_ne!(code, Some(0), "missing archive must fail: {stdout}{stderr}");
+        assert!(format!("{stdout}{stderr}").contains("cache miss"));
+        assert_eq!(std::fs::read_to_string(&lock_path).unwrap(), bytes);
+        std::fs::write(&path, b"tampered archive").unwrap();
+        let (code, stdout, stderr) =
+            sandbox.run_mgc_with_env(&["install-app", "--offline"], project.path(), &envs);
+        assert_ne!(
+            code,
+            Some(0),
+            "tampered archive must fail: {stdout}{stderr}"
+        );
+        assert_eq!(std::fs::read_to_string(&lock_path).unwrap(), bytes);
+        assert!(
+            sandbox.marker_text().is_empty(),
+            "offline must not spawn an SDK/package manager"
+        );
+    }
 }

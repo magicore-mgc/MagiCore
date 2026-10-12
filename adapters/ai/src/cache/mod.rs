@@ -1,7 +1,7 @@
 //! Model cache management cho AI adapter.
 //! Hỗ trợ HuggingFace cache, Ollama cache, local cache.
 
-use mgc_types::{MgError, MgResult};
+use mgc_types::MgResult;
 use std::path::PathBuf;
 
 pub mod metadata;
@@ -11,14 +11,25 @@ use crate::registry::Registry;
 
 /// Cache location cho từng registry
 pub fn cache_dir(registry: &Registry) -> MgResult<PathBuf> {
-    let home =
-        dirs::home_dir().ok_or_else(|| MgError::Other("Cannot determine home directory".into()))?;
-
     let cache_path = match registry {
-        Registry::HuggingFace => home.join(".cache").join("huggingface").join("hub"),
-        Registry::PyTorchHub => home.join(".cache").join("torch").join("hub"),
-        Registry::TensorFlowHub => home.join(".cache").join("tfhub"),
-        Registry::OnnxZoo => home.join(".cache").join("onnx"),
+        Registry::HuggingFace => mgc_platform::paths::mgc_data_dir()
+            .join("cache")
+            .join("ai")
+            .join("huggingface")
+            .join("hub"),
+        Registry::PyTorchHub => mgc_platform::paths::mgc_data_dir()
+            .join("cache")
+            .join("ai")
+            .join("torch")
+            .join("hub"),
+        Registry::TensorFlowHub => mgc_platform::paths::mgc_data_dir()
+            .join("cache")
+            .join("ai")
+            .join("tfhub"),
+        Registry::OnnxZoo => mgc_platform::paths::mgc_data_dir()
+            .join("cache")
+            .join("ai")
+            .join("onnx"),
         Registry::Local(path) => path.clone(),
     };
 

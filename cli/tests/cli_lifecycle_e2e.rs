@@ -103,6 +103,47 @@ fn test_lib_rust_lifecycle_create_build() {
     let core_content = std::fs::read_to_string(project_path.join(".mgc.core")).unwrap();
     assert_eq!(core_content.trim(), "lib");
 
+    // Install first so the dependency lock and Cargo projection are established
+    // before the Rust build's freshness preflight.
+    // (Cài trước để tạo lock dependency và projection Cargo trước freshness.)
+    let install_home = TempDir::new().expect("create isolated MGC home");
+    let install_data = install_home.path().join("data");
+    let install_cache = install_home.path().join("cache");
+    let install_templates = install_home.path().join("templates");
+    let install_store = install_home.path().join("store");
+    for path in [
+        &install_data,
+        &install_cache,
+        &install_templates,
+        &install_store,
+    ] {
+        std::fs::create_dir_all(path).expect("create isolated MGC directory");
+    }
+    let install_output = Command::new(&mgc)
+        .arg("install-lib")
+        .current_dir(&project_path)
+        .env("HOME", install_home.path())
+        .env("USERPROFILE", install_home.path())
+        .env("MGC_DATA_DIR", &install_data)
+        .env("MGC_CACHE_DIR", &install_cache)
+        .env("MGC_TEMPLATES_DIR", &install_templates)
+        .env("MAGICORE_STORE_ROOT", &install_store)
+        .output()
+        .expect("mgc install-lib failed");
+    let install_stdout = String::from_utf8_lossy(&install_output.stdout);
+    let install_stderr = String::from_utf8_lossy(&install_output.stderr);
+    let install_combined = format!("{}{}", install_stdout, install_stderr);
+    println!("=== mgc install-lib (rust) ===\n{}", install_combined);
+    assert!(
+        install_output.status.success(),
+        "mgc install-lib failed:\n{}",
+        install_combined
+    );
+    assert!(
+        project_path.join("mgc.lock").exists(),
+        "mgc.lock not created"
+    );
+
     // Step 2: mgc build (should run cargo build)
     let build_output = Command::new(&mgc)
         .arg("build")

@@ -26,9 +26,10 @@ pub async fn test(
     args: Vec<String>,
     core: Option<&str>,
     compat_runtime: Option<&str>,
+    compat_runner: Option<&str>,
 ) -> Result<()> {
     let ctx = crate::context::ProjectContext::load_with_core(core)?;
-    test_at(ctx.root(), args, core, compat_runtime).await
+    test_at(ctx.root(), args, core, compat_runtime, compat_runner).await
 }
 
 /// Run the same test discovery and execution policy against an explicit project root.
@@ -38,8 +39,19 @@ pub(crate) async fn test_at(
     args: Vec<String>,
     core: Option<&str>,
     compat_runtime: Option<&str>,
+    compat_runner: Option<&str>,
 ) -> Result<()> {
     let compat = CompatMode::from_flag(compat_runtime)?;
+    // Delegated runner lane (Spec rev4 §7/§9): qualified only, warned loudly.
+    // (Lane runner ủy quyền (Spec rev4 §7/§9): chỉ qualified, cảnh báo lớn.)
+    let compat_runner = crate::commands::compat::parse_compat_runner(compat_runner)?;
+    // Union freshness pre-flight (Spec rev4 §8): drift from a present
+    // lock fails before anything spawns; lockless projects pass (see
+    // `check_any_freshness` — optimizer fixtures have no lock by design).
+    // (Freshness pre-flight hợp (Spec rev4 §8): lệch khỏi lock hiện có thì
+    // fail trước spawn; project chưa lock thì qua (xem `check_any_freshness`
+    // — fixture optimizer vốn không có lock).)
+    crate::commands::freshness::check_any_freshness(project_root)?;
 
     // 1. Priority: mgc.toml [scripts] test — ưu tiên: mgc.toml [scripts] test
     let mgc_toml_path = project_root.join("mgc.toml");
@@ -48,7 +60,7 @@ pub(crate) async fn test_at(
         && let Some(cmd) = resolve_mgc_toml_script(&mgc_toml_path, "test")?
     {
         info(&format!("Running test from mgc.toml: {}", cmd));
-        return crate::commands::run::run("test".to_string(), args, core, None).await;
+        return crate::commands::run::run("test".to_string(), args, core, None, None).await;
     }
 
     // 2. Auto-detect test runner based on project files — tự động phát hiện test runner
@@ -61,7 +73,14 @@ pub(crate) async fn test_at(
         // run.rs parse + chặn runtime đối thủ/PM y như `mgc run test`.
         // Xử lý TRƯỚC vì nó tiêu thụ `args` theo giá trị.
         if runner == "mgc-internal-run-script" {
-            return crate::commands::run::run("test".to_string(), args, core, compat_runtime).await;
+            return crate::commands::run::run(
+                "test".to_string(),
+                args,
+                core,
+                compat_runtime,
+                compat_runner.as_deref(),
+            )
+            .await;
         }
 
         info(&format!(
@@ -125,6 +144,10 @@ pub(crate) async fn test_at(
             CompatMode::Native => None,
             CompatMode::Explicit(runtime) => Some(runtime.clone()),
         };
+        // Exact-manifest lane context for this operation (exact-match only).
+        // (Ngữ cảnh lane cho manifest exception của operation này (chỉ khớp chính xác).)
+        let (policy_manifest, policy_context, policy_profile) =
+            crate::commands::policy::load_policy_for_run(project_root, "test");
         let opts = mgc_exec::prelude::ExecOptions {
             cwd: Some(project_root.to_path_buf()),
             timeout: Some(std::time::Duration::from_secs(600)), // 10min test timeout
@@ -133,6 +156,10 @@ pub(crate) async fn test_at(
             clean_env: false, // Preserve existing env
             log_path: Some(project_root.join(".magicore").join("exec.log")), // P0.7 FIX: Enable audit logging
             compat_runtime,
+            compat_runner,
+            policy_manifest,
+            policy_context,
+            policy_profile,
             ..Default::default()
         };
 

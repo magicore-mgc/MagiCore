@@ -296,6 +296,104 @@ fn lib_project(dir: &std::path::Path, language: &str, manifest_name: &str, manif
     write(dir, manifest_name, manifest_body);
 }
 
+fn web_backend_project(
+    dir: &std::path::Path,
+    language: &str,
+    framework: &str,
+    manifest_name: &str,
+    manifest_body: &str,
+    schema: &str,
+) {
+    write(dir, ".mgc.core", "web\n");
+    write(
+        dir,
+        "mgc.toml",
+        &format!(
+            "name = \"m\"\nversion = \"0.1.0\"\necosystem = \"web\"\nmode = \"backend\"\nframeworks = [\"{language}\", \"{framework}\"]\n\n[lock]\nschema = \"{schema}\"\n"
+        ),
+    );
+    write(dir, manifest_name, manifest_body);
+}
+
+struct WebBackendCase<'a> {
+    language: &'a str,
+    framework: &'a str,
+    manifest_name: &'a str,
+    manifest_body: &'a str,
+    schema: &'a str,
+    package: &'a str,
+    manifest_pin: &'a str,
+    lock_pin: &'a str,
+}
+
+fn web_backend_nonempty_add_install(case: WebBackendCase<'_>, env: &[(&str, &str)]) {
+    let WebBackendCase {
+        language,
+        framework,
+        manifest_name,
+        manifest_body,
+        schema,
+        package,
+        manifest_pin,
+        lock_pin,
+    } = case;
+    let project = TempDir::new().unwrap();
+    web_backend_project(
+        project.path(),
+        language,
+        framework,
+        manifest_name,
+        manifest_body,
+        schema,
+    );
+    let sandbox = MatrixSandbox::new();
+    let (code, out) = sandbox.run_with_env(&["add-web", package], project.path(), env);
+    assert_eq!(
+        code,
+        Some(0),
+        "web/{framework} add-web {package} ({schema}) must succeed:\n{out}"
+    );
+    let manifest = std::fs::read_to_string(project.path().join(manifest_name)).unwrap();
+    assert!(
+        manifest.contains(manifest_pin),
+        "web/{framework} manifest must contain {manifest_pin}:\n{manifest}"
+    );
+    let lock_path = project.path().join("mgc.lock");
+    let lock = std::fs::read_to_string(&lock_path).unwrap_or_default();
+    assert!(
+        lock.contains(lock_pin),
+        "web/{framework} lock must contain {lock_pin}:\n{lock}"
+    );
+    let expected_version = if schema == "v4" { 4 } else { 3 };
+    assert_eq!(
+        mgc_lockfile::migrate::detect_lockfile_version(&lock).expect("detect lock schema"),
+        expected_version,
+        "web/{framework} wrote the wrong lock schema"
+    );
+    assert_eq!(
+        std::fs::read_to_string(project.path().join(".mgc.core")).unwrap(),
+        "web\n",
+        "web/{framework} add changed the project owner"
+    );
+    sandbox.assert_no_spawn(&format!("web/{framework} add-web"));
+
+    for args in [&["install-web"][..], &["install-web", "--frozen"][..]] {
+        let (code, out) = sandbox.run_with_env(args, project.path(), env);
+        assert_eq!(
+            code,
+            Some(0),
+            "web/{framework} {} ({schema}) must succeed:\n{out}",
+            args.join(" ")
+        );
+        sandbox.assert_no_spawn(&format!("web/{framework} {}", args.join(" ")));
+        assert_eq!(
+            std::fs::read_to_string(project.path().join(".mgc.core")).unwrap(),
+            "web\n",
+            "web/{framework} install changed the project owner"
+        );
+    }
+}
+
 fn python_manifest() -> (&'static str, String) {
     (
         "pyproject.toml",
@@ -489,6 +587,15 @@ fn matrix_ai_python_native_list_remove_use_verified_adapter_without_tools() {
 
 #[test]
 fn matrix_lib_rust_add_install() {
+    run_lib_rust_build_e2e("3");
+}
+
+#[test]
+fn matrix_lib_rust_v4_add_install_build() {
+    run_lib_rust_build_e2e("v4");
+}
+
+fn run_lib_rust_build_e2e(schema: &str) {
     let setup = |d: &std::path::Path| {
         let (f, b) = rust_manifest();
         lib_project(d, "rust", f, &b);
@@ -498,15 +605,111 @@ fn matrix_lib_rust_add_install() {
         ("MGC_CRATES_INDEX_URL", registry.index_url.as_str()),
         ("MGC_CRATES_DOWNLOAD_URL", registry.download_url.as_str()),
     ];
-    native_add_cell_with_env(
-        setup,
-        &["add-lib", "mgcfixture"],
-        "Cargo.toml",
-        "mgcfixture",
-        "mgcfixture",
-        &env,
+    let project = TempDir::new().unwrap();
+    setup(project.path());
+    let config_path = project.path().join("mgc.toml");
+    let mut config = std::fs::read_to_string(&config_path).unwrap();
+    config.push_str(&format!("\n[lock]\nschema = \"{schema}\"\n"));
+    std::fs::write(config_path, config).unwrap();
+    std::fs::create_dir_all(project.path().join("src")).unwrap();
+    std::fs::write(
+        project.path().join("src/lib.rs"),
+        "pub fn call_fixture() { mgcfixture::fixture(); }\n",
+    )
+    .unwrap();
+    let sandbox = MatrixSandbox::new();
+    let (code, out) = sandbox.run_with_env(&["add-lib", "mgcfixture"], project.path(), &env);
+    assert_eq!(
+        code,
+        Some(0),
+        "native Rust add ({schema}) must succeed:\n{out}"
     );
-    native_install_cell_with_env(setup, &["add-lib", "mgcfixture"], &["install-lib"], &env);
+    let (code, out) = sandbox.run_with_env(&["install-lib"], project.path(), &env);
+    assert_eq!(
+        code,
+        Some(0),
+        "native Rust install ({schema}) must succeed:\n{out}"
+    );
+
+    let lock_before = std::fs::read(project.path().join("mgc.lock")).unwrap();
+    let cargo_lock_before = std::fs::read(project.path().join("Cargo.lock")).ok();
+    let cached_source = sandbox
+        .store_root()
+        .join("cargo/registry/src/mgcfixture-1.0.0/Cargo.toml");
+    assert!(
+        cached_source.is_file(),
+        "online install must materialize Cargo source"
+    );
+    std::fs::remove_dir_all(cached_source.parent().unwrap()).unwrap();
+
+    // An unreachable registry URL proves offline reinstall never falls back
+    // to crates.io/local registry access. It must rematerialize from the
+    // SHA-256-verified MagiCore Cargo cache while preserving both lockfiles.
+    let closed_registry = [
+        ("MGC_CRATES_INDEX_URL", "http://127.0.0.1:1"),
+        ("MGC_CRATES_DOWNLOAD_URL", "http://127.0.0.1:1"),
+    ];
+    let (code, out) = sandbox.run_with_env(
+        &["install-lib", "--offline"],
+        project.path(),
+        &closed_registry,
+    );
+    assert_eq!(
+        code,
+        Some(0),
+        "offline Rust reinstall ({schema}) must use cache:\n{out}"
+    );
+    assert_eq!(
+        std::fs::read(project.path().join("mgc.lock")).unwrap(),
+        lock_before
+    );
+    assert_eq!(
+        std::fs::read(project.path().join("Cargo.lock")).ok(),
+        cargo_lock_before
+    );
+    assert!(
+        cached_source.is_file(),
+        "offline replay must restore Cargo source"
+    );
+
+    // Use a clean Cargo home and the real host toolchain to prove the build
+    // consumes MGC's verified directory source without registry fallback.
+    // (Dùng Cargo home sạch và toolchain thật để chứng minh build chỉ đọc
+    // directory source đã verify của MGC, không fallback registry.)
+    let mut build = Command::new(mgc_binary());
+    build
+        .args(["build", "--core", "lib"])
+        .current_dir(project.path())
+        .env("HOME", sandbox.home_dir.path())
+        .env("CARGO_HOME", sandbox.home_dir.path().join(".cargo"))
+        .env("MAGICORE_STORE_ROOT", sandbox.store_root())
+        .env("MGC_CRATES_INDEX_URL", "http://127.0.0.1:1")
+        .env_remove("MGC_COMPAT_RUNTIME");
+    if let Some(rustup_home) = std::env::var_os("RUSTUP_HOME").or_else(|| {
+        std::env::var_os("HOME").map(|home| {
+            std::path::PathBuf::from(home)
+                .join(".rustup")
+                .into_os_string()
+        })
+    }) {
+        build.env("RUSTUP_HOME", rustup_home);
+    }
+    let output = build.output().expect("run mgc build with real Cargo");
+    let build_output = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.status.success(),
+        "non-empty Rust build ({schema}) must use MGC's offline source:\n{build_output}"
+    );
+    assert_eq!(
+        std::fs::read(project.path().join("mgc.lock")).unwrap(),
+        lock_before,
+        "Cargo build must not rewrite canonical mgc.lock"
+    );
+    sandbox.assert_no_spawn("Rust add/install/offline reinstall");
 }
 
 #[test]
@@ -585,6 +788,196 @@ fn matrix_lib_java_add_install() {
         &env,
     );
     registry.assert_all_routes_used();
+}
+
+#[test]
+fn matrix_web_non_js_backends_resolve_nonempty_v3_and_v4_without_toolchains() {
+    for schema in ["3", "v4"] {
+        let (manifest, body) = python_manifest();
+        let pypi = HermeticPypi::new(&[("six", "1.17.0")]);
+        let env = [("MGC_PYPI_INDEX_URL", pypi.url.as_str())];
+        web_backend_nonempty_add_install(
+            WebBackendCase {
+                language: "python",
+                framework: "fastapi",
+                manifest_name: manifest,
+                manifest_body: &body,
+                schema,
+                package: "six",
+                manifest_pin: "six",
+                lock_pin: "six",
+            },
+            &env,
+        );
+        pypi.assert_required_routes_used();
+
+        let (manifest, body) = rust_manifest();
+        let crates = HermeticCrates::new();
+        let env = [
+            ("MGC_CRATES_INDEX_URL", crates.index_url.as_str()),
+            ("MGC_CRATES_DOWNLOAD_URL", crates.download_url.as_str()),
+        ];
+        web_backend_nonempty_add_install(
+            WebBackendCase {
+                language: "rust",
+                framework: "actix-web",
+                manifest_name: manifest,
+                manifest_body: &body,
+                schema,
+                package: "mgcfixture",
+                manifest_pin: "mgcfixture",
+                lock_pin: "mgcfixture",
+            },
+            &env,
+        );
+        for mock in &crates._mocks {
+            mock.assert();
+        }
+
+        let (manifest, body) = go_manifest();
+        let proxy = HermeticGo::new();
+        let env = [
+            ("MGC_GO_PROXY_URL", proxy.url.as_str()),
+            ("MGC_GO_SUM_URL", proxy.url.as_str()),
+        ];
+        web_backend_nonempty_add_install(
+            WebBackendCase {
+                language: "go",
+                framework: "gin",
+                manifest_name: manifest,
+                manifest_body: &body,
+                schema,
+                package: "github.com/google/uuid",
+                manifest_pin: "github.com/google/uuid",
+                lock_pin: "github.com/google/uuid",
+            },
+            &env,
+        );
+        proxy.assert_all_routes_used();
+
+        let (manifest, body) = java_manifest();
+        let maven = HermeticMaven::new();
+        let env = [("MGC_MAVEN_REPO_URL", maven.url.as_str())];
+        web_backend_nonempty_add_install(
+            WebBackendCase {
+                language: "java",
+                framework: "spring-boot",
+                manifest_name: manifest,
+                manifest_body: &body,
+                schema,
+                package: "org.apache.commons:commons-lang3",
+                manifest_pin: "commons-lang3",
+                lock_pin: "commons-lang3",
+            },
+            &env,
+        );
+        maven.assert_all_routes_used();
+
+        let (manifest, body) = dotnet_manifest();
+        let nuget = HermeticNuget::new();
+        let env = [("MGC_NUGET_INDEX_URL", nuget.index_url.as_str())];
+        let lock_pin = if schema == "v4" {
+            "newtonsoft.json@13.0.3"
+        } else {
+            "Newtonsoft.Json"
+        };
+        web_backend_nonempty_add_install(
+            WebBackendCase {
+                language: "dotnet",
+                framework: "dotnet-webapi",
+                manifest_name: manifest,
+                manifest_body: &body,
+                schema,
+                package: "Newtonsoft.Json",
+                manifest_pin: "Newtonsoft.Json",
+                lock_pin,
+            },
+            &env,
+        );
+        nuget.assert_all_routes_used();
+    }
+}
+
+#[test]
+fn matrix_web_rust_offline_reinstall_matches_capability_owners() {
+    for framework in ["actix-web", "axum", "rust"] {
+        for schema in ["3", "v4"] {
+            let (manifest, body) = rust_manifest();
+            let project = TempDir::new().unwrap();
+            web_backend_project(project.path(), "rust", framework, manifest, &body, schema);
+            let registry = HermeticCrates::new();
+            let online_env = [
+                ("MGC_CRATES_INDEX_URL", registry.index_url.as_str()),
+                ("MGC_CRATES_DOWNLOAD_URL", registry.download_url.as_str()),
+            ];
+            let sandbox = MatrixSandbox::new();
+
+            let (code, out) =
+                sandbox.run_with_env(&["add-web", "mgcfixture"], project.path(), &online_env);
+            assert_eq!(
+                code,
+                Some(0),
+                "web/{framework} Rust add ({schema}) must succeed:\n{out}"
+            );
+            let (code, out) = sandbox.run_with_env(&["install-web"], project.path(), &online_env);
+            assert_eq!(
+                code,
+                Some(0),
+                "web/{framework} Rust install ({schema}) must succeed:\n{out}"
+            );
+
+            let mgc_lock_before = std::fs::read(project.path().join("mgc.lock")).unwrap();
+            let cargo_lock_before = std::fs::read(project.path().join("Cargo.lock")).ok();
+            let cached_source = sandbox
+                .store_root()
+                .join("cargo/registry/src/mgcfixture-1.0.0/Cargo.toml");
+            assert!(
+                cached_source.is_file(),
+                "web/{framework} online install must materialize Rust source"
+            );
+            std::fs::remove_dir_all(cached_source.parent().unwrap()).unwrap();
+
+            // Closed registry endpoints prove offline replay never falls back to the network.
+            // Endpoint registry đóng chứng minh replay offline không rơi về truy cập mạng.
+            let closed_registry = [
+                ("MGC_CRATES_INDEX_URL", "http://127.0.0.1:1"),
+                ("MGC_CRATES_DOWNLOAD_URL", "http://127.0.0.1:1"),
+            ];
+            let (code, out) = sandbox.run_with_env(
+                &["install-web", "--offline"],
+                project.path(),
+                &closed_registry,
+            );
+            assert_eq!(
+                code,
+                Some(0),
+                "web/{framework} Rust offline reinstall ({schema}) must use cache:\n{out}"
+            );
+            assert_eq!(
+                std::fs::read(project.path().join("mgc.lock")).unwrap(),
+                mgc_lock_before,
+                "offline replay must preserve mgc.lock bytes"
+            );
+            assert_eq!(
+                std::fs::read(project.path().join("Cargo.lock")).ok(),
+                cargo_lock_before,
+                "offline replay must preserve Cargo.lock bytes"
+            );
+            assert!(
+                cached_source.is_file(),
+                "offline replay must restore web/{framework} Rust source"
+            );
+            assert_eq!(
+                std::fs::read_to_string(project.path().join(".mgc.core")).unwrap(),
+                "web\n",
+                "web/{framework} offline replay must preserve the web project owner"
+            );
+            sandbox.assert_no_spawn(&format!("web/{framework} Rust offline reinstall"));
+            for mock in &registry._mocks {
+                mock.assert();
+            }
+        }
+    }
 }
 
 #[test]
@@ -756,13 +1149,17 @@ fn matrix_native_remove_all_lanes() {
         let (f, b) = java_manifest();
         lib_project(d, "java", f, &b);
     };
-    native_remove_cell(
+    let maven = HermeticMaven::new();
+    let maven_env = [("MGC_MAVEN_REPO_URL", maven.url.as_str())];
+    native_remove_cell_with_env(
         java,
         &["add-lib", "org.apache.commons:commons-lang3"],
         &["remove-lib", "org.apache.commons:commons-lang3"],
         "pom.xml",
         "commons-lang3",
+        &maven_env,
     );
+    maven.assert_all_routes_used();
 }
 
 #[test]
@@ -1152,19 +1549,24 @@ fn offline_flag_is_not_silently_dropped_for_other_cores() {
         "mgc.toml",
         "name = \"offline-app\"\necosystem = \"app\"\n[app]\nlanguage = \"flutter\"\n",
     );
+    write(
+        project.path(),
+        "pubspec.yaml",
+        "name: offline_app\ndependencies: {}\n",
+    );
     let sandbox = MatrixSandbox::new();
     let (code, out) = sandbox.run(&["install", "--offline"], project.path());
     assert_ne!(
         code,
         Some(0),
-        "unsupported offline mode must fail explicitly:\n{out}"
+        "offline replay without a lock must fail explicitly:\n{out}"
     );
     assert!(
-        out.to_lowercase()
-            .contains("offline install is not implemented"),
-        "unsupported offline mode must not be silently ignored:\n{out}"
+        out.to_lowercase().contains("mgc.lock"),
+        "offline mode must reach the missing-lock gate:\n{out}"
     );
-    sandbox.assert_no_spawn("unsupported offline install core");
+    assert!(!project.path().join("mgc.lock").exists());
+    sandbox.assert_no_spawn("offline install without a lock");
 }
 
 #[test]
@@ -1890,12 +2292,14 @@ impl HermeticCrates {
         let mocks = vec![
             server
                 .mock("GET", "/mg/cf/mgcfixture")
+                .expect_at_least(1)
                 .with_status(200)
                 .with_header("content-type", "application/octet-stream")
                 .with_body(index_entry)
                 .create(),
             server
                 .mock("GET", "/api/v1/crates/mgcfixture/1.0.0/download")
+                .expect_at_least(1)
                 .with_status(200)
                 .with_header("content-type", "application/octet-stream")
                 .with_body(archive)

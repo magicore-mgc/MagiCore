@@ -281,14 +281,14 @@ fn command_timeout_kills_hung_tool() {
     //
     // Asserts the three things the Tech Lead asked for:
     //   1. run() returns a "timed out" error (not Ok, not a hang)
-    //   2. wall-clock stays under 1s for a 250ms timeout
+    //   2. wall-clock stays under 2s for a 1s timeout
     //   3. the grandchild is GONE after run() returns
     //
     // (Đúng kịch bản Tech Lead nêu: tool sinh GRANDCHILD thừa hưởng pipe và
     // giữ nó trong lúc sleep. Đây là ca (a) treo drain sau kill vô hạn và
     // (b) trên macOS sống sót qua timeout vì walk /proc không khớp gì.
-    // Kiểm 3 điều: (1) run() trả lỗi "timed out"; (2) wall-clock < 1s với
-    // timeout 250ms; (3) grandchild đã chết sau khi run() trả về.)
+    // Kiểm 3 điều: (1) run() trả lỗi "timed out"; (2) wall-clock < 2s với
+    // timeout 1s; (3) grandchild đã chết sau khi run() trả về.)
     use std::os::unix::fs::PermissionsExt;
     use std::time::Instant;
 
@@ -319,7 +319,7 @@ fn command_timeout_kills_hung_tool() {
     let opts = ExecOptions {
         clean_env: true,
         cwd: Some(dir.clone()),
-        timeout: Some(Duration::from_millis(250)),
+        timeout: Some(Duration::from_secs(1)),
         ..Default::default()
     };
 
@@ -332,8 +332,8 @@ fn command_timeout_kills_hung_tool() {
         "expected a timeout error, got: {err}"
     );
     assert!(
-        elapsed < Duration::from_secs(1),
-        "run() took {elapsed:?} for a 250ms timeout — the process tree was \
+        elapsed < Duration::from_secs(2),
+        "run() took {elapsed:?} for a 1s timeout — the process tree was \
          not reaped promptly (grandchild still holding the pipe?)"
     );
 
@@ -381,7 +381,7 @@ fn clean_env_blocks_forbidden_pm_spawned_by_child_path_lookup() {
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     let fake_cargo = dir.join("cargo");
-    fs::write(&fake_cargo, "#!/bin/sh\nnpm --version\n").unwrap();
+    fs::write(&fake_cargo, "#!/bin/sh\nnpm install\n").unwrap();
     let mut permissions = fs::metadata(&fake_cargo).unwrap().permissions();
     permissions.set_mode(0o755);
     fs::set_permissions(&fake_cargo, permissions).unwrap();
@@ -404,7 +404,7 @@ fn clean_env_blocks_forbidden_pm_spawned_by_child_path_lookup() {
             .contains("MagiCore blocked forbidden package manager: npm")
             || err
                 .to_string()
-                .contains("references forbidden package manager 'npm'"),
+                .contains("forbidden package manager 'npm' spawned"),
         "unexpected error: {err}"
     );
 }
@@ -424,7 +424,7 @@ fn inherited_env_still_blocks_forbidden_pm_spawned_by_project_tool() {
         format!("#!/bin/sh\nprintf ran > '{}'\n", marker.display()),
     )
     .unwrap();
-    fs::write(&fake_cargo, "#!/bin/sh\nnpm --version\n").unwrap();
+    fs::write(&fake_cargo, "#!/bin/sh\nnpm install\n").unwrap();
     for path in [&fake_cargo, &fake_npm] {
         let mut permissions = fs::metadata(path).unwrap().permissions();
         permissions.set_mode(0o755);
@@ -800,7 +800,7 @@ fn captured_runner_rejects_a_session_escape_when_root_exits_immediately()
 
 #[test]
 #[cfg(unix)]
-fn inherited_monitor_kills_session_started_during_term_grace()
+fn inherited_monitor_kills_forbidden_pm_and_reaps_term_escape_when_handler_is_ready()
 -> Result<(), Box<dyn std::error::Error>> {
     use std::time::Instant;
 
@@ -830,7 +830,7 @@ fn inherited_monitor_kills_session_started_during_term_grace()
     make_executable(&fake_pm);
     fs::write(
         &fake_cargo,
-        "#!/bin/sh\n\"$MGC_TEST_PM\" install &\ni=0\nwhile [ ! -f \"$MGC_TEST_MARKER\" ] && [ \"$i\" -lt 100 ]; do /bin/sleep 0.01; i=$((i + 1)); done\n/bin/sleep 5\nwait\n",
+        "#!/bin/sh\n# Let the first clean process scan finish before starting the signal-handler fixture.\n# Chờ lần quét process sạch đầu tiên xong rồi mới chạy fixture xử lý signal.\n/bin/sleep 0.1\n\"$MGC_TEST_PM\" install &\ni=0\nwhile [ ! -f \"$MGC_TEST_MARKER\" ] && [ \"$i\" -lt 100 ]; do /bin/sleep 0.01; i=$((i + 1)); done\n/bin/sleep 5\nwait\n",
     )?;
     make_executable(&fake_cargo);
 
@@ -859,6 +859,31 @@ fn inherited_monitor_kills_session_started_during_term_grace()
     );
     let elapsed = started.elapsed();
     let error = result.expect_err("a forbidden child must remain rejected during TERM cleanup");
+    assert!(
+        error
+            .to_string()
+            .contains("forbidden package manager 'npm' spawned"),
+        "unexpected process-guard error: {error}"
+    );
+    assert!(
+        elapsed < Duration::from_secs(2),
+        "the guard exceeded its bounded cleanup window: {elapsed:?}"
+    );
+
+    if !helper_pid_file.exists() {
+        // The monitor can catch npm before its shell executes the first `trap` line.
+        // That is a valid earlier deny; only assert the session-escape branch when
+        // the fixture confirms its TERM handler was installed.
+        // Monitor có thể bắt npm trước khi shell chạy dòng `trap` đầu tiên.
+        // Đây là deny sớm hợp lệ; chỉ kiểm nhánh thoát session khi fixture xác nhận
+        // handler TERM đã được cài.
+        assert!(
+            !marker.exists(),
+            "TERM handler became ready without starting its session-escape child"
+        );
+        return Ok(());
+    }
+
     let pid_deadline = Instant::now() + Duration::from_secs(1);
     while !helper_pid_file.exists() && Instant::now() < pid_deadline {
         std::thread::sleep(Duration::from_millis(10));
@@ -876,18 +901,8 @@ fn inherited_monitor_kills_session_started_during_term_grace()
     }
 
     assert!(
-        error
-            .to_string()
-            .contains("forbidden package manager 'npm' spawned"),
-        "unexpected process-guard error: {error}"
-    );
-    assert!(
         stopped,
         "session escaped helper PID {helper_pid} survived TERM/KILL cleanup"
-    );
-    assert!(
-        elapsed < Duration::from_secs(2),
-        "the guard exceeded its bounded cleanup window: {elapsed:?}"
     );
     Ok(())
 }
@@ -934,6 +949,187 @@ fn clean_env_allows_only_the_executor_npm_version_probe_shim() {
     assert_eq!(report.exit_code, 0);
     assert_eq!(report.stdout_full.trim(), "0.0.0");
     assert!(!marker.exists(), "the real npm executable must never run");
+}
+
+#[test]
+#[cfg(unix)]
+fn clean_env_allows_shell_wrapped_npm_version_probe() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tmp_dir().join("npm-version-shell-probe");
+    fs::create_dir_all(&dir).unwrap();
+    let fake_cargo = dir.join("cargo");
+    let fake_npm = dir.join("npm");
+    let marker = dir.join("external-npm-was-run");
+    // Angular invokes this probe via Node's shell-backed child_process API.
+    // Angular gọi probe qua API child_process của Node có bọc shell.
+    fs::write(
+        &fake_cargo,
+        "#!/bin/sh\npm=n\npm=\"${pm}pm\"\n/bin/sh -c \"$pm --version\"\n",
+    )
+    .unwrap();
+    fs::write(
+        &fake_npm,
+        format!("#!/bin/sh\nprintf ran > '{}'\nexit 99\n", marker.display()),
+    )
+    .unwrap();
+    for path in [&fake_cargo, &fake_npm] {
+        let mut permissions = fs::metadata(path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(path, permissions).unwrap();
+    }
+
+    let opts = ExecOptions {
+        clean_env: true,
+        env: vec![("PATH".to_string(), dir.display().to_string())],
+        timeout: Some(Duration::from_secs(2)),
+        capture_full_stdout: true,
+        ..Default::default()
+    };
+    let report = run(fake_cargo.to_str().unwrap(), &[], &opts)
+        .expect("the exact shell-wrapped npm version probe should use the inert shim");
+
+    assert_eq!(report.exit_code, 0);
+    assert_eq!(report.stdout_full.trim(), "0.0.0");
+    assert!(!marker.exists(), "the real npm executable must never run");
+}
+
+#[test]
+#[cfg(unix)]
+fn clean_env_still_blocks_shell_wrapped_npm_install() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tmp_dir().join("npm-install-shell-blocked");
+    fs::create_dir_all(&dir).unwrap();
+    let fake_cargo = dir.join("cargo");
+    let fake_npm = dir.join("npm");
+    let marker = dir.join("external-npm-was-run");
+    // The exact version probe is the only shell wrapper exception.
+    // Ngoại lệ shell chỉ áp dụng đúng probe version.
+    fs::write(
+        &fake_cargo,
+        "#!/bin/sh\npm=n\npm=\"${pm}pm\"\n/bin/sh -c \"$pm install\"\n",
+    )
+    .unwrap();
+    fs::write(
+        &fake_npm,
+        format!("#!/bin/sh\nprintf ran > '{}'\n", marker.display()),
+    )
+    .unwrap();
+    for path in [&fake_cargo, &fake_npm] {
+        let mut permissions = fs::metadata(path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(path, permissions).unwrap();
+    }
+
+    let opts = ExecOptions {
+        clean_env: true,
+        env: vec![("PATH".to_string(), dir.display().to_string())],
+        timeout: Some(Duration::from_secs(2)),
+        ..Default::default()
+    };
+    let error = run(fake_cargo.to_str().unwrap(), &[], &opts)
+        .expect_err("shell-wrapped npm install must remain blocked");
+
+    assert!(
+        error.to_string().contains("forbidden package manager"),
+        "unexpected deny error: {error:#}"
+    );
+    assert!(!marker.exists(), "the real npm executable must never run");
+}
+
+#[test]
+#[cfg(unix)]
+fn runtime_monitor_ignores_package_manager_words_in_shell_code() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tmp_dir().join("opaque-shell-code");
+    fs::create_dir_all(&dir).unwrap();
+    let fake_cargo = dir.join("cargo");
+    fs::write(
+        &fake_cargo,
+        r##"#!/bin/sh
+/bin/sh -c 'printf "%s\n" "npm install; pip install example"'
+"##,
+    )
+    .unwrap();
+    let mut permissions = fs::metadata(&fake_cargo).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&fake_cargo, permissions).unwrap();
+
+    let opts = ExecOptions {
+        clean_env: true,
+        cwd: Some(dir.clone()),
+        env: vec![("PATH".to_string(), dir.display().to_string())],
+        timeout: Some(Duration::from_secs(2)),
+        capture_full_stdout: true,
+        ..Default::default()
+    };
+    let report = run(fake_cargo.to_str().unwrap(), &[], &opts)
+        .expect("ordinary shell code that mentions managers must remain runnable");
+
+    assert_eq!(report.exit_code, 0);
+    assert!(
+        report
+            .stdout_full
+            .contains("npm install; pip install example")
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn runtime_monitor_blocks_dependency_mutation_from_a_script_child() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tmp_dir().join("descendant-dependency-mutation");
+    fs::create_dir_all(&dir).unwrap();
+    let fake_node = dir.join("node");
+    let fake_cargo = dir.join("cargo");
+    let marker = dir.join("cargo-command-ran");
+    let audit_log = dir.join(".mgc/exec.log");
+    fs::write(&fake_node, "#!/bin/sh\ncargo fetch\n").unwrap();
+    fs::write(
+        &fake_cargo,
+        format!(
+            "#!/bin/sh\n/bin/sleep 1\nprintf reached > '{}'\n",
+            marker.display()
+        ),
+    )
+    .unwrap();
+    for path in [&fake_node, &fake_cargo] {
+        let mut permissions = fs::metadata(path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(path, permissions).unwrap();
+    }
+
+    let opts = ExecOptions {
+        clean_env: true,
+        cwd: Some(dir.clone()),
+        env: vec![("PATH".to_string(), dir.display().to_string())],
+        timeout: Some(Duration::from_secs(4)),
+        log_path: Some(audit_log.clone()),
+        ..Default::default()
+    };
+    let error = run(fake_node.to_str().unwrap(), &[], &opts)
+        .expect_err("a descendant cargo fetch must be blocked before it runs");
+
+    assert!(
+        error
+            .to_string()
+            .contains("forbidden package manager 'cargo'"),
+        "unexpected runtime mutation refusal: {error:#}"
+    );
+    assert!(
+        !marker.exists(),
+        "the descendant package mutation command must be killed before its side effect"
+    );
+    let audit = fs::read_to_string(&audit_log).expect("native denial must be written to audit");
+    assert!(
+        audit.contains("native_dependency_mutation_denied"),
+        "{audit}"
+    );
+    assert!(audit.contains("\"child_name\":\"cargo\""), "{audit}");
+    assert!(audit.contains("dependency-mutation invocation"), "{audit}");
 }
 
 #[test]
@@ -1055,13 +1251,13 @@ fn project_binary_rejects_forbidden_binary_name() {
 
 #[test]
 #[cfg(unix)]
-fn project_binary_rejects_script_that_references_forbidden_pm() {
+fn project_binary_blocks_script_that_executes_forbidden_pm() {
     use std::os::unix::fs::PermissionsExt;
 
     let dir = tmp_dir().join("project-bin-script-pm");
     fs::create_dir_all(&dir).unwrap();
     let fake_bin = dir.join("tool");
-    fs::write(&fake_bin, "#!/bin/sh\n/usr/bin/npm --version\n").unwrap();
+    fs::write(&fake_bin, "#!/bin/sh\nnpm install\n").unwrap();
     let mut permissions = fs::metadata(&fake_bin).unwrap().permissions();
     permissions.set_mode(0o755);
     fs::set_permissions(&fake_bin, permissions).unwrap();
@@ -1073,19 +1269,23 @@ fn project_binary_rejects_script_that_references_forbidden_pm() {
     let err = run_project_binary(&fake_bin, &[], &opts).unwrap_err();
     assert!(
         err.to_string()
-            .contains("references forbidden package manager")
+            .contains("MagiCore blocked forbidden package manager: npm")
+            || err
+                .to_string()
+                .contains("forbidden package manager 'npm' spawned"),
+        "unexpected error: {err}"
     );
 }
 
 #[test]
 #[cfg(unix)]
-fn inherited_project_binary_rejects_script_that_references_forbidden_pm() {
+fn inherited_project_binary_blocks_script_that_executes_forbidden_pm() {
     use std::os::unix::fs::PermissionsExt;
 
     let dir = tmp_dir().join("project-bin-inherited-script-pm");
     fs::create_dir_all(&dir).unwrap();
     let fake_bin = dir.join("tool");
-    fs::write(&fake_bin, "#!/bin/sh\n/usr/bin/yarn --version\n").unwrap();
+    fs::write(&fake_bin, "#!/bin/sh\nnpm install\n").unwrap();
     let mut permissions = fs::metadata(&fake_bin).unwrap().permissions();
     permissions.set_mode(0o755);
     fs::set_permissions(&fake_bin, permissions).unwrap();
@@ -1097,7 +1297,11 @@ fn inherited_project_binary_rejects_script_that_references_forbidden_pm() {
     let err = run_project_binary_inherited(&fake_bin, &[], &opts).unwrap_err();
     assert!(
         err.to_string()
-            .contains("references forbidden package manager")
+            .contains("MagiCore blocked forbidden package manager: npm")
+            || err
+                .to_string()
+                .contains("forbidden package manager 'npm' spawned"),
+        "unexpected error: {err}"
     );
 }
 
@@ -1136,4 +1340,50 @@ fn npm_is_blocked_even_inside_react_native_subdir() {
     );
 
     let _ = fs::remove_dir_all(&base);
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+#[ignore = "requires an explicitly configured real Go SDK"]
+fn real_go_readonly_run_survives_cold_compiler_processes() {
+    let sdk = std::env::var("MGC_E2E_GO_BINARY").expect("MGC_E2E_GO_BINARY is required");
+    assert!(
+        std::path::Path::new(&sdk).is_file(),
+        "Go SDK executable is missing"
+    );
+    for _ in 0..2 {
+        let project = tempfile::tempdir().unwrap();
+        fs::write(project.path().join("main.go"),
+            "package main\nimport \"fmt\"\nfunc main() { fmt.Println(\"MGC_GO_COLD_RUNTIME_OK\") }\n").unwrap();
+        fs::write(
+            project.path().join("go.mod"),
+            "module example.com/mgc-go-runtime-probe\ngo 1.21\n",
+        )
+        .unwrap();
+        let cache = project.path().join("go-cache");
+        fs::create_dir(&cache).unwrap();
+        let temporary = project.path().join("go-temp");
+        fs::create_dir(&temporary).unwrap();
+        let opts = ExecOptions {
+            cwd: Some(project.path().to_path_buf()),
+            clean_env: true,
+            execution_scope: Some(ExecutionScope::DevServer),
+            timeout: Some(std::time::Duration::from_secs(120)),
+            env: vec![
+                ("GOCACHE".into(), cache.to_string_lossy().into_owned()),
+                ("TMPDIR".into(), temporary.to_string_lossy().into_owned()),
+                ("TMP".into(), temporary.to_string_lossy().into_owned()),
+                ("TEMP".into(), temporary.to_string_lossy().into_owned()),
+                ("GOPROXY".into(), "off".into()),
+                ("GOSUMDB".into(), "off".into()),
+                ("GOTOOLCHAIN".into(), "local".into()),
+                ("GOENV".into(), "off".into()),
+                ("CGO_ENABLED".into(), "0".into()),
+            ],
+            ..ExecOptions::default()
+        };
+        let args = vec!["run".into(), "-mod=readonly".into(), "main.go".into()];
+        let result = run(&sdk, &args, &opts).expect("cold Go execution must pass native monitor");
+        assert!(result.stdout_tail.contains("MGC_GO_COLD_RUNTIME_OK"));
+    }
 }

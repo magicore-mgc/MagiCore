@@ -22,6 +22,7 @@ mgc-store = { workspace = true }
 mgc-platform = { workspace = true }
 mgc-resolver = { workspace = true }
 mgc-web-adapter = { path = "../web" }
+base64 = { workspace = true }
 mgc-ui = { workspace = true }
 libc = { workspace = true }
 chrono = { workspace = true }
@@ -67,6 +68,8 @@ tempfile = { workspace = true }
 tokio-test = "0.4"
 hex = { workspace = true }
 sha2 = { workspace = true }
+flate2 = { workspace = true }
+tar = { workspace = true }
 
 [[bench]]
 name = "perf_bench"

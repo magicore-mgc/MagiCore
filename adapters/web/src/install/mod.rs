@@ -424,6 +424,35 @@ pub async fn run_install(
     project_root: &Path,
     opts: InstallOptions,
 ) -> MgResult<InstallSummary> {
+    let registry = native::npm_registry::NpmRegistry::new_with_token(
+        registry_url,
+        provider_auth_token.map(str::to_string),
+    );
+    run_install_with_registry(
+        &registry,
+        store_override,
+        shared_cache,
+        prefetch_handle,
+        graph,
+        project_root,
+        opts,
+    )
+    .await
+}
+
+// Preserve the configured transport and credential scope across installation.
+// Giữ nguyên transport và phạm vi credential từ provider xuyên qua installer.
+#[allow(clippy::too_many_arguments)]
+pub async fn run_install_with_registry(
+    registry: &native::npm_registry::NpmRegistry,
+    store_override: Option<&ContentStore>,
+    shared_cache: Option<SharedWebCache>,
+    prefetch_handle: Option<tokio::task::JoinHandle<MgResult<u64>>>,
+    graph: &ResolvedGraph,
+    project_root: &Path,
+    opts: InstallOptions,
+) -> MgResult<InstallSummary> {
+    let registry_url = registry.registry_url();
     // Patch specs are currently integrity-managed but not applied by the
     // production materializer. Refuse before creating stores or touching
     // node_modules rather than silently installing the unpatched artifact.
@@ -446,10 +475,7 @@ pub async fn run_install(
 
     let start = std::time::Instant::now();
     let mut profile = InstallProfile::from_env();
-    let registry = native::npm_registry::NpmRegistry::new_with_token(
-        registry_url,
-        provider_auth_token.map(str::to_string),
-    );
+
     let store_root = project_cache_dir(project_root);
     let layout = Layout::new(store_root);
     // Context-wrapped dir creation — bare io errors left CI failures
@@ -777,19 +803,16 @@ pub async fn run_install(
     // (Ghi lock ý định resolve; script fail thì khôi phục bytes cũ.)
     let prior_lock = snapshot_prior_lock(project_root)?;
     // Lockfile ownership follows the resolved graph, not whether this run
-    // needed to download bytes. In particular, removing the final root
-    // dependency produces an empty graph/fetch_graph; skipping this write
-    // would leave the removed package recorded in mgc.lock while the
-    // manifest and materialized tree are empty.
-    // (Lock phản ánh graph đã resolve, không phụ thuộc có tải byte hay không;
-    // graph rỗng sau khi gỡ dependency cuối vẫn phải xóa pin cũ khỏi mgc.lock.)
-    if !graph.is_empty() || prior_lock.is_some() {
-        write_web_lockfile_with_state(project_root, graph, registry_url).inspect_err(|_e| {
-            if let Some(root) = &staging_root {
-                let _ = std::fs::remove_dir_all(root);
-            }
-        })?;
-    }
+    // needed to download bytes. Write an empty lock for a fresh dependency-
+    // free project as well as when removing its final root; dev freshness and
+    // frozen install both bind that exact empty graph.
+    // (Lock phản ánh graph đã resolve. Project mới không có dep vẫn ghi lock
+    // rỗng để dev freshness và frozen install ghim cùng một graph.)
+    write_web_lockfile_with_state(project_root, graph, registry_url).inspect_err(|_e| {
+        if let Some(root) = &staging_root {
+            let _ = std::fs::remove_dir_all(root);
+        }
+    })?;
     eprintln!("[magicore:debug] install:prune_cache_start");
     prune_project_local_cache(&layout);
     profile.mark("prune_project_local_cache", start);
@@ -822,7 +845,7 @@ pub async fn run_install(
             &already_materialized,
             active_package_cache,
             secondary_shared_cache,
-            &registry,
+            registry,
         )
         .await
         .inspect_err(|_e| {
@@ -1042,7 +1065,7 @@ pub async fn run_install(
             &already_materialized,
             active_package_cache,
             shared_cache.as_ref(),
-            Some(&registry),
+            Some(registry),
             &layout,
             store,
             cas_generation,

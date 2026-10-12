@@ -2,6 +2,7 @@
 //! Installs only ecosystems whose dependency lifecycle is implemented natively.
 
 pub mod fetch;
+mod pub_archive_cache;
 pub mod verify;
 
 use mgc_resolver::protocols::{
@@ -15,8 +16,8 @@ use std::path::{Path, PathBuf};
 
 use crate::language::AppLanguage;
 
-/// Install orchestrator for app adapter.
-/// Điều phối install cho Flutter/Kotlin/Swift/ReactNative app projects.
+/// Install orchestrator for natively supported Flutter and Swift app projects.
+/// Điều phối install cho project Flutter và Swift được hỗ trợ native.
 pub async fn run_install(
     language: AppLanguage,
     graph: &ResolvedGraph,
@@ -37,12 +38,9 @@ pub async fn run_install(
         });
     }
 
-    // Flutter and Swift native installs fetch missing archives. Until both
-    // lanes can prove a complete lock+local-cache replay, reject offline
-    // before creating cache/CAS directories or mutating the project.
-    // (Flutter/Swift còn tải archive; từ chối trước khi tạo cache/CAS hoặc
-    // sửa project cho tới khi có replay lock+cache đầy đủ.)
-    if opts.offline {
+    // Only Flutter has verified cache-only archive replay; other lanes stay closed.
+    // Chỉ Flutter có replay archive không mạng; lane khác vẫn từ chối offline.
+    if opts.offline && language != AppLanguage::Flutter {
         return Err(MgError::Unsupported {
             core: "app",
             capability: "offline install",
@@ -54,13 +52,15 @@ pub async fn run_install(
         // Flutter: native pub.dev engine (Phase 2) — no `flutter pub get`
         // spawn for resolve/fetch/install.
         AppLanguage::Flutter => {
-            let summary = install_flutter_native(graph, project_root).await?;
-            write_canonical_lock_with_roots(
-                project_root,
-                &[mgc_lockfile::EcosystemTag::Dart],
-                lock_packages,
-                direct_package_ids(graph),
-            )?;
+            let summary = install_flutter_native(graph, project_root, opts.offline).await?;
+            if !opts.offline && !opts.replay_from_lock {
+                write_canonical_lock_with_roots(
+                    project_root,
+                    &[mgc_lockfile::EcosystemTag::Dart],
+                    lock_packages,
+                    direct_package_ids(graph),
+                )?;
+            }
             Ok(summary)
         }
 
@@ -76,12 +76,14 @@ pub async fn run_install(
         // bị resolver từ chối.)
         AppLanguage::Swift => {
             let summary = install_swift_native(graph, &lock_packages, project_root).await?;
-            write_canonical_lock_with_roots(
+            if !opts.replay_from_lock {
+                write_canonical_lock_with_roots(
                 project_root,
                 &[mgc_lockfile::EcosystemTag::Swift],
                 lock_packages,
                 direct_package_ids(graph),
-            )?;
+                )?;
+            }
             Ok(summary)
         }
 
@@ -94,7 +96,10 @@ pub async fn run_install(
             guidance: "MagiCore requires native JS, Maven, and CocoaPods engines plus one atomic cross-ecosystem transaction".to_string(),
         }),
 
-        AppLanguage::ObjC | AppLanguage::Multi => Err(MgError::Unsupported {
+        AppLanguage::ObjC
+        | AppLanguage::Multi
+        | AppLanguage::Maui
+        | AppLanguage::Tauri => Err(MgError::Unsupported {
             core: "app",
             capability: "native dependency install",
             guidance: "MagiCore does not yet implement a native dependency engine for this app ecosystem".to_string(),
@@ -115,10 +120,14 @@ pub async fn run_install(
 async fn install_flutter_native(
     graph: &ResolvedGraph,
     project_root: &Path,
+    offline: bool,
 ) -> MgResult<InstallSummary> {
     let started = std::time::Instant::now();
     let protocol = PubProtocol::from_env();
-    let pub_cache = pub_cache_root()?;
+    let pub_cache = pub_cache_root(!offline)?;
+    if offline {
+        preflight_flutter_archives(graph, &pub_cache)?;
+    }
     // An empty resolved graph has no artifacts to fetch or persist. Avoid
     // opening/creating the global CAS in that no-op case (which can fail on
     // read-only or sandboxed home directories despite there being no work).
@@ -129,11 +138,28 @@ async fn install_flutter_native(
         Some(content_store()?)
     };
     let mut added = Vec::with_capacity(graph.packages.len());
+    let mut bytes_from_cache = 0_u64;
 
     for pkg in &graph.packages {
         let entry = entry_from_package(pkg);
-        let bytes = protocol.download(&entry).await?;
-        protocol.verify(&entry, &bytes)?;
+        let bytes = match pub_archive_cache::load_verified(&pub_cache, &entry.sha256)? {
+            Some(bytes) => {
+                bytes_from_cache = bytes_from_cache.saturating_add(bytes.len() as u64);
+                bytes
+            }
+            None => {
+                if offline {
+                    return Err(MgError::Other(format!(
+                        "offline Flutter archive disappeared after preflight for '{}'@{}",
+                        entry.name, entry.version
+                    )));
+                }
+                let bytes = protocol.download(&entry).await?;
+                protocol.verify(&entry, &bytes)?;
+                pub_archive_cache::save_verified(&pub_cache, &entry.sha256, &bytes)?;
+                bytes
+            }
+        };
         let store = store.as_ref().ok_or_else(|| {
             MgError::Store("non-empty Flutter graph has no initialized content store".to_string())
         })?;
@@ -152,10 +178,25 @@ async fn install_flutter_native(
 
     Ok(InstallSummary {
         added,
-        bytes_from_cache: 0,
+        bytes_from_cache,
         duration_ms: started.elapsed().as_millis() as u64,
         cache_mode: InstallCacheMode::MgCStore,
     })
+}
+
+/// Verify the complete cache before creating CAS or materializing any package.
+/// Xác minh toàn cache trước tạo CAS/bung package để missing artifact không gây partial install.
+fn preflight_flutter_archives(graph: &ResolvedGraph, cache_root: &Path) -> MgResult<()> {
+    for package in &graph.packages {
+        let entry = entry_from_package(package);
+        if pub_archive_cache::load_verified(cache_root, &entry.sha256)?.is_none() {
+            return Err(MgError::Other(format!(
+                "offline Flutter archive cache miss for '{}'@{}; run `mgc install` online first",
+                entry.name, entry.version
+            )));
+        }
+    }
+    Ok(())
 }
 
 #[derive(serde::Serialize)]
@@ -671,21 +712,19 @@ fn entry_from_package(pkg: &ResolvedPackage) -> ResolvedEntry {
         version: pkg.id.version().to_string(),
         deps: Vec::new(),
         artifact_url: pkg.tarball_url.clone(),
-        sha256: pkg
-            .integrity
-            .strip_prefix("sha256-")
-            .unwrap_or("")
-            .to_string(),
+        sha256: mgc_lockfile::policy::native_sha256_hex(&pkg.integrity),
         extra_markers: Vec::new(),
     }
 }
 
-/// Resolve (and create) the mgc-managed pub cache root (`~/.magicore/store/pub`).
-/// Resolve (và tạo) gốc pub cache do mgc quản (`~/.magicore/store/pub`).
-fn pub_cache_root() -> MgResult<PathBuf> {
-    let home = dirs::home_dir().ok_or_else(|| MgError::Other("no home directory".to_string()))?;
-    let root = home.join(".magicore").join("store").join("pub");
-    std::fs::create_dir_all(&root).map_err(|e| MgError::Other(format!("create pub cache: {e}")))?;
+/// Resolve (and create) the mgc-managed pub cache root (`MGC_DATA_DIR/store/pub`).
+/// Resolve (và tạo) gốc pub cache do mgc quản (`MGC_DATA_DIR/store/pub`).
+fn pub_cache_root(create: bool) -> MgResult<PathBuf> {
+    let root = mgc_platform::paths::mgc_data_dir().join("store/pub");
+    if create {
+        std::fs::create_dir_all(&root)
+            .map_err(|e| MgError::Other(format!("create pub cache: {e}")))?;
+    }
     Ok(root)
 }
 
@@ -817,10 +856,10 @@ fn build_swift_pins(
 }
 
 /// Resolve (and create) the mgc-managed Swift store root
-/// (`~/.magicore/store/swift`) — checkouts live under `<root>/checkouts`.
+/// (`MGC_DATA_DIR/store/swift`) — checkouts live under `<root>/checkouts`.
 /// `MGC_SWIFT_STORE_ROOT` overrides the root (testability + shared-cache
 /// placement), mirroring the other engines' env seams.
-/// Resolve (và tạo) gốc store Swift do mgc quản (`~/.magicore/store/swift`)
+/// Resolve (và tạo) gốc store Swift do mgc quản (`MGC_DATA_DIR/store/swift`)
 /// — checkouts nằm dưới `<root>/checkouts`. `MGC_SWIFT_STORE_ROOT` ghi đè
 /// gốc (khả nghiệm + vị trí cache dùng chung), giống các seam env của
 /// engine khác.
@@ -830,11 +869,9 @@ fn swift_store_root() -> MgResult<PathBuf> {
         .filter(|v| !v.trim().is_empty())
     {
         Some(over) => PathBuf::from(over),
-        None => {
-            let home =
-                dirs::home_dir().ok_or_else(|| MgError::Other("no home directory".to_string()))?;
-            home.join(".magicore").join("store").join("swift")
-        }
+        None => mgc_platform::paths::mgc_data_dir()
+            .join("store")
+            .join("swift"),
     };
     std::fs::create_dir_all(&root)
         .map_err(|e| MgError::Other(format!("create swift store root: {e}")))?;
@@ -877,14 +914,36 @@ fn write_canonical_lock_with_roots(
     }
 
     let owner_core = app_lock_owner_core(project_root)?;
+    // Even an empty native install writes an empty lock. App dev performs a
+    // strict freshness check before launching; without this file, a successful
+    // install would leave a dependency-free project unable to start.
+    // (Install native rỗng vẫn ghi lock rỗng. `mgc dev` kiểm freshness
+    // nghiêm ngặt trước khi chạy; thiếu file sẽ khiến project không dependency
+    // không thể khởi động sau một lần install thành công.)
+    // v4 write path (explicit `[lock] schema` only): lane rows convert
+    // losslessly against the v4 base on disk — the legacy v3 model is never
+    // in the loop, so a v4 lock stays readable across installs.
+    // (Đường ghi v4 (chỉ khi `[lock] schema` tường minh): row lane convert
+    // với base v4 trên đĩa — model v3 legacy không tham gia, nên lock v4
+    // đọc được qua mọi lần install.)
+    if mgc_config::project::lock_schema_is_v4(project_root)
+        .map_err(|error| MgError::Other(error.to_string()))?
+    {
+        return write_canonical_lock_v4(
+            &lock_path,
+            lock_packages,
+            &owner_core,
+            replace_ecosystems,
+            &direct_package_ids,
+        );
+    }
+    mgc_lockfile::parser::ensure_v3_readable_lock(&lock_path)
+        .map_err(|error| MgError::Other(error.to_string()))?;
     let mut lockfile = match mgc_lockfile::load_lockfile(&lock_path) {
         Ok(lockfile) => lockfile,
         Err(mgc_lockfile::LockfileError::IoError(error))
             if error.kind() == std::io::ErrorKind::NotFound =>
         {
-            if lock_packages.is_empty() {
-                return Ok(());
-            }
             mgc_lockfile::Lockfile::new()
         }
         Err(error) => {
@@ -935,7 +994,8 @@ fn write_canonical_lock_with_roots(
             direct_package_ids.clone(),
         );
     }
-    if lockfile.packages == original_packages
+    if lock_path.is_file()
+        && lockfile.packages == original_packages
         && lockfile.root_dependencies_by_owner == original_roots
         && original_version == mgc_lockfile::LOCKFILE_SCHEMA_VERSION
     {
@@ -957,6 +1017,86 @@ fn direct_package_ids(graph: &ResolvedGraph) -> Vec<String> {
         .filter(|package| package.direct)
         .map(|package| package.id.to_string())
         .collect()
+}
+
+/// v4 lane write: convert this lane's resolved rows losslessly, merge with
+/// the v4 base on disk (sibling lanes preserved), finalize digest +
+/// round-trip proof, and atomically replace the lock.
+/// (Ghi v4 của lane: convert row đã resolve lossless, gộp với base v4 trên
+/// đĩa (giữ lane khác), hoàn thiện digest + chứng minh round-trip và thay
+/// atomic lock.)
+fn write_canonical_lock_v4(
+    lock_path: &std::path::Path,
+    lock_packages: Vec<mgc_lockfile::Package>,
+    owner_core: &str,
+    replace_ecosystems: &[mgc_lockfile::EcosystemTag],
+    direct_package_ids: &[String],
+) -> MgResult<()> {
+    use mgc_lockfile::migrate::{lane_rows_to_v4, read_v4_merge_base, verify_v4_merge_base};
+    use mgc_lockfile::v4_graph::{merge_v4_lane_packages, v4_docs_match_material};
+    use mgc_lockfile::writer::finalize_v4_document;
+    let generator = format!("mgc/{}", env!("CARGO_PKG_VERSION"));
+    let mut lane_rows = lock_packages;
+    for package in &mut lane_rows {
+        package.owner_core = Some(owner_core.to_string());
+    }
+    let lane_rows: Vec<mgc_lockfile::Package> = lane_rows
+        .into_iter()
+        .filter(|package| replace_ecosystems.contains(&package.ecosystem))
+        .collect();
+    let (lane_packages, lane_sources) =
+        lane_rows_to_v4(lane_rows, &generator).map_err(|error| {
+            MgError::Other(format!("v4 lane write refused (lossy lane rows): {error}"))
+        })?;
+    let (base, had_legacy_rows) =
+        read_v4_merge_base(lock_path).map_err(|error| MgError::Other(error.to_string()))?;
+    // Sibling rows are preserved verbatim: the base must verify first, or a
+    // tampered lock would flow into the new document unchecked.
+    // (Row khác được giữ nguyên văn: base phải xác minh trước, nếu không lock
+    // bị sửa sẽ chảy vào lock mới mà không ai kiểm.)
+    if let Some(base_doc) = &base {
+        verify_v4_merge_base(base_doc).map_err(|error| MgError::Other(error.to_string()))?;
+    }
+    let mut lane_roots: Vec<String> = direct_package_ids.to_vec();
+    lane_roots.sort();
+    lane_roots.dedup();
+    let base_material = base.clone();
+    let (mut doc, dropped) = merge_v4_lane_packages(
+        base,
+        lane_packages,
+        lane_sources,
+        lane_roots,
+        owner_core,
+        &generator,
+    );
+    if had_legacy_rows || dropped {
+        // A non-v4 base cannot contribute lossless rows: report, never silent.
+        // (Base không v4 không đóng góp lossless được: báo rõ, không lặng.)
+        eprintln!(
+            "WARNING: non-v4 mgc.lock rows were replaced by the v4 lane write (sibling pins need `mgc migrate lock --to v4` or re-install under v4 schema)"
+        );
+    }
+    // Byte-identical replay: a merge that changes no material row skips the
+    // rewrite (parity with the v3 unchanged short-circuit).
+    // (Replay giữ nguyên byte: merge không đổi row material nào thì bỏ qua
+    // ghi lại (parity với short-circuit v3).)
+    if let Some(base_doc) = &base_material
+        && v4_docs_match_material(base_doc, &doc)
+        && !dropped
+    {
+        return Ok(());
+    }
+    // Signed v4 on disk is never rewritten without explicit re-signing.
+    // (v4 đã ký trên đĩa không bao giờ bị ghi đè nếu không ký lại tường minh.)
+    if let Some(base_doc) = &base_material {
+        mgc_lockfile::atomic::ensure_v4_unsigned_for_rewrite(base_doc)
+            .map_err(|error| MgError::Other(error.to_string()))?;
+    }
+    doc.metadata.generated_at = chrono::Utc::now().to_rfc3339();
+    let text = finalize_v4_document(&mut doc).map_err(|error| MgError::Other(error.to_string()))?;
+    mgc_lockfile::atomic::atomic_write_v4_bytes(lock_path, text.as_bytes())
+        .map_err(|error| MgError::Other(error.to_string()))?;
+    Ok(())
 }
 
 /// Resolve the app install lane's core identity from the project marker/config.

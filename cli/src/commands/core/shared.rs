@@ -168,9 +168,36 @@ pub(crate) async fn begin_dependency_mutation(
             | MutationOperation::Update
             | MutationOperation::AuditFix
     ) {
-        mgc_lockfile::ensure_lockfile_mutation_allowed(&root.join("mgc.lock"))?;
+        ensure_mutation_gateway_lock(&root.join("mgc.lock"))?;
     }
     Ok(write_lock)
+}
+
+/// Verify the v4 merge base and reject signed locks before mutation staging.
+/// (Xác minh base v4 và từ chối lock đã ký trước khi stage mutation.)
+fn ensure_mutation_gateway_lock(lock_path: &std::path::Path) -> Result<()> {
+    let bytes = match mgc_lockfile::parser::read_lockfile_bytes(lock_path) {
+        Ok(bytes) => bytes,
+        Err(mgc_lockfile::LockfileError::IoError(error))
+            if error.kind() == std::io::ErrorKind::NotFound =>
+        {
+            return Ok(());
+        }
+        Err(error) => return Err(anyhow::anyhow!("{error}")),
+    };
+    let text = String::from_utf8(bytes)
+        .map_err(|error| anyhow::anyhow!("mgc.lock is not valid UTF-8: {error}"))?;
+    if mgc_lockfile::migrate::detect_lockfile_version(&text).is_ok_and(|version| version == 4) {
+        let document = mgc_lockfile::canonical::parse_v4_document(&text)
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        mgc_lockfile::migrate::verify_v4_merge_base(&document)
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        mgc_lockfile::atomic::ensure_v4_unsigned_for_rewrite(&document)
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        return Ok(());
+    }
+    mgc_lockfile::ensure_lockfile_mutation_allowed(lock_path)?;
+    Ok(())
 }
 
 /// Migrate-side guard (no adapter available there): refuse to migrate
@@ -1831,6 +1858,8 @@ async fn install_with_adapter_locked(
     }
 
     let spinner = create_spinner("  Linking packages...");
+    let mut opts = opts;
+    opts.replay_from_lock = used_lockfile;
     let mut summary = adapter.install(&graph, root, opts).await?;
     spinner.finish_and_clear();
     profile_install_mark("adapter_install", started_at);
@@ -1877,6 +1906,20 @@ pub(crate) async fn prepare_install_execution(
 
     let all_deps: Vec<_> = manifest.all_dependencies().collect();
     if all_deps.is_empty() && !adapter.resolves_implicit_dependencies(root)? {
+        if frozen && add_cmd.is_some() {
+            if let Some(graph) = load_locked_graph(root, adapter.name(), &manifest)? {
+                return Ok(InstallExecution {
+                    graph,
+                    summary: mgc_types::adapter::InstallSummary::default(),
+                    used_lockfile: true,
+                });
+            }
+            let command = install_command_for_adapter(adapter);
+            if root.join("mgc.lock").is_file() {
+                return Err(crate::error::frozen_lock_mismatch(command));
+            }
+            return Err(crate::error::frozen_lock_missing(command));
+        }
         if let Some(add_cmd) = add_cmd {
             info("No dependencies to install.");
             info(&format!(
@@ -1891,7 +1934,10 @@ pub(crate) async fn prepare_install_execution(
         });
     }
 
-    let loaded_lock = load_locked_graph(root, adapter.name(), &manifest)?;
+    // Resolve and replay must agree on registry requirements supplied by an SDK.
+    // Replay dùng cùng dependency SDK như resolver, vẫn giữ manifest gốc cho mutation.
+    let replay_manifest = adapter.lock_replay_manifest(root, &manifest)?;
+    let loaded_lock = load_locked_graph(root, adapter.name(), &replay_manifest)?;
     let force_fresh_resolve =
         refresh_locked_graph_for_age_gate(adapter, root, loaded_lock.is_some(), frozen)?;
     let loaded_lock = if force_fresh_resolve {
@@ -2221,11 +2267,9 @@ pub(crate) fn load_locked_graph(
     let lock_text = String::from_utf8(lock_bytes)
         .map_err(|error| anyhow::anyhow!("mgc.lock is not valid UTF-8: {error}"))?;
     let owner_core = lock_owner_core(project_root, adapter_name)?;
-    // Only version "4" takes the v4 path; every other version — including
-    // unreadable ones — falls through to the legacy reader, which owns
-    // their exact historical error messages.
-    // (Chỉ version "4" đi đường v4; mọi version khác — kể cả không đọc
-    // được — rơi về legacy reader giữ nguyên message lỗi cũ.)
+    // Every supported v4 revision takes the v4 path; other versions keep the
+    // legacy reader's historical errors. (Mọi revision v4 được hỗ trợ đi
+    // đường v4; version khác giữ nguyên lỗi của legacy reader.)
     if mgc_lockfile::detect_lockfile_version(&lock_text).is_ok_and(|version| version == 4) {
         return load_locked_graph_v4(&lock_text, manifest, &owner_core);
     }
@@ -2253,6 +2297,12 @@ pub(crate) fn load_locked_graph(
     // let state_ok = matches!(lock.resolution.state.as_str(), "locked" | "installing");
     // if lock.core != adapter_name || !state_ok || lock.version != 1 || lock.packages.is_empty() {
     if lock.packages.is_empty() {
+        if manifest.all_dependencies().next().is_none()
+            && lock_matches_manifest(&lock, manifest)
+            && lock_graph_matches_manifest_closure(&lock, manifest, &owner_core)
+        {
+            return Ok(Some(ResolvedGraph::empty()));
+        }
         return Ok(None);
     }
     if lock.packages.iter().any(|p| p.name.is_empty()) {
@@ -2779,7 +2829,7 @@ pub async fn why(adapter: &dyn PackageAdapter, root: &Path, package: &str) -> Re
     // (name, version, outgoing dep edges) in one shape for every schema.
     type WhyNode = (String, String, Vec<String>);
     let (nodes, roots): (Vec<WhyNode>, Vec<String>) = match version.as_str() {
-        "4" => {
+        version if mgc_lockfile::v4::is_v4_schema_version(version) => {
             let doc = mgc_lockfile::canonical::parse_v4_document(&text)
                 .map_err(|e| anyhow::anyhow!("parse mgc.lock v4 failed: {e}"))?;
             let report = mgc_lockfile::policy::verify_v4_math(&doc)?;
@@ -2929,6 +2979,13 @@ fn magicore_global_package_roots() -> Vec<PathBuf> {
     if let Some(path) = std::env::var_os("MAGICORE_GLOBAL_PACKAGE_ROOT") {
         roots.push(PathBuf::from(path));
     }
+    roots.push(
+        mgc_platform::paths::mgc_data_dir()
+            .join("cache")
+            .join("web")
+            .join("global")
+            .join("node_modules"),
+    );
     if let Some(cache_dir) = dirs::cache_dir() {
         roots.push(
             cache_dir
@@ -2989,6 +3046,16 @@ pub fn lib_adapter(root: &Path) -> Result<Arc<dyn PackageAdapter>> {
             &[],
         );
     }
+    Ok(context.adapter)
+}
+
+/// Bind the Cloud adapter to its verified project root, including nested cwd.
+/// Dùng root đã xác minh thay vì cwd để lệnh Cloud không panic trong thư mục con.
+#[cfg(feature = "clo")]
+pub fn cloud_adapter(root: &Path) -> Result<Arc<dyn PackageAdapter>> {
+    ensure_project_core_identity(root, "clo")?;
+    let root = root.to_path_buf();
+    let context = crate::context::ProjectContext::load_at(&root, Some(&root), None)?;
     Ok(context.adapter)
 }
 
@@ -3204,6 +3271,9 @@ pub fn require_native_ai_python(root: &std::path::Path, operation: &str) -> Resu
 pub async fn ai_dev(_dry_run: bool) -> Result<()> {
     let root = ai_project_root()?;
     require_native_ai_python(&root, "dev")?;
+    // Pre-flight freshness (Spec rev4 §8): dependency drift fails before spawn.
+    // (Freshness pre-flight (Spec rev4 §8): lệch dependency fail trước spawn.)
+    crate::commands::freshness::check_python_freshness(&root)?;
     let framework =
         mgc_ai_adapter::adapter_for(&root).ok_or_else(|| crate::error::no_ai_framework(&root))?;
     let script = framework.framework.entry_script().to_string();

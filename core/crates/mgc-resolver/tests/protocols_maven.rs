@@ -7,6 +7,84 @@ use mgc_resolver::protocols::maven::collect_pom_dependencies;
 use mgc_resolver::protocols::sha256_hex;
 use mgc_resolver::protocols::{MavenProtocol, RegistryProtocol};
 
+#[test]
+fn maven_materializer_rejects_path_coordinates_before_writing() {
+    use mgc_resolver::protocols::ResolvedEntry;
+    let sandbox = tempfile::tempdir().unwrap();
+    let cache = sandbox.path().join("cache");
+    let outside = sandbox.path().join("escaped");
+    let absolute_artifact = format!("dev.mgc:{}", outside.display());
+    let protocol = MavenProtocol::new("http://127.0.0.1:5431");
+    let cases = [
+        (absolute_artifact.as_str(), "1.0"),
+        ("/dev.mgc:probe", "1.0"),
+        ("dev..mgc:probe", "1.0"),
+        ("dev.mgc:../probe", "1.0"),
+        ("dev.mgc:C:\\escape", "1.0"),
+        ("dev.mgc:probe:other", "1.0"),
+        ("dev.mgc:probe", "../../escape"),
+        ("dev.mgc:probe", "/absolute"),
+        ("dev.mgc:probe", "C:\\escape"),
+        ("dev.mgc:probe", ".."),
+        ("dev.mgc:probe", "1.0\n"),
+        ("dev.mgc:probe", "1.0."),
+    ];
+    for (name, version) in cases {
+        let entry = ResolvedEntry {
+            name: name.to_string(),
+            version: version.to_string(),
+            deps: vec![],
+            artifact_url: String::new(),
+            sha256: String::new(),
+            extra_markers: vec![],
+        };
+        assert!(
+            protocol
+                .materialize(&entry, b"fixture", b"<project/>", &cache)
+                .is_err(),
+            "unsafe Maven coordinates must be rejected before writes"
+        );
+        assert!(
+            !cache.exists(),
+            "rejected coordinates must not create the cache"
+        );
+        assert_eq!(
+            std::fs::read_dir(sandbox.path()).unwrap().count(),
+            0,
+            "rejected coordinates must not write outside the cache"
+        );
+    }
+}
+
+#[test]
+fn maven_materializer_preserves_raw_safe_versions() {
+    use mgc_resolver::protocols::ResolvedEntry;
+    let sandbox = tempfile::tempdir().unwrap();
+    let protocol = MavenProtocol::new("http://127.0.0.1:5431");
+    for version in ["1.3", "1.0-SNAPSHOT", "1.0.redhat-00001", "1.0+build_2"] {
+        let entry = ResolvedEntry {
+            name: "dev.mgc:probe-core".into(),
+            version: version.into(),
+            deps: vec![],
+            artifact_url: String::new(),
+            sha256: String::new(),
+            extra_markers: vec![],
+        };
+        let jar = protocol
+            .materialize(&entry, b"fixture", b"<project/>", sandbox.path())
+            .unwrap();
+        assert_eq!(
+            jar,
+            sandbox
+                .path()
+                .join("repository/dev/mgc/probe-core")
+                .join(version)
+                .join(format!("probe-core-{version}.jar"))
+        );
+        assert_eq!(std::fs::read(jar).unwrap(), b"fixture");
+    }
+}
+
 async fn mock_server() -> Option<mockito::ServerGuard> {
     match std::net::TcpListener::bind("127.0.0.1:0") {
         Ok(listener) => drop(listener),

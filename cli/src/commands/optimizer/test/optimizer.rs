@@ -151,6 +151,45 @@ fn test_optimize_project_without_runtime_fails_closed() {
 }
 
 #[test]
+fn test_runtime_free_core_profiles_generate_deployment_optimization() {
+    let dir = tempdir().unwrap();
+    let hw = HardwareInfo {
+        cpu_cores: None,
+        arch: "unknown".to_string(),
+        os: "unknown".to_string(),
+        total_memory_gb: None,
+        profile: SystemProfile::Constrained,
+        gpus: vec![],
+        gpu_detection_status: GpuDetectionStatus::Unavailable,
+    };
+
+    assert!(has_core_level_optimization("clo"));
+    assert!(has_core_level_optimization("cloud"));
+    assert!(has_core_level_optimization("cicd"));
+    assert!(!has_core_level_optimization("app"));
+
+    let files = generate_optimizations_for_core("cicd", &hw, dir.path());
+    let deploy = files
+        .iter()
+        .find(|file| file.relative_path == ".mgc-optimizer/deploy_concurrency.env")
+        .expect("CI/CD profile should be independent of RAM and language runtime");
+    assert!(deploy.content.contains("DOCKER_BUILDKIT=1"));
+    assert!(deploy.content.contains("CPU count unknown"));
+    assert!(!dir.path().join("package.json").exists());
+}
+
+#[test]
+fn test_runtime_free_core_optimization_completes_without_runtime() {
+    let dir = tempdir().unwrap();
+    super::optimize_project(dir.path(), "cicd", false).unwrap();
+    assert!(
+        dir.path()
+            .join(".mgc-optimizer/deploy_concurrency.env")
+            .is_file()
+    );
+}
+
+#[test]
 fn test_hash_guard_prevents_overwriting_user_custom_file() {
     let dir = tempdir().unwrap();
     let root = dir.path();

@@ -379,6 +379,31 @@ fn v4_audit_derives_roots_from_manifest_when_lock_roots_are_empty() {
 }
 
 #[test]
+fn v4_audit_explicit_empty_owner_does_not_query_sibling_pins() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("mgc.toml"),
+        "name = \"web\"\necosystem = \"web\"\n",
+    )
+    .unwrap();
+    std::fs::write(dir.path().join(".mgc.core"), "web\n").unwrap();
+    std::fs::write(
+        dir.path().join("package.json"),
+        r#"{"name":"web","dependencies":{}}"#,
+    )
+    .unwrap();
+    let text = "version = \"4\"\nroot_dependencies = [\"sibling@1.0.0\"]\n[root_dependencies_by_owner]\nweb = []\nlib = [\"sibling@1.0.0\"]\n[metadata]\ngenerated_at = \"2026-10-01T00:00:00Z\"\ngenerator = \"mgc/test\"\nlockfile_hash = \"\"\n[[package]]\n[package.key]\necosystem = \"web\"\nname = \"sibling\"\nversion = \"1.0.0\"\nsource_id = \"npm\"\n";
+    write_v4_fixture(dir.path(), text);
+    let (pins, jsr) = crate::audit::v4_pins_for_audit(dir.path())
+        .unwrap()
+        .unwrap();
+    assert!(
+        pins.is_empty() && jsr.is_empty(),
+        "empty Web owner must not audit Lib pins"
+    );
+}
+
+#[test]
 fn v4_audit_rejects_payload_tampering_and_unresolved_full_edge_keys() {
     // A valid digest is required before audit; edge identity includes the
     // complete source/variant key, not only name and version.

@@ -32,6 +32,9 @@ pub struct InstallOptions {
     pub legacy_flat: bool,
     /// Fail fast if mgc.lock is missing or out-of-sync (CI mode).
     pub frozen: bool,
+    /// The orchestrator verified this graph from the current authoritative lock.
+    /// Graph đã được kiểm từ lock hiện hành; materialize không được ghi lại lock.
+    pub replay_from_lock: bool,
     /// Skip checking already-installed root packages. Only materialize what differs.
     /// Safe after add/remove when graph changed by exactly one leaf package.
     pub incremental: bool,
@@ -515,6 +518,16 @@ pub trait PackageAdapter:
     /// (Cho biết manifest rỗng vẫn có thể resolve dependency ngầm do ecosystem sở hữu.)
     fn resolves_implicit_dependencies(&self, _project_root: &Path) -> MgResult<bool> {
         Ok(false)
+    }
+
+    /// Effective dependency requirements for lock replay, including SDK-owned registry roots.
+    /// Tập dependency để replay lock; không dùng bản mở rộng này để ghi manifest project.
+    fn lock_replay_manifest(
+        &self,
+        _project_root: &Path,
+        manifest: &Manifest,
+    ) -> MgResult<Manifest> {
+        Ok(manifest.clone())
     }
 
     /// Orchestrator-level: list installed packages. Liệt kê package đã cài

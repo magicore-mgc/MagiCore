@@ -3,7 +3,6 @@
 use anyhow::Result;
 
 use super::super::shared;
-use mgc_types::Ecosystem;
 
 pub async fn remove(packages: Vec<String>, compat_runtime: Option<String>) -> Result<()> {
     let root = shared::core_project_root("clo")?;
@@ -14,6 +13,6 @@ pub async fn remove(packages: Vec<String>, compat_runtime: Option<String>) -> Re
         crate::commands::dep_gate::DepOp::Remove,
         compat_runtime.as_deref(),
     )?;
-    let adapter = shared::core_adapter(&Ecosystem::Cloud);
+    let adapter = shared::cloud_adapter(&root)?;
     shared::remove(&*adapter, &root, packages, true).await
 }

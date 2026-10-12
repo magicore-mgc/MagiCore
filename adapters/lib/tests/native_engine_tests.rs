@@ -16,6 +16,26 @@ use mgc_types::{
 
 struct CrossRootConflictProtocol;
 
+struct MarkerProtocol(Vec<String>);
+
+#[async_trait::async_trait]
+impl RegistryProtocol for MarkerProtocol {
+    async fn resolve(&self, name: &str, _range: &str) -> mgc_types::MgResult<ResolvedEntry> {
+        Ok(ResolvedEntry {
+            name: name.to_string(),
+            version: "1.0.0".to_string(),
+            deps: Vec::new(),
+            artifact_url: format!("https://registry.invalid/{name}/1.0.0"),
+            sha256: String::new(),
+            extra_markers: self.0.clone(),
+        })
+    }
+
+    async fn download(&self, _entry: &ResolvedEntry) -> mgc_types::MgResult<Vec<u8>> {
+        Ok(Vec::new())
+    }
+}
+
 #[async_trait::async_trait]
 impl RegistryProtocol for CrossRootConflictProtocol {
     async fn resolve(&self, name: &str, range: &str) -> mgc_types::MgResult<ResolvedEntry> {
@@ -176,6 +196,41 @@ async fn resolve_with_protocol_rejects_cross_root_version_conflicts() {
 
     assert!(matches!(error, mgc_types::MgError::DependencyConflict(_)));
     assert!(error.to_string().contains("ambiguous lock graph"));
+}
+
+#[tokio::test]
+async fn nuget_resolution_rejects_missing_malformed_or_ambiguous_sha512_markers() {
+    let valid_digest = {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD.encode([0_u8; 64])
+    };
+    let cases = [
+        Vec::new(),
+        vec!["sha512:YQ==".to_string()],
+        vec![
+            format!("sha512:{valid_digest}"),
+            format!("sha512:{valid_digest}"),
+        ],
+    ];
+    let mut manifest = Manifest::new("demo", Ecosystem::Lib);
+    manifest.add_dep(
+        DependencySpec::new(PackageName::new("demo.lib").unwrap(), VersionRange::star()),
+        false,
+        false,
+        false,
+    );
+
+    for markers in cases {
+        let error = resolve_with_protocol(
+            &MarkerProtocol(markers),
+            EcosystemTag::NuGet,
+            "nuget://local-test",
+            &manifest,
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error, mgc_types::MgError::Integrity(_)));
+    }
 }
 
 #[tokio::test]
@@ -574,4 +629,5 @@ async fn lib_adapter_csproj_project_resolves_natively_via_env() {
     assert_eq!(graph.packages.len(), 1);
     assert_eq!(graph.packages[0].id.name_str(), "Demo.Lib");
     assert_eq!(graph.packages[0].id.version().to_string(), "1.2.3");
+    assert_eq!(graph.packages[0].integrity, format!("sha512-{sha512_b64}"));
 }

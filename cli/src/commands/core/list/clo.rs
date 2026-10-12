@@ -8,7 +8,6 @@
 use anyhow::Result;
 
 use super::super::shared;
-use mgc_types::Ecosystem;
 
 pub async fn list(compat_runtime: Option<String>) -> Result<()> {
     let root = shared::core_project_root("clo")?;
@@ -21,6 +20,6 @@ pub async fn list(compat_runtime: Option<String>) -> Result<()> {
         crate::commands::dep_gate::DepOp::List,
         compat_runtime.as_deref(),
     )?;
-    let adapter = shared::core_adapter(&Ecosystem::Cloud);
+    let adapter = shared::cloud_adapter(&root)?;
     shared::list(&*adapter, &root).await
 }

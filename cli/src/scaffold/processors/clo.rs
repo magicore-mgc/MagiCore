@@ -36,10 +36,19 @@ impl CloProcessor {
             "cdk" | "cdk-typescript" => {
                 Self::write_cdk_project(target, name)?;
             }
-            "cloudflare" => write_file(
-                &target.join("wrangler.toml"),
-                &format!("name = \"{}\"\nmain = \"src/index.ts\"\n", slugify(name)),
-            )?,
+            "cloudflare" => {
+                write_file(
+                    &target.join("wrangler.toml"),
+                    &format!(
+                        "name = \"{}\"\nmain = \"src/index.ts\"\ncompatibility_date = \"2026-10-01\"\n",
+                        slugify(name)
+                    ),
+                )?;
+                write_file(
+                    &target.join("src/index.ts"),
+                    "export default {\n  async fetch(request: Request): Promise<Response> {\n    return new Response('Hello from MagiCore Worker', { status: 200 });\n  },\n};\n",
+                )?;
+            }
             "lambda" => write_file(
                 &target.join("handler.ts"),
                 "export const handler = async () => ({ statusCode: 200, body: 'ok' });\n",

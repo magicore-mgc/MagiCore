@@ -67,6 +67,7 @@ fn audit_strict_rejects_commands_that_never_consult_strictness() {
     let err = reject_unsupported_audit_strict(&Commands::Build {
         target: None,
         compat_runtime: None,
+        compat_runner: None,
     })
     .unwrap_err();
     assert!(
@@ -115,6 +116,7 @@ fn recursive_supported_includes_build_run_audit_outdated_dev() {
     assert!(recursive_supported(&Commands::Build {
         target: None,
         compat_runtime: None,
+        compat_runner: None,
     }));
     assert!(recursive_supported(&Commands::Audit {
         cmd: None,
@@ -127,6 +129,7 @@ fn recursive_supported_includes_build_run_audit_outdated_dev() {
         port: None,
         clear: false,
         compat_runtime: None,
+        compat_runner: None,
     }));
 }
 
@@ -297,6 +300,35 @@ fn bare_add_version_pin_reaches_core_command() {
             assert_eq!(version.as_deref(), Some("3.22.4"))
         }
         _ => panic!("expected AddAi core command"),
+    }
+}
+
+#[test]
+fn bare_install_frozen_reaches_game_cloud_and_iot_lanes() {
+    use crate::dispatch::bare::bare_core_command;
+    use crate::dispatch::types::{CoreCommand, DispatchCommand};
+
+    for core in ["game", "clo", "iot"] {
+        let command = Commands::Install {
+            packages: Vec::new(),
+            frozen: true,
+            ignore_scripts: false,
+            allow_scripts: false,
+            prefer_dedupe: false,
+            repair: false,
+            dry_run: false,
+            offline: false,
+            compat_runtime: None,
+        };
+        let dispatch = bare_core_command(command, Some(core.to_string())).unwrap();
+        match (core, dispatch) {
+            ("game", DispatchCommand::Core(CoreCommand::InstallGame { frozen, .. }))
+            | ("clo", DispatchCommand::Core(CoreCommand::InstallClo { frozen, .. }))
+            | ("iot", DispatchCommand::Core(CoreCommand::InstallIot { frozen, .. })) => {
+                assert!(frozen, "mgc install --core {core} must preserve --frozen")
+            }
+            (_, _) => panic!("unexpected install dispatch for core {core}"),
+        }
     }
 }
 

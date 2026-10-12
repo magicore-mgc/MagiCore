@@ -35,16 +35,28 @@ impl GameProcessor {
                 )?;
                 write_file(
                     &target.join("Main.tscn"),
-                    "[gd_scene format=3]\n\n[node name=\"Main\" type=\"Node2D\"]\n",
+                    "[gd_scene load_steps=2 format=3]\n\n[ext_resource type=\"Script\" path=\"res://Main.gd\" id=\"1_main\"]\n\n[node name=\"Main\" type=\"Node2D\"]\nscript = ExtResource(\"1_main\")\n",
+                )?;
+                write_file(
+                    &target.join("Main.gd"),
+                    "extends Node2D\n\nfunc _ready() -> void:\n    print(\"MagiCore Godot project ready\")\n",
                 )?;
             }
             "unreal" => {
                 write_file(
                     &target.join(format!("{name}.uproject")),
                     &format!(
-                        "{{\n  \"FileVersion\": 3,\n  \"EngineAssociation\": \"5.0\",\n  \"Category\": \"Games\",\n  \"Description\": \"{}\"\n}}\n",
+                        "{{\n  \"FileVersion\": 3,\n  \"EngineAssociation\": \"\",\n  \"Category\": \"Games\",\n  \"Description\": \"{}\",\n  \"Modules\": [\n    {{ \"Name\": \"MagiCoreGame\", \"Type\": \"Runtime\", \"LoadingPhase\": \"Default\" }}\n  ]\n}}\n",
                         name
                     ),
+                )?;
+                write_file(
+                    &target.join("Source/MagiCoreGame/MagiCoreGame.Build.cs"),
+                    "using UnrealBuildTool;\n\npublic class MagiCoreGame : ModuleRules\n{\n    public MagiCoreGame(ReadOnlyTargetRules Target) : base(Target)\n    {\n        PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;\n    }\n}\n",
+                )?;
+                write_file(
+                    &target.join("Source/MagiCoreGame/MagiCoreGame.cpp"),
+                    "#include \"CoreMinimal.h\"\n#include \"Modules/ModuleManager.h\"\n\nIMPLEMENT_PRIMARY_GAME_MODULE(FDefaultGameModuleImpl, MagiCoreGame, \"MagiCoreGame\");\n",
                 )?;
             }
             _ => {

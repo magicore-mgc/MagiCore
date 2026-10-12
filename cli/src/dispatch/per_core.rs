@@ -22,11 +22,13 @@ pub fn command_to_dispatch(
             port,
             clear,
             compat_runtime,
+            compat_runner,
         } => Some(CommonCommand::Dev {
             host,
             port,
             clear,
             compat_runtime,
+            compat_runner,
         }),
         Commands::Info { package, json } => Some(CommonCommand::Info { package, json }),
         Commands::Search {
@@ -85,33 +87,47 @@ pub fn command_to_dispatch(
             script,
             args,
             compat_runtime,
+            compat_runner,
         } => Some(CommonCommand::Run {
             script,
             args,
             compat_runtime,
+            compat_runner,
         }),
         Commands::Test {
             args,
             compat_runtime,
+            compat_runner,
         } => Some(CommonCommand::Test {
             args,
             compat_runtime,
+            compat_runner,
         }),
         Commands::Optimizer { force } => Some(CommonCommand::Optimizer { force }),
         Commands::Build {
             target,
             compat_runtime,
+            compat_runner,
         } => Some(CommonCommand::Build {
             target,
             compat_runtime,
+            compat_runner,
         }),
         Commands::Flash { board, skip_build } => Some(CommonCommand::Flash { board, skip_build }),
         Commands::Deploy { run } => Some(CommonCommand::Deploy { run }),
         Commands::CiGenerate => Some(CommonCommand::CiGenerate),
         Commands::Verify => Some(CommonCommand::Verify),
         Commands::Start => Some(CommonCommand::Start),
-        Commands::Exec { command, args } => Some(CommonCommand::Exec { command, args }),
-        Commands::Dlx { package, args } => Some(CommonCommand::Dlx { package, args }),
+        Commands::Exec {
+            command,
+            args,
+            compat_runner,
+        } => Some(CommonCommand::Exec {
+            command,
+            args,
+            compat_runner,
+        }),
+        Commands::Dlx { package, bin, args } => Some(CommonCommand::Dlx { package, bin, args }),
         Commands::Cache {
             action,
             target,
@@ -309,9 +325,11 @@ pub fn command_to_dispatch(
         }),
         Commands::InstallGame {
             packages,
+            frozen,
             compat_runtime,
         } => Some(CoreCommand::InstallGame {
             packages,
+            frozen,
             compat_runtime,
         }),
         Commands::InstallAi {
@@ -319,18 +337,22 @@ pub fn command_to_dispatch(
             dry_run,
             compat_runtime,
             frozen,
+            offline,
         } => Some(CoreCommand::InstallAi {
             packages,
             dry_run,
             compat_runtime,
             frozen,
+            offline,
         }),
         Commands::InstallClo {
             packages,
+            frozen,
             compat_runtime,
         } => Some(CoreCommand::InstallClo {
             packages,
             dry_run: false,
+            frozen,
             compat_runtime,
         }),
         Commands::InstallCicd {
@@ -343,20 +365,24 @@ pub fn command_to_dispatch(
         }),
         Commands::InstallIot {
             packages,
+            frozen,
             compat_runtime,
         } => Some(CoreCommand::InstallIot {
             packages,
+            frozen,
             compat_runtime,
         }),
         Commands::InstallApp {
             packages,
             compat_runtime,
             frozen,
+            offline,
         } => Some(CoreCommand::InstallApp {
             packages,
             dry_run: false,
             compat_runtime,
             frozen,
+            offline,
         }),
         Commands::InstallLib {
             packages,

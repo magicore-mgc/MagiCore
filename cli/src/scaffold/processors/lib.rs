@@ -96,6 +96,10 @@ impl LibProcessor {
                     &target.join(format!("{}.csproj", slugify(name))),
                     "<Project Sdk=\"Microsoft.NET.Sdk\">\n\n  <PropertyGroup>\n    <TargetFramework>net8.0</TargetFramework>\n    <Nullable>enable</Nullable>\n  </PropertyGroup>\n\n</Project>\n",
                 )?;
+                write_file(
+                    &target.join("Class1.cs"),
+                    "namespace MagiCore.Generated;\n\npublic static class Library\n{\n    public static string Greeting() => \"hello from MagiCore\";\n}\n",
+                )?;
             }
             "java" => {
                 // Minimal pom.xml so the Maven audit/resolve lanes detect
@@ -106,6 +110,10 @@ impl LibProcessor {
                         "<project>\n  <modelVersion>4.0.0</modelVersion>\n  <groupId>com.magicore</groupId>\n  <artifactId>{}</artifactId>\n  <version>0.1.0</version>\n  <properties>\n    <maven.compiler.source>17</maven.compiler.source>\n    <maven.compiler.target>17</maven.compiler.target>\n  </properties>\n</project>\n",
                         slugify(name)
                     ),
+                )?;
+                write_file(
+                    &target.join("src/main/java/dev/magicore/Library.java"),
+                    "package dev.magicore;\n\npublic final class Library {\n    private Library() {}\n\n    public static String greeting() {\n        return \"hello from MagiCore\";\n    }\n}\n",
                 )?;
             }
             _ => {

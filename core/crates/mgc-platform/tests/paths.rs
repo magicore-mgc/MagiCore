@@ -28,7 +28,10 @@ fn ensure_dirs_creates_all() {
 #[test]
 fn global_paths_creates_patches_dir() {
     let paths = GlobalPaths::new().unwrap();
-    assert!(paths.patches_dir().ends_with(".magicore/patches"));
+    assert_eq!(
+        paths.patches_dir(),
+        mgc_platform::paths::mgc_data_dir().join("patches")
+    );
 }
 
 #[test]
@@ -71,4 +74,49 @@ fn find_project_root_detects_mgc_toml() {
     std::fs::write(tmp.path().join("mgc.toml"), "").unwrap();
     let found = mgc_platform::paths::find_project_root(tmp.path()).unwrap();
     assert_eq!(found, tmp.path());
+}
+
+#[test]
+fn project_data_paths_are_stable_and_separate_same_named_projects() {
+    let first_parent = tempfile::tempdir().unwrap();
+    let second_parent = tempfile::tempdir().unwrap();
+    let first = first_parent.path().join("app");
+    let second = second_parent.path().join("app");
+    std::fs::create_dir_all(&first).unwrap();
+    std::fs::create_dir_all(&second).unwrap();
+
+    let first_path = mgc_platform::paths::project_data_dir(&first);
+    assert_eq!(first_path, mgc_platform::paths::project_data_dir(&first));
+    assert_ne!(first_path, mgc_platform::paths::project_data_dir(&second));
+    assert!(first_path.starts_with(mgc_platform::paths::mgc_data_dir()));
+}
+
+#[test]
+fn mgc_data_dir_honors_absolute_override_in_child_process() {
+    let temp = tempfile::tempdir().unwrap();
+    let expected = temp.path().join("central-mgc-data");
+    let output = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "mgc_data_dir_override_child", "--nocapture"])
+        .env("MGC_DATA_DIR", &expected)
+        .env("MGC_TEST_EXPECTED_DATA_DIR", &expected)
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "data-dir override child failed:\n{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn mgc_data_dir_override_child() {
+    let Some(expected) = std::env::var_os("MGC_TEST_EXPECTED_DATA_DIR") else {
+        return;
+    };
+    assert_eq!(
+        mgc_platform::paths::mgc_data_dir(),
+        std::path::PathBuf::from(expected)
+    );
 }

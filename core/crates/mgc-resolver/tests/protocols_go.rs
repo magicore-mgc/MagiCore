@@ -77,6 +77,29 @@ async fn mock_server() -> Option<mockito::ServerGuard> {
     Some(mockito::Server::new_async().await)
 }
 
+async fn mock_go_module(
+    server: &mut mockito::ServerGuard,
+    name: &str,
+    version: &str,
+    requirements: &str,
+) {
+    let info = format!(r#"{{"Version":"v{version}","Time":"2020-01-01T00:00:00Z"}}"#);
+    let require_block = if requirements.trim().is_empty() {
+        String::new()
+    } else {
+        format!("require (\n{requirements}\n)\n")
+    };
+    let gomod = format!("module {name}\n{require_block}");
+    for (extension, body) in [("info", info), ("mod", gomod), ("ziphash", "0".repeat(64))] {
+        server
+            .mock("GET", format!("/{name}/@v/v{version}.{extension}").as_str())
+            .with_status(200)
+            .with_body(body)
+            .create_async()
+            .await;
+    }
+}
+
 #[tokio::test]
 async fn go_resolves_graph_with_ziphash_and_materializes_cache() {
     let Some(mut server) = mock_server().await else {
@@ -133,11 +156,10 @@ async fn go_resolves_graph_with_ziphash_and_materializes_cache() {
     assert_eq!(
         entry.deps,
         vec![
-            // replace rewrote the requirement; the excluded indirect dep
-            // (dep/two @0.2.0) must be dropped from the graph.
-            // (replace viết lại requirement; dep indirect bị exclude
-            // (dep/two @0.2.0) phải bị loại khỏi graph.)
-            ("github.com/dep/one-fork".to_string(), "1.0.0".to_string()),
+            // A dependency's replace/exclude directives do not control the main module graph.
+            // replace/exclude trong go.mod của dependency không điều khiển graph của project.
+            ("github.com/dep/one".to_string(), "1.0.0".to_string()),
+            ("github.com/dep/two".to_string(), "0.2.0".to_string()),
         ]
     );
     assert!(
@@ -149,20 +171,16 @@ async fn go_resolves_graph_with_ziphash_and_materializes_cache() {
         entry.extra_markers
     );
     assert!(
-        entry
+        !entry
             .extra_markers
             .iter()
-            .any(|m| m == "excluded:github.com/dep/two@0.2.0"),
-        "excluded module must be recorded: {:?}",
-        entry.extra_markers
+            .any(|m| m.starts_with("excluded:"))
     );
     assert!(
-        entry
+        !entry
             .extra_markers
             .iter()
-            .any(|m| m == "replace:github.com/dep/one=>github.com/dep/one-fork"),
-        "replace must be recorded: {:?}",
-        entry.extra_markers
+            .any(|m| m.starts_with("replace:"))
     );
     assert!(
         entry
@@ -204,7 +222,22 @@ async fn go_resolves_graph_with_ziphash_and_materializes_cache() {
             .join("cache/download/example.com/pkg/@v/v1.2.3.ziphash"),
     )
     .unwrap();
-    assert_eq!(stored_hash.trim(), sha256_hex(&zip_bytes));
+    // Independent Hash1 vector: sorted per-file SHA-256 lines, then base64 SHA-256.
+    // Vector tính riêng theo chuẩn Go; không dùng helper production làm oracle.
+    assert_eq!(
+        stored_hash.trim(),
+        "h1:YJbVDjHSwcdNsZfu8Z8CdZcfdjy+e4gj0Ud51FNHtys="
+    );
+    assert_ne!(stored_hash.trim(), sha256_hex(&zip_bytes));
+    let mut malformed = files.clone();
+    malformed.zip = b"not a zip".to_vec();
+    let rejected_cache = tempfile::tempdir().unwrap();
+    assert!(
+        protocol
+            .materialize(&entry, &malformed, rejected_cache.path())
+            .is_err()
+    );
+    assert!(!rejected_cache.path().join("cache").exists());
 }
 
 #[tokio::test]
@@ -343,4 +376,303 @@ async fn go_latest_fallback_and_range_selection() {
     // Range that does not match the latest version fails closed.
     // (Range không khớp version mới nhất fail-closed.)
     assert!(protocol.resolve("example.com/only", "1.0.0").await.is_err());
+}
+
+#[test]
+#[ignore = "requires an explicitly configured real Go SDK"]
+fn materialized_go_module_imports_with_real_sdk_without_rewriting_hash() {
+    use mgc_resolver::protocols::ResolvedEntry;
+    use mgc_resolver::protocols::go::GoModuleFiles;
+    let sdk = std::env::var("MGC_E2E_GO_BINARY").expect("MGC_E2E_GO_BINARY is required");
+    assert!(
+        std::path::Path::new(&sdk).is_file(),
+        "Go SDK executable is missing"
+    );
+    let root = tempfile::tempdir().unwrap();
+    let gomod = b"module example.com/pkg\ngo 1.21\n";
+    let zip = build_module_zip(&[
+        ("example.com/pkg@v1.2.3/go.mod", gomod.as_slice()),
+        (
+            "example.com/pkg@v1.2.3/pkg.go",
+            b"package pkg\nconst Marker = \"MGC_GO_IMPORTED\"\n".as_slice(),
+        ),
+    ]);
+    let files = GoModuleFiles {
+        zip: zip.clone(),
+        gomod: gomod.to_vec(),
+        info: br#"{"Version":"v1.2.3","Time":"2020-01-01T00:00:00Z"}"#.to_vec(),
+    };
+    let entry = ResolvedEntry {
+        name: "example.com/pkg".into(),
+        version: "1.2.3".into(),
+        deps: vec![],
+        artifact_url: String::new(),
+        sha256: sha256_hex(&zip),
+        extra_markers: vec![],
+    };
+    let protocol = GoModProtocol::from_env();
+    protocol.verify(&entry, &files.zip).unwrap();
+    let cache = root.path().join("modules");
+    let zip_path = protocol.materialize(&entry, &files, &cache).unwrap();
+    let hash_path = zip_path.with_extension("ziphash");
+    let before = std::fs::read(&hash_path).unwrap();
+    assert_eq!(before, b"h1:bg40Pl8hXM1h5nYr/dKdz2D7lBOBkGzSsFhpsZht/qY=");
+    std::fs::write(
+        root.path().join("go.mod"),
+        "module example.com/probe\ngo 1.21\nrequire example.com/pkg v1.2.3\n",
+    )
+    .unwrap();
+    // Independent sums cover both the zip content and the go.mod artifact.
+    // Sum tính độc lập cho zip và go.mod; không cho SDK fetch hoặc sửa manifest.
+    std::fs::write(root.path().join("go.sum"), "example.com/pkg v1.2.3 h1:bg40Pl8hXM1h5nYr/dKdz2D7lBOBkGzSsFhpsZht/qY=\nexample.com/pkg v1.2.3/go.mod h1:P80OUskPLmuRx31utNM9j/sgmpvOrZ/ta6nccuJ2wHM=\n").unwrap();
+    std::fs::write(
+        root.path().join("main.go"),
+        "package main\nimport(\"fmt\";\"example.com/pkg\")\nfunc main(){fmt.Println(pkg.Marker)}\n",
+    )
+    .unwrap();
+    let output = std::process::Command::new(sdk)
+        .args(["run", "-mod=readonly", "main.go"])
+        .current_dir(root.path())
+        .env("GOMODCACHE", &cache)
+        .env("GOCACHE", root.path().join("build"))
+        .env("GOPROXY", "off")
+        .env("GOSUMDB", "off")
+        .env("GOTOOLCHAIN", "local")
+        .env("GOENV", "off")
+        .env("CGO_ENABLED", "0")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "Go cached import failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("MGC_GO_IMPORTED"));
+    assert_eq!(std::fs::read(hash_path).unwrap(), before);
+}
+
+#[test]
+fn go_dirhash_rejects_newline_names_instead_of_hashing_ambiguous_lines() {
+    use mgc_resolver::protocols::{go::dirhash_zip, zip_reader::ZipEntry};
+    let entry = ZipEntry {
+        name: "example.com/pkg@v1.2.3/bad\nname.go".into(),
+        data: b"package pkg\n".to_vec(),
+    };
+    let error = dirhash_zip(&[entry]).unwrap_err();
+    assert!(error.to_string().contains("newlines"));
+    let ordinary = ZipEntry {
+        name: "example.com/pkg@v1.2.3/ordinary.go".into(),
+        data: b"package pkg\n".to_vec(),
+    };
+    assert!(dirhash_zip(&[ordinary]).unwrap().starts_with("h1:"));
+}
+
+#[test]
+fn go_materializer_rejects_escaping_coordinates_before_cache_writes() {
+    use mgc_resolver::protocols::{ResolvedEntry, go::GoModuleFiles};
+    let protocol = GoModProtocol::from_env();
+    let files = GoModuleFiles {
+        zip: build_module_zip(&[("example.com/pkg@v1.2.3/pkg.go", b"package pkg\n")]),
+        gomod: vec![],
+        info: vec![],
+    };
+    for (module, version) in [
+        ("/absolute/module", "1.2.3"),
+        ("../escaped", "1.2.3"),
+        ("example.com/../escaped", "1.2.3"),
+        ("C:\\escaped", "1.2.3"),
+        ("example.com\\escaped", "1.2.3"),
+        ("example.com/pkg", "../../escaped"),
+        ("example.com/pkg", "1.2.3\\escaped"),
+        ("example.com//pkg", "1.2.3"),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let entry = ResolvedEntry {
+            name: module.into(),
+            version: version.into(),
+            deps: vec![],
+            artifact_url: String::new(),
+            sha256: sha256_hex(&files.zip),
+            extra_markers: vec![],
+        };
+        let error = protocol
+            .materialize(&entry, &files, root.path())
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("unsafe Go module cache coordinates")
+        );
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+    }
+}
+
+#[tokio::test]
+async fn go_resolves_multiple_roots_with_minimum_version_selection_and_cycles() {
+    let Some(mut server) = mock_server().await else {
+        return;
+    };
+    mock_go_module(
+        &mut server,
+        "example.test/a",
+        "1.0.0",
+        "\texample.test/shared v1.0.0",
+    )
+    .await;
+    mock_go_module(
+        &mut server,
+        "example.test/b",
+        "1.0.0",
+        "\texample.test/shared v1.2.0",
+    )
+    .await;
+    mock_go_module(
+        &mut server,
+        "example.test/shared",
+        "1.0.0",
+        "\texample.test/old v1.0.0",
+    )
+    .await;
+    mock_go_module(
+        &mut server,
+        "example.test/shared",
+        "1.2.0",
+        "\texample.test/new v1.0.0",
+    )
+    .await;
+    mock_go_module(
+        &mut server,
+        "example.test/old",
+        "1.0.0",
+        "\texample.test/a v1.0.0",
+    )
+    .await;
+    mock_go_module(&mut server, "example.test/new", "1.0.0", "").await;
+
+    let protocol = GoModProtocol::with_sum_base(&server.url(), &server.url());
+    let roots = vec![
+        ("example.test/a".to_string(), "1.0.0".to_string()),
+        ("example.test/b".to_string(), "1.0.0".to_string()),
+    ];
+    let entries = protocol.resolve_graph_roots(&roots).await.unwrap();
+    let mut reversed_roots = roots;
+    reversed_roots.reverse();
+    let reversed_entries = protocol.resolve_graph_roots(&reversed_roots).await.unwrap();
+    assert_eq!(entries, reversed_entries);
+    assert_eq!(entries.len(), 5);
+    assert_eq!(
+        entries
+            .iter()
+            .find(|entry| entry.name == "example.test/shared")
+            .unwrap()
+            .version,
+        "1.2.0"
+    );
+    assert!(entries.iter().any(|entry| entry.name == "example.test/old"));
+    assert!(entries.iter().any(|entry| entry.name == "example.test/new"));
+}
+
+#[tokio::test]
+async fn go_resolution_rejects_release_metadata_for_another_version() {
+    let Some(mut server) = mock_server().await else {
+        return;
+    };
+    server
+        .mock("GET", "/example.test/wrong/@v/v1.2.3.info")
+        .with_status(200)
+        .with_body(r#"{"Version":"v9.9.9","Time":"2024-01-01T00:00:00Z"}"#)
+        .create_async()
+        .await;
+
+    let protocol = GoModProtocol::with_sum_base(&server.url(), &server.url());
+    let error = protocol
+        .resolve("example.test/wrong", "1.2.3")
+        .await
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("release metadata identifies"),
+        "unexpected error: {error}"
+    );
+}
+
+#[tokio::test]
+async fn go_exact_incompatible_version_is_resolved_and_preserved() {
+    let Some(mut server) = mock_server().await else {
+        return;
+    };
+    mock_go_module(&mut server, "example.test/legacy", "3.2.2+incompatible", "").await;
+
+    let protocol = GoModProtocol::with_sum_base(&server.url(), &server.url());
+    let entry = protocol
+        .resolve("example.test/legacy", "3.2.2+incompatible")
+        .await
+        .unwrap();
+    assert_eq!(entry.version, "3.2.2+incompatible");
+    assert!(entry.artifact_url.ends_with("v3.2.2+incompatible.zip"));
+}
+
+#[tokio::test]
+async fn go_download_rejects_changed_mod_metadata_after_resolution() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    let Some(mut server) = mock_server().await else {
+        return;
+    };
+    let module = "example.test/frozen";
+    let version = "1.2.3";
+    let original_mod = "module example.test/frozen\nrequire example.test/safe v1.0.0\n";
+    let changed_mod = "module example.test/frozen\nrequire example.test/unselected v9.9.9\n";
+    let mod_hits = Arc::new(AtomicUsize::new(0));
+    server
+        .mock("GET", "/example.test/frozen/@v/v1.2.3.info")
+        .with_status(200)
+        .with_body(r#"{"Version":"v1.2.3","Time":"2024-01-01T00:00:00Z"}"#)
+        .create_async()
+        .await;
+    server
+        .mock("GET", "/example.test/frozen/@v/v1.2.3.mod")
+        .with_status(200)
+        .with_body_from_request({
+            let mod_hits = Arc::clone(&mod_hits);
+            let original_mod = original_mod.to_string();
+            let changed_mod = changed_mod.to_string();
+            move |_| {
+                if mod_hits.fetch_add(1, Ordering::SeqCst) == 0 {
+                    original_mod.clone().into_bytes()
+                } else {
+                    changed_mod.clone().into_bytes()
+                }
+            }
+        })
+        .expect(2)
+        .create_async()
+        .await;
+    server
+        .mock("GET", "/example.test/frozen/@v/v1.2.3.ziphash")
+        .with_status(200)
+        .with_body("0".repeat(64))
+        .create_async()
+        .await;
+    server
+        .mock("GET", "/example.test/frozen/@v/v1.2.3.zip")
+        .with_status(200)
+        .with_body(b"zip fixture".as_slice())
+        .create_async()
+        .await;
+
+    let protocol = GoModProtocol::with_sum_base(&server.url(), &server.url());
+    let entry = protocol.resolve(module, version).await.unwrap();
+    assert!(entry.extra_markers.iter().any(|marker| {
+        marker == &format!("go-mod-sha256:{}", sha256_hex(original_mod.as_bytes()))
+    }));
+    let error = protocol.download_module(&entry).await.unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains(".mod metadata changed after resolution"),
+        "unexpected error: {error}"
+    );
 }

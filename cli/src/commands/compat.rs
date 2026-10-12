@@ -11,6 +11,21 @@
 
 use anyhow::{Result, bail};
 
+/// Parse `--compat-runner <manager>` (Spec rev4 §7/§9): qualified names only
+/// (`npm|pnpm|yarn|bun` — the only compat contracts today). Warn loudly on
+/// every use; the delegation trade-off is never silent.
+/// (Parse `--compat-runner <manager>` (Spec rev4 §7/§9): chỉ tên qualified.
+/// Cảnh báo lớn mỗi lần dùng; trade-off ủy quyền không bao giờ im lặng.)
+pub fn parse_compat_runner(flag: Option<&str>) -> Result<Option<String>> {
+    let parsed = mgc_exec::prelude::parse_compat_runner(flag)?;
+    if let Some(manager) = &parsed {
+        mgc_ui::warning(&format!(
+            "--compat-runner '{manager}' delegates execution to an external package manager; dependency and lifecycle operations are no longer fully owned by MagiCore"
+        ));
+    }
+    Ok(parsed)
+}
+
 /// Historical rival-runtime flag values accepted for actionable refusal.
 /// Các giá trị cờ runtime cũ được nhận diện để từ chối có hướng dẫn.
 pub const COMPAT_RUNTIMES: &[&str] = &["bun", "deno"];

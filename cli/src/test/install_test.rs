@@ -346,11 +346,10 @@ fn test_load_locked_graph_ignores_legacy_checksum_sidecar() {
     )
     .unwrap();
 
-    assert!(
-        load_locked_graph(dir.path(), "web", &manifest)
-            .unwrap()
-            .is_none()
-    );
+    let graph = load_locked_graph(dir.path(), "web", &manifest)
+        .unwrap()
+        .expect("a signed empty lock is a valid graph for an empty manifest");
+    assert!(graph.packages.is_empty());
 }
 
 #[test]
@@ -728,7 +727,7 @@ fn generic_install_owner_recognizes_native_ai_pep621_lane() {
         native.path(),
         crate::commands::dep_gate::DepOp::OfflineReinstall,
     )
-    .expect_err("AI's online native install must not be advertised as offline-capable");
+    .expect("native AI offline ownership must reach verified cache-only replay");
 
     std::fs::write(native.path().join("uv.lock"), "version = 1\n").unwrap();
     let foreign = mgc_ai_adapter::adapter_for(native.path())
@@ -739,6 +738,12 @@ fn generic_install_owner_recognizes_native_ai_pep621_lane() {
     );
     validate_install_owner(&foreign, native.path())
         .expect_err("generic install must not admit a Python project owned by uv.lock");
+    validate_install_owner_for_op(
+        &foreign,
+        native.path(),
+        crate::commands::dep_gate::DepOp::OfflineReinstall,
+    )
+    .expect_err("foreign AI lock must not admit offline replay");
 }
 
 #[cfg(feature = "clo")]

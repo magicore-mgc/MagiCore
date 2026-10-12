@@ -19,18 +19,12 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to verify (e.g., v1.1.0-rc.9)"
+        description: "Release tag to verify (e.g., v1.1.0-rc.10)"
         required: true
         type: string
 
 permissions:
-  # Draft releases are only visible to write-capable tokens (2026-09-12):
-  # every job here DOWNLOADS the draft to verify its bytes/manifests
-  # before promotion — read-only through the API, nothing is created.
-  # Draft release chỉ hiển thị với token có quyền write: mọi job ở đây
-  # chỉ TẢI draft để kiểm tra byte/manifest trước khi promote — chỉ đọc
-  # qua API, không tạo gì.
-  contents: write
+  contents: read
 
 env:
   # Live OSV checks are required here; the active Rust/Python scanners
@@ -63,14 +57,17 @@ jobs:
           - os: windows-latest
             os_name: windows
             arch: x64
+    # Dispatch tags enter shell only through quoted environment variables.
+    # Tag dispatch chỉ vào shell qua biến môi trường có dấu nháy.
     steps:
       - name: Download archive + checksum from the public release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          TAG="${{ inputs.tag }}"
+          TAG="$RELEASE_TAG"
           VERSION="${TAG#v}"
           OS_NAME="${{ matrix.os_name }}"
           ARCH="${{ matrix.arch }}"
@@ -180,19 +177,29 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          TAG="${{ inputs.tag }}"
+          TAG="$RELEASE_TAG"
           mkdir -p formula-verify && cd formula-verify
-          gh release download "$TAG" -R "${{ github.repository }}" -p "packaging/homebrew/magicore.rb"
+          mkdir -p downloaded packaging/homebrew
+          # GitHub Release assets are flat; download by asset basename, then
+          # rebuild the directory structure expected by the local tap below.
+          # Asset của GitHub Release là file phẳng; tải theo basename rồi dựng
+          # lại cấu trúc thư mục mà tap cục bộ cần.
+          gh release download "$TAG" -R "${{ github.repository }}" --dir downloaded \
+            --pattern "magicore.rb" --pattern "magicore-web.rb"
+          cp downloaded/magicore.rb packaging/homebrew/magicore.rb
+          cp downloaded/magicore-web.rb packaging/homebrew/magicore-web.rb
           test -f packaging/homebrew/magicore.rb
+          test -f packaging/homebrew/magicore-web.rb
           # Formula must not ship placeholder hashes — the release CI
           # replaces them; a placeholder here means the release is NOT
           # publishable (fail loudly, never install a broken formula).
           # Formula không được còn hash placeholder — release CI thay;
           # còn placeholder nghĩa là release CHƯA publish được.
-          if grep -q "PLACEHOLDER" packaging/homebrew/magicore.rb; then
-            echo "formula still carries PLACEHOLDER hashes — release CI did not finalize" >&2
+          if grep -Eq 'PLACEHOLDER|PENDING_[A-Z0-9_]+|UPDATE_ME|0000000000000000' packaging/homebrew/*.rb; then
+            echo "a Homebrew formula still carries a placeholder hash — release CI did not finalize" >&2
             exit 1
           fi
 
@@ -255,14 +262,24 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          TAG="${{ inputs.tag }}"
+          TAG="$RELEASE_TAG"
           mkdir -p scoop-verify && cd scoop-verify
-          gh release download "$TAG" -R "${{ github.repository }}" -p "packaging/scoop/magicore.json"
+          mkdir -p downloaded packaging/scoop
+          # GitHub Release assets are flat; download by asset basename, then
+          # rebuild the bucket path consumed by the install step.
+          # Asset của GitHub Release là file phẳng; tải theo basename rồi
+          # dựng lại đường dẫn bucket mà bước cài đặt sử dụng.
+          gh release download "$TAG" -R "${{ github.repository }}" --dir downloaded \
+            --pattern "magicore.json" --pattern "magicore-web.json"
+          cp downloaded/magicore.json packaging/scoop/magicore.json
+          cp downloaded/magicore-web.json packaging/scoop/magicore-web.json
           test -f packaging/scoop/magicore.json
-          if grep -q "PLACEHOLDER" packaging/scoop/magicore.json; then
-            echo "scoop manifest still carries PLACEHOLDER hashes — release CI did not finalize" >&2
+          test -f packaging/scoop/magicore-web.json
+          if grep -Eq 'PLACEHOLDER|PENDING_[A-Z0-9_]+|UPDATE_ME|0000000000000000' packaging/scoop/*.json; then
+            echo "a Scoop manifest still carries a placeholder hash — release CI did not finalize" >&2
             exit 1
           fi
 
@@ -301,20 +318,20 @@ jobs:
 
   verify-signed-manifest:
     # P0/F7: the release manifest is the self-update trust anchor —
-    # verify its detached Ed25519 signature against the release signing
-    # key and verify every downloaded release archive's signed size/digest binding.
+    # verify its detached Ed25519 signature against configured public
+    # trust roots and every archive's signed size/digest binding.
     # Missing key, signature, manifest, or a required variant is a hard failure.
     # Manifest là neo trust của self-update — verify chữ ký Ed25519
     # và ràng buộc size/digest của tất cả archive phát hành. Thiếu biến thể
     # bắt buộc nào đều phải fail.
     name: verify signed release manifest
     runs-on: ubuntu-latest
-    # Draft assets are only visible to write-capable repository tokens.
-    # (Token cần quyền write để đọc asset draft trước khi promote.)
+    # This job runs after promotion and downloads only public release assets.
+    # Job chạy sau khi promote và chỉ tải asset public của release.
     permissions:
-      contents: write
+      contents: read
     env:
-      MGC_RELEASE_SIGNING_KEY: ${{ secrets.MGC_RELEASE_SIGNING_KEY }}
+      MGC_RELEASE_TRUST_ROOTS: ${{ vars.MGC_RELEASE_TRUST_ROOTS }}
     steps:
       - name: Checkout verifier at the workflow revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

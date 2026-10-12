@@ -8,6 +8,13 @@ use std::fs;
 use std::io::Write;
 use tempfile::TempDir;
 
+#[test]
+fn default_cache_is_under_mgc_web_cache_root() {
+    let path = PackageCache::default_cache_dir().unwrap();
+    assert!(path.starts_with(mgc_platform::paths::mgc_data_dir().join("cache/web")));
+    assert!(path.ends_with("package-cache"));
+}
+
 fn setup_test_cache() -> (TempDir, PackageCache) {
     // Create temp cache — Tạo cache tạm thời
     let tmp = tempfile::tempdir().unwrap();

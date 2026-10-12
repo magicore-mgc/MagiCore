@@ -59,6 +59,7 @@ fn sample_packages() -> Vec<PackageV4> {
                 variant: VariantKey::default(),
             },
             edges: Vec::new(),
+            markers: None,
             artifact: None,
             provenance: None,
             toolchain: None,
@@ -90,6 +91,7 @@ fn sample_packages() -> Vec<PackageV4> {
                 origin: EdgeOrigin::Manifest,
                 marker: None,
             }],
+            markers: None,
             artifact: None,
             provenance: None,
             toolchain: None,
@@ -132,6 +134,55 @@ fn canonical_output_is_order_independent() {
     shuffled.sources.reverse();
     let second = canonical_toml(&shuffled.payload());
     assert_eq!(first, second);
+}
+
+#[test]
+fn legacy_v4_remains_readable_and_does_not_gain_new_payload_fields() {
+    let lock = sample_lockfile();
+    let text = write_v4_document(&lock).unwrap();
+    let parsed = parse_v4_document(&text).unwrap();
+
+    assert_eq!(parsed, lock);
+    assert!(!canonical_toml(&lock.payload()).contains("markers ="));
+    assert_eq!(
+        parse_document(&text).unwrap(),
+        mgc_lockfile::parser::LockDocument::V4(lock)
+    );
+}
+
+#[test]
+fn v4_1_markers_are_roundtripped_and_authenticated() {
+    let mut lock = sample_lockfile();
+    lock.version = mgc_lockfile::v4::LOCKFILE_SCHEMA_V4.to_string();
+    lock.packages[0].markers = Some(vec![
+        "go-mod-sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
+    ]);
+    let first_digest = payload_digest(&lock.payload());
+    let text = write_v4_document(&lock).unwrap();
+
+    assert!(text.contains("version = \"4.1\""));
+    assert!(canonical_toml(&lock.payload()).contains("markers = ["));
+    let parsed = parse_v4_document(&text).unwrap();
+    assert_eq!(parsed, lock);
+    assert_eq!(payload_digest(&parsed.payload()), first_digest);
+
+    lock.packages[0].markers = Some(vec!["go-mod-sha256:different".into()]);
+    assert_ne!(payload_digest(&lock.payload()), first_digest);
+}
+
+#[test]
+fn legacy_v4_rejects_markers_that_its_revision_cannot_authenticate() {
+    let mut lock = sample_lockfile();
+    lock.packages[0].markers = Some(vec!["go-mod-sha256:untrusted".into()]);
+    let text = write_v4_document(&lock).unwrap();
+
+    assert!(
+        parse_v4_document(&text)
+            .unwrap_err()
+            .to_string()
+            .contains("require lockfile schema revision 4.1")
+    );
+    assert!(parse_document(&text).is_err());
 }
 
 #[test]

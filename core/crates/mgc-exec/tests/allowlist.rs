@@ -23,6 +23,139 @@ fn allows_known_tools() {
 }
 
 #[test]
+fn bash_is_limited_to_project_execution_scopes() {
+    use mgc_exec::allowlist::check_tool_with_scope;
+    use std::path::Path;
+
+    let root = Path::new("/tmp/project");
+    for scope in [
+        ExecutionScope::TestRunner,
+        ExecutionScope::BuildRunner,
+        ExecutionScope::DevServer,
+        ExecutionScope::ScriptRunner,
+    ] {
+        assert!(
+            check_tool_with_scope("bash", scope, Some(root)).is_ok(),
+            "bash should run project shell code in {scope:?}"
+        );
+    }
+    assert!(
+        check_tool_with_scope("bash", ExecutionScope::Install, Some(root)).is_err(),
+        "bash must not execute dependency install scripts"
+    );
+    assert!(
+        check_tool_with_scope("bash", ExecutionScope::DeviceControl, Some(root)).is_err(),
+        "bash is not a device-control tool"
+    );
+}
+
+#[test]
+fn language_runtimes_are_available_only_in_project_execution_scopes() {
+    use mgc_exec::allowlist::check_tool_with_scope;
+    use std::path::Path;
+
+    let root = Path::new("/tmp/project");
+    let tools = [
+        "bash", "clang", "clang++", "dotnet", "gcc", "g++", "godot", "java", "javac", "kotlinc",
+        "php", "zig",
+    ];
+    for tool in tools {
+        for scope in [
+            ExecutionScope::TestRunner,
+            ExecutionScope::BuildRunner,
+            ExecutionScope::DevServer,
+            ExecutionScope::ScriptRunner,
+        ] {
+            assert!(
+                check_tool_with_scope(tool, scope, Some(root)).is_ok(),
+                "{tool} should be available in {scope:?}"
+            );
+        }
+        for scope in [ExecutionScope::Install, ExecutionScope::DeviceControl] {
+            assert!(
+                check_tool_with_scope(tool, scope, Some(root)).is_err(),
+                "{tool} must stay out of {scope:?}"
+            );
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn explicitly_invoked_project_executable_is_scoped_and_confined() {
+    use mgc_exec::allowlist::check_tool_with_scope;
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = tempfile::tempdir().expect("create executable project root");
+    let executable = root.path().join(".mgc-probe");
+    std::fs::write(&executable, b"probe").expect("write executable fixture");
+    let mut permissions = std::fs::metadata(&executable)
+        .expect("read executable metadata")
+        .permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&executable, permissions).expect("mark fixture executable");
+
+    assert!(
+        check_tool_with_scope("./.mgc-probe", ExecutionScope::DevServer, Some(root.path())).is_ok()
+    );
+    assert!(
+        check_tool_with_scope(
+            "./.mgc-probe",
+            ExecutionScope::ScriptRunner,
+            Some(root.path())
+        )
+        .is_ok()
+    );
+    assert!(
+        check_tool_with_scope(".mgc-probe", ExecutionScope::DevServer, Some(root.path())).is_err()
+    );
+    assert!(
+        check_tool_with_scope("./.mgc-probe", ExecutionScope::Install, Some(root.path())).is_err()
+    );
+    assert!(
+        check_tool_with_scope(
+            "./.mgc-probe",
+            ExecutionScope::DeviceControl,
+            Some(root.path())
+        )
+        .is_err()
+    );
+
+    let outside = tempfile::tempdir().expect("create outside executable directory");
+    let outside_executable = outside.path().join("probe");
+    std::fs::write(&outside_executable, b"probe").expect("write outside executable");
+    let mut outside_permissions = std::fs::metadata(&outside_executable)
+        .expect("read outside executable metadata")
+        .permissions();
+    outside_permissions.set_mode(0o755);
+    std::fs::set_permissions(&outside_executable, outside_permissions)
+        .expect("mark outside fixture executable");
+
+    assert!(
+        check_tool_with_scope(
+            outside_executable.to_str().expect("outside path is UTF-8"),
+            ExecutionScope::DevServer,
+            Some(root.path())
+        )
+        .is_err(),
+        "executables outside the project root must stay denied"
+    );
+
+    let escaped_link = root.path().join("escaped-probe");
+    std::os::unix::fs::symlink(&outside_executable, &escaped_link)
+        .expect("create project symlink to outside executable");
+    assert!(
+        check_tool_with_scope(
+            "./escaped-probe",
+            ExecutionScope::DevServer,
+            Some(root.path())
+        )
+        .is_err(),
+        "a project symlink must not authorize a target outside the root"
+    );
+}
+
+#[test]
 fn android_debug_bridge_is_allowed_only_for_device_control_scope() {
     use mgc_exec::allowlist::check_tool_with_scope;
     use std::path::Path;

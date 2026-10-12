@@ -37,28 +37,32 @@ pub enum StoreCmd {
     /// review vòng-9): 0 = healthy (or repaired AND re-checked healthy),
     /// 1 = corruption/invariant violation — scripts and CI must be able
     /// to trust the code, `doctor && prune` must not run on a broken
-    /// store. `--json` emits a machine-readable status object. The
-    /// current doctor covers the WEB core's store only — the flag `--core
-    /// web` makes that boundary explicit (all-core dispatch is future
-    /// work; a doctor named wider than its evidence is a false claim).
+    /// store. `--json` emits a machine-readable status object. Web doctor
+    /// checks DB/CAS invariants; other native routes check managed-root
+    /// path safety only. Supply `--framework` for non-Web routes.
     /// (Kiểm tra sức khỏe store (đọc được DB, an toàn root CAS) và báo
     /// các bước sửa — đích của mọi lời từ chối prune (P1-6 + P0-C).
     /// `--repair` khóa lại store bị cách ly và dọn temp sót. HỢP ĐỒNG
     /// EXIT (P0-B): 0 = khỏe (hoặc đã repair VÀ re-check khỏe), 1 =
     /// hỏng/vi phạm invariant — script và CI phải tin được exit code,
     /// `doctor && prune` không được chạy trên store hỏng. `--json` xuất
-    /// đối tượng trạng thái máy đọc được. Doctor hiện tại chỉ phủ store
-    /// của core WEB — cờ `--core web` ghi rõ biên đó (dispatch all-core
-    /// là việc sau; doctor đặt tên rộng hơn bằng chứng là claim giả).)
+    /// đối tượng trạng thái máy đọc được. Web doctor kiểm tra invariant
+    /// DB/CAS; route native khác chỉ kiểm tra an toàn root. Dùng
+    /// `--framework` cho route ngoài Web.)
     Doctor {
         #[arg(long, help = "attempt automatic repair, not just a check")]
         repair: bool,
         #[arg(
             long,
             default_value = "web",
-            help = "store core to inspect (web is the only implemented doctor)"
+            help = "project core whose store route should be checked"
         )]
         core: String,
+        #[arg(
+            long,
+            help = "framework/language store route (required for non-Web routes)"
+        )]
+        framework: Option<String>,
         #[arg(long, help = "emit machine-readable JSON status")]
         json: bool,
     },
@@ -102,6 +106,351 @@ fn ensure_web_store_owner(project_root: &Path) -> Result<()> {
         return Err(crate::error::store_requires_web_core(Some(&marker)));
     }
     Ok(())
+}
+
+/// Store health route backed by the actual native installer for a lane.
+/// Route kiểm tra store theo installer native thực sự của lane.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StoreRoute {
+    WebProject,
+    Global(&'static [StoreRootKind]),
+}
+
+/// MagiCore-managed roots written or consumed by native installers.
+/// Các root do installer native của MagiCore ghi hoặc sử dụng.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StoreRootKind {
+    ContentCas,
+    Cargo,
+    Go,
+    Maven,
+    Nuget,
+    Pypi,
+    Pub,
+    Swift,
+}
+
+impl StoreRootKind {
+    fn name(self) -> &'static str {
+        match self {
+            Self::ContentCas => "content-cas",
+            Self::Cargo => "cargo",
+            Self::Go => "go",
+            Self::Maven => "maven",
+            Self::Nuget => "nuget",
+            Self::Pypi => "pypi",
+            Self::Pub => "pub",
+            Self::Swift => "swift",
+        }
+    }
+}
+
+const WEB_NATIVE_FRAMEWORKS: &[&str] = &[
+    "angular",
+    "astro",
+    "express",
+    "fastify",
+    "hono",
+    "nestjs",
+    "nextjs",
+    "node",
+    "nuxt",
+    "qwik",
+    "react-vite",
+    "remix",
+    "solidjs",
+    "sveltekit",
+    "trpc",
+    "ts",
+    "vanilla",
+    "vue-vite",
+];
+const AI_PYTHON_ROOTS: &[StoreRootKind] = &[StoreRootKind::ContentCas, StoreRootKind::Pypi];
+const APP_FLUTTER_ROOTS: &[StoreRootKind] = &[StoreRootKind::ContentCas, StoreRootKind::Pub];
+const APP_SWIFT_ROOTS: &[StoreRootKind] = &[StoreRootKind::ContentCas, StoreRootKind::Swift];
+const LIB_CARGO_ROOTS: &[StoreRootKind] = &[StoreRootKind::ContentCas, StoreRootKind::Cargo];
+const LIB_GO_ROOTS: &[StoreRootKind] = &[StoreRootKind::ContentCas, StoreRootKind::Go];
+const LIB_MAVEN_ROOTS: &[StoreRootKind] = &[StoreRootKind::ContentCas, StoreRootKind::Maven];
+const LIB_NUGET_ROOTS: &[StoreRootKind] = &[StoreRootKind::ContentCas, StoreRootKind::Nuget];
+const LIB_PYPI_ROOTS: &[StoreRootKind] = &[StoreRootKind::ContentCas, StoreRootKind::Pypi];
+
+/// Resolve only store routes currently implemented by native installers.
+/// Chỉ phân giải route store hiện được installer native triển khai.
+fn store_route(core: &str, framework: Option<&str>) -> Option<StoreRoute> {
+    match (core, framework) {
+        ("web", None) => Some(StoreRoute::WebProject),
+        ("web", Some(name)) if WEB_NATIVE_FRAMEWORKS.contains(&name) => {
+            Some(StoreRoute::WebProject)
+        }
+        ("web", Some("actix-web" | "axum" | "rust")) => Some(StoreRoute::Global(LIB_CARGO_ROOTS)),
+        ("web", Some("django" | "fastapi" | "flask" | "python")) => {
+            Some(StoreRoute::Global(LIB_PYPI_ROOTS))
+        }
+        ("web", Some("echo" | "fiber" | "gin" | "go")) => Some(StoreRoute::Global(LIB_GO_ROOTS)),
+        ("web", Some("java" | "quarkus" | "spring-boot")) => {
+            Some(StoreRoute::Global(LIB_MAVEN_ROOTS))
+        }
+        ("web", Some("dotnet" | "dotnet-minimal" | "dotnet-webapi")) => {
+            Some(StoreRoute::Global(LIB_NUGET_ROOTS))
+        }
+        ("clo", Some("cdk" | "pulumi")) | ("lib", Some("ts")) => Some(StoreRoute::WebProject),
+        ("ai", Some("python-agent")) => Some(StoreRoute::Global(AI_PYTHON_ROOTS)),
+        ("app", Some("flutter")) => Some(StoreRoute::Global(APP_FLUTTER_ROOTS)),
+        ("app", Some("swift")) => Some(StoreRoute::Global(APP_SWIFT_ROOTS)),
+        ("lib", Some("rust")) | ("game", Some("bevy")) | ("iot", Some("esp32-rust")) => {
+            Some(StoreRoute::Global(LIB_CARGO_ROOTS))
+        }
+        ("lib", Some("go")) => Some(StoreRoute::Global(LIB_GO_ROOTS)),
+        ("lib", Some("java")) => Some(StoreRoute::Global(LIB_MAVEN_ROOTS)),
+        ("lib", Some("dotnet")) => Some(StoreRoute::Global(LIB_NUGET_ROOTS)),
+        ("lib", Some("python")) => Some(StoreRoute::Global(LIB_PYPI_ROOTS)),
+        _ => None,
+    }
+}
+
+/// Resolve an installer root without creating or modifying it.
+/// Tìm root installer mà không tạo hay sửa dữ liệu.
+fn store_root_path(kind: StoreRootKind) -> Result<PathBuf> {
+    let global = mgc_platform::paths::GlobalPaths::new()?;
+    let path = match kind {
+        StoreRootKind::ContentCas => mgc_store::default_store_root(),
+        StoreRootKind::Cargo => global.store.join("cargo"),
+        StoreRootKind::Go => global.store.join("go"),
+        StoreRootKind::Maven => global.store.join("maven"),
+        StoreRootKind::Nuget => global.store.join("nuget"),
+        StoreRootKind::Pypi => global.store.join("pypi"),
+        StoreRootKind::Pub => mgc_platform::paths::mgc_data_dir()
+            .join("store")
+            .join("pub"),
+        StoreRootKind::Swift => std::env::var("MGC_SWIFT_STORE_ROOT")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                mgc_platform::paths::mgc_data_dir()
+                    .join("store")
+                    .join("swift")
+            }),
+    };
+    Ok(path)
+}
+
+/// Check the project core marker before touching a non-Web shared store.
+/// Đối chiếu marker core trước khi kiểm tra shared store ngoài Web.
+fn ensure_store_core_owner(project_root: &Path, expected: &str) -> Result<()> {
+    let marker = ProjectConfig::read_core_marker(project_root)?
+        .ok_or_else(|| crate::error::store_core_marker_required(expected))?;
+    let configured = ProjectConfig::load(project_root)?.map(|config| {
+        if config.ecosystem == "cloud" {
+            "clo".to_string()
+        } else {
+            config.ecosystem
+        }
+    });
+    if let Some(configured) = &configured
+        && &marker != configured
+    {
+        return Err(crate::error::store_core_identity_conflict_any(
+            &marker, configured,
+        ));
+    }
+    if marker != expected {
+        return Err(crate::error::store_core_identity_mismatch(
+            expected,
+            &marker,
+            configured.as_deref().unwrap_or("<missing mgc.toml core>"),
+        ));
+    }
+    Ok(())
+}
+
+/// Refuse a caller-selected framework that disagrees with mgc.toml.
+/// Từ chối framework caller chọn nếu không khớp mgc.toml.
+fn ensure_store_framework_owner(project_root: &Path, core: &str, expected: &str) -> Result<()> {
+    ensure_store_core_owner(project_root, core)?;
+    let config = ProjectConfig::load(project_root)?
+        .ok_or_else(|| crate::error::store_doctor_framework_metadata_required(core, expected))?;
+    if !config
+        .frameworks
+        .iter()
+        .any(|framework| store_framework_name_matches(core, framework, expected))
+    {
+        return Err(crate::error::store_doctor_framework_mismatch(
+            core,
+            expected,
+            &config.frameworks,
+        ));
+    }
+    Ok(())
+}
+
+/// Match the small set of Web aliases accepted by the store route against
+/// the canonical names written to `mgc.toml` by scaffold normalization.
+/// So khớp alias Web được store route nhận với tên chuẩn scaffold ghi vào `mgc.toml`.
+fn store_framework_name_matches(core: &str, declared: &str, requested: &str) -> bool {
+    fn canonical<'a>(core: &str, framework: &'a str) -> &'a str {
+        match (core, framework) {
+            ("web", "ts") => "vanilla",
+            ("web", "node") => "express",
+            _ => framework,
+        }
+    }
+    canonical(core, declared) == canonical(core, requested)
+}
+
+#[derive(Debug, serde::Serialize)]
+struct SharedRootStatus {
+    name: String,
+    path: String,
+    exists: bool,
+    safe: bool,
+    error: Option<String>,
+}
+
+/// Inspect one configured root using the same no-symlink/owner policy as CAS open.
+/// Kiểm tra một root theo cùng chính sách cấm symlink và xác minh owner của CAS.
+fn inspect_shared_root(name: &str, path: &Path) -> SharedRootStatus {
+    let exists = match std::fs::symlink_metadata(path) {
+        Ok(_) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => {
+            return SharedRootStatus {
+                name: name.to_string(),
+                path: path.display().to_string(),
+                exists: false,
+                safe: false,
+                error: Some(error.to_string()),
+            };
+        }
+    };
+    let validation = mgc_store::cas::validate_cas_root(path);
+    SharedRootStatus {
+        name: name.to_string(),
+        path: path.display().to_string(),
+        exists,
+        safe: validation.is_ok(),
+        error: validation.err().map(|error| error.to_string()),
+    }
+}
+
+/// Check global managed-root safety without creating roots or hashing package bytes.
+/// Kiểm tra an toàn root global, không tạo root hay hash nội dung package.
+fn doctor_global_roots(
+    core: &str,
+    framework: &str,
+    roots: &[StoreRootKind],
+    json: bool,
+) -> Result<()> {
+    #[derive(serde::Serialize)]
+    struct GlobalDoctorReport {
+        core: String,
+        framework: String,
+        scope: &'static str,
+        integrity_checked: bool,
+        repair_supported: bool,
+        roots: Vec<SharedRootStatus>,
+        healthy: bool,
+    }
+
+    let mut statuses = Vec::with_capacity(roots.len());
+    for kind in roots {
+        let path = store_root_path(*kind)?;
+        statuses.push(inspect_shared_root(kind.name(), &path));
+    }
+    let healthy = statuses.iter().all(|status| status.safe);
+    let report = GlobalDoctorReport {
+        core: core.to_string(),
+        framework: framework.to_string(),
+        scope: "managed-root-path-safety-only",
+        integrity_checked: false,
+        repair_supported: false,
+        roots: statuses,
+        healthy,
+    };
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!(
+            "store doctor: {} (managed root path safety only; package bytes not checked)",
+            if healthy { "HEALTHY" } else { "UNSAFE" }
+        );
+        for root in &report.roots {
+            println!(
+                "  [{}] {}: {}{}",
+                if root.safe { "ok" } else { "FAIL" },
+                root.name,
+                root.path,
+                if root.exists {
+                    " (present)"
+                } else {
+                    " (not initialized)"
+                }
+            );
+            if let Some(error) = &root.error {
+                println!("    {error}");
+            }
+        }
+    }
+    if healthy {
+        Ok(())
+    } else {
+        Err(crate::error::store_global_root_unsafe())
+    }
+}
+
+/// Dispatch health checking to the store route declared for the selected lane.
+/// Điều phối health check theo store route của lane đã chọn.
+fn run_store_doctor(
+    project_root: &Path,
+    repair: bool,
+    core: &str,
+    framework: Option<&str>,
+    json: bool,
+) -> Result<()> {
+    let route = store_route(core, framework)
+        .ok_or_else(|| crate::error::store_doctor_route_unsupported(core, framework))?;
+    match route {
+        StoreRoute::WebProject => {
+            if core == "web" {
+                if let Some(framework) = framework {
+                    ensure_web_store_owner(project_root)?;
+                    ensure_store_framework_owner(project_root, core, framework)?;
+                } else {
+                    ensure_web_store_owner(project_root)?;
+                }
+                let native = crate::commands::compat::CompatMode::Native;
+                crate::commands::dep_gate::gate(
+                    &crate::commands::dep_gate::DepContext::new(
+                        "web",
+                        Some(crate::commands::dep_gate::eco::JS),
+                        None,
+                        None,
+                        crate::commands::dep_gate::DepOp::Gc,
+                    ),
+                    None,
+                    &native,
+                    None,
+                )?;
+            } else {
+                let framework = framework
+                    .ok_or_else(|| crate::error::store_doctor_route_unsupported(core, framework))?;
+                ensure_store_framework_owner(project_root, core, framework)?;
+                if repair {
+                    return Err(crate::error::store_doctor_repair_unsupported(core));
+                }
+            }
+            doctor(project_root, repair, core, framework, json)
+        }
+        StoreRoute::Global(roots) => {
+            let framework = framework
+                .ok_or_else(|| crate::error::store_doctor_route_unsupported(core, framework))?;
+            ensure_store_framework_owner(project_root, core, framework)?;
+            if repair {
+                return Err(crate::error::store_doctor_repair_unsupported(core));
+            }
+            doctor_global_roots(core, framework, roots, json)
+        }
+    }
 }
 
 /// Locks directory for the doctor's GC (P2-1): the install lock lives
@@ -237,6 +586,15 @@ pub async fn run(cmd: StoreCmd) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let project_root =
         ProjectConfig::find_project_root(&cwd).ok_or_else(crate::error::project_root_missing)?;
+    if let StoreCmd::Doctor {
+        repair,
+        core,
+        framework,
+        json,
+    } = &cmd
+    {
+        return run_store_doctor(&project_root, *repair, core, framework.as_deref(), *json);
+    }
     ensure_web_store_owner(&project_root)?;
     let native = crate::commands::compat::CompatMode::Native;
     crate::commands::dep_gate::gate(
@@ -346,7 +704,12 @@ pub async fn run(cmd: StoreCmd) -> Result<()> {
             );
             Ok(())
         }
-        StoreCmd::Doctor { repair, core, json } => doctor(&project_root, repair, &core, json),
+        StoreCmd::Doctor {
+            repair,
+            core,
+            framework,
+            json,
+        } => run_store_doctor(&project_root, repair, &core, framework.as_deref(), json),
     }
 }
 
@@ -559,18 +922,13 @@ fn classify_staging_lease_pure(
     }
 }
 
-fn doctor(project_root: &Path, repair: bool, core: &str, json: bool) -> Result<()> {
-    // Scope gate (P0-D taxonomy, vòng-9): only the WEB core store has a
-    // doctor today — refuse anything else loudly instead of silently
-    // checking web while the user asked for cargo/pypi.
-    // (Cổng phạm vi: chỉ store core WEB có doctor hôm nay — từ chối thứ
-    // khác rõ ràng thay vì âm thầm check web khi user hỏi cargo/pypi.)
-    if core != "web" {
-        return Err(anyhow::anyhow!(
-            "store doctor currently supports only --core web; \
-             other core stores are future work"
-        ));
-    }
+fn doctor(
+    project_root: &Path,
+    repair: bool,
+    core: &str,
+    framework: Option<&str>,
+    json: bool,
+) -> Result<()> {
     let web_cache = project_root.join(".magicore").join("cache").join("web");
     let db_path = store_db_for(project_root)?;
     let cas_root = web_cache.join("cas");
@@ -609,6 +967,10 @@ fn doctor(project_root: &Path, repair: bool, core: &str, json: bool) -> Result<(
     #[derive(serde::Serialize)]
     struct DoctorReport {
         core: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        framework: Option<String>,
+        scope: &'static str,
+        integrity_checked: bool,
         store_root: String,
         db_ok: bool,
         cas_root_ok: bool,
@@ -624,6 +986,9 @@ fn doctor(project_root: &Path, repair: bool, core: &str, json: bool) -> Result<(
     }
     let mut report = DoctorReport {
         core: core.to_string(),
+        framework: framework.map(str::to_string),
+        scope: "web-cas-and-generation-integrity",
+        integrity_checked: true,
         store_root: web_cache.display().to_string(),
         db_ok: false,
         cas_root_ok: false,
@@ -1130,10 +1495,7 @@ fn doctor(project_root: &Path, repair: bool, core: &str, json: bool) -> Result<(
     if report.healthy {
         Ok(())
     } else {
-        Err(anyhow::anyhow!(
-            "store doctor: NEEDS REPAIR — prune/install refuse until fixed \
-             (re-run mgc store doctor for details)"
-        ))
+        Err(crate::error::store_doctor_unhealthy(core, framework))
     }
 }
 

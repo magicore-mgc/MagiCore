@@ -1,283 +1,69 @@
-# MagiCore Distribution Packaging
+# MagiCore Distribution
 
-This directory contains package manager manifests and release automation for distributing MagiCore binaries.
+This directory contains package metadata and release checks. The authoritative release matrix and tag workflow are defined in [`.github/workflows/release.yml`](../.github/workflows/release.yml).
 
----
+## Published variants
 
-## Current Status (v1.1.0-rc.6)
+The release workflow publishes two binaries:
 
-### ✅ Ready
-- **macOS ARM64**: Real binary + checksum, Homebrew formula updated
-- **GitHub Actions**: Full 6-platform build workflow ready
-- **Automation**: SHA256 checksum generation, manifest updates
+- `magicore`: all nine core families.
+- `magicore-web`: web core only.
 
-### ⏳ Pending (Requires CI Trigger)
-- macOS x86_64 (Intel)
-- Linux x86_64
-- Linux ARM64
-- Windows x86_64
-- Windows ARM64
+Each is built for five targets: Linux x64 and arm64, macOS x64 and arm64, and Windows x64. This produces ten archives, each with a SHA-256 sidecar and a CycloneDX SBOM. Windows ARM64 is not in the current release matrix.
 
----
+The nine package manifests under `packaging/packages/` also let `mgc-dist` build core-specific binaries locally. Those seven additional core-specific variants are not published as GitHub release archives.
 
-## Package Managers
+## Install a published binary
 
-### Homebrew (macOS/Linux)
+Use a version shown on the [GitHub Releases page](https://github.com/mingd-153/MagiCore/releases). Replace `<published-version>` below with the version without its leading `v`:
 
-**Formulas**:
-- `homebrew/magicore.rb` - Full distribution (all cores)
-- `homebrew/magicore-web.rb` - Web-only distribution
-
-**Status**: 
-- ✅ macOS ARM64 checksum: REAL (`9b7593fee3317aea2867075fe17082b427f70213...`)
-- ⏳ Other platforms: Placeholder (will be replaced by CI)
-
-**Installation** (after release):
 ```bash
-brew tap magicore/tap
-brew install magicore
+curl -fsSLo /tmp/mgc-install-from-gh.sh \
+  https://raw.githubusercontent.com/mingd-153/MagiCore/main/scripts/install-from-gh.sh
+VERSION="<published-version>" # replace with a version listed on GitHub Releases
+bash /tmp/mgc-install-from-gh.sh \
+  --package magicore \
+  --version "$VERSION" \
+  --dir "$HOME/.local/bin"
 ```
 
-### Scoop (Windows)
+Use `--package magicore-web` for the web-only binary. The installer downloads the matching archive and `.sha256` sidecar, verifies the archive checksum, extracts `mgc`, and installs it into the requested directory. SHA-256 detects a mismatch against the downloaded sidecar; the installer does not verify the signed release manifest.
 
-**Manifests**:
-- `scoop/magicore.json` - Full distribution
-- `scoop/magicore-web.json` - Web-only distribution
+For Windows x64 in PowerShell, download and verify the ZIP before extracting it:
 
-**Status**: ⏳ All placeholders (needs Windows build)
-
-**Installation** (after release):
 ```powershell
-scoop bucket add magicore https://github.com/mingd-153/MagiCore
-scoop install magicore
+$Version = "<published-version>" # replace with a version listed on GitHub Releases
+$Archive = "magicore-$Version-windows-x64.zip"
+$Url = "https://github.com/mingd-153/MagiCore/releases/download/v$Version/$Archive"
+Invoke-WebRequest $Url -OutFile $Archive
+Invoke-WebRequest "$Url.sha256" -OutFile "$Archive.sha256"
+$Expected = (Get-Content -Raw "$Archive.sha256").Trim().Split()[0].ToLowerInvariant()
+$Actual = (Get-FileHash -Path $Archive -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($Actual -ne $Expected) { throw "SHA-256 mismatch" }
+$InstallDir = Join-Path $env:USERPROFILE ".magicore\bin"
+New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+Expand-Archive -LiteralPath $Archive -DestinationPath $InstallDir -Force
+& (Join-Path $InstallDir "mgc.exe") --version
 ```
 
----
+Add the extraction directory to the user PATH if the shell should find `mgc` by name.
 
-## Release Process
+The source files in `packaging/homebrew/` and `packaging/scoop/` are release inputs. The release workflow finalizes their checksums and attaches copies to the GitHub Release, but it does not update external package-manager repositories. Live GitHub inspection on 2026-10-09 confirmed that the owner’s [`homebrew-tap`](https://github.com/mingd-153/homebrew-tap) still points to MagiCore `1.0.0-rc.2` and legacy archive names; no Scoop bucket repository appeared in the owner’s repository list. Do not advertise `brew install magicore` or `scoop install magicore` for the 1.1.0 RC until those channels are updated and verified.
 
-### Automated (Recommended)
+## Release workflow
 
-**Trigger**: Push a version tag
+Pushing a version tag matching the workspace version starts `.github/workflows/release.yml`. The workflow builds both published variants for the five targets, creates archives/checksums/SBOMs, runs pre-publish checks, signs `manifest.json`, creates a **draft** GitHub Release, and smoke-tests the draft assets before a maintainer publishes it. After publication, run `.github/workflows/verify-release-distribution.yml` manually with that tag; it checks public downloads and package-manager installation using read-only repository access.
+
+Before a tag-triggered release can pass, configure repository Actions secret `MGC_RELEASE_SIGNING_KEY` with a 64-character hexadecimal Ed25519 seed and repository Actions variable `MGC_RELEASE_TRUST_ROOTS` with its matching 64-character hexadecimal public key. The variable accepts comma-separated public keys for rotation. CI signs with the secret and verifies with the public variable; it never passes the private seed to the distribution verifier. Clients that run `mgc self-update` must pin the same public key with `--trust-root` or `MGC_RELEASE_TRUST_ROOTS`. Never commit the seed or put it in an issue or workflow log.
+
+`workflow_dispatch` runs the workflow in dry-run mode and does not publish a release. The tag-triggered path intentionally starts as a draft; a maintainer reviews the completed checks and promotes it manually. The public-distribution workflow must run after promotion because Homebrew/Scoop fetch archives from the public release URL.
+
+The current Homebrew/Scoop checksum placeholders in source manifests are intentional fail-closed values. Do not publish them directly. The release job replaces them using checksums computed from the completed release archives and verifies the generated manifests before attaching them.
+
+## Local build scope
 
 ```bash
-git tag v1.1.0-rc.6
-git push origin v1.1.0-rc.6
+bash scripts/release.sh --profile release
 ```
 
-**GitHub Actions will**:
-1. Build binaries for 6 platforms (Linux/macOS/Windows, x86_64/ARM64)
-2. Generate SHA256 checksums for all artifacts
-3. Update package manager manifests with real checksums
-4. Create GitHub Release with all artifacts attached
-5. Mark as prerelease if tag contains `alpha`, `beta`, or `rc`
-
-**Timeline**: ~30-60 minutes for all builds
-
-**Artifacts**:
-- `magicore-<version>-linux-x64.tar.gz` + `.sha256`
-- `magicore-<version>-linux-arm64.tar.gz` + `.sha256`
-- `magicore-<version>-macos-x64.tar.gz` + `.sha256`
-- `magicore-<version>-macos-arm64.tar.gz` + `.sha256`
-- `magicore-<version>-windows-x64.zip` + `.sha256`
-- `magicore-<version>-windows-arm64.zip` + `.sha256`
-- Web-only variants for each platform
-
----
-
-### Manual (Local Testing)
-
-**Script**: `scripts/build_all_platforms.sh`
-
-**Usage**:
-```bash
-./scripts/build_all_platforms.sh [version]
-```
-
-**Options**:
-1. **GitHub Actions** (recommended) - Instructions to trigger CI build
-2. **cross-tool** - Local cross-compilation (requires Docker)
-3. **Native only** - Current platform only (quick testing)
-
-**Limitations**:
-- Local builds limited by platform (macOS can't build Windows, etc.)
-- cross-tool requires Docker setup
-- Native build only produces 1 platform artifact
-
----
-
-## Post-Release Checklist
-
-After GitHub Release is published:
-
-### 1. Download & Verify (5-10 min per platform)
-
-```bash
-# Download artifact
-curl -LO https://github.com/mingd-153/MagiCore/releases/download/v1.1.0-rc.6/magicore-1.1.0-rc.6-macos-arm64.tar.gz
-
-# Verify checksum
-curl -LO https://github.com/mingd-153/MagiCore/releases/download/v1.1.0-rc.6/magicore-1.1.0-rc.6-macos-arm64.tar.gz.sha256
-shasum -a 256 -c magicore-1.1.0-rc.6-macos-arm64.tar.gz.sha256
-
-# Extract & test
-tar -xzf magicore-1.1.0-rc.6-macos-arm64.tar.gz
-./mgc --version
-```
-
-Repeat for all 6 platforms (requires VMs/CI for non-native).
-
-### 2. Test Installation (10-15 min per platform)
-
-**macOS**:
-```bash
-# Fresh system test
-brew install magicore
-mgc --version
-mgc init test-project
-cd test-project
-mgc install
-brew uninstall magicore
-```
-
-**Linux**:
-```bash
-# Manual install test
-tar -xzf magicore-<version>-linux-x64.tar.gz
-sudo mv mgc /usr/local/bin/
-mgc --version
-sudo rm /usr/local/bin/mgc
-```
-
-**Windows**:
-```powershell
-# Scoop test
-scoop install magicore
-mgc --version
-mgc init test-project
-scoop uninstall magicore
-```
-
-### 3. Update Package Repositories
-
-**Homebrew**:
-```bash
-# Fork homebrew-core
-# Update formula with new version + checksums
-# Submit PR to Homebrew/homebrew-core
-
-# Or create custom tap
-git clone https://github.com/mingd-153/homebrew-magicore
-cp packaging/homebrew/magicore.rb homebrew-magicore/Formula/magicore.rb
-cd homebrew-magicore
-git add Formula/magicore.rb
-git commit -m "magicore 1.1.0-rc.6"
-git push
-```
-
-**Scoop**:
-```bash
-# Fork scoop bucket
-# Update manifest
-# Submit PR to ScoopInstaller/Main
-
-# Or create custom bucket
-git clone https://github.com/mingd-153/scoop-magicore
-cp packaging/scoop/magicore.json scoop-magicore/bucket/magicore.json
-cd scoop-magicore
-git add bucket/magicore.json
-git commit -m "magicore 1.1.0-rc.6"
-git push
-```
-
-### 4. Announce Release
-
-- Update README.md with installation instructions
-- Create release announcement (CHANGELOG.md highlights)
-- Post to community channels (if applicable)
-- Update documentation with version-specific notes
-
----
-
-## Troubleshooting
-
-### "Checksum mismatch"
-
-**Cause**: Downloaded file corrupted or tampered
-
-**Solution**: Re-download from GitHub Release, verify source
-
-### "Binary not found after install"
-
-**Cause**: PATH not updated or install location wrong
-
-**Solution** (macOS/Linux):
-```bash
-which mgc
-echo $PATH | grep /usr/local/bin
-```
-
-**Solution** (Windows):
-```powershell
-Get-Command mgc
-$env:PATH -split ';' | Select-String scoop
-```
-
-### "Permission denied" on macOS
-
-**Cause**: Gatekeeper blocking unsigned binary
-
-**Solution**:
-```bash
-xattr -d com.apple.quarantine /usr/local/bin/mgc
-# Or: System Preferences → Security & Privacy → Click "Allow"
-```
-
-### "Cross-compilation fails"
-
-**Cause**: esbuild-rs Go bindings don't cross-compile well
-
-**Solution**: Use GitHub Actions (has native runners for each platform)
-
----
-
-## Development Notes
-
-### Why Checksums Matter
-
-- **Security**: Verify artifact integrity, detect tampering
-- **Package managers**: Homebrew/Scoop require checksums for formula validation
-- **Reproducibility**: Ensure same binary for all users
-
-### Platform Targets
-
-| Platform | Arch | Target Triple | Notes |
-|----------|------|---------------|-------|
-| Linux | x86_64 | `x86_64-unknown-linux-gnu` | Most common |
-| Linux | ARM64 | `aarch64-unknown-linux-gnu` | Raspberry Pi, AWS Graviton |
-| macOS | ARM64 | `aarch64-apple-darwin` | M1/M2/M3 |
-| macOS | x86_64 | `x86_64-apple-darwin` | Intel Macs |
-| Windows | x86_64 | `x86_64-pc-windows-msvc` | Standard Windows |
-| Windows | ARM64 | `aarch64-pc-windows-msvc` | Surface Pro X, Qualcomm |
-
-### Binary Size
-
-- **Unstripped**: ~14 MB (includes debug symbols)
-- **Compressed**: ~7 MB (.tar.gz) / ~7.2 MB (.zip)
-- **Stripped** (optional): ~8 MB (`strip mgc`)
-
----
-
-## Future Improvements
-
-- [ ] Code signing (macOS notarization, Windows Authenticode)
-- [ ] Apt/Yum repositories (Linux .deb/.rpm packages)
-- [ ] Chocolatey support (Windows alternative to Scoop)
-- [ ] Snap/Flatpak (universal Linux packaging)
-- [ ] Automated smoke tests in CI (post-build validation)
-- [ ] Binary size optimization (strip, UPX, feature flags)
-
----
-
-**Last Updated**: 2026-09-04
-**Version**: 1.1.0-rc.6
+This command runs `mgc-dist build-all` and creates nine core-specific binaries plus build receipts for the host target under `dist/`. It does not create the ten cross-platform release archives; those are built by the GitHub Actions release matrix.

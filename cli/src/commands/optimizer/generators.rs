@@ -17,6 +17,12 @@ pub struct OptimizedConfigFile {
     pub description: String,
 }
 
+/// Whether a core has a safe optimization profile that does not require a language runtime.
+/// (Core nào có profile tối ưu an toàn mà không cần runtime ngôn ngữ cụ thể.)
+pub(crate) fn has_core_level_optimization(core: &str) -> bool {
+    matches!(core, "clo" | "cloud" | "cicd")
+}
+
 /// Generate optimized configuration files for each Core and actual Hardware specs — sinh các file cấu hình tối ưu phù hợp với từng Core và thông số Hardware thực tế
 /// REFACTORED: Runtime detection + adapter pattern (no hardcoding per core) — đã refactor: phát hiện runtime + pattern adapter
 pub fn generate_optimizations_for_core(
@@ -41,36 +47,10 @@ pub fn generate_optimizations_for_core(
     // (Dữ liệu GPU phân biệt inventory đủ, partial và chưa hỗ trợ.)
     files.push(gpu_env_file(hw));
 
-    // 0b. Unknown RAM guard: memory-derived adapter values (heap sizes,
-    // container limits) have no honest source — emit the honest manifest
-    // only, never tuned files from a guessed size.
-    // (Chặn RAM unknown: không nguồn trung thực — chỉ manifest.)
-    if hw.total_memory_gb.is_none() {
-        mgc_ui::warning(
-            "RAM size unknown — skipping memory-derived adapter configs (manifest only).",
-        );
-        return files;
-    }
-
-    // 1. Detect runtimes for this project + core — phát hiện runtimes cho project + core này
-    let detected_runtimes = runtime_detect::detect_runtimes(project_root, core);
-
-    // 2. Find matching adapters — tìm adapters khớp
-    let matched_adapters = adapters::find_adapters(&detected_runtimes);
-
-    // 3. Generate optimizations via adapters — tạo optimizations qua adapters
-    for adapter in matched_adapters {
-        let adapter_files = adapter.generate(hw);
-        mgc_ui::info(&format!(
-            "Optimizer: {} runtime detected, generating {} config(s)",
-            adapter.name(),
-            adapter_files.len()
-        ));
-        files.extend(adapter_files);
-    }
-
-    // 4. Fallback for cloud/cicd cores (container-neutral) — fallback cho cloud/cicd cores
-    if matches!(core, "clo" | "cloud" | "cicd") {
+    // Cloud and CI/CD profiles tune deployment/build concurrency without
+    // depending on a language runtime being present.
+    // (Profile Cloud và CI/CD tối ưu concurrency mà không cần runtime ngôn ngữ.)
+    if has_core_level_optimization(core) {
         let upload_limit = hw.cpu_cores.map(|cores| cores.max(2));
         let upload_line = upload_limit
             .map(|limit| format!("MGC_PARALLEL_UPLOADS={limit}\n"))
@@ -89,6 +69,34 @@ pub fn generate_optimizations_for_core(
                     "Deploy and container build defaults; CPU count unknown".to_string()
                 }),
         });
+    }
+
+    // 0b. Unknown RAM guard: memory-derived adapter values (heap sizes,
+    // container limits) have no honest source — emit the honest manifest
+    // only, never tuned files from a guessed size.
+    // (Chặn RAM unknown: không nguồn trung thực — chỉ manifest.)
+    if hw.total_memory_gb.is_none() {
+        mgc_ui::warning(
+            "RAM size unknown — skipping memory-derived adapter configs (manifest only).",
+        );
+        return files;
+    }
+
+    // 1. Detect runtimes for this project + core — phát hiện runtimes cho project + core này
+    let detected_runtimes = runtime_detect::detect_optimizer_runtimes(project_root, core);
+
+    // 2. Find matching adapters — tìm adapters khớp
+    let matched_adapters = adapters::find_adapters(&detected_runtimes);
+
+    // 3. Generate optimizations via adapters — tạo optimizations qua adapters
+    for adapter in matched_adapters {
+        let adapter_files = adapter.generate(hw);
+        mgc_ui::info(&format!(
+            "Optimizer: {} runtime detected, generating {} config(s)",
+            adapter.name(),
+            adapter_files.len()
+        ));
+        files.extend(adapter_files);
     }
 
     files

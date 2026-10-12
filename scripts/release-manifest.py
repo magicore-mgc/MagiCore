@@ -4,10 +4,10 @@
 Reads VERSION from the environment (fail-closed with a clear message —
 never an unhandled KeyError) and parses archive names from the RIGHT:
 ``magicore[-web]-<version>-<os>-<arch>.<ext>`` where <version> itself
-may contain dashes (e.g. ``1.1.0-rc.9``). The old left-split parser
+may contain dashes (e.g. ``1.1.0-rc.10``). The old left-split parser
 silently dropped every RC asset; this one cannot.
 
-Usage: VERSION=1.1.0-rc.9 python3 scripts/release-manifest.py <assets-dir>
+Usage: VERSION=1.1.0-rc.10 python3 scripts/release-manifest.py <assets-dir>
 """
 
 import hashlib

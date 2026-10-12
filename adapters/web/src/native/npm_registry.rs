@@ -67,6 +67,7 @@ pub struct NpmRegistry {
     /// tiếp khi primary 404/network/5xx — KHÔNG fallback khi 401/403 (auth
     /// fail = fail-closed, không leak package từ registry khác).
     fallbacks: Vec<(String, Option<String>)>,
+    scoped_clients: Option<Vec<(String, ScopedRegistryClient)>>,
     /// Per-client age-gate fetch mode (P0/F6): armed by the owning
     /// provider per operation — full packuments + no stale abbreviated
     /// cache. Never a process global.
@@ -124,6 +125,7 @@ fn global_http_client() -> mgc_types::MgResult<reqwest::Client> {
     CLIENT
         .get_or_init(|| {
             reqwest::Client::builder()
+                .redirect(registry_redirect_policy())
                 // Increased pool: 256 concurrent connections per registry host.
                 .pool_max_idle_per_host(256)
                 .pool_idle_timeout(Duration::from_secs(90))
@@ -152,6 +154,7 @@ pub fn batch_http_client() -> mgc_types::MgResult<reqwest::Client> {
     BATCH_CLIENT
         .get_or_init(|| {
             reqwest::Client::builder()
+                .redirect(registry_redirect_policy())
                 .pool_max_idle_per_host(256)
                 .pool_idle_timeout(Duration::from_secs(300))
                 .tcp_keepalive(Duration::from_secs(60))
@@ -180,6 +183,7 @@ impl NpmRegistry {
             registry_url: registry_url.to_string(),
             token: None,
             fallbacks: Vec::new(),
+            scoped_clients: None,
             age_armed: std::sync::atomic::AtomicBool::new(false),
         }
     }
@@ -189,6 +193,7 @@ impl NpmRegistry {
             registry_url: registry_url.to_string(),
             token,
             fallbacks: Vec::new(),
+            scoped_clients: None,
             age_armed: std::sync::atomic::AtomicBool::new(false),
         }
     }
@@ -203,8 +208,117 @@ impl NpmRegistry {
             registry_url: registry_url.to_string(),
             token,
             fallbacks,
+            scoped_clients: None,
             age_armed: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    /// Preserve typed credential scopes across every registry request.
+    /// Giữ scope theo instance, không suy ngược quyền từ token hoặc URL artifact.
+    pub fn new_with_scoped_chain(entries: Vec<mgc_config::chain::ScopedRegistry>) -> Result<Self> {
+        let primary = entries
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("no registry configured"))?;
+        for (index, entry) in entries.iter().enumerate() {
+            if entries.iter().skip(index + 1).any(|other| {
+                entry.registry.url == other.registry.url
+                    || (entry.credential_scope.is_some()
+                        && entry.credential_scope == other.credential_scope
+                        && entry.registry.token != other.registry.token)
+            }) {
+                return Err(anyhow::anyhow!("ambiguous registry credential chain"));
+            }
+        }
+        let mut registry = Self::new_with_chain(
+            &primary.registry.url,
+            primary.registry.token.clone(),
+            entries
+                .iter()
+                .skip(1)
+                .map(|entry| (entry.registry.url.clone(), entry.registry.token.clone()))
+                .collect(),
+        );
+        registry.scoped_clients = Some(
+            entries
+                .iter()
+                .map(|entry| {
+                    Ok((
+                        entry.registry.url.clone(),
+                        ScopedRegistryClient::new(entry)?,
+                    ))
+                })
+                .collect::<Result<Vec<_>>>()?,
+        );
+        Ok(registry)
+    }
+
+    /// Download tasks retain immutable credential scopes and reuse connection pools.
+    /// Không tái tạo từ token scalar; clone giữ policy theo instance của adapter.
+    pub fn clone_for_downloads(&self) -> Self {
+        Self {
+            registry_url: self.registry_url.clone(),
+            token: self.token.clone(),
+            fallbacks: self.fallbacks.clone(),
+            scoped_clients: self.scoped_clients.clone(),
+            age_armed: std::sync::atomic::AtomicBool::new(self.age_gate_armed()),
+        }
+    }
+
+    fn request_for(&self, target: &str, streaming: bool) -> Result<reqwest::RequestBuilder> {
+        if let Some(clients) = &self.scoped_clients {
+            let selected = clients
+                .iter()
+                .filter(|(_, client)| {
+                    client.token.is_some()
+                        && client
+                            .scope
+                            .as_ref()
+                            .is_some_and(|scope| credential_path_matches(scope.as_str(), target))
+                })
+                .max_by_key(|(_, client)| {
+                    client.scope.as_ref().map_or(0, |scope| scope.path().len())
+                });
+            let client = selected
+                .or_else(|| clients.first())
+                .ok_or_else(|| anyhow::anyhow!("no registry transport configured"))?;
+            let request = client.1.get(target)?;
+            return Ok(if streaming {
+                request.timeout(Duration::from_secs(SCOPED_REGISTRY_TIMEOUT_SECONDS))
+            } else {
+                request
+            });
+        }
+        let client = if streaming {
+            batch_http_client()
+        } else {
+            global_http_client()
+        }
+        .map_err(|error| anyhow::anyhow!("{error}"))?;
+        Ok(self.with_auth(client.get(target), target))
+    }
+
+    fn metadata_request_for(
+        &self,
+        registry_url: &str,
+        token: Option<&str>,
+        target: &str,
+    ) -> Result<reqwest::RequestBuilder> {
+        if let Some(clients) = &self.scoped_clients {
+            return clients
+                .iter()
+                .find(|(url, _)| url == registry_url)
+                .ok_or_else(|| anyhow::anyhow!("registry transport is missing"))?
+                .1
+                .get(target);
+        }
+        let request = global_http_client()
+            .map_err(|error| anyhow::anyhow!("{error}"))?
+            .get(target);
+        Ok(if let Some(token) = token {
+            request.bearer_auth(token)
+        } else {
+            request
+        })
     }
 
     /// Arm/disarm full-packument fetch mode for this client (called by
@@ -228,17 +342,10 @@ impl NpmRegistry {
     }
 
     fn with_auth(&self, req: reqwest::RequestBuilder, url: &str) -> reqwest::RequestBuilder {
-        if let Some(token) = &self.token {
-            let rh = reqwest::Url::parse(&self.registry_url)
-                .ok()
-                .and_then(|u| u.host_str().map(str::to_owned));
-            let rh: Option<&str> = rh.as_deref();
-            let url_host = reqwest::Url::parse(url)
-                .ok()
-                .and_then(|u| u.host_str().map(str::to_owned));
-            if url_host.as_deref() == rh {
-                return req.header("Authorization", format!("Bearer {token}"));
-            }
+        if let Some(token) = &self.token
+            && registry_origin_matches(&self.registry_url, url)
+        {
+            return req.header("Authorization", format!("Bearer {token}"));
         }
         req
     }
@@ -256,40 +363,26 @@ impl NpmRegistry {
         &self,
         package: &str,
     ) -> Result<(PackageMetadata, Option<String>)> {
-        let client = global_http_client().map_err(|error| anyhow::anyhow!("{error}"))?;
         let chain = self.chain();
         let mut last_err: Option<anyhow::Error> = None;
         let accept = metadata_accept_header(self.age_gate_armed());
 
         for (url, token) in chain {
             let endpoint = format!("{}/{}", url.trim_end_matches('/'), package);
-            let endpoint_for_closure = endpoint.clone();
-            let token_for_closure = token.clone();
-            // `Client` is reference-counted — per-attempt clones are cheap.
-            let client = client.clone();
-            let result = with_retry("metadata", package, move || {
-                let resp_future = client.get(&endpoint_for_closure);
-                let token_owned = token_for_closure.clone();
-                // Return the async block directly — trả thẳng async block (clippy let_and_return).
-                async move {
-                    let req = if let Some(tok) = token_owned.as_deref() {
-                        resp_future.header("Authorization", format!("Bearer {tok}"))
-                    } else {
-                        resp_future
-                    };
-                    let resp = req
-                        .header("Accept", accept)
-                        .send()
-                        .await?
-                        .error_for_status()?;
-                    let etag = resp
-                        .headers()
-                        .get("etag")
-                        .and_then(|v| v.to_str().ok())
-                        .map(str::to_owned);
-                    let metadata: PackageMetadata = resp.json().await?;
-                    Ok((metadata, etag))
-                }
+            let result = with_retry("metadata", package, || async {
+                let req = self.metadata_request_for(&url, token.as_deref(), &endpoint)?;
+                let resp = req
+                    .header("Accept", accept)
+                    .send()
+                    .await?
+                    .error_for_status()?;
+                let etag = resp
+                    .headers()
+                    .get("etag")
+                    .and_then(|v| v.to_str().ok())
+                    .map(str::to_owned);
+                let metadata: PackageMetadata = resp.json().await?;
+                Ok((metadata, etag))
             })
             .await;
 
@@ -300,7 +393,15 @@ impl NpmRegistry {
             let Err(e) = result else {
                 unreachable!("checked Ok arm above")
             };
-            if is_auth_error(&e) {
+            // Scoped redirect refusal is terminal, never a public fallback.
+            // Lỗi ranh giới credential không được làm lộ package qua registry kế tiếp.
+            let scoped_redirect_refused = self.scoped_clients.is_some()
+                && e.chain().any(|cause| {
+                    cause
+                        .downcast_ref::<reqwest::Error>()
+                        .is_some_and(|error| error.is_redirect())
+                });
+            if is_auth_error(&e) || scoped_redirect_refused {
                 return Err(e);
             }
             last_err = Some(e);
@@ -315,36 +416,32 @@ impl NpmRegistry {
         package: &str,
         etag: Option<&str>,
     ) -> Result<Option<(PackageMetadata, String)>> {
-        let url = format!("{}/{}", self.registry_url, package);
+        let url = format!("{}/{}", self.registry_url.trim_end_matches('/'), package);
         let etag_owned = etag.map(|s| s.to_string());
-        let client = global_http_client().map_err(|error| anyhow::anyhow!("{error}"))?;
-
-        with_retry("metadata-conditional", package, move || {
+        with_retry("metadata-conditional", package, || async {
             let accept = metadata_accept_header(self.age_gate_armed());
             let mut req = self
-                .with_auth(client.get(&url), &url)
+                .metadata_request_for(&self.registry_url, self.token.as_deref(), &url)?
                 .header("Accept", accept);
             if let Some(ref etag_val) = etag_owned {
                 req = req.header("If-None-Match", etag_val);
             }
-            async move {
-                let resp = req.send().await?;
+            let resp = req.send().await?;
 
-                if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
-                    return Ok(None);
-                }
-
-                let resp = resp.error_for_status()?;
-                let new_etag = resp
-                    .headers()
-                    .get("etag")
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or("")
-                    .to_string();
-
-                let metadata: PackageMetadata = resp.json().await?;
-                Ok(Some((metadata, new_etag)))
+            if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
+                return Ok(None);
             }
+
+            let resp = resp.error_for_status()?;
+            let new_etag = resp
+                .headers()
+                .get("etag")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_string();
+
+            let metadata: PackageMetadata = resp.json().await?;
+            Ok(Some((metadata, new_etag)))
         })
         .await
     }
@@ -354,12 +451,7 @@ impl NpmRegistry {
     pub async fn download_tarball(&self, url: &str) -> Result<Vec<u8>> {
         with_retry("tarball", url, || async {
             let resp = self
-                .with_auth(
-                    global_http_client()
-                        .map_err(|error| anyhow::anyhow!("{error}"))?
-                        .get(url),
-                    url,
-                )
+                .request_for(url, false)?
                 .send()
                 .await?
                 .error_for_status()?;
@@ -388,12 +480,7 @@ impl NpmRegistry {
                 tokio::fs::create_dir_all(parent).await?;
             }
             let resp = self
-                .with_auth(
-                    batch_http_client()
-                        .map_err(|error| anyhow::anyhow!("{error}"))?
-                        .get(url),
-                    url,
-                )
+                .request_for(url, true)?
                 .send()
                 .await?
                 .error_for_status()?;
@@ -444,12 +531,7 @@ impl NpmRegistry {
             }
 
             let resp = self
-                .with_auth(
-                    batch_http_client()
-                        .map_err(|error| anyhow::anyhow!("{error}"))?
-                        .get(url),
-                    url,
-                )
+                .request_for(url, true)?
                 .send()
                 .await?
                 .error_for_status()?;
@@ -669,3 +751,193 @@ where
 #[cfg(test)]
 #[path = "test/npm_registry_tests.rs"]
 mod tests;
+
+// Explicit registry credentials are restricted to the same HTTP origin.
+// Token của registry không được gửi sang scheme/host/port khác.
+fn registry_origin_matches(registry_url: &str, request_url: &str) -> bool {
+    let (Ok(registry), Ok(request)) = (
+        reqwest::Url::parse(registry_url),
+        reqwest::Url::parse(request_url),
+    ) else {
+        return false;
+    };
+    matches!(registry.scheme(), "http" | "https")
+        && matches!(request.scheme(), "http" | "https")
+        && registry.username().is_empty()
+        && request.username().is_empty()
+        && registry.password().is_none()
+        && request.password().is_none()
+        && registry.host_str().is_some()
+        && registry.scheme() == request.scheme()
+        && registry.host_str() == request.host_str()
+        && registry.port_or_known_default() == request.port_or_known_default()
+}
+
+// Keep bounded redirects without crossing protocol credential boundaries.
+// Giữ redirect mặc định có giới hạn, nhưng không chuyển token qua scheme khác.
+fn registry_redirect_policy() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| {
+        if let Some(previous) = attempt.previous().last()
+            && previous.scheme() != attempt.url().scheme()
+        {
+            return attempt.error(std::io::Error::other(
+                "registry redirect changes URL scheme; configure the final secure URL explicitly",
+            ));
+        }
+        reqwest::redirect::Policy::default().redirect(attempt)
+    })
+}
+
+/// Build a request without separating the selected token from its path scope.
+/// Native callers phải truyền cả scoped registry; artifact public ngoài scope không có token.
+pub fn scoped_registry_request(
+    registry: &mgc_config::chain::ScopedRegistry,
+    target: &str,
+) -> Result<reqwest::RequestBuilder> {
+    ScopedRegistryClient::new(registry)?.get(target)
+}
+
+/// An instance-owned transport keeps one credential client and its immutable scope.
+/// Không cache token toàn process; adapter giữ instance để tái dùng connection pool.
+#[derive(Clone)]
+pub struct ScopedRegistryClient {
+    scope: Option<reqwest::Url>,
+    token: Option<String>,
+    credential_client: Option<reqwest::Client>,
+    public_client: reqwest::Client,
+}
+
+impl ScopedRegistryClient {
+    /// Build clients once; missing or malformed credential scope fails explicitly.
+    /// Credential có token thì phải có scope hợp lệ trước khi tạo transport.
+    pub fn new(registry: &mgc_config::chain::ScopedRegistry) -> Result<Self> {
+        let scope = registry.credential_scope.clone();
+        let token = registry.registry.token.clone();
+        let credential_client = if token.is_some() {
+            let selected = scope
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("credential scope is missing"))?;
+            if !credential_path_matches(selected.as_str(), selected.as_str()) {
+                return Err(anyhow::anyhow!("invalid registry credential scope"));
+            }
+            let selected = selected.to_string();
+            Some(
+                reqwest::Client::builder()
+                    .redirect(reqwest::redirect::Policy::custom(move |attempt| {
+                        if !credential_path_matches(&selected, attempt.url().as_str()) {
+                            return attempt.error(std::io::Error::other(
+                                "credential redirect leaves authorized registry scope",
+                            ));
+                        }
+                        reqwest::redirect::Policy::default().redirect(attempt)
+                    }))
+                    .timeout(Duration::from_secs(SCOPED_REGISTRY_TIMEOUT_SECONDS))
+                    .user_agent(format!("MagiCore/{}", env!("CARGO_PKG_VERSION")))
+                    .build()?,
+            )
+        } else {
+            None
+        };
+        Ok(Self {
+            scope,
+            token,
+            credential_client,
+            public_client: global_http_client().map_err(|error| anyhow::anyhow!("{error}"))?,
+        })
+    }
+
+    /// Reuse the appropriate client; public requests never inherit credential headers.
+    /// Mỗi request kiểm scope lại, không đặt token vào default headers của client.
+    pub fn get(&self, target: &str) -> Result<reqwest::RequestBuilder> {
+        let parsed = reqwest::Url::parse(target)
+            .map_err(|_| anyhow::anyhow!("invalid registry request URL"))?;
+        if !matches!(parsed.scheme(), "http" | "https")
+            || parsed.host_str().is_none()
+            || !parsed.username().is_empty()
+            || parsed.password().is_some()
+        {
+            return Err(anyhow::anyhow!(
+                "registry request URL must use HTTP without userinfo"
+            ));
+        }
+        let authorized = self.token.is_some()
+            && self
+                .scope
+                .as_ref()
+                .is_some_and(|scope| credential_path_matches(scope.as_str(), target));
+        if authorized {
+            let client = self
+                .credential_client
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("credential transport is missing"))?;
+            let token = self
+                .token
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("credential token is missing"))?;
+            Ok(client.get(parsed).bearer_auth(token))
+        } else {
+            Ok(self.public_client.get(parsed))
+        }
+    }
+}
+
+const SCOPED_REGISTRY_TIMEOUT_SECONDS: u64 = 300;
+const MAX_CREDENTIAL_PATH_DECODE_LAYERS: usize = 8;
+
+// Match origin and a path segment boundary, refusing ambiguous encoded traversal.
+// Giữ hỗ trợ @scope%2fpkg; dot segment hoặc backslash không được cấp token.
+fn credential_path_matches(scope: &str, target: &str) -> bool {
+    if !registry_origin_matches(scope, target) {
+        return false;
+    }
+    let (Ok(scope), Ok(target)) = (reqwest::Url::parse(scope), reqwest::Url::parse(target)) else {
+        return false;
+    };
+    if !credential_path_is_unambiguous(scope.path())
+        || !credential_path_is_unambiguous(target.path())
+    {
+        return false;
+    }
+    let prefix = scope.path().trim_end_matches('/');
+    target.path() == prefix || target.path().starts_with(&format!("{prefix}/"))
+}
+
+// Bounded structural decoding is a policy check, not a server normalization claim.
+// Không khẳng định mô hình mọi server; mã hóa quá sâu hoặc lỗi thì không gửi token.
+fn credential_path_is_unambiguous(path: &str) -> bool {
+    let mut bytes = path.as_bytes().to_vec();
+    for _ in 0..MAX_CREDENTIAL_PATH_DECODE_LAYERS {
+        if bytes.contains(&b'\\')
+            || bytes
+                .split(|byte| *byte == b'/')
+                .any(|segment| segment == b"." || segment == b"..")
+        {
+            return false;
+        }
+        let mut decoded = Vec::with_capacity(bytes.len());
+        let mut index = 0;
+        while index < bytes.len() {
+            if bytes[index] == b'%' {
+                if index + 2 >= bytes.len() {
+                    return false;
+                }
+                let (Some(high), Some(low)) = (
+                    (bytes[index + 1] as char).to_digit(16),
+                    (bytes[index + 2] as char).to_digit(16),
+                ) else {
+                    return false;
+                };
+                decoded.push((high * 16 + low) as u8);
+                index += 3;
+            } else {
+                decoded.push(bytes[index]);
+                index += 1;
+            }
+        }
+        if decoded == bytes {
+            return true;
+        }
+        bytes = decoded;
+    }
+    false
+}

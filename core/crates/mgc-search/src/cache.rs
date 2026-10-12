@@ -17,8 +17,8 @@ impl SearchCache {
     /// Create new cache (or open existing)
     /// Tạo cache mới (hoặc mở có sẵn)
     ///
-    /// Cache location: ~/.magicore/search_cache.db
-    /// Vị trí cache: ~/.magicore/search_cache.db
+    /// Cache location: MGC_DATA_DIR/search_cache.db
+    /// Vị trí cache: MGC_DATA_DIR/search_cache.db
     pub fn new() -> Result<Self> {
         let cache_path = Self::cache_path()?;
         Self::new_with_path(&cache_path)
@@ -44,9 +44,7 @@ impl SearchCache {
     /// Get cache file path
     /// Lấy đường dẫn file cache
     fn cache_path() -> Result<PathBuf> {
-        let home =
-            dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
-        Ok(home.join(".magicore").join("search_cache.db"))
+        Ok(mgc_platform::paths::mgc_data_dir().join("search_cache.db"))
     }
 
     /// Initialize database schema

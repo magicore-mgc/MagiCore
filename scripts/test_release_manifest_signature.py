@@ -34,6 +34,7 @@ class ReleaseManifestSignatureVerification(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.assets = Path(self.temp.name)
         self.seed = bytes(range(32))
+        self.trust_root = _ed25519.public_key(self.seed).hex()
         self.archives = []
         required = [
             ("magicore", "linux", "x64", "tar.gz"),
@@ -74,27 +75,43 @@ class ReleaseManifestSignatureVerification(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def run_verifier(self, *archives, tag="v1.2.0", seed=None):
+    def run_verifier(self, *archives, tag="v1.2.0", trust_roots=None):
         args = ["verify-release-manifest-signature.py", str(self.assets), tag]
         args.extend(str(path) for path in archives)
-        env = {} if seed is None else {"MGC_RELEASE_SIGNING_KEY": seed.hex()}
+        env = (
+            {}
+            if trust_roots is None
+            else {"MGC_RELEASE_TRUST_ROOTS": ",".join(trust_roots)}
+        )
         stdout = io.StringIO()
         stderr = io.StringIO()
         with mock.patch.dict(os.environ, env, clear=False):
-            if seed is None:
-                os.environ.pop("MGC_RELEASE_SIGNING_KEY", None)
+            os.environ.pop("MGC_RELEASE_TRUST_ROOTS", None)
+            if trust_roots is not None:
+                os.environ["MGC_RELEASE_TRUST_ROOTS"] = ",".join(trust_roots)
             with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
                 code = verifier.main(args)
         return code, stdout.getvalue(), stderr.getvalue()
 
     def test_valid_signature_and_archive_binding_pass(self):
-        code, output, _error = self.run_verifier(*self.archives, seed=self.seed)
+        code, output, _error = self.run_verifier(
+            *self.archives, trust_roots=[self.trust_root]
+        )
         self.assertEqual(code, 0)
         self.assertIn("manifest signature VALID", output)
         self.assertEqual(output.count("archive binding VALID"), 10)
 
+    def test_matching_root_in_rotation_set_passes_without_private_seed(self):
+        code, output, _error = self.run_verifier(
+            *self.archives, trust_roots=["00" * 32, self.trust_root]
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("manifest signature VALID", output)
+
     def test_missing_required_archive_binding_fails(self):
-        code, _output, error = self.run_verifier(*self.archives[:-1], seed=self.seed)
+        code, _output, error = self.run_verifier(
+            *self.archives[:-1], trust_roots=[self.trust_root]
+        )
         self.assertEqual(code, 1)
         self.assertIn("every signed archive must be downloaded and verified", error)
         self.assertIn(self.archives[-1].name, error)
@@ -116,31 +133,63 @@ class ReleaseManifestSignatureVerification(unittest.TestCase):
         with self.assertRaisesRegex(verifier.VerificationError, "magicore-1.2.0-linux-arm64.tar.gz"):
             verifier._parse_manifest(malformed, "v1.2.0")
 
-    def test_missing_signing_key_fails_closed(self):
+    def test_missing_trust_root_fails_closed(self):
         code, _output, error = self.run_verifier(*self.archives)
         self.assertEqual(code, 1)
-        self.assertIn("MGC_RELEASE_SIGNING_KEY is required", error)
+        self.assertIn("MGC_RELEASE_TRUST_ROOTS is required", error)
+
+    def test_private_signing_seed_alone_is_not_a_trust_root(self):
+        with mock.patch.dict(
+            os.environ,
+            {"MGC_RELEASE_SIGNING_KEY": self.seed.hex()},
+            clear=False,
+        ):
+            code, _output, error = self.run_verifier(*self.archives)
+        self.assertEqual(code, 1)
+        self.assertIn("MGC_RELEASE_TRUST_ROOTS is required", error)
+
+    def test_invalid_trust_root_fails_closed(self):
+        code, _output, error = self.run_verifier(
+            *self.archives, trust_roots=["not-a-public-key"]
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("must contain comma-separated 64-hex", error)
+
+    def test_wrong_trust_root_fails_signature_verification(self):
+        code, _output, error = self.run_verifier(
+            *self.archives, trust_roots=["00" * 32]
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("manifest signature verification failed", error)
 
     def test_missing_signature_fails_closed(self):
         (self.assets / "manifest.json.sig").unlink()
-        code, _output, error = self.run_verifier(*self.archives, seed=self.seed)
+        code, _output, error = self.run_verifier(
+            *self.archives, trust_roots=[self.trust_root]
+        )
         self.assertEqual(code, 1)
         self.assertIn("manifest.json.sig is missing", error)
 
     def test_tampered_manifest_fails_signature_verification(self):
         (self.assets / "manifest.json").write_bytes(self.manifest_bytes + b" ")
-        code, _output, error = self.run_verifier(*self.archives, seed=self.seed)
+        code, _output, error = self.run_verifier(
+            *self.archives, trust_roots=[self.trust_root]
+        )
         self.assertEqual(code, 1)
         self.assertIn("manifest signature verification failed", error)
 
     def test_tag_version_mismatch_fails(self):
-        code, _output, error = self.run_verifier(*self.archives, tag="v9.9.9", seed=self.seed)
+        code, _output, error = self.run_verifier(
+            *self.archives, tag="v9.9.9", trust_roots=[self.trust_root]
+        )
         self.assertEqual(code, 1)
         self.assertIn("does not match requested tag", error)
 
     def test_tampered_archive_fails_manifest_binding(self):
         self.archives[0].write_bytes(b"x" * self.archives[0].stat().st_size)
-        code, _output, error = self.run_verifier(*self.archives, seed=self.seed)
+        code, _output, error = self.run_verifier(
+            *self.archives, trust_roots=[self.trust_root]
+        )
         self.assertEqual(code, 1)
         self.assertIn("archive digest does not match signed manifest", error)
 
@@ -151,7 +200,9 @@ class ReleaseManifestSignatureVerification(unittest.TestCase):
         outside.write_bytes(self.archives[0].read_bytes())
         try:
             code, _output, error = self.run_verifier(
-                outside, *self.archives[1:], seed=self.seed
+                outside,
+                *self.archives[1:],
+                trust_roots=[self.trust_root],
             )
             self.assertEqual(code, 1)
             self.assertIn("must be a regular file directly under", error)

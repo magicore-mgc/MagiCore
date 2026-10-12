@@ -4,6 +4,9 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+const DEFAULT_STORAGE_BUDGET_GIB: u64 = 50;
+const STORAGE_BUDGET_GIB_ENV: &str = "MGC_STORAGE_BUDGET_GB";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CacheTarget {
     All,
@@ -121,19 +124,26 @@ fn cache_entries(
     let mut entries = Vec::new();
 
     // let-chain edition 2024 — gộp điều kiện theo clippy 1.98.
-    if target.includes(CacheTarget::Shared)
-        && let Some(root) = dirs::cache_dir()
-    {
-        let shared = match core {
-            Some("web") => root.join("magicore").join("web"),
-            Some(core) => root.join("magicore").join(core),
-            None => root.join("magicore"),
-        };
+    if target.includes(CacheTarget::Shared) {
+        let data_root = mgc_platform::paths::mgc_data_dir();
+        let shared = shared_cache_path(&data_root, core);
         entries.push(CacheEntry {
             label: "shared",
             path: shared,
             removable: true,
         });
+        if core.is_none() || core == Some("app") {
+            entries.push(CacheEntry {
+                label: "app-pub-store",
+                path: data_root.join("store").join("pub"),
+                removable: true,
+            });
+            entries.push(CacheEntry {
+                label: "app-swift-store",
+                path: data_root.join("store").join("swift"),
+                removable: true,
+            });
+        }
     }
 
     // let-chain edition 2024 — gộp điều kiện theo clippy 1.98.
@@ -163,6 +173,14 @@ fn cache_entries(
     }
 
     Ok(entries)
+}
+
+fn shared_cache_path(data_root: &Path, core: Option<&str>) -> PathBuf {
+    let root = data_root.join("cache");
+    match core {
+        Some(core) => root.join(core),
+        None => root,
+    }
 }
 
 fn workspace_build_cache_path() -> Result<PathBuf> {
@@ -200,46 +218,134 @@ fn find_cargo_workspace_root(start: &Path) -> Option<PathBuf> {
 fn print_status(entries: &[CacheEntry]) -> Result<()> {
     if entries.is_empty() {
         println!("No cache paths found.");
-        return Ok(());
-    }
-
-    for entry in entries {
-        let bytes = path_size(&entry.path);
-        let exists = entry.path.exists();
-        println!(
-            "{}\t{}\t{}\t{}",
-            entry.label,
-            human_bytes(bytes),
-            if exists { "exists" } else { "missing" },
-            entry.path.display()
-        );
-        if entry.label == "shared" && entry.path.ends_with("magicore/web") {
-            let stats = web_shared_cache_stats(&entry.path);
+    } else {
+        for entry in entries {
+            let bytes = path_size(&entry.path);
+            let exists = entry.path.exists();
             println!(
-                "shared:web:pinned\t{}\t{} roots\t{} refs",
-                human_bytes(stats.pinned_package_bytes),
-                stats.pinned_package_roots,
-                stats.project_refs
+                "{}\t{}\t{}\t{}",
+                entry.label,
+                human_bytes(bytes),
+                if exists { "exists" } else { "missing" },
+                entry.path.display()
             );
-            println!(
-                "shared:web:unpinned\t{}\t{} roots",
-                human_bytes(stats.unpinned_package_bytes),
-                stats.unpinned_package_roots
-            );
-        } else if entry.label == "project" && entry.path.ends_with(".magicore/cache/web") {
-            let stats = web_project_cache_stats(&entry.path);
-            println!("project:web:cas\t{}\tcas", human_bytes(stats.cas_bytes));
-            println!(
-                "project:web:tarballs\t{}\tcache",
-                human_bytes(stats.tarball_bytes)
-            );
-            println!(
-                "project:web:resolutions\t{}\tresolutions",
-                human_bytes(stats.resolution_bytes)
-            );
+            if entry.label == "shared" && entry.path.ends_with("cache/web") {
+                let stats = web_shared_cache_stats(&entry.path);
+                println!(
+                    "shared:web:pinned\t{}\t{} roots\t{} refs",
+                    human_bytes(stats.pinned_package_bytes),
+                    stats.pinned_package_roots,
+                    stats.project_refs
+                );
+                println!(
+                    "shared:web:unpinned\t{}\t{} roots",
+                    human_bytes(stats.unpinned_package_bytes),
+                    stats.unpinned_package_roots
+                );
+            } else if entry.label == "project" && entry.path.ends_with(".magicore/cache/web") {
+                let stats = web_project_cache_stats(&entry.path);
+                println!("project:web:cas\t{}\tcas", human_bytes(stats.cas_bytes));
+                println!(
+                    "project:web:tarballs\t{}\tcache",
+                    human_bytes(stats.tarball_bytes)
+                );
+                println!(
+                    "project:web:resolutions\t{}\tresolutions",
+                    human_bytes(stats.resolution_bytes)
+                );
+            }
         }
     }
+
+    print_storage_budget()?;
     Ok(())
+}
+
+fn print_storage_budget() -> Result<()> {
+    let data_root = mgc_platform::paths::mgc_data_dir();
+    let cwd = std::env::current_dir()?;
+    let project_root = crate::commands::core::shared::find_project_root(&cwd)?;
+    let data_bytes = measured_path_size(&data_root)?;
+    let project_bytes = match project_root.as_deref() {
+        Some(project) => measured_path_size(project)?,
+        None => 0,
+    };
+    let combined_bytes = project_root
+        .as_deref()
+        .map(|project| combined_path_size(&data_root, project, data_bytes, project_bytes))
+        .unwrap_or(data_bytes);
+    let budget_gib = storage_budget_gib();
+    let budget_bytes = budget_gib.saturating_mul(1024_u64.pow(3));
+
+    println!(
+        "storage:data\t{}\t{}",
+        human_bytes(data_bytes),
+        data_root.display()
+    );
+    if let Some(project) = project_root {
+        println!(
+            "storage:project\t{}\t{}",
+            human_bytes(project_bytes),
+            project.display()
+        );
+        println!("storage:combined\t{}", human_bytes(combined_bytes));
+    } else {
+        println!("storage:project\tproject root not detected");
+        println!("storage:combined\t{}", human_bytes(combined_bytes));
+    }
+    println!("storage:budget\t{} GiB", budget_gib);
+    if combined_bytes >= budget_bytes {
+        println!(
+            "warning\tcombined project and MagiCore data usage has reached the configured budget"
+        );
+    }
+    Ok(())
+}
+
+fn storage_budget_gib() -> u64 {
+    std::env::var(STORAGE_BUDGET_GIB_ENV)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(DEFAULT_STORAGE_BUDGET_GIB)
+}
+
+fn combined_path_size(
+    data_root: &Path,
+    project_root: &Path,
+    data_bytes: u64,
+    project_bytes: u64,
+) -> u64 {
+    let data = canonical_or_original(data_root);
+    let project = canonical_or_original(project_root);
+    if data.starts_with(&project) {
+        project_bytes
+    } else if project.starts_with(&data) {
+        data_bytes
+    } else {
+        data_bytes.saturating_add(project_bytes)
+    }
+}
+
+fn measured_path_size(path: &Path) -> Result<u64> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(error) => return Err(error.into()),
+    };
+    if metadata.is_file() || metadata.file_type().is_symlink() {
+        return Ok(metadata.len());
+    }
+
+    let mut total = 0u64;
+    for entry in WalkDir::new(path).follow_links(false) {
+        let entry = entry?;
+        let metadata = std::fs::symlink_metadata(entry.path())?;
+        if metadata.is_file() || metadata.file_type().is_symlink() {
+            total = total.saturating_add(metadata.len());
+        }
+    }
+    Ok(total)
 }
 
 fn clean(entries: &[CacheEntry], yes: bool) -> Result<()> {
@@ -296,6 +402,11 @@ fn prune(entries: &[CacheEntry], yes: bool, dry_run: bool, core: Option<&str>) -
                 stats.tarball_files,
                 stats.resolution_files,
                 entry.path.display()
+            );
+        } else if matches!(entry.label, "app-pub-store" | "app-swift-store") {
+            println!(
+                "skip\t{}\tprune has no live-project reference graph; use `mgc cache clean --target shared --core app --yes` to remove it explicitly",
+                entry.label
             );
         } else if core.is_some() {
             let stats = prune_generic_cache(&entry.path, dry_run)?;

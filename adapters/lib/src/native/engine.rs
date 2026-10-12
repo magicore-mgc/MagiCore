@@ -13,6 +13,7 @@
 //! `content_hash` blake3 + `store_ref` điền lúc install (chỉ download mới sinh
 //! ra được); resolve ghi mọi thứ mà chính registry index đảm bảo.
 
+use base64::Engine as _;
 use mgc_lockfile::{ArtifactRef, EcosystemTag, Package, Provenance, SOURCE_KIND_NATIVE_RESOLVE};
 use mgc_resolver::protocols::{RegistryProtocol, ResolvedEntry};
 use mgc_types::{
@@ -145,11 +146,7 @@ async fn resolve_with_protocol_inner(
             })
             .collect::<mgc_types::MgResult<Vec<_>>>()?;
 
-        let integrity = if entry.sha256.is_empty() {
-            String::new()
-        } else {
-            format!("sha256-{}", entry.sha256)
-        };
+        let integrity = resolved_integrity(ecosystem, entry)?;
 
         packages.push(ResolvedPackage {
             id: PackageId::new(name, version),
@@ -166,7 +163,7 @@ async fn resolve_with_protocol_inner(
             name: entry.name.clone(),
             version: entry.version.clone(),
             resolved: entry.artifact_url.clone(),
-            integrity,
+            integrity: integrity.clone(),
             dependencies: entry.deps.iter().map(|(n, _)| n.clone()).collect(),
             ecosystem,
             registry: Some(registry.to_string()),
@@ -176,11 +173,10 @@ async fn resolve_with_protocol_inner(
                 // blake3 filled at install (requires the downloaded bytes).
                 content_hash: String::new(),
                 downloaded_from: registry.to_string(),
-                // Registry SRI not supplied on this lane yet — v4 install
-                // refuses SRI-less pins (fail-closed).
-                // Lane này chưa cung cấp SRI registry — install v4 từ chối
-                // pin thiếu SRI (fail-closed).
-                integrity_sri: None,
+                // NuGet's catalog SHA-512 is already verified by its protocol;
+                // preserve it as installer-enforced SRI for V4 conversion.
+                // SHA-512 catalog NuGet đã được protocol xác minh; giữ SRI để chuyển V4.
+                integrity_sri: (ecosystem == EcosystemTag::NuGet).then(|| integrity.clone()),
             }),
             provenance: Some(Provenance {
                 source_kind: SOURCE_KIND_NATIVE_RESOLVE.to_string(),
@@ -204,4 +200,44 @@ async fn resolve_with_protocol_inner(
         graph: ResolvedGraph { packages },
         lock_packages,
     })
+}
+
+/// Project registry-verified integrity into the shared graph representation.
+/// Chuyển integrity registry đã xác minh sang biểu diễn graph dùng chung.
+fn resolved_integrity(ecosystem: EcosystemTag, entry: &ResolvedEntry) -> MgResult<String> {
+    if ecosystem != EcosystemTag::NuGet {
+        return Ok(if entry.sha256.is_empty() {
+            String::new()
+        } else {
+            format!("sha256-{}", entry.sha256)
+        });
+    }
+
+    let hashes = entry
+        .extra_markers
+        .iter()
+        .filter_map(|marker| marker.strip_prefix("sha512:"))
+        .collect::<Vec<_>>();
+    if hashes.len() != 1 {
+        return Err(mgc_types::MgError::Integrity(format!(
+            "NuGet resolution for {}@{} must contain exactly one SHA-512 registry marker",
+            entry.name, entry.version
+        )));
+    }
+    let digest = hashes[0];
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(digest)
+        .map_err(|error| {
+            mgc_types::MgError::Integrity(format!(
+                "NuGet SHA-512 registry marker for {}@{} is not valid base64: {error}",
+                entry.name, entry.version
+            ))
+        })?;
+    if decoded.len() != 64 {
+        return Err(mgc_types::MgError::Integrity(format!(
+            "NuGet SHA-512 registry marker for {}@{} must decode to 64 bytes",
+            entry.name, entry.version
+        )));
+    }
+    Ok(format!("sha512-{digest}"))
 }

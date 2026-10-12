@@ -7,7 +7,7 @@ use mgc_lockfile::policy::check_install_sri;
 use mgc_lockfile::schema::{ArtifactRef, Lockfile, Package};
 
 const SHA512_SRI: &str = "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==";
-const SHA256_SRI: &str = "sha256-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=";
+const SHA256_SRI: &str = "sha256-AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=";
 
 #[test]
 fn install_sri_gate_accepts_supported_algorithms() {

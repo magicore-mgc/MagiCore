@@ -1,5 +1,7 @@
 # P1.4: Cross-Platform Distribution Testing
 
+> **Historical planning snapshot (2026-09-04).** Its pending statuses, commands, repository URLs, and platform claims are not current release evidence. Use [`README.md`](README.md) and [`.github/workflows/release.yml`](../.github/workflows/release.yml) for the current release matrix and gates.
+
 **Status**: Test matrix defined, macOS verified, Linux/Windows pending
 **Date**: 2026-09-04
 **Requirement**: Verify install/uninstall on macOS, Linux, Windows

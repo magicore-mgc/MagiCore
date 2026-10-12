@@ -10,6 +10,7 @@ description = "Package store and cache management for MagiCore"
 [dependencies]
 mgc-types = { workspace = true }
 mgc-crypto = { workspace = true }
+mgc-platform = { workspace = true }
 
 # Database
 rusqlite = { workspace = true }

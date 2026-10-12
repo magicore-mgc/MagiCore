@@ -301,8 +301,28 @@ fn dev_scheme(root: &Path) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-/// iOS/ObjC dev — phải chạy trên macOS + Xcode.
-/// Tự động tìm simulator booted/available, boot nếu cần.
+/// iOS simulator dev requires macOS + Xcode; a SwiftPM CLI package can use
+/// `swift run` on macOS without an Xcode project or simulator.
+/// (Dev iOS Simulator cần macOS + Xcode; SwiftPM CLI có thể chạy `swift run`
+/// trên macOS mà không cần Xcode project hay simulator.)
+fn run_swift_package(root: &Path, dry_run: bool, env: Option<Vec<(String, String)>>) -> Result<()> {
+    if dry_run {
+        mgc_ui::info("[dry-run] would run: swift run");
+        return Ok(());
+    }
+    mgc_ui::info("App dev (Swift): swift run");
+    run_tool_with_env(
+        root,
+        "swift",
+        &[
+            "run".to_string(),
+            "--skip-update".to_string(),
+            "--disable-automatic-resolution".to_string(),
+        ],
+        env,
+    )
+}
+
 async fn dev_ios(
     root: &Path,
     lang_is_swift: bool,
@@ -316,6 +336,9 @@ async fn dev_ios(
              Use `mgc dev app` on macOS or switch to Android target.",
             std::env::consts::OS
         );
+    }
+    if lang_is_swift && find_xcode_project(root).is_none() {
+        return run_swift_package(root, dry_run, env);
     }
     if !xcode_available_in(Some(root)) {
         bail!(
@@ -389,22 +412,10 @@ async fn dev_ios(
         return run_tool_with_env(root, "xcodebuild", &args, env);
     }
 
-    // Fallback: swift run (Package.swift)
-    if dry_run {
-        mgc_ui::info("[dry-run] would run: swift run");
-        return Ok(());
-    }
-    mgc_ui::info("App dev (Swift): swift run");
-    run_tool_with_env(
-        root,
-        "swift",
-        &[
-            "run".to_string(),
-            "--skip-update".to_string(),
-            "--disable-automatic-resolution".to_string(),
-        ],
-        env,
-    )
+    // Project layout can change after the Xcode probe; keep the SwiftPM path
+    // explicit if the Xcode project disappeared between the two checks.
+    // (Cấu trúc có thể đổi sau khi probe Xcode; vẫn giữ nhánh SwiftPM rõ ràng.)
+    run_swift_package(root, dry_run, env)
 }
 
 // ─── Main entry point ─────────────────────────────────────────────────────────
@@ -416,24 +427,43 @@ async fn dev_ios(
 pub async fn dev(dry_run: bool) -> Result<()> {
     let root = project_root()?;
     let lang = language(&root)?;
+    if matches!(
+        lang,
+        mgc_app_adapter::AppLanguage::Maui | mgc_app_adapter::AppLanguage::Tauri
+    ) {
+        return Err(crate::error::app_not_available(
+            "MagiCore recognizes this app scaffold, but native dependency install and dev execution are not implemented for MAUI/Tauri yet",
+        ));
+    }
+    // Pre-flight freshness applies only to Flutter's pubspec/lock pair.
+    // (Freshness pre-flight chỉ áp dụng cho cặp pubspec/lock của Flutter.)
+    if lang == mgc_app_adapter::AppLanguage::Flutter {
+        crate::commands::freshness::check_flutter_freshness(&root)?;
+    }
 
     let platform = detect_target_platform();
+    let target_label =
+        if lang == mgc_app_adapter::AppLanguage::Swift && find_xcode_project(&root).is_none() {
+            "SwiftPM CLI"
+        } else {
+            match &platform {
+                TargetPlatform::IosSimulator => "iOS Simulator",
+                TargetPlatform::Android => "Android",
+            }
+        };
 
     if dry_run {
         mgc_ui::info(&format!(
-            "[dry-run] mgc dev app — OS: {}, platform: {:?}, lang: {:?}",
+            "[dry-run] mgc dev app — OS: {}, target: {}, lang: {:?}",
             std::env::consts::OS,
-            platform,
+            target_label,
             lang
         ));
     } else {
         mgc_ui::info(&format!(
             "mgc dev app — OS: {}, target: {}",
             std::env::consts::OS,
-            match &platform {
-                TargetPlatform::IosSimulator => "iOS Simulator",
-                TargetPlatform::Android => "Android",
-            }
+            target_label
         ));
     }
 
@@ -470,7 +500,15 @@ pub async fn dev(dry_run: bool) -> Result<()> {
             Ok(())
         }
 
-        mgc_app_adapter::AppLanguage::Swift => dev_ios(&root, true, dry_run, env_opt.clone()).await,
+        mgc_app_adapter::AppLanguage::Swift => {
+            // Pre-flight freshness (Spec rev4 §8): Swift identities are
+            // lowercase-normalized on both sides (registry `scope.name` and
+            // git repo tails — see freshness projection docs).
+            // (Freshness pre-flight (Spec rev4 §8): identity Swift chuẩn hóa
+            // lowercase cả hai phía.)
+            crate::commands::freshness::check_swift_freshness(&root)?;
+            dev_ios(&root, true, dry_run, env_opt.clone()).await
+        }
 
         mgc_app_adapter::AppLanguage::ObjC => dev_ios(&root, false, dry_run, env_opt.clone()).await,
 
@@ -539,6 +577,13 @@ pub async fn dev(dry_run: bool) -> Result<()> {
             run_tool_with_env(&flutter_dir, &cmd.tool, cmd.args.as_slice(), env_opt)?;
             Ok(())
         }
+        // Returned before platform detection above; keep the dispatch
+        // exhaustive and the unsupported message explicit.
+        mgc_app_adapter::AppLanguage::Maui | mgc_app_adapter::AppLanguage::Tauri => {
+            Err(crate::error::app_not_available(
+                "MagiCore recognizes this app scaffold, but native dependency install and dev execution are not implemented for MAUI/Tauri yet",
+            ))
+        }
     }
 }
 
@@ -560,6 +605,9 @@ fn detect_app_runtime(
         }
         mgc_app_adapter::AppLanguage::Kotlin => DetectedRuntime::RustNative, // Android native
         mgc_app_adapter::AppLanguage::Multi => DetectedRuntime::Flutter, // Multi defaults to Flutter
+        mgc_app_adapter::AppLanguage::Maui | mgc_app_adapter::AppLanguage::Tauri => {
+            DetectedRuntime::Unknown
+        }
     }
 }
 

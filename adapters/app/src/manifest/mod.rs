@@ -20,6 +20,14 @@ pub fn parse_manifest(language: AppLanguage, project_root: &Path) -> MgResult<Ma
         AppLanguage::ReactNative => react_native::parse_package_json(project_root),
         AppLanguage::ObjC => flutter::parse_podfile(project_root), // ObjC uses CocoaPods
         AppLanguage::Multi => parse_multi_manifest(project_root),
+        AppLanguage::Maui | AppLanguage::Tauri => Err(mgc_types::MgError::Unsupported {
+            core: "app",
+            capability: "parse-manifest",
+            guidance: format!(
+                "{} is detected as an app project, but MagiCore does not yet parse its dependency manifest",
+                language.as_str()
+            ),
+        }),
     }
 }
 
@@ -68,6 +76,14 @@ pub fn write_manifest(
         AppLanguage::ReactNative => react_native::write_package_json(project_root, manifest),
         AppLanguage::ObjC => flutter::write_podfile(project_root, manifest),
         AppLanguage::Multi => write_multi_manifest(project_root, manifest),
+        AppLanguage::Maui | AppLanguage::Tauri => Err(mgc_types::MgError::Unsupported {
+            core: "app",
+            capability: "write-manifest",
+            guidance: format!(
+                "{} dependency manifest writes are not implemented by MagiCore",
+                language.as_str()
+            ),
+        }),
     }
 }
 

@@ -2,12 +2,22 @@
 set -euo pipefail
 
 profile="release"
-target_args=()
+target=""
+target_is_set=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --target)
-      target_args+=(--target "$2")
+      if [[ $# -lt 2 || -z "${2:-}" ]]; then
+        echo "--target requires a non-empty value" >&2
+        exit 2
+      fi
+      if [[ "$target_is_set" -eq 1 ]]; then
+        echo "--target may only be provided once" >&2
+        exit 2
+      fi
+      target="$2"
+      target_is_set=1
       shift 2
       ;;
     --profile)
@@ -22,4 +32,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo "==> building all packaged distributions"
-cargo run -p mgc-dist -- build-all --profile "$profile" "${target_args[@]}"
+if [[ "$target_is_set" -eq 1 ]]; then
+  cargo run -p mgc-dist -- build-all --profile "$profile" --target "$target"
+else
+  cargo run -p mgc-dist -- build-all --profile "$profile"
+fi

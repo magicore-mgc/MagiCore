@@ -15,8 +15,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::ecosystem_tag::EcosystemTag;
 
-/// Canonical v4 schema version — Phiên bản schema v4 canonical.
-pub const LOCKFILE_SCHEMA_V4: &str = "4";
+/// Current additive v4 schema revision — Revision cộng thêm hiện tại của schema v4.
+pub const LOCKFILE_SCHEMA_V4: &str = "4.1";
+/// Original v4 revision remains readable — Revision v4 ban đầu vẫn đọc được.
+pub const LOCKFILE_SCHEMA_V4_LEGACY: &str = "4";
+
+/// Whether a declared format version belongs to the supported v4 family.
+/// Version có thuộc nhóm format v4 mà reader hiện tại hỗ trợ không.
+pub fn is_v4_schema_version(version: &str) -> bool {
+    version == LOCKFILE_SCHEMA_V4_LEGACY || version == LOCKFILE_SCHEMA_V4
+}
 
 /// Fallback priority for the labeled "unknown" source: higher than any
 /// real priority, low enough for TOML's i64-only integers.

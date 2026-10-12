@@ -60,6 +60,124 @@ fn web_store_operations_reject_missing_or_conflicting_identity() {
     assert!(ensure_web_store_owner(conflict.path()).is_err());
 }
 
+#[test]
+fn store_routes_match_the_declared_native_framework_lanes() {
+    for framework in WEB_NATIVE_FRAMEWORKS {
+        assert_eq!(
+            store_route("web", Some(framework)),
+            Some(StoreRoute::WebProject)
+        );
+    }
+    for (framework, roots) in [
+        ("actix-web", LIB_CARGO_ROOTS),
+        ("axum", LIB_CARGO_ROOTS),
+        ("rust", LIB_CARGO_ROOTS),
+        ("django", LIB_PYPI_ROOTS),
+        ("fastapi", LIB_PYPI_ROOTS),
+        ("flask", LIB_PYPI_ROOTS),
+        ("python", LIB_PYPI_ROOTS),
+        ("echo", LIB_GO_ROOTS),
+        ("fiber", LIB_GO_ROOTS),
+        ("gin", LIB_GO_ROOTS),
+        ("go", LIB_GO_ROOTS),
+        ("java", LIB_MAVEN_ROOTS),
+        ("quarkus", LIB_MAVEN_ROOTS),
+        ("spring-boot", LIB_MAVEN_ROOTS),
+        ("dotnet", LIB_NUGET_ROOTS),
+        ("dotnet-minimal", LIB_NUGET_ROOTS),
+        ("dotnet-webapi", LIB_NUGET_ROOTS),
+    ] {
+        assert_eq!(
+            store_route("web", Some(framework)),
+            Some(StoreRoute::Global(roots)),
+            "wrong global store route for web/{framework}"
+        );
+    }
+    for (core, framework) in [
+        ("ai", "python-agent"),
+        ("app", "flutter"),
+        ("app", "swift"),
+        ("clo", "cdk"),
+        ("clo", "pulumi"),
+        ("game", "bevy"),
+        ("iot", "esp32-rust"),
+        ("lib", "dotnet"),
+        ("lib", "go"),
+        ("lib", "java"),
+        ("lib", "python"),
+        ("lib", "rust"),
+        ("lib", "ts"),
+    ] {
+        assert!(
+            store_route(core, Some(framework)).is_some(),
+            "missing native store route for {core}/{framework}"
+        );
+    }
+    for (core, framework) in [
+        ("ai", "mcp-server"),
+        ("app", "maui"),
+        ("game", "godot"),
+        ("iot", "platformio"),
+        ("lib", "gradle"),
+        ("hardware", "fpga"),
+    ] {
+        assert_eq!(
+            store_route(core, Some(framework)),
+            None,
+            "unsupported route must not guess a store for {core}/{framework}"
+        );
+    }
+    assert_eq!(store_route("lib", None), None);
+}
+
+#[test]
+fn store_doctor_matches_web_scaffold_aliases_to_canonical_frameworks() {
+    assert!(store_framework_name_matches("web", "vanilla", "ts"));
+    assert!(store_framework_name_matches("web", "express", "node"));
+    assert!(!store_framework_name_matches("app", "vanilla", "ts"));
+    assert!(!store_framework_name_matches("web", "react-vite", "ts"));
+}
+
+#[test]
+fn global_store_doctor_accepts_absent_roots_without_creating_them() {
+    let root = tempfile::tempdir().unwrap();
+    let missing = root.path().join("not-initialized");
+    let status = inspect_shared_root("test", &missing);
+    assert!(!status.exists);
+    assert!(status.safe);
+    assert!(
+        !missing.exists(),
+        "doctor must not create an uninitialized root"
+    );
+}
+
+#[test]
+fn global_store_doctor_rejects_a_file_as_a_store_root() {
+    let root = tempfile::tempdir().unwrap();
+    let file = root.path().join("not-a-directory");
+    std::fs::write(&file, "fixture").unwrap();
+    let status = inspect_shared_root("test", &file);
+    assert!(status.exists);
+    assert!(!status.safe);
+    assert!(status.error.is_some());
+}
+
+#[cfg(unix)]
+#[test]
+fn global_store_doctor_rejects_a_symlinked_root() {
+    use std::os::unix::fs::symlink;
+
+    let root = tempfile::tempdir().unwrap();
+    let target = root.path().join("real-store");
+    let link = root.path().join("linked-store");
+    std::fs::create_dir(&target).unwrap();
+    symlink(&target, &link).unwrap();
+    let status = inspect_shared_root("test", &link);
+    assert!(status.exists);
+    assert!(!status.safe);
+    assert!(status.error.is_some());
+}
+
 /// Current UNIX seconds — shared by the pid/lease-liveness tests.
 /// (Giây UNIX hiện tại — dùng chung cho test pid/lease-còn-sống.)
 fn now_secs() -> i64 {

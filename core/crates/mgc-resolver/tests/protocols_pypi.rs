@@ -62,6 +62,84 @@ fn wheel_with_module(module_bytes: &[u8]) -> Vec<u8> {
     writer.finish().unwrap().into_inner()
 }
 
+#[test]
+fn runtime_wheel_gate_checks_platform_and_python_abi() {
+    let matches = |filename: &str, os, arch, python, platform_version| {
+        PypiProtocol::is_importable_wheel_for_target(filename, os, arch, python, platform_version)
+    };
+
+    assert!(matches(
+        "pydantic_core-2.0.0-cp312-cp312-macosx_11_0_arm64.whl",
+        "macos",
+        "aarch64",
+        Some((3, 12)),
+        Some((14, 0))
+    ));
+    assert!(matches(
+        "pydantic_core-2.0.0-cp312-cp312-manylinux_2_17_x86_64.whl",
+        "linux",
+        "x86_64",
+        Some((3, 12)),
+        Some((2, 39))
+    ));
+    assert!(matches(
+        "pydantic_core-2.0.0-cp312-cp312-win_amd64.whl",
+        "windows",
+        "x86_64",
+        Some((3, 12)),
+        None
+    ));
+    assert!(matches(
+        "pydantic_core-2.0.0-cp37-abi3-win_amd64.whl",
+        "windows",
+        "x86_64",
+        Some((3, 12)),
+        None
+    ));
+    assert!(!matches(
+        "pydantic_core-2.0.0-cp312-cp312-win_amd64.whl",
+        "windows",
+        "x86_64",
+        None,
+        None
+    ));
+    assert!(!matches(
+        "pydantic_core-2.0.0-cp312-cp312-win_amd64.whl",
+        "macos",
+        "aarch64",
+        Some((3, 12)),
+        Some((14, 0))
+    ));
+    assert!(!matches(
+        "pydantic_core-2.0.0-cp311-cp311-manylinux_2_17_x86_64.whl",
+        "linux",
+        "x86_64",
+        Some((3, 12)),
+        Some((2, 39))
+    ));
+    assert!(matches(
+        "six-1.17.0-py3-none-any.whl",
+        "windows",
+        "x86_64",
+        None,
+        None
+    ));
+    assert!(!matches(
+        "demo-1.0.0-cp312-cp312-macosx_15_0_arm64.whl",
+        "macos",
+        "aarch64",
+        Some((3, 12)),
+        Some((14, 0))
+    ));
+    assert!(!matches(
+        "demo-1.0.0-cp312-cp312-manylinux_2_39_x86_64.whl",
+        "linux",
+        "x86_64",
+        Some((3, 12)),
+        Some((2, 28))
+    ));
+}
+
 fn file_entry(filename: &str, url: &str, sha: &str, ptype: &str) -> String {
     format!(
         r#"{{"filename":"{filename}","url":"{url}","digests":{{"sha256":"{sha}"}},"packagetype":"{ptype}","requires_python":">=3.9"}}"#
@@ -795,11 +873,20 @@ async fn pypi_only_foreign_wheel_fails_closed() {
         .with_body(index_json(&releases))
         .create_async()
         .await;
+    server
+        .mock("GET", "/pypi/demo/1.0.0/json")
+        .with_status(200)
+        .with_body(version_json(""))
+        .create_async()
+        .await;
 
     let protocol = PypiProtocol::new(&base);
     let err = protocol.resolve("demo", "==1.0.0").await.unwrap_err();
     assert!(
-        err.to_string().contains("no downloadable file"),
+        err.to_string().contains("no downloadable file")
+            || err
+                .to_string()
+                .contains("no artifact compatible with Python"),
         "unexpected error: {err}"
     );
 }

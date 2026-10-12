@@ -881,7 +881,7 @@ NATIVE_USER_OPERATION_LANES = {
     ("web", "vanilla"): set(ALL_DEPENDENCY_OPERATIONS),
     ("web", "ts"): set(ALL_DEPENDENCY_OPERATIONS),
     ("web", "node"): set(ALL_DEPENDENCY_OPERATIONS),
-    ("ai", "python"): set(NATIVE_OPERATIONS_EXCEPT_GC_AND_OFFLINE),
+    ("ai", "python"): set(NATIVE_OPERATIONS_EXCEPT_GC),
     ("app", "flutter"): {"install", "add", "remove", "update"},
     ("app", "swift"): {"install"},
     ("lib", "rust"): {"install", "add", "remove", "update"},
@@ -906,14 +906,15 @@ for _lane in LANES:
     if _key not in NATIVE_USER_OPERATION_LANES:
         raise ValueError(f"dependency operation ownership missing for lane {_key}")
     _native_ops = NATIVE_USER_OPERATION_LANES[_key]
-    # Offline reinstall is its own capability: Web/TS and the verified
-    # Lib/Python wheel-cache lane enforce cache-only installation. Other
+    # Offline reinstall is its own capability: Web/TS, Lib/Python wheel
+    # cache, AI/Python wheels, and Lib/Rust crate cache enforce cache-only installation. Other
     # native online installers still download from registries and must not
     # inherit an offline claim.
     _offline_native = _key in {
         ("web", "javascript"), ("web", "typescript"), ("web", "vanilla"),
         ("web", "ts"), ("web", "node"), ("lib", "typescript"),
-        ("lib", "python"), ("clo", "cdk"), ("clo", "pulumi"),
+        ("lib", "python"), ("ai", "python"), ("lib", "rust"), ("clo", "cdk"), ("clo", "pulumi"),
+        ("app", "flutter"),
     }
     _lane["dependency_owner"] = (
         "mgc-native" if "install" in _native_ops

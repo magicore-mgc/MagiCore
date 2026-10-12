@@ -43,6 +43,19 @@ fn crate_line(name: &str, vers: &str, yanked: bool, cksum: &str, deps: &str) -> 
     )
 }
 
+fn crate_line_with_features(
+    name: &str,
+    vers: &str,
+    cksum: &str,
+    deps: &str,
+    features: &str,
+    features2: &str,
+) -> String {
+    format!(
+        r#"{{"name":"{name}","vers":"{vers}","deps":[{deps}],"cksum":"{cksum}","features":{features},"features2":{features2},"yanked":false,"links":null}}"#
+    )
+}
+
 fn dep(name: &str, req: &str, kind: &str, optional: bool) -> String {
     format!(
         r#"{{"name":"{name}","req":"{req}","features":[],"optional":{optional},"default_features":true,"target":null,"kind":"{kind}","package":null}}"#
@@ -50,29 +63,29 @@ fn dep(name: &str, req: &str, kind: &str, optional: bool) -> String {
 }
 
 #[tokio::test]
-async fn crates_resolves_transitive_graph_skips_yanked_and_optional() {
+async fn crates_resolves_complete_lock_closure_with_optional_and_target_edges() {
     let Some(mut server) = mock_server().await else {
         return;
     };
     let serde_bytes = b"SERDE_CRATE_1.0.219";
     let core_bytes = b"SERDE_CORE_1.0.5";
+    let windows_bytes = b"WINDOWS_SYS_0.59.0";
     let serde_cksum = sha256_hex(serde_bytes);
     let core_cksum = sha256_hex(core_bytes);
+    let windows_cksum = sha256_hex(windows_bytes);
 
-    // serde 1.0.219 → normal dep serde_core (1.0) + optional serde_derive
-    // 2.0.0 yanked (must be skipped) + 1.0.100 (lower, must lose to 1.0.219)
+    // serde 1.0.219 → serde_core + dormant optional serde_derive + Windows-only
+    // windows-sys. The optional edge is marked but not fetched; the target edge
+    // remains in the lock closure for Cargo builds on other operating systems.
+    let windows_dep = r#"{"name":"windows-sys","req":"^0.59","features":[],"optional":false,"default_features":true,"target":"cfg(windows)","kind":"normal","package":null}"#;
+    let serde_dependencies = format!(
+        "{},{},{}",
+        dep("serde_core", "1.0", "normal", false),
+        dep("serde_derive", "=1.0.219", "normal", true),
+        windows_dep
+    );
     let serde_body = [
-        crate_line(
-            "serde",
-            "1.0.219",
-            false,
-            &serde_cksum,
-            &format!(
-                "{},{}",
-                dep("serde_core", "1.0", "normal", false),
-                dep("serde_derive", "=1.0.219", "normal", true)
-            ),
-        ),
+        crate_line("serde", "1.0.219", false, &serde_cksum, &serde_dependencies),
         crate_line("serde", "2.0.0", true, &serde_cksum, ""),
         crate_line("serde", "1.0.100", false, &serde_cksum, ""),
     ]
@@ -93,20 +106,32 @@ async fn crates_resolves_transitive_graph_skips_yanked_and_optional() {
         .create_async()
         .await;
 
+    server
+        .mock("GET", "/wi/nd/windows-sys")
+        .with_status(200)
+        .with_body(crate_line(
+            "windows-sys",
+            "0.59.0",
+            false,
+            &windows_cksum,
+            "",
+        ))
+        .create_async()
+        .await;
+
     let protocol = CratesProtocol::with_download_base(&server.url(), &server.url());
     let entries = protocol.resolve_graph("serde", "^1.0").await.unwrap();
 
-    assert_eq!(
-        entries.len(),
-        2,
-        "optional serde_derive + yanked 2.0.0 must be excluded"
-    );
+    assert_eq!(entries.len(), 3, "target-qualified lock edges are resolved");
     let serde = &entries[0];
     assert_eq!(serde.name, "serde");
     assert_eq!(serde.version, "1.0.219");
     assert_eq!(
         serde.deps,
-        vec![("serde_core".to_string(), "1.0".to_string())]
+        vec![
+            ("serde_core".to_string(), "1.0".to_string()),
+            ("windows-sys".to_string(), "^0.59".to_string()),
+        ]
     );
     assert!(
         serde
@@ -120,6 +145,142 @@ async fn crates_resolves_transitive_graph_skips_yanked_and_optional() {
     let core = &entries[1];
     assert_eq!(core.name, "serde_core");
     assert_eq!(core.version, "1.0.5");
+    assert_eq!(entries[2].name, "windows-sys");
+    assert!(
+        serde
+            .extra_markers
+            .iter()
+            .any(|marker| marker == "target:cfg(windows)")
+    );
+}
+
+#[tokio::test]
+async fn crates_feature_resolution_enables_selected_optional_edges_only() {
+    let Some(mut server) = mock_server().await else {
+        return;
+    };
+    let checksum = |name: &str| sha256_hex(name.as_bytes());
+
+    server
+        .mock("GET", "/ro/ot/root")
+        .with_status(200)
+        .with_body(crate_line_with_features(
+            "root",
+            "1.0.0",
+            &checksum("root"),
+            &dep("syn", "^3", "normal", false),
+            r#"{"default":["api"],"api":["syn/proc-macro","syn/weak-forward"]}"#,
+            "{}",
+        ))
+        .create_async()
+        .await;
+    server
+        .mock("GET", "/3/s/syn")
+        .with_status(200)
+        .with_body(crate_line_with_features(
+            "syn",
+            "3.0.0",
+            &checksum("syn"),
+            &format!(
+                "{},{},{}",
+                dep("proc-macro2", "^1", "normal", false),
+                dep("quote", "^1", "normal", true),
+                dep("indexmap", "^2", "normal", true),
+            ),
+            r#"{"default":["derive"],"derive":["dep:quote"],"proc-macro":["proc-macro2/proc-macro"],"weak-forward":["proc-macro2?/span"]}"#,
+            "{}",
+        ))
+        .create_async()
+        .await;
+    server
+        .mock("GET", "/pr/oc/proc-macro2")
+        .with_status(200)
+        .with_body(crate_line_with_features(
+            "proc-macro2",
+            "1.0.0",
+            &checksum("proc-macro2"),
+            &dep("unicode-ident", "^1", "normal", true),
+            r#"{"proc-macro":[]}"#,
+            r#"{"span":["dep:unicode-ident"]}"#,
+        ))
+        .create_async()
+        .await;
+    server
+        .mock("GET", "/un/ic/unicode-ident")
+        .with_status(200)
+        .with_body(crate_line(
+            "unicode-ident",
+            "1.0.0",
+            false,
+            &checksum("unicode-ident"),
+            "",
+        ))
+        .create_async()
+        .await;
+    server
+        .mock("GET", "/qu/ot/quote")
+        .with_status(200)
+        .with_body(crate_line("quote", "1.0.0", false, &checksum("quote"), ""))
+        .create_async()
+        .await;
+
+    let protocol = CratesProtocol::with_download_base(&server.url(), &server.url());
+    let entries = protocol.resolve_graph("root", "1").await.unwrap();
+    let by_name = entries
+        .iter()
+        .map(|entry| (entry.name.as_str(), entry))
+        .collect::<std::collections::BTreeMap<_, _>>();
+
+    assert!(
+        by_name.contains_key("quote"),
+        "default feature must activate quote"
+    );
+    assert!(
+        by_name.contains_key("proc-macro2"),
+        "requested child feature must activate proc-macro2"
+    );
+    assert!(
+        by_name.contains_key("unicode-ident"),
+        "weak feature forwarding must affect a non-optional active dependency"
+    );
+    assert!(
+        !by_name.contains_key("indexmap"),
+        "dormant optional dependency must stay unresolved"
+    );
+    assert!(by_name["syn"].deps.iter().any(|(name, _)| name == "quote"));
+    assert!(
+        by_name["syn"]
+            .extra_markers
+            .iter()
+            .any(|marker| marker == "optional:indexmap")
+    );
+}
+
+#[tokio::test]
+async fn crates_refuses_unmanaged_alternate_registry_edges() {
+    let Some(mut server) = mock_server().await else {
+        return;
+    };
+    server
+        .mock("GET", "/fo/re/foreign_root")
+        .with_status(200)
+        .with_body(crate_line_with_features(
+            "foreign_root",
+            "1.0.0",
+            &sha256_hex(b"foreign-root"),
+            r#"{"name":"private-crate","req":"^1","features":[],"optional":false,"default_features":true,"target":null,"kind":"normal","package":null,"registry":"https://registry.example/index"}"#,
+            "{}",
+            "{}",
+        ))
+        .create_async()
+        .await;
+
+    let protocol = CratesProtocol::with_download_base(&server.url(), &server.url());
+    let error = protocol
+        .resolve_graph("foreign_root", "1")
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("alternate registry"), "{error}");
 }
 
 #[tokio::test]

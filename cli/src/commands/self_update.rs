@@ -137,7 +137,7 @@ const MAX_DOC_BYTES: u64 = 64 * 1024;
 /// (Manifest release: bind mọi artifact với tọa độ + digest.)
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ReleaseManifest {
-    /// Release version WITHOUT leading `v` (e.g. `1.1.0-rc.9`).
+    /// Release version WITHOUT leading `v` (e.g. `1.1.0-rc.10`).
     pub version: String,
     /// One entry per published archive.
     pub artifacts: Vec<ManifestArtifact>,
@@ -798,8 +798,8 @@ async fn swap_binary(staged: &std::path::Path, version_number: &str) -> Result<(
     };
     let expected = format!("mgc {version_number}");
     // The probe output must contain the requested version as a
-    // whitespace-delimited token (`mgc 1.1.0-rc.9`): substring matching
-    // would accept `1.1.0-rc.90`.
+    // whitespace-delimited token (`mgc 1.1.0-rc.10`): substring matching
+    // would accept `1.1.0-rc.100`.
     // (Output probe phải chứa đúng version yêu cầu.)
     if !probe_reports_version(&report.stdout_tail, version_number) {
         return Err(rollback(format!(

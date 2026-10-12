@@ -233,7 +233,7 @@ fn exact_version_from_range(range: &VersionRange) -> Option<Version> {
 
 use crate::audit::{run_audit, run_audit_fix};
 use crate::cache::{SharedWebCache, resolve_prefetch_enabled};
-use crate::install::run_install;
+use crate::install::run_install_with_registry;
 use crate::lockfile::{build_graph_from_lockfile, lockfile_satisfies_manifest};
 use crate::manifest::{parse_manifest, write_manifest};
 use crate::profile::ResolveProfile;
@@ -330,6 +330,48 @@ impl WebAdapter {
             fallbacks,
             shared_cache.clone(),
         ));
+        Self::from_provider(registry_url, provider, shared_cache)
+    }
+
+    /// Use an already-resolved chain without rereading environment overrides.
+    /// Chain typed là cấu hình đã chọn; không đổi endpoint rồi giữ nhầm token cũ.
+    pub fn with_scoped_registry_chain(
+        entries: Vec<mgc_config::chain::ScopedRegistry>,
+    ) -> Result<Self> {
+        for entry in &entries {
+            let url = url::Url::parse(&entry.registry.url)
+                .map_err(|_| anyhow::anyhow!("invalid registry endpoint"))?;
+            if url.host_str().is_none()
+                || !url.username().is_empty()
+                || url.password().is_some()
+                || (url.scheme() != "https"
+                    && !crate::audit::allow_insecure_loopback_url(&entry.registry.url))
+            {
+                return Err(anyhow::anyhow!(
+                    "registry endpoint must use HTTPS without userinfo"
+                ));
+            }
+            validate_registry_allowed(&entry.registry.url)?;
+        }
+        let registry_url = entries
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("no registry configured"))?
+            .registry
+            .url
+            .clone();
+        let shared_cache = SharedWebCache::discover();
+        let provider = Arc::new(NpmDependencyProvider::new_with_scoped_chain(
+            entries,
+            shared_cache.clone(),
+        )?);
+        Ok(Self::from_provider(registry_url, provider, shared_cache))
+    }
+
+    fn from_provider(
+        registry_url: String,
+        provider: Arc<NpmDependencyProvider>,
+        shared_cache: Option<SharedWebCache>,
+    ) -> Self {
         Self {
             registry_url,
             provider: provider.clone(),
@@ -814,8 +856,16 @@ impl WebAdapter {
             profile.flush(started_at.elapsed().as_millis() as u64);
             return Ok(graph);
         }
+        // Legacy short-circuit runs only when the lock on disk is NOT v4:
+        // a v4 miss above means re-resolve, and the legacy reader would
+        // misparse a v4 document instead of missing cleanly.
+        // (Short-circuit legacy chỉ chạy khi lock đĩa KHÔNG phải v4: v4 miss
+        // ở trên nghĩa là resolve mới, reader legacy sẽ parse sai v4 thay vì
+        // miss sạch.)
+        let legacy_readable = !crate::lockfile::lock_on_disk_is_v4(std::path::Path::new("."));
         if allow_shortcircuit
             && !age_gate_active
+            && legacy_readable
             && let Some(lockfile) = read_web_lockfile_checked(Path::new("."))?
             && lockfile_satisfies_manifest(&lockfile, manifest)
             && let Ok(Some(graph)) = build_graph_from_lockfile(
@@ -1054,19 +1104,9 @@ impl ArtifactFetcher for WebAdapter {
     }
 
     async fn fetch(&self, graph: &ResolvedGraph) -> MgResult<()> {
-        let reg = native::npm_registry::NpmRegistry::new_with_token(
-            &self.registry_url,
-            self.provider.registry.auth_token().map(str::to_string),
-        );
+        let reg = &self.provider.registry;
         for pkg in &graph.packages {
-            let unscoped = pkg.id.name().unscoped();
-            let url = format!(
-                "{}/{}/-/{}-{}.tgz",
-                self.registry_url,
-                pkg.id.name_str(),
-                unscoped,
-                pkg.id.version()
-            );
+            let url = install::fetch::package_tarball_url(reg.registry_url(), pkg);
             let bytes = reg.download_tarball(&url).await.map_err(|e| {
                 mgc_types::MgError::Network(format!(
                     "download failed for '{}': {}",
@@ -1074,6 +1114,9 @@ impl ArtifactFetcher for WebAdapter {
                     e
                 ))
             })?;
+            // Verify declared SRI before publishing any artifact bytes to CAS.
+            // Hash nội dung CAS không thay cho SRI của artifact đã resolve.
+            install::integrity::verify_tarball_integrity(pkg, &bytes)?;
             if let Some(ref store) = self.store {
                 store
                     .import_bytes(&bytes)
@@ -1107,9 +1150,8 @@ impl ContentStoreProvider for WebAdapter {
             project_root.display()
         );
         let prefetch_handle = self.prefetch_handle_guard().take();
-        run_install(
-            &self.registry_url,
-            self.provider.registry.auth_token(),
+        run_install_with_registry(
+            &self.provider.registry,
             self.store.as_ref(),
             self.shared_cache.clone(),
             prefetch_handle,

@@ -53,6 +53,7 @@ pub async fn install_flutter_native(
     dry_run: bool,
     compat_runtime: Option<String>,
     frozen: bool,
+    offline: bool,
 ) -> Result<()> {
     if !packages.is_empty() {
         return Err(crate::error::install_app_packages_use_add(&packages));
@@ -66,7 +67,11 @@ pub async fn install_flutter_native(
             Some(mgc_app_adapter::AppLanguage::Flutter.ecosystem()),
             None,
             None,
-            crate::commands::dep_gate::DepOp::Install,
+            if offline {
+                crate::commands::dep_gate::DepOp::OfflineReinstall
+            } else {
+                crate::commands::dep_gate::DepOp::Install
+            },
         ),
         &adapter,
         &compat,
@@ -86,6 +91,7 @@ pub async fn install_flutter_native(
         frozen,
         mgc_types::adapter::InstallOptions {
             legacy_flat: false,
+            offline,
             ..Default::default()
         },
     )
@@ -104,6 +110,8 @@ pub fn manifest_hint(lang: mgc_app_adapter::AppLanguage, verb: &str) -> anyhow::
         }
         mgc_app_adapter::AppLanguage::ObjC => "iOS Podfile",
         mgc_app_adapter::AppLanguage::Multi => "platform subproject manifest",
+        mgc_app_adapter::AppLanguage::Maui => "MAUI *.csproj",
+        mgc_app_adapter::AppLanguage::Tauri => "src-tauri/Cargo.toml",
     };
     crate::error::manifest_hint(verb, &format!("{lang:?}"), file)
 }
@@ -114,6 +122,7 @@ pub async fn install(
     dry_run: bool,
     compat_runtime: Option<String>,
     frozen: bool,
+    offline: bool,
 ) -> Result<()> {
     let root = project_root()?;
     let lang = language(&root)?;
@@ -124,7 +133,16 @@ pub async fn install(
             | mgc_app_adapter::AppLanguage::Swift
             | mgc_app_adapter::AppLanguage::ReactNative
     ) {
-        return install_app_native(&root, lang, packages, dry_run, compat_runtime, frozen).await;
+        return install_app_native(
+            &root,
+            lang,
+            packages,
+            dry_run,
+            compat_runtime,
+            frozen,
+            offline,
+        )
+        .await;
     }
 
     Err(crate::error::native_dependency_engine_unavailable(
@@ -141,6 +159,7 @@ async fn install_app_native(
     dry_run: bool,
     compat_runtime: Option<String>,
     frozen: bool,
+    offline: bool,
 ) -> Result<()> {
     if !packages.is_empty() && lang != mgc_app_adapter::AppLanguage::Flutter {
         return Err(crate::error::native_dependency_engine_unavailable(
@@ -150,7 +169,8 @@ async fn install_app_native(
         ));
     }
     if lang == mgc_app_adapter::AppLanguage::Flutter {
-        return install_flutter_native(root, packages, dry_run, compat_runtime, frozen).await;
+        return install_flutter_native(root, packages, dry_run, compat_runtime, frozen, offline)
+            .await;
     }
     let compat = crate::commands::dep_gate::from_dep_flag(compat_runtime.as_deref())?;
     let adapter =
@@ -161,7 +181,11 @@ async fn install_app_native(
             Some(lang.ecosystem()),
             None,
             None,
-            crate::commands::dep_gate::DepOp::Install,
+            if offline {
+                crate::commands::dep_gate::DepOp::OfflineReinstall
+            } else {
+                crate::commands::dep_gate::DepOp::Install
+            },
         ),
         &adapter,
         &compat,
@@ -180,6 +204,7 @@ async fn install_app_native(
         frozen,
         mgc_types::adapter::InstallOptions {
             legacy_flat: false,
+            offline,
             ..Default::default()
         },
     )

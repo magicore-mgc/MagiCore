@@ -21,7 +21,7 @@ pub fn bare_core_command(
     // caller's no-network constraint was honored.
     // (`install --offline` trước đây bị bỏ âm thầm ở các core khác Web.)
     if matches!(&command, Commands::Install { offline: true, .. })
-        && !matches!(ecosystem.as_deref(), Some("web" | "lib"))
+        && !matches!(ecosystem.as_deref(), Some("web" | "lib" | "ai" | "app"))
     {
         anyhow::bail!(
             "offline install is not implemented for core '{}'; the request was not run",
@@ -53,6 +53,7 @@ pub fn bare_core_command(
             },
             "game" => CoreCommand::InstallGame {
                 packages,
+                frozen,
                 compat_runtime,
             },
             "ai" => CoreCommand::InstallAi {
@@ -60,10 +61,12 @@ pub fn bare_core_command(
                 dry_run,
                 compat_runtime,
                 frozen,
+                offline,
             },
             "clo" => CoreCommand::InstallClo {
                 packages,
                 dry_run,
+                frozen,
                 compat_runtime,
             },
             "cicd" => CoreCommand::InstallCicd {
@@ -73,6 +76,7 @@ pub fn bare_core_command(
             },
             "iot" => CoreCommand::InstallIot {
                 packages,
+                frozen,
                 compat_runtime,
             },
             "app" => CoreCommand::InstallApp {
@@ -80,6 +84,7 @@ pub fn bare_core_command(
                 dry_run,
                 compat_runtime,
                 frozen,
+                offline,
             },
             "lib" => CoreCommand::InstallLib {
                 packages,

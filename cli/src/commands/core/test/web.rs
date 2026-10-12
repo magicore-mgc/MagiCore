@@ -1,4 +1,166 @@
 #[test]
+fn native_astro_dev_disables_external_update_check_only() {
+    use crate::commands::compat::CompatMode;
+    use std::path::Path;
+
+    assert_eq!(
+        super::native_astro_update_check_env(
+            Path::new("node_modules/.bin/astro"),
+            &CompatMode::Native
+        ),
+        Some(("ASTRO_DISABLE_UPDATE_CHECK".to_string(), "true".to_string()))
+    );
+    assert_eq!(
+        super::native_astro_update_check_env(
+            Path::new("node_modules/.bin/astro.cmd"),
+            &CompatMode::Native
+        ),
+        Some(("ASTRO_DISABLE_UPDATE_CHECK".to_string(), "true".to_string()))
+    );
+    assert_eq!(
+        super::native_astro_update_check_env(
+            Path::new("node_modules/.bin/astro"),
+            &CompatMode::Explicit("bun".to_string())
+        ),
+        None
+    );
+    assert_eq!(
+        super::native_astro_update_check_env(
+            Path::new("node_modules/.bin/next"),
+            &CompatMode::Native
+        ),
+        None
+    );
+}
+
+#[test]
+fn native_fastapi_dev_uses_uvicorn_asgi_entrypoint() {
+    let root = tempfile::tempdir().expect("create FastAPI project");
+    std::fs::write(
+        root.path().join("mgc.toml"),
+        "name = \"fastapi-probe\"\necosystem = \"web\"\nmode = \"backend\"\nframeworks = [\"python\", \"fastapi\"]\n",
+    )
+    .expect("write project config");
+    std::fs::write(
+        root.path().join("pyproject.toml"),
+        "[project]\nname = \"fastapi-probe\"\nversion = \"0.1.0\"\ndependencies = [\"fastapi>=0.110.0\", \"uvicorn>=0.28.0\"]\n",
+    )
+    .expect("write Python manifest");
+    std::fs::write(root.path().join("main.py"), "app = object()\n").expect("write ASGI entrypoint");
+
+    let launch =
+        super::infer_native_dev_launch(root.path(), Some("127.0.0.1".to_string()), Some(4567))
+            .expect("infer FastAPI dev launch");
+
+    assert!(
+        launch.program.file_name().is_some_and(|name| {
+            let name = name.to_string_lossy();
+            name == "python" || name.starts_with("python3")
+        }),
+        "FastAPI must run through the project's Python interpreter: {}",
+        launch.program.display()
+    );
+    assert_eq!(
+        launch.args,
+        [
+            "-m",
+            "uvicorn",
+            "main:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "4567"
+        ]
+        .into_iter()
+        .map(std::ffi::OsString::from)
+        .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn native_python_dev_keeps_plain_main_script_semantics_without_fastapi_config() {
+    let root = tempfile::tempdir().expect("create Python project");
+    std::fs::write(root.path().join("main.py"), "print('plain python app')\n")
+        .expect("write Python entrypoint");
+
+    let launch = super::infer_native_dev_launch(root.path(), None, None)
+        .expect("infer plain Python dev launch");
+
+    assert_eq!(launch.args, [std::ffi::OsString::from("main.py")]);
+}
+
+#[test]
+fn native_fastapi_dev_supports_src_main_module_layout() {
+    let root = tempfile::tempdir().expect("create FastAPI project");
+    std::fs::write(
+        root.path().join("mgc.toml"),
+        "name = \"fastapi-probe\"\necosystem = \"web\"\nframeworks = [\"fastapi\"]\n",
+    )
+    .expect("write project config");
+    std::fs::create_dir(root.path().join("src")).expect("create source directory");
+    std::fs::write(root.path().join("src/main.py"), "app = object()\n")
+        .expect("write ASGI entrypoint");
+
+    let launch = super::infer_native_dev_launch(root.path(), None, Some(4568))
+        .expect("infer FastAPI source-layout dev launch");
+
+    assert_eq!(
+        launch.args,
+        [
+            "-m",
+            "uvicorn",
+            "src.main:app",
+            "--host",
+            "localhost",
+            "--port",
+            "4568"
+        ]
+        .into_iter()
+        .map(std::ffi::OsString::from)
+        .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn non_python_backend_does_not_parse_python_framework_config() {
+    let root = tempfile::tempdir().expect("create Go project");
+    std::fs::write(root.path().join("mgc.toml"), "this is not valid TOML = [\n")
+        .expect("write malformed unrelated config");
+    std::fs::write(root.path().join("go.mod"), "module example.com/server\n")
+        .expect("write Go manifest");
+
+    let launch = super::infer_native_dev_launch(root.path(), None, None)
+        .expect("Go dev route should not read the FastAPI config");
+
+    assert_eq!(launch.program, std::path::PathBuf::from("go"));
+    assert_eq!(launch.args, ["run", "."].map(std::ffi::OsString::from));
+}
+
+#[test]
+fn python_interpreter_name_detection_covers_supported_executable_names() {
+    for name in ["python", "python3", "python3.12", "python312", "python.exe"] {
+        assert!(
+            super::is_python_interpreter_name(name),
+            "expected {name} to be recognized as Python"
+        );
+    }
+    for name in [
+        "pythonw",
+        "pythonfmt",
+        "python3-dev",
+        "python3..12",
+        "python3.",
+        "uvicorn",
+        "python-dev",
+    ] {
+        assert!(
+            !super::is_python_interpreter_name(name),
+            "expected {name} to stay outside Python interpreter detection"
+        );
+    }
+}
+
+#[test]
 fn v3_web_lockfile_is_written_with_current_schema_version() {
     // Deliberate v3 bump (Phase 1): web writes target the v3 schema.
     // Nâng lên v3 có chủ đích (Phase 1): web ghi ra nhắm schema v3.
@@ -7,6 +169,77 @@ fn v3_web_lockfile_is_written_with_current_schema_version() {
     assert!(encoded.contains("version = \"3\""));
     let decoded: mgc_lockfile::Lockfile = mgc_lockfile::serialization::from_toml(&encoded).unwrap();
     assert_eq!(decoded.version, "3");
+}
+
+#[test]
+fn web_framework_aliases_resolve_to_supported_defaults() {
+    for (alias, canonical) in [
+        ("ts", "vanilla"),
+        ("frontend", "vanilla"),
+        ("custom", "vanilla"),
+        ("node", "express"),
+        ("backend", "express"),
+        ("fullstack", "remix"),
+        ("go", "gin"),
+        ("java", "spring-boot"),
+        ("php", "laravel"),
+        ("python", "fastapi"),
+        ("rust", "axum"),
+        ("dotnet", "dotnet-minimal"),
+        ("monorepo", "react-vite"),
+    ] {
+        assert_eq!(
+            super::parse_framework_request(alias).normalized,
+            canonical,
+            "alias {alias}"
+        );
+    }
+}
+
+#[test]
+fn nuxt_scaffold_seeds_unplugin_at_project_root_for_builder_resolution() {
+    let seed = super::FRAMEWORK_SEEDS
+        .iter()
+        .find(|seed| seed.name == "nuxt")
+        .expect("Nuxt framework seed should exist");
+
+    assert!(seed.primary.contains(&"nuxt"));
+    assert!(seed.supplemental.contains(&"vue"));
+    assert!(seed.toolchain.iter().any(|package| {
+        package.section == "devDependencies"
+            && package.package == "unplugin"
+            && package.version.is_none()
+    }));
+    assert_eq!(
+        super::versions::scaffold_baseline_version("unplugin"),
+        Some("^3.0.0")
+    );
+}
+
+#[test]
+fn monorepo_alias_selects_a_frontend_and_backend() {
+    let mut flags = crate::commands::core::scaffold_flags::ScaffoldFlags::default();
+    super::apply_framework_alias_defaults("monorepo", &mut flags);
+    let config = super::build_web_config("monorepo", "sample", &flags).unwrap();
+    assert_eq!(config.sub_type, "monorepo");
+    assert_eq!(config.frameworks, ["react-vite", "express"]);
+}
+
+#[test]
+fn monorepo_alias_has_an_offline_frontend_and_backend_scaffold() {
+    let root = tempfile::tempdir().unwrap();
+    let project = root.path().join("sample-monorepo");
+    let mut flags = crate::commands::core::scaffold_flags::ScaffoldFlags::default();
+    super::apply_framework_alias_defaults("monorepo", &mut flags);
+    let config = super::build_web_config("monorepo", project.to_str().unwrap(), &flags).unwrap();
+    let out = crate::scaffold::processor::Scaffolder::scaffold(&config).unwrap();
+    assert!(out.join("magicore.workspace.toml").is_file());
+    assert!(out.join("apps/frontend/src/App.tsx").is_file());
+    assert!(out.join("apps/backend/src/server.js").is_file());
+    let package: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(out.join("package.json")).unwrap()).unwrap();
+    assert_eq!(package["workspaces"][0], "apps/frontend");
+    assert_eq!(package["workspaces"][1], "apps/backend");
 }
 
 #[test]
@@ -120,12 +353,93 @@ fn vite_dev_launch_needs_no_vite_binary() {
         None,
         Some(4315),
         &crate::commands::compat::CompatMode::Native,
+        None,
     )
     .expect("vite dev launch must build without the binary");
     assert!(
         launch.program.to_string_lossy().ends_with("vite"),
         "vite program routes to MgDevServer downstream"
     );
+}
+
+#[test]
+fn dev_endpoint_flags_override_values_in_project_scripts() {
+    let mut args = [
+        "serve",
+        "--port=4315",
+        "--port",
+        "3000",
+        "--host=localhost",
+        "--host",
+        "0.0.0.0",
+    ]
+    .into_iter()
+    .map(std::ffi::OsString::from)
+    .collect::<Vec<_>>();
+
+    super::append_dev_endpoint_args(
+        &mut args,
+        "--host",
+        "--port",
+        Some("127.0.0.1".to_string()),
+        Some(4531),
+    );
+
+    assert_eq!(
+        args,
+        ["serve", "--host", "127.0.0.1", "--port", "4531"]
+            .into_iter()
+            .map(std::ffi::OsString::from)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn dev_endpoint_flags_override_short_options_for_next_scripts() {
+    let mut args = ["dev", "-H", "0.0.0.0", "-p", "4315"]
+        .into_iter()
+        .map(std::ffi::OsString::from)
+        .collect::<Vec<_>>();
+
+    super::append_dev_endpoint_args(
+        &mut args,
+        "-H",
+        "-p",
+        Some("127.0.0.1".to_string()),
+        Some(3451),
+    );
+
+    assert_eq!(
+        args,
+        ["dev", "-H", "127.0.0.1", "-p", "3451"]
+            .into_iter()
+            .map(std::ffi::OsString::from)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn multi_dev_supervisor_cancels_and_reaps_sibling_targets() {
+    let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let sibling_stopped = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let mut tasks = tokio::task::JoinSet::<anyhow::Result<()>>::new();
+
+    let sibling_cancel = std::sync::Arc::clone(&cancel_flag);
+    let sibling_stopped_flag = std::sync::Arc::clone(&sibling_stopped);
+    tasks.spawn(async move {
+        while !sibling_cancel.load(std::sync::atomic::Ordering::SeqCst) {
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        }
+        sibling_stopped_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    });
+    tasks.spawn(async { anyhow::bail!("expected dev target failure") });
+
+    let result = super::supervise_dev_tasks(&mut tasks, cancel_flag).await;
+
+    assert!(result.is_err_and(|error| error.to_string().contains("expected dev target failure")));
+    assert!(sibling_stopped.load(std::sync::atomic::Ordering::SeqCst));
+    assert!(tasks.is_empty(), "supervisor must reap every dev task");
 }
 
 #[test]

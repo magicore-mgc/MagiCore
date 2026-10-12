@@ -19,7 +19,7 @@ pub use database::{CasGenerationError, Database, DatabaseEntry, ProjectInstallLo
 pub use index::{FileEntry, StoreIndex};
 pub use layout::Layout;
 
-/// Trả về đường dẫn global store: `~/.magicore/store/v3`
+/// Trả về đường dẫn global store: `$MGC_DATA_DIR/store/v3`
 /// (env `MAGICORE_STORE_ROOT` override — tests + custom setups)
 pub fn default_store_root() -> std::path::PathBuf {
     // let-chain edition 2024 — gộp điều kiện theo clippy 1.98.
@@ -28,9 +28,5 @@ pub fn default_store_root() -> std::path::PathBuf {
     {
         return std::path::PathBuf::from(override_dir);
     }
-    dirs::home_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join(".magicore")
-        .join("store")
-        .join("v3")
+    mgc_platform::paths::mgc_data_dir().join("store").join("v3")
 }

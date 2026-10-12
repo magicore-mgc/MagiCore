@@ -96,7 +96,7 @@ fn e2e_v4_lock_replays_install_byte_identical() {
     mgc(&consumer, &["migrate", "lock", "--to", "v4"], &env);
     let lock_v4 = fs::read_to_string(consumer.join("mgc.lock")).unwrap();
     assert!(
-        lock_v4.contains("version = \"4\""),
+        lock_v4.contains("version = \"4.1\""),
         "migrate must emit a v4 lock"
     );
 

@@ -3,15 +3,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
-// use mgc_lockfile::{
-//     serialization, LockPackage, Lockfile, LockfileSigner, ResolutionMeta, WorkspaceLock,
-// };
 use mgc_types::adapter::PackageAdapter;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use crate::commands::core::scaffold_flags::ScaffoldFlags;
 use crate::commands::core::shared;
+use crate::commands::freshness::check_profile_gate;
 use mgc_types::Ecosystem;
 use mgc_ui::info;
 
@@ -88,7 +86,7 @@ fn project_root() -> Result<std::path::PathBuf> {
 /// detectable — current behavior runs and fails honestly downstream).
 /// Detected from manifest markers first, then mgc.toml frameworks[].
 /// (Ngôn ngữ backend non-JS của project web khi không có package.json.)
-#[cfg(feature = "lib")]
+#[cfg(any(feature = "lib", feature = "web-backend-runtime"))]
 fn web_backend_language(root: &Path) -> Option<mgc_lib_adapter::LibLanguage> {
     use mgc_lib_adapter::LibLanguage;
     if root.join("package.json").exists() {
@@ -142,14 +140,46 @@ fn web_backend_language(root: &Path) -> Option<mgc_lib_adapter::LibLanguage> {
     })
 }
 
-fn web_adapter() -> Result<Arc<dyn PackageAdapter>> {
+/// Build the native language adapter for a web-owned backend project.
+/// Dependency ownership is evaluated by the lib language lane, while the
+/// project identity and adapter security policy remain `web`.
+/// Dựng adapter ngôn ngữ native cho backend do web sở hữu. Gate dùng lane
+/// ngôn ngữ lib; project identity và security policy vẫn thuộc `web`.
+#[cfg(any(feature = "lib", feature = "web-backend-runtime"))]
+fn web_backend_adapter_for_operation(
+    root: &Path,
+    language: mgc_lib_adapter::LibLanguage,
+    operation: crate::commands::dep_gate::DepOp,
+    compat_runtime: Option<&str>,
+) -> Result<Arc<dyn PackageAdapter>> {
+    let compat = crate::commands::dep_gate::from_dep_flag(compat_runtime)?;
+    // Gate the same language and manifest that web_backend_language selected
+    // for the adapter; Lib's generic detector has a different probe order.
+    // (Gate theo đúng ngôn ngữ/manifest Web đã chọn; detector Lib tổng quát
+    // có thứ tự dò khác.)
+    let context = crate::commands::dep_gate::DepContext::new(
+        "lib",
+        Some(language.ecosystem()),
+        None,
+        None,
+        operation,
+    )
+    .with_manifest_format(mgc_lib_adapter::dependency_manifest_format(root, language));
+    crate::commands::dep_gate::gate(
+        &context,
+        None,
+        &compat,
+        Some(&root.join(".magicore").join("exec.log")),
+    )?;
+    let adapter = mgc_lib_adapter::adapter_for_web_backend(language, root)?;
+    Ok(Arc::new(adapter))
+}
+
+fn web_adapter(root: &Path) -> Result<Arc<dyn PackageAdapter>> {
     let started_at = std::time::Instant::now();
-    let registry_url = std::env::var("MAGICORE_WEB_REGISTRY_URL").ok();
-    let token = std::env::var("MAGICORE_WEB_REGISTRY_TOKEN").ok();
-    let adapter =
-        crate::factory::create_adapter(&Ecosystem::Web, registry_url.as_deref(), token.as_deref())?;
-    // NOTE: mgc.toml [security] min-release-age is armed inside
-    // WebAdapter::build (single point for every lane) — nothing to do here.
+    let config = mgc_config::project::ProjectConfig::load(root)?;
+    let chain = mgc_config::chain::registry_chain_scoped_checked(Some(root), config.as_ref())?;
+    let adapter = crate::factory::create_adapter_for_scoped(root, &Ecosystem::Web, chain)?;
     web_command_profile_mark("web_adapter", started_at);
     Ok(adapter)
 }
@@ -170,14 +200,12 @@ pub async fn add(
 ) -> Result<()> {
     let started_at = std::time::Instant::now();
     let root = project_root()?;
-    // Non-JS backend (create-web gin/axum/django/... — no package.json):
-    // the lib lane owns this lifecycle (it gates + runs the real
-    // machinery). Routing here keeps ONE behavior for `add-web` on such
-    // projects instead of querying npm for Go/Rust/Python paths (HTTP
-    // 406 confusion). The gate inside records core `lib` — that IS the
-    // machinery executing.
-    // (Backend non-JS: giao cho lane lib.)
-    #[cfg(feature = "lib")]
+    // Non-JS backends use the native language adapter from the Lib engine,
+    // while the project remains web-owned and keeps Web security policy.
+    // This avoids routing Go/Rust/Python manifests through the JS resolver.
+    // (Backend ngoài JS dùng adapter ngôn ngữ của engine Lib; project vẫn
+    // thuộc Web và giữ security policy Web.)
+    #[cfg(any(feature = "lib", feature = "web-backend-runtime"))]
     if let Some(backend) = web_backend_language(&root) {
         if !install {
             return Err(crate::error::web_backend_flag_unsupported(
@@ -185,16 +213,14 @@ pub async fn add(
                 backend.ecosystem(),
             ));
         }
-        return super::add::library::add(
-            packages,
-            version,
-            dev,
-            exact,
-            optional,
-            peer,
-            no_save,
-            global,
-            compat_runtime,
+        let adapter = web_backend_adapter_for_operation(
+            &root,
+            backend,
+            crate::commands::dep_gate::DepOp::Add,
+            compat_runtime.as_deref(),
+        )?;
+        return shared::add(
+            &*adapter, &root, packages, version, dev, exact, optional, peer, no_save, true, global,
         )
         .await;
     }
@@ -213,7 +239,7 @@ pub async fn add(
         &compat,
         Some(&root.join(".magicore").join("exec.log")),
     )?;
-    let adapter = web_adapter()?;
+    let adapter = web_adapter(&root)?;
     let result = shared::add(
         &*adapter, &root, packages, version, dev, exact, optional, peer, no_save, install, global,
     )
@@ -230,17 +256,17 @@ pub async fn remove(
 ) -> Result<()> {
     let started_at = std::time::Instant::now();
     let root = project_root()?;
-    // Non-JS backend: the lib lane owns this lifecycle (see add()).
-    // (Backend non-JS: giao cho lane lib.)
-    #[cfg(feature = "lib")]
+    // Non-JS backends use the Lib language engine without changing Web ownership.
+    // (Backend ngoài JS dùng engine ngôn ngữ Lib nhưng không đổi owner Web.)
+    #[cfg(any(feature = "lib", feature = "web-backend-runtime"))]
     if let Some(backend) = web_backend_language(&root) {
-        if !install {
-            return Err(crate::error::web_backend_flag_unsupported(
-                "--no-install",
-                backend.ecosystem(),
-            ));
-        }
-        return super::remove::library::remove(packages, compat_runtime).await;
+        let adapter = web_backend_adapter_for_operation(
+            &root,
+            backend,
+            crate::commands::dep_gate::DepOp::Remove,
+            compat_runtime.as_deref(),
+        )?;
+        return shared::remove(&*adapter, &root, packages, install).await;
     }
     // C0 ownership firewall (T0.3): web is native.
     // (Tường lửa C0: web native.)
@@ -257,7 +283,7 @@ pub async fn remove(
         &compat,
         Some(&root.join(".magicore").join("exec.log")),
     )?;
-    let adapter = web_adapter()?;
+    let adapter = web_adapter(&root)?;
     let result = shared::remove(&*adapter, &root, packages, install).await;
     web_command_profile_mark("web_remove_total", started_at);
     result
@@ -267,11 +293,17 @@ pub async fn remove(
 pub async fn list(compat_runtime: Option<String>) -> Result<()> {
     let started_at = std::time::Instant::now();
     let root = project_root()?;
-    // Non-JS backend: the lib lane owns this lifecycle (see add()).
-    // (Backend non-JS: giao cho lane lib.)
-    #[cfg(feature = "lib")]
-    if let Some(_backend) = web_backend_language(&root) {
-        return super::list::library::list(compat_runtime).await;
+    // Non-JS backends use the Lib language engine without changing Web ownership.
+    // (Backend ngoài JS dùng engine ngôn ngữ Lib nhưng không đổi owner Web.)
+    #[cfg(any(feature = "lib", feature = "web-backend-runtime"))]
+    if let Some(backend) = web_backend_language(&root) {
+        let adapter = web_backend_adapter_for_operation(
+            &root,
+            backend,
+            crate::commands::dep_gate::DepOp::List,
+            compat_runtime.as_deref(),
+        )?;
+        return shared::list(&*adapter, &root).await;
     }
     // C0 ownership firewall (T0.3): web list is a native manifest read —
     // the explicit --compat-runtime flag is accepted for CLI uniformity
@@ -291,7 +323,7 @@ pub async fn list(compat_runtime: Option<String>) -> Result<()> {
         &compat,
         Some(&root.join(".magicore").join("exec.log")),
     )?;
-    let adapter = web_adapter()?;
+    let adapter = web_adapter(&root)?;
     let result = shared::list(&*adapter, &root).await;
     web_command_profile_mark("web_list_total", started_at);
     result
@@ -307,9 +339,15 @@ pub async fn update(
     let root = project_root()?;
     // Non-JS backend: the lib lane owns this lifecycle (see add()).
     // (Backend non-JS: giao cho lane lib.)
-    #[cfg(feature = "lib")]
-    if let Some(_backend) = web_backend_language(&root) {
-        return super::update::library::update(packages, install, compat_runtime).await;
+    #[cfg(any(feature = "lib", feature = "web-backend-runtime"))]
+    if let Some(backend) = web_backend_language(&root) {
+        let adapter = web_backend_adapter_for_operation(
+            &root,
+            backend,
+            crate::commands::dep_gate::DepOp::Update,
+            compat_runtime.as_deref(),
+        )?;
+        return shared::update(&*adapter, &root, packages, install).await;
     }
     // C0 ownership firewall (T0.3): web is native.
     // (Tường lửa C0: web native.)
@@ -326,7 +364,7 @@ pub async fn update(
         &compat,
         Some(&root.join(".magicore").join("exec.log")),
     )?;
-    let adapter = web_adapter()?;
+    let adapter = web_adapter(&root)?;
     let result = shared::update(&*adapter, &root, packages, install).await;
     web_command_profile_mark("web_update_total", started_at);
     result
@@ -354,10 +392,10 @@ pub async fn install(
             anyhow::bail!("offline install cannot add packages; run `mgc add` online first");
         }
     }
-    // Non-JS backend: the lib lane owns this lifecycle (see add()).
+    // Non-JS backends use the Lib language engine without changing Web ownership.
     // Web-pipeline-only flags have no meaning there — fail loudly.
-    // (Backend non-JS: giao cho lane lib; flag web-only thì fail rõ.)
-    #[cfg(feature = "lib")]
+    // (Backend ngoài JS dùng engine Lib nhưng vẫn thuộc Web; flag riêng JS fail rõ.)
+    #[cfg(any(feature = "lib", feature = "web-backend-runtime"))]
     if let Some(backend) = web_backend_language(&root) {
         let language = backend.ecosystem();
         if ignore_scripts {
@@ -383,7 +421,32 @@ pub async fn install(
                 "--repair", language,
             ));
         }
-        return super::install::library::install(packages, compat_runtime, frozen, offline).await;
+        if !packages.is_empty() {
+            return Err(crate::error::install_lib_packages_use_add(&packages));
+        }
+        let operation = if offline {
+            crate::commands::dep_gate::DepOp::OfflineReinstall
+        } else {
+            crate::commands::dep_gate::DepOp::Install
+        };
+        let adapter = web_backend_adapter_for_operation(
+            &root,
+            backend,
+            operation,
+            compat_runtime.as_deref(),
+        )?;
+        return shared::install_with_adapter(
+            &*adapter,
+            &root,
+            "mgc add",
+            frozen || offline,
+            mgc_types::adapter::InstallOptions {
+                legacy_flat: false,
+                offline,
+                ..Default::default()
+            },
+        )
+        .await;
     }
     let compat = crate::commands::dep_gate::from_dep_flag(compat_runtime.as_deref())?;
     crate::commands::dep_gate::gate(
@@ -398,8 +461,17 @@ pub async fn install(
         &compat,
         Some(&root.join(".magicore").join("exec.log")),
     )?;
-    let adapter: Arc<dyn PackageAdapter> = web_adapter()?;
+    let adapter: Arc<dyn PackageAdapter> = web_adapter(&root)?;
     let targets = install_targets(&root)?;
+
+    // Reject unsupported mixed-stack members before the frontend manifest,
+    // lockfile, or shared store can be changed.
+    // (Từ chối member chưa hỗ trợ trước khi sửa manifest, lock hay store của frontend.)
+    for target in &targets {
+        if !target.join("package.json").exists() {
+            compat_install_target(target, &compat)?;
+        }
+    }
 
     // Compat gate for monorepo native (non-package.json) members: the
     // `compat` resolved for the dep_gate above travels down (not a
@@ -534,18 +606,54 @@ pub async fn install(
     Ok(())
 }
 
+/// Pre-flight freshness: every dependency declared in `package.json`
+/// must have a locked entry in `mgc.lock` (Spec rev4 §8).
+/// Only dependency metadata participates — editing `scripts.*` alone never
+/// triggers a resolve. Missing/invalid lock fails closed.
+/// (Freshness pre-flight: mọi dependency khai báo trong `package.json` phải
+/// có entry trong `mgc.lock` (Spec rev4 §8). Chỉ metadata dependency được so —
+/// sửa `scripts.*` không trigger resolve. Thiếu/sai lock thì fail-closed.)
+pub fn check_dev_freshness(project_root: &Path) -> Result<()> {
+    let manifest_path = project_root.join("package.json");
+    if !manifest_path.exists() {
+        return Ok(());
+    }
+    let manifest: Value = serde_json::from_str(
+        &std::fs::read_to_string(&manifest_path)
+            .with_context(|| format!("cannot read {}", manifest_path.display()))?,
+    )
+    .with_context(|| format!("{} is not valid JSON", manifest_path.display()))?;
+
+    let declared = crate::commands::freshness::declared_npm_dep_specs(&manifest)?;
+    crate::commands::freshness::check_dev_npm_freshness_against_lock(project_root, &declared)
+}
+
 pub async fn dev_at_root(
     project_root: &Path,
     host: Option<String>,
     port: Option<u16>,
     compat: &crate::commands::compat::CompatMode,
+    compat_runner: Option<&str>,
 ) -> Result<()> {
+    // Refresh policy distribution once, resolve every launch target, then
+    // finish freshness and profile pre-flight for each target before any
+    // lifecycle hook or dev process can spawn.
+    // (Refresh policy một lần, resolve toàn bộ target, rồi hoàn tất freshness
+    // và profile pre-flight từng target trước khi spawn hook hay dev process.)
+    crate::commands::policy::refresh_url_manifest_if_configured(project_root).await;
     let targets = dev_targets(project_root, host, port)?;
+    let profile_store = crate::commands::freshness::default_profile_store_dir();
+    for target in &targets {
+        check_dev_freshness(&target.dir)?;
+        // Pre-flight row 3: known-mutation lanes refuse upfront (never mid-run).
+        // (Hàng 3: lane mutation đã biết từ chối upfront, không kill giữa run.)
+        check_profile_gate(&target.dir, &profile_store, "dev", compat_runner)?;
+    }
     if targets.len() == 1 {
-        return run_single_dev_target(&targets[0], compat).await;
+        return run_single_dev_target(&targets[0], compat, compat_runner).await;
     }
 
-    run_multi_dev_targets(&targets, compat).await
+    run_multi_dev_targets(&targets, compat, compat_runner).await
 }
 
 #[derive(Debug)]
@@ -935,6 +1043,14 @@ async fn install_web_target_quiet(
     frozen: bool,
     opts: mgc_types::adapter::InstallOptions,
 ) -> Result<()> {
+    // Each workspace target is its own project: acquire its mutation gateway
+    // before resolution and the empty-graph return, so recovery and concurrent
+    // installs cannot bypass that target's writer lock.
+    // (Mỗi target là một project riêng: vào mutation gateway trước resolve
+    // và nhánh graph rỗng để recovery/install đồng thời không bypass writer lock.)
+    let _write_lock =
+        shared::begin_dependency_mutation(adapter, target, shared::MutationOperation::Install)
+            .await?;
     let execution =
         shared::prepare_install_execution(adapter, target, frozen || opts.offline, None).await?;
     if execution.graph.is_empty() {
@@ -1056,8 +1172,29 @@ fn read_dev_script(project_root: &Path) -> Result<Option<String>> {
     read_script(project_root, "dev")
 }
 
-fn has_arg(args: &[OsString], flag: &str) -> bool {
-    args.iter().any(|arg| arg == flag)
+fn replace_dev_endpoint_arg(args: &mut Vec<OsString>, flag: &str, value: OsString) {
+    let equals_prefix = format!("{flag}=");
+    let mut normalized = Vec::with_capacity(args.len() + 2);
+    let mut index = 0;
+
+    while index < args.len() {
+        let current = args[index].to_string_lossy();
+        if current == flag {
+            index += 1;
+            if index < args.len() && !args[index].to_string_lossy().starts_with('-') {
+                index += 1;
+            }
+        } else if current.starts_with(&equals_prefix) {
+            index += 1;
+        } else {
+            normalized.push(args[index].clone());
+            index += 1;
+        }
+    }
+
+    normalized.push(OsString::from(flag));
+    normalized.push(value);
+    *args = normalized;
 }
 
 fn append_dev_endpoint_args(
@@ -1067,19 +1204,13 @@ fn append_dev_endpoint_args(
     host: Option<String>,
     port: Option<u16>,
 ) {
-    // let-chain edition 2024 — gộp điều kiện theo clippy 1.98.
-    if let Some(host) = host
-        && !has_arg(args, host_flag)
-    {
-        args.push(OsString::from(host_flag));
-        args.push(OsString::from(host));
+    // MGC owns the selected endpoint, so replace script values in both `--flag value` and `--flag=value` forms.
+    // MGC sở hữu endpoint đã chọn nên thay giá trị trong cả hai dạng cờ của script.
+    if let Some(host) = host {
+        replace_dev_endpoint_arg(args, host_flag, OsString::from(host));
     }
-    // let-chain edition 2024 — gộp điều kiện theo clippy 1.98.
-    if let Some(port) = port
-        && !has_arg(args, port_flag)
-    {
-        args.push(OsString::from(port_flag));
-        args.push(OsString::from(port.to_string()));
+    if let Some(port) = port {
+        replace_dev_endpoint_arg(args, port_flag, OsString::from(port.to_string()));
     }
 }
 
@@ -1131,13 +1262,18 @@ fn build_dev_launch(
     host: Option<String>,
     port: Option<u16>,
     compat: &crate::commands::compat::CompatMode,
+    compat_runner: Option<&str>,
 ) -> Result<DevLaunch> {
     let script = match read_script(project_root, script_name)? {
         Some(script) => script,
         None => return infer_native_dev_launch(project_root, host, port),
     };
 
-    reject_external_package_manager_script(&script, &project_root.join("package.json"))?;
+    reject_external_package_manager_script(
+        &script,
+        &project_root.join("package.json"),
+        compat_runner,
+    )?;
 
     let tokens: Vec<&str> = script.split_whitespace().collect();
     if tokens.is_empty() {
@@ -1385,13 +1521,23 @@ fn build_dev_launch(
     }
 }
 
-fn reject_external_package_manager_script(script: &str, manifest_path: &Path) -> Result<()> {
+fn reject_external_package_manager_script(
+    script: &str,
+    manifest_path: &Path,
+    compat_runner: Option<&str>,
+) -> Result<()> {
     // P0-1 fix (2026-09-10 audit): carve-out "bun run/deno run/deno task"
     // vô điều kiện đã BỎ — runtime đối thủ giờ qua gate_runtime_spawn với
     // CompatMode thật (native từ chối, compat tường minh mới mở). Ở đây
     // chỉ chặn PM ngoài (npm/npx/pnpm/yarn/bunx) như trước.
     // Chặn PM ngoài trong script (install là việc của resolver mgc).
-    if let Some(pm) = mgc_exec::allowlist::find_forbidden_tool_in_script(script) {
+    // Spec rev4 §7/§9: the declared `--compat-runner` manager is exempt from
+    // the script-token check; its subtree runs compat-audit downstream.
+    // (Spec rev4 §7/§9: manager `--compat-runner` đã khai báo được miễn
+    // check token script; subtree của nó chịu compat-audit phía sau.)
+    if let Some(pm) = mgc_exec::allowlist::find_forbidden_tool_in_script(script)
+        && !mgc_exec::prelude::compat_runner_allows(pm, compat_runner)
+    {
         // "bun run x" ở đây là runtime usage — gate_runtime_spawn đã xử lý
         // bun ở trên; chỉ từ chối nếu token bun là PM thật (bun install).
         let tokens: Vec<&str> = script.split_whitespace().collect();
@@ -1453,18 +1599,46 @@ fn infer_native_dev_launch(
 
     if project_root.join("main.py").exists() {
         let python = native_python_program(project_root);
+        let fastapi_module = native_fastapi_asgi_module(project_root)?;
+        let args = if let Some(module) = fastapi_module {
+            vec![
+                OsString::from("-m"),
+                OsString::from("uvicorn"),
+                OsString::from(module),
+                OsString::from("--host"),
+                OsString::from(host_str),
+                OsString::from("--port"),
+                OsString::from(port.unwrap_or(3415).to_string()),
+            ]
+        } else {
+            vec![OsString::from("main.py")]
+        };
         return Ok(DevLaunch {
             program: python,
-            args: vec![OsString::from("main.py")],
+            args,
             envs: env_host_port_pairs(host, port),
         });
     }
 
     if project_root.join("src/main.py").exists() {
         let python = native_python_program(project_root);
+        let fastapi_module = native_fastapi_asgi_module(project_root)?;
+        let args = if let Some(module) = fastapi_module {
+            vec![
+                OsString::from("-m"),
+                OsString::from("uvicorn"),
+                OsString::from(module),
+                OsString::from("--host"),
+                OsString::from(host_str),
+                OsString::from("--port"),
+                OsString::from(port.unwrap_or(3415).to_string()),
+            ]
+        } else {
+            vec![OsString::from("-m"), OsString::from("src.main")]
+        };
         return Ok(DevLaunch {
             program: python,
-            args: vec![OsString::from("-m"), OsString::from("src.main")],
+            args,
             envs: env_host_port_pairs(host, port),
         });
     }
@@ -1559,6 +1733,30 @@ fn infer_native_dev_launch(
     }
 
     Err(crate::error::web_no_dev_entrypoint(project_root))
+}
+
+/// Resolve the ASGI module only when the project explicitly declares FastAPI.
+/// Chỉ suy ra module ASGI khi cấu hình project khai báo rõ FastAPI.
+fn native_fastapi_asgi_module(project_root: &Path) -> Result<Option<&'static str>> {
+    let configured =
+        mgc_config::project::ProjectConfig::load(project_root)?.is_some_and(|config| {
+            config.ecosystem.eq_ignore_ascii_case("web")
+                && config
+                    .frameworks
+                    .iter()
+                    .any(|framework| framework.eq_ignore_ascii_case("fastapi"))
+        });
+    if !configured {
+        return Ok(None);
+    }
+
+    if project_root.join("main.py").is_file() {
+        Ok(Some("main:app"))
+    } else if project_root.join("src/main.py").is_file() {
+        Ok(Some("src.main:app"))
+    } else {
+        Ok(None)
+    }
 }
 
 fn env_host_port_pairs(host: Option<String>, port: Option<u16>) -> Vec<(OsString, OsString)> {
@@ -1686,6 +1884,7 @@ fn native_install_env(project_root: &Path, program: &str) -> Result<Vec<(String,
 async fn run_single_dev_target(
     target: &DevTarget,
     compat: &crate::commands::compat::CompatMode,
+    compat_runner: Option<&str>,
 ) -> Result<()> {
     let launch = build_dev_launch(
         &target.dir,
@@ -1693,6 +1892,7 @@ async fn run_single_dev_target(
         target.host.clone(),
         target.port,
         compat,
+        compat_runner,
     )?;
 
     if launch.program.to_string_lossy().ends_with("vite") {
@@ -1700,7 +1900,20 @@ async fn run_single_dev_target(
             "Starting MgDevServer (Native Rust) in {}",
             target.dir.display()
         ));
+    } else {
+        info(&format!(
+            "Starting web dev server in {}",
+            target.dir.display()
+        ));
+        info(&format!("  {}", launch.describe()));
+    }
 
+    // Lifecycle hooks (Spec rev4 §16.1 — decided): predev aborts on failure,
+    // postdev always runs once after the server stops.
+    // (Hook lifecycle (Spec rev4 §16.1 — đã chốt): predev hỏng thì dừng,
+    // postdev luôn chạy một lần sau khi server dừng.)
+    run_dev_hook(&target.dir, "predev", compat, compat_runner)?;
+    let result = if launch.program.to_string_lossy().ends_with("vite") {
         let entry = if target.dir.join("src/main.tsx").exists() {
             target.dir.join("src/main.tsx")
         } else if target.dir.join("src/main.ts").exists() {
@@ -1718,33 +1931,81 @@ async fn run_single_dev_target(
                 .unwrap_or_else(|| "localhost".to_string()),
             port: target.port.unwrap_or(4315),
         };
-
+        mgc_exec::prelude::ensure_signal_handlers();
         let server = crate::bundler::dev_server::MgDevServer::new(config);
-        return server.serve().await;
+        let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        tokio::select! {
+            result = server.serve() => result,
+            stop = wait_for_dev_stop(cancel_flag) => stop,
+        }
+    } else {
+        run_dev_launch_with_guard(target, &launch, compat, compat_runner, None)
+    };
+    if mgc_exec::prelude::shutdown_requested() {
+        mgc_exec::prelude::clear_shutdown();
     }
+    let post = run_dev_hook(&target.dir, "postdev", compat, compat_runner);
+    if let Err(post_err) = post {
+        mgc_ui::warning(&format!("post hook 'postdev' failed: {post_err:#}"));
+    }
+    result
+}
 
-    info(&format!(
-        "Starting web dev server in {}",
-        target.dir.display()
-    ));
-    info(&format!("  {}", launch.describe()));
-    run_dev_launch_with_guard(target, &launch, compat)
+/// Run a dev lifecycle hook (`predev`/`postdev`) if the project defines it.
+/// Missing hooks are a no-op; hook failures propagate to the caller.
+/// (Chạy hook lifecycle dev (`predev`/`postdev`) nếu project định nghĩa.
+/// Hook vắng là no-op; hook hỏng lan tới caller.)
+fn run_dev_hook(
+    dir: &std::path::Path,
+    hook: &str,
+    compat: &crate::commands::compat::CompatMode,
+    compat_runner: Option<&str>,
+) -> Result<()> {
+    // Reuse the single task-script implementation (same precedence, gates
+    // and compat wiring as `mgc run`) — one behavior, not two.
+    // (Dùng chung implementation task-script (cùng precedence, gate và
+    // compat như `mgc run`) — một hành vi, không hai.)
+    if crate::commands::run::resolve_task_script(dir, hook)?.is_none() {
+        return Ok(());
+    }
+    crate::commands::run::run_task_script(dir, hook, &[], compat, compat_runner, "dev")
 }
 
 async fn run_multi_dev_targets(
     targets: &[DevTarget],
     compat: &crate::commands::compat::CompatMode,
+    compat_runner: Option<&str>,
 ) -> Result<()> {
-    let mut children = Vec::new();
+    if targets.is_empty() {
+        return Ok(());
+    }
+
+    // Resolve every launch before lifecycle hooks or child processes begin.
+    // (Resolve mọi launch trước hook lifecycle hoặc khi process con bắt đầu.)
+    let launches = targets
+        .iter()
+        .map(|target| {
+            build_dev_launch(
+                &target.dir,
+                target.script_name,
+                target.host.clone(),
+                target.port,
+                compat,
+                compat_runner,
+            )
+            .map(|launch| (target.clone(), launch))
+        })
+        .collect::<Result<Vec<_>>>()?;
 
     for target in targets {
-        let launch = build_dev_launch(
-            &target.dir,
-            target.script_name,
-            target.host.clone(),
-            target.port,
-            compat,
-        )?;
+        run_dev_hook(&target.dir, "predev", compat, compat_runner)?;
+    }
+
+    let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    mgc_exec::prelude::ensure_signal_handlers();
+    let mut tasks = tokio::task::JoinSet::<Result<()>>::new();
+
+    for (target, launch) in launches {
         if launch.program.to_string_lossy().ends_with("vite") {
             info(&format!(
                 "Starting MgDevServer (Native Rust) for {} in {}",
@@ -1771,9 +2032,11 @@ async fn run_multi_dev_targets(
             };
 
             let server = crate::bundler::dev_server::MgDevServer::new(config);
-            tokio::spawn(async move {
-                if let Err(e) = server.serve().await {
-                    tracing::error!("MgDevServer error: {}", e);
+            let cancel_flag = Arc::clone(&cancel_flag);
+            tasks.spawn(async move {
+                tokio::select! {
+                    result = server.serve() => result,
+                    stop = wait_for_dev_stop(cancel_flag) => stop,
                 }
             });
             continue;
@@ -1785,23 +2048,94 @@ async fn run_multi_dev_targets(
             target.dir.display()
         ));
         info(&format!("  {}", launch.describe()));
-        children.push(tokio::spawn({
-            let target = target.clone();
+        tasks.spawn({
             let compat = compat.clone();
-            async move { run_dev_launch_with_guard(&target, &launch, &compat) }
-        }));
+            let compat_runner = compat_runner.map(str::to_string);
+            let cancel_flag = Arc::clone(&cancel_flag);
+            async move {
+                tokio::task::spawn_blocking(move || {
+                    run_dev_launch_with_guard(
+                        &target,
+                        &launch,
+                        &compat,
+                        compat_runner.as_deref(),
+                        Some(cancel_flag),
+                    )
+                })
+                .await?
+            }
+        });
     }
 
-    for child in children {
-        child.await??;
+    let result = supervise_dev_tasks(&mut tasks, cancel_flag).await;
+    if mgc_exec::prelude::shutdown_requested() {
+        mgc_exec::prelude::clear_shutdown();
     }
-    Ok(())
+    for target in targets {
+        if let Err(post_err) = run_dev_hook(&target.dir, "postdev", compat, compat_runner) {
+            mgc_ui::warning(&format!("post hook 'postdev' failed: {post_err:#}"));
+        }
+    }
+    result
+}
+
+const DEV_CANCEL_POLL_INTERVAL_MS: u64 = 25;
+
+/// Wait for either a process-wide signal or sibling cancellation.
+/// Chờ tín hiệu dừng toàn process hoặc yêu cầu hủy từ target cùng nhóm.
+async fn wait_for_dev_stop(cancel_flag: Arc<std::sync::atomic::AtomicBool>) -> Result<()> {
+    loop {
+        if mgc_exec::prelude::shutdown_requested() {
+            return Err(crate::error::web_dev_interrupted());
+        }
+        if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(crate::error::web_dev_target_cancelled());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(
+            DEV_CANCEL_POLL_INTERVAL_MS,
+        ))
+        .await;
+    }
+}
+
+/// Stop every sibling after the first target finishes, then reap all tasks.
+/// Dừng target cùng nhóm khi target đầu tiên kết thúc, sau đó thu hồi hết task.
+async fn supervise_dev_tasks(
+    tasks: &mut tokio::task::JoinSet<Result<()>>,
+    cancel_flag: Arc<std::sync::atomic::AtomicBool>,
+) -> Result<()> {
+    let Some(first) = tasks.join_next().await else {
+        return Ok(());
+    };
+
+    cancel_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+    let mut first_result = match first {
+        Ok(result) => result,
+        Err(error) => Err(error.into()),
+    };
+    let mut reap_error = None;
+    while let Some(result) = tasks.join_next().await {
+        if let Err(error) = result
+            && reap_error.is_none()
+        {
+            reap_error = Some(anyhow::Error::from(error));
+        }
+    }
+
+    if first_result.is_ok()
+        && let Some(error) = reap_error
+    {
+        first_result = Err(error);
+    }
+    first_result
 }
 
 fn run_dev_launch_with_guard(
     target: &DevTarget,
     launch: &DevLaunch,
     compat: &crate::commands::compat::CompatMode,
+    compat_runner: Option<&str>,
+    cancel_flag: Option<Arc<std::sync::atomic::AtomicBool>>,
 ) -> Result<()> {
     let local_bin = target.dir.join("node_modules").join(".bin");
     let mut env = vec![(
@@ -1815,6 +2149,9 @@ fn run_dev_launch_with_guard(
             value.to_string_lossy().to_string(),
         )
     }));
+    if let Some((key, value)) = native_astro_update_check_env(&launch.program, compat) {
+        env.push((key, value));
+    }
     if let Some(port) = target.port {
         env.push(("PORT".to_string(), port.to_string()));
     }
@@ -1838,6 +2175,10 @@ fn run_dev_launch_with_guard(
         crate::commands::compat::CompatMode::Native => None,
         crate::commands::compat::CompatMode::Explicit(runtime) => Some(runtime.clone()),
     };
+    // Exact-manifest lane context for this operation (exact-match only).
+    // (Ngữ cảnh lane cho manifest exception của operation này (chỉ khớp chính xác).)
+    let (policy_manifest, policy_context, policy_profile) =
+        crate::commands::policy::load_policy_for_run(&target.dir, "dev");
     let opts = mgc_exec::prelude::ExecOptions {
         cwd: Some(target.dir.clone()),
         env,
@@ -1846,15 +2187,34 @@ fn run_dev_launch_with_guard(
         execution_scope: Some(mgc_exec::prelude::ExecutionScope::DevServer),
         log_path: Some(audit_log),
         compat_runtime,
+        compat_runner: compat_runner.map(str::to_string),
+        policy_manifest,
+        policy_context,
+        policy_profile,
         ..Default::default()
     };
 
-    if launch.program.components().count() > 1 {
-        mgc_exec::prelude::run_project_binary_inherited(&launch.program, &args, &opts)
-    } else {
-        mgc_exec::prelude::run_inherited(&launch.program.to_string_lossy(), &args, &opts)
-    }
-    .with_context(|| format!("failed to start '{}'", launch.program.to_string_lossy()))?;
+    let execution = match cancel_flag.as_deref() {
+        Some(cancel_flag) if launch.program.components().count() > 1 => {
+            mgc_exec::prelude::run_project_binary_inherited_cancellable(
+                &launch.program,
+                &args,
+                &opts,
+                cancel_flag,
+            )
+        }
+        Some(cancel_flag) => mgc_exec::prelude::run_inherited_cancellable(
+            &launch.program.to_string_lossy(),
+            &args,
+            &opts,
+            cancel_flag,
+        ),
+        None if launch.program.components().count() > 1 => {
+            mgc_exec::prelude::run_project_binary_inherited(&launch.program, &args, &opts)
+        }
+        None => mgc_exec::prelude::run_inherited(&launch.program.to_string_lossy(), &args, &opts),
+    };
+    execution.with_context(|| format!("failed to start '{}'", launch.program.to_string_lossy()))?;
     Ok(())
 }
 
@@ -1862,7 +2222,48 @@ fn native_runtime_env(project_root: &Path, program: &Path) -> Result<Vec<(String
     let Some(name) = program.file_name().and_then(|name| name.to_str()) else {
         return Ok(Vec::new());
     };
-    native_install_env(project_root, name)
+    let mut env = native_install_env(project_root, name)?;
+    if is_python_interpreter_name(name) {
+        crate::commands::python_runtime::extend_native_python_env(&mut env, project_root, false)?;
+    }
+    Ok(env)
+}
+
+fn is_python_interpreter_name(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    let stem = name.strip_suffix(".exe").unwrap_or(&name);
+    if stem == "python" {
+        return true;
+    }
+
+    let Some(version) = stem.strip_prefix("python") else {
+        return false;
+    };
+    let mut previous_was_dot = true;
+    let mut saw_digit = false;
+    for character in version.chars() {
+        if character.is_ascii_digit() {
+            previous_was_dot = false;
+            saw_digit = true;
+        } else if character == '.' && !previous_was_dot {
+            previous_was_dot = true;
+        } else {
+            return false;
+        }
+    }
+    saw_digit && !previous_was_dot
+}
+
+fn native_astro_update_check_env(
+    program: &Path,
+    compat: &crate::commands::compat::CompatMode,
+) -> Option<(String, String)> {
+    let is_astro = program
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("astro"));
+    (is_astro && matches!(compat, crate::commands::compat::CompatMode::Native))
+        .then(|| ("ASTRO_DISABLE_UPDATE_CHECK".to_string(), "true".to_string()))
 }
 
 fn resolve_local_bin(project_root: &Path, bin_name: &str) -> Result<PathBuf> {
@@ -1925,6 +2326,8 @@ pub async fn run_create_with_options(
     use crate::scaffold::spec::{CoreKind, parse_scaffold_spec};
     let spec = parse_scaffold_spec(CoreKind::Web, framework)
         .map_err(|e| anyhow::anyhow!("Invalid framework specification '{}': {}", framework, e))?;
+
+    apply_framework_alias_defaults(&spec.name, &mut flags);
 
     // Use normalized name cho resolve
     let fe_framework = resolve_framework(Some(&spec.name), &flags)?;
@@ -2082,6 +2485,37 @@ fn web_layer_has_scaffold_fallback(
     // (Framework fullstack all-in-one dùng chung const template.)
     if rel == format!("web/fullstack/all-in-one/{framework}") {
         return crate::scaffold::embedded_kernel::get_embedded_template("web", framework).is_some();
+    }
+    if config.sub_type == "fullstack"
+        && !crate::scaffold::processor::is_all_in_one_fullstack(framework)
+        && rel == format!("web/fullstack/split/{framework}")
+    {
+        let frontend = if framework.starts_with("react-") {
+            "react-vite"
+        } else if framework.starts_with("vue-") {
+            "vue-vite"
+        } else if framework.starts_with("svelte-") {
+            "sveltekit"
+        } else {
+            return false;
+        };
+        let Some(backend) = fullstack_backend_framework(framework) else {
+            return false;
+        };
+        return crate::scaffold::embedded_kernel::get_embedded_template("web", frontend).is_some()
+            && crate::scaffold::processor::infer_backend_language(backend).is_some();
+    }
+    if config.sub_type == "monorepo"
+        && (rel.starts_with("web/monorepo/") || rel.starts_with("web/shared/partials/monorepo"))
+    {
+        let Some(frontend) = config.frameworks.first() else {
+            return false;
+        };
+        let Some(backend) = config.frameworks.get(1) else {
+            return false;
+        };
+        return crate::scaffold::embedded_kernel::get_embedded_template("web", frontend).is_some()
+            && crate::scaffold::processor::infer_backend_language(backend).is_some();
     }
 
     let backend_leaf = crate::scaffold::processor::infer_backend_language(framework)
@@ -2564,6 +2998,16 @@ pub(crate) fn parse_framework_request(input: &str) -> FrameworkRequest {
 
 fn normalize_cli_web_framework(framework: &str) -> String {
     match framework {
+        "ts" | "frontend" | "custom" => "vanilla".to_string(),
+        "node" | "backend" => "express".to_string(),
+        "fullstack" => "remix".to_string(),
+        "go" => "gin".to_string(),
+        "java" => "spring-boot".to_string(),
+        "php" => "laravel".to_string(),
+        "python" => "fastapi".to_string(),
+        "rust" => "axum".to_string(),
+        "dotnet" => "dotnet-minimal".to_string(),
+        "monorepo" => "react-vite".to_string(),
         "react" | "react-app" => "react-vite".to_string(),
         "vue" | "vue-app" => "vue-vite".to_string(),
         "next" | "next-app" => "nextjs".to_string(),
@@ -2583,6 +3027,37 @@ fn normalize_cli_web_framework(framework: &str) -> String {
             "sveltekit".to_string()
         }
         other => other.to_string(),
+    }
+}
+
+/// Turn broad capability aliases into deterministic scaffold defaults.
+/// Biến alias tổng quát thành lựa chọn scaffold có mặc định ổn định.
+fn apply_framework_alias_defaults(framework: &str, flags: &mut ScaffoldFlags) {
+    match framework {
+        "ts" => flags.ts = true,
+        "monorepo" => {
+            flags.monorepo = true;
+            let has_frontend = [
+                flags.react,
+                flags.next,
+                flags.vue,
+                flags.nuxt,
+                flags.svelte,
+                flags.sveltekit,
+                flags.solid,
+                flags.astro,
+                flags.remix,
+            ]
+            .into_iter()
+            .any(|enabled| enabled);
+            if !has_frontend {
+                flags.react = true;
+            }
+            if detect_backend_framework(flags).is_none() {
+                flags.express = true;
+            }
+        }
+        _ => {}
     }
 }
 
@@ -2807,12 +3282,20 @@ const FRAMEWORK_SEEDS: &[WebFrameworkSeed] = &[
         name: "nuxt",
         primary: &["nuxt"],
         supplemental: &["vue"],
-        toolchain: &[WebToolchainPackage {
-            section: "devDependencies",
-            package: "typescript",
-            typescript_only: true,
-            version: None,
-        }],
+        toolchain: &[
+            WebToolchainPackage {
+                section: "devDependencies",
+                package: "unplugin",
+                typescript_only: false,
+                version: None,
+            },
+            WebToolchainPackage {
+                section: "devDependencies",
+                package: "typescript",
+                typescript_only: true,
+                version: None,
+            },
+        ],
     },
     WebFrameworkSeed {
         name: "angular",

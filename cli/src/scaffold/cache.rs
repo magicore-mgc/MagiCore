@@ -1,4 +1,5 @@
-//! Versioned scaffold cache (~/.mgc/scaffolds/{core}/{name}/{version}/).
+//! Versioned scaffold cache (MGC_DATA_DIR/scaffolds/{core}/{name}/{version}/).
+//! Cache scaffold theo phiên bản, lưu dưới root dữ liệu MagiCore.
 
 use anyhow::{Result, bail};
 use std::fs;
@@ -16,7 +17,8 @@ pub struct ScaffoldCache;
 impl ScaffoldCache {
     /// Cache path for a specific scaffold version.
     ///
-    /// Example: `~/.mgc/scaffolds/web/nextjs/15.5.0/`
+    /// Example: `MGC_DATA_DIR/scaffolds/web/nextjs/15.5.0/`
+    /// Ví dụ: đường dẫn scaffold web Next.js theo phiên bản.
     pub fn path(spec: &ScaffoldSpec, version: &str) -> PathBuf {
         Self::cache_root()
             .join(spec.core.as_str())
@@ -121,10 +123,7 @@ impl ScaffoldCache {
     /// Root of the versioned scaffold cache; MGC_SCAFFOLDS_DIR overrides the platform default.
     /// Gốc cache template có version; MGC_SCAFFOLDS_DIR ghi đè vị trí mặc định của hệ điều hành.
     fn cache_root() -> PathBuf {
-        let default_root = dirs::cache_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("mgc")
-            .join("scaffolds");
+        let default_root = mgc_platform::paths::mgc_data_dir().join("scaffolds");
         let override_root = std::env::var_os("MGC_SCAFFOLDS_DIR").map(PathBuf::from);
         cache_root_with_override(override_root, default_root)
     }
@@ -161,7 +160,7 @@ mod tests {
         };
 
         let path = ScaffoldCache::path(&spec, "15.5.0");
-        assert!(path.ends_with("mgc/scaffolds/web/nextjs/15.5.0"));
+        assert!(path.ends_with("scaffolds/web/nextjs/15.5.0"));
     }
 
     #[test]

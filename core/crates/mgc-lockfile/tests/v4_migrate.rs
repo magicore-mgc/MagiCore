@@ -136,3 +136,29 @@ fn migrated_document_roundtrips_with_stable_digest() {
     assert_eq!(back, v4);
     assert_eq!(payload_digest(&back.payload()), v4.metadata.lockfile_hash);
 }
+
+#[test]
+fn v4_migration_preserves_protocol_markers_in_the_signed_payload() {
+    let mut go = package(
+        "example.com/dependency",
+        "1.2.3",
+        Some("go://proxy.golang.org"),
+    );
+    go.ecosystem = mgc_lockfile::EcosystemTag::Go;
+    go.markers = Some(vec![
+        "go-mod-sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
+    ]);
+    let (mut v4, warnings) = migrate_v3_to_v4(v3_lock(vec![go])).unwrap();
+    assert!(warnings.is_empty(), "{warnings:?}");
+    v4.metadata.generator = "mgc/go-marker-test".into();
+    v4.metadata.lockfile_hash = payload_digest(&v4.payload());
+
+    let text = write_v4_document(&v4).unwrap();
+    assert!(
+        text.contains("go-mod-sha256:"),
+        "marker was dropped:\n{text}"
+    );
+    let parsed = parse_v4_document(&text).unwrap();
+    assert_eq!(parsed, v4);
+    assert_eq!(payload_digest(&parsed.payload()), v4.metadata.lockfile_hash);
+}

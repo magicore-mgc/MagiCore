@@ -10,6 +10,7 @@ description = "L0 OS layer: os, symlink, shell, paths, perms (MagiCore)"
 [dependencies]
 dirs = { workspace = true }
 anyhow = { workspace = true }
+blake3 = { workspace = true }
 libc = "0.2"
 tokio = { workspace = true, features = ["sync"] }
 

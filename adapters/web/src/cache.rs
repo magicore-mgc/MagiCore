@@ -97,17 +97,17 @@ impl SharedWebCache {
             }
         }
 
-        dirs::cache_dir().and_then(|root| {
-            let candidate = Self {
-                root: root.join("magicore").join("web"),
-            };
-            if candidate.is_usable() {
-                candidate.maybe_prune_once_per_process();
-                Some(candidate)
-            } else {
-                None
-            }
-        })
+        let candidate = Self {
+            root: mgc_platform::paths::mgc_data_dir()
+                .join("cache")
+                .join("web"),
+        };
+        if candidate.is_usable() {
+            candidate.maybe_prune_once_per_process();
+            Some(candidate)
+        } else {
+            None
+        }
     }
 
     pub fn is_usable(&self) -> bool {

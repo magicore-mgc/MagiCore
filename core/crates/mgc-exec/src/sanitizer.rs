@@ -32,11 +32,45 @@ fn is_sensitive_flag(arg: &str) -> bool {
     }
     for part in SENSITIVE_PARTS {
         let needle = part.trim_start_matches('_');
-        if flag.split(['-', '_']).any(|seg| seg == needle) {
+        if flag
+            .split(['-', '_'])
+            .any(|seg| seg == needle || seg.starts_with(needle))
+        {
             return true;
         }
     }
     SENSITIVE_SHORT_FLAGS.contains(&arg)
+}
+
+/// True when one argv item contains a shell-like command with a sensitive flag.
+/// Audit records redact the whole item because safely rewriting shell syntax
+/// would require parsing it and could leave quoted or escaped secrets behind.
+fn contains_embedded_sensitive_flag(arg: &str) -> bool {
+    // Shell removes backslash-newline pairs before parsing a token. Join both
+    // common newline forms before splitting so `--to\\\nken` is seen as
+    // `--token`, including commands authored with Windows line endings.
+    // Shell bỏ cặp backslash-newline trước khi phân tích token. Nối hai dạng
+    // newline phổ biến trước khi tách để nhận ra `--to\\\nken` thành `--token`.
+    let joined_lines = arg.replace("\\\r\n", "").replace("\\\n", "");
+    joined_lines.split_whitespace().any(|token| {
+        // Shell concatenates adjacent quoted/unquoted fragments and removes
+        // backslash escapes before passing argv to the child. Normalize those
+        // syntax markers before checking the option name.
+        let unquoted = token
+            .chars()
+            .filter(|ch| !matches!(ch, '\'' | '"' | '`' | '\\'))
+            .collect::<String>();
+        let token = unquoted.trim_matches(|ch: char| {
+            matches!(
+                ch,
+                ';' | ',' | '(' | ')' | '[' | ']' | '{' | '}' | '&' | '|' | '<' | '>' | ':'
+            )
+        });
+        let flag = token
+            .split_once('=')
+            .map_or(token, |(candidate, _)| candidate);
+        is_sensitive_flag(flag)
+    })
 }
 
 /// Redact args: `--token=VAL` / `--token VAL` / `-p VAL` → `[REDACTED]`.
@@ -48,6 +82,12 @@ pub fn redact_args(args: &[String]) -> Vec<String> {
         if consume_next {
             out.push(REDACTED.to_string());
             consume_next = false;
+            continue;
+        }
+        if arg.chars().any(char::is_whitespace) && contains_embedded_sensitive_flag(arg) {
+            // Nested command strings (for example `sh -c "npm ... --token ..."`)
+            // are one argv value; redact it in full to avoid leaking shell syntax variants.
+            out.push(REDACTED.to_string());
             continue;
         }
         if let Some((flag, _)) = arg.split_once('=') {

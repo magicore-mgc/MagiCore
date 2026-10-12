@@ -36,6 +36,24 @@ async fn audit_flutter_security_is_unsupported_not_clean() {
 }
 
 #[tokio::test]
+async fn audit_maui_and_tauri_report_unsupported_ecosystem() {
+    let dir = tmp("maui-tauri-unsupported");
+    for (language, expected) in [
+        (mgc_app_adapter::AppLanguage::Maui, "maui"),
+        (mgc_app_adapter::AppLanguage::Tauri, "tauri"),
+    ] {
+        let report = mgc_app_adapter::audit::run_audit(language, &dir)
+            .await
+            .unwrap();
+        assert_eq!(report.vulnerability_count, 0);
+        assert!(matches!(
+            report.scanner_status,
+            ScannerStatus::UnsupportedEcosystem { ecosystem } if ecosystem == expected
+        ));
+    }
+}
+
+#[tokio::test]
 async fn dependency_health_flutter_without_flutter_fails_closed() {
     let dir = tmp("flutter-no-tool");
     std::fs::write(dir.join("pubspec.yaml"), "name: test\n").unwrap();

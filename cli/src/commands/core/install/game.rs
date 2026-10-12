@@ -3,7 +3,11 @@
 use anyhow::Result;
 use mgc_types::Ecosystem;
 
-pub async fn install(packages: Vec<String>, compat_runtime: Option<String>) -> Result<()> {
+pub async fn install(
+    packages: Vec<String>,
+    frozen: bool,
+    compat_runtime: Option<String>,
+) -> Result<()> {
     let root = super::super::shared::core_project_root("game")?;
     let engine = mgc_game_adapter::adapter_for(&root).map(|adapter| adapter.engine());
 
@@ -46,7 +50,7 @@ pub async fn install(packages: Vec<String>, compat_runtime: Option<String>) -> R
             &*lib_adapter,
             &root,
             "mgc add",
-            false,
+            frozen,
             mgc_types::adapter::InstallOptions {
                 legacy_flat: false,
                 ..Default::default()

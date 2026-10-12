@@ -280,6 +280,13 @@ fn web_project_with_dev_script(dir: &std::path::Path, dev_script: &str) {
         "name = \"dev-canary\"\necosystem = \"web\"\n",
     )
     .unwrap();
+    // Runtime-policy canaries must pass the dev freshness pre-flight first.
+    // Use a real empty lock so the fixture reaches the process gate it tests.
+    // (Canary policy phải qua freshness pre-flight trước. Tạo lock rỗng hợp lệ
+    // để fixture đi tới đúng cổng process mà test cần kiểm tra.)
+    let lock = mgc_lockfile::Lockfile::new();
+    let lock_text = mgc_lockfile::writer::serialize_lockfile(&lock).unwrap();
+    std::fs::write(dir.join("mgc.lock"), lock_text).unwrap();
 }
 
 // ---------------------------------------------------------------------------

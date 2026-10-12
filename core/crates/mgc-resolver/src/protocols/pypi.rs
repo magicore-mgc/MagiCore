@@ -443,19 +443,59 @@ impl PypiProtocol {
         Ok(Self::is_pure_wheel_filename(&filename))
     }
 
-    /// Unpack a PURE-PYTHON wheel into a digest-specific site directory.
-    /// for importable use. Compiled wheels (versioned ABI tag) return None —
-    /// unpacking them would fake an install the interpreter cannot load
-    /// (the ABI warning stays the honest signal).
-    /// (Bung wheel pure-python thành site dir import được.)
+    /// Whether a wheel can be loaded by the declared Python runtime on this
+    /// host. Compiled wheels require an explicit consumer version so resolver,
+    /// installer, and runner cannot silently disagree about the ABI.
+    /// (Wheel có thể nạp trên host và Python runtime đã khai báo hay không.)
+    pub fn is_importable_runtime_wheel(artifact_url: &str) -> MgResult<bool> {
+        let filename = Self::artifact_filename(artifact_url)?;
+        if Self::is_pure_wheel_filename(&filename) {
+            return Ok(true);
+        }
+        let Some(consumer) = consumer_python() else {
+            return Ok(false);
+        };
+        Ok(Self::is_importable_wheel_for_target(
+            &filename,
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            Some(consumer),
+            host_platform_version(),
+        ))
+    }
+
+    /// Deterministic wheel compatibility predicate shared with cross-platform
+    /// tests. A missing Python minor intentionally rejects ABI-specific wheels.
+    /// (Predicate tương thích ổn định cho test và bộ chọn wheel đa nền tảng.)
+    pub fn is_importable_wheel_for_target(
+        filename: &str,
+        os: &str,
+        arch: &str,
+        consumer: Option<(u64, u64)>,
+        platform_version: Option<(u64, u64)>,
+    ) -> bool {
+        if Self::is_pure_wheel_filename(filename) {
+            return true;
+        }
+        let Some((major, minor)) = consumer else {
+            return false;
+        };
+        let (py, abi, plat) = wheel_tags(filename);
+        platform_tag_matches_target(&plat, os, arch, platform_version)
+            && abi_compatible(&py, &abi, major, minor)
+    }
+
+    /// Unpack a compatible wheel into a digest-specific site directory.
+    /// Compiled wheels are accepted only when their host platform and declared
+    /// Python ABI match; source distributions and mismatched wheels return None.
+    /// (Bung wheel tương thích; wheel biên dịch phải khớp host và Python ABI.)
     pub fn materialize_importable(
         &self,
         entry: &ResolvedEntry,
         bytes: &[u8],
         wheels_dir: &Path,
     ) -> MgResult<Option<PathBuf>> {
-        let filename = Self::artifact_filename(&entry.artifact_url)?;
-        if !Self::is_pure_wheel_filename(&filename) {
+        if !Self::is_importable_runtime_wheel(&entry.artifact_url)? {
             return Ok(None);
         }
         let digest = if entry.sha256.is_empty() {
@@ -807,13 +847,15 @@ impl RegistryProtocol for PypiProtocol {
         // the newest match wins (historical behavior).
         // (Cổng requires_python theo consumer.)
         let consumer = consumer_python();
-        let (version, files) = match consumer {
-            None => candidates
-                .into_iter()
-                .next()
-                .ok_or_else(|| MgError::Other(format!("no version of {name} matches '{range}'")))?,
+        let (version, files, selected_version_info) = match consumer {
+            None => {
+                let (version, files) = candidates.into_iter().next().ok_or_else(|| {
+                    MgError::Other(format!("no version of {name} matches '{range}'"))
+                })?;
+                (version, files, None)
+            }
             Some((major, minor)) => {
-                let mut selected: Option<(Version, Vec<PypiFile>)> = None;
+                let mut selected: Option<(Version, Vec<PypiFile>, PypiInfo)> = None;
                 let mut last_excluded: Option<String> = None;
                 for (candidate, candidate_files) in candidates {
                     let version_url = format!("{}/pypi/{name}/{candidate}/json", self.index_url);
@@ -822,11 +864,12 @@ impl RegistryProtocol for PypiProtocol {
                             "cannot determine Python compatibility for {name} {candidate}: {error}"
                         ))
                     })?;
-                    let version_doc: PypiJson = serde_json::from_str(&version_body).map_err(|error| {
-                        MgError::Other(format!(
-                            "parse Python compatibility metadata for {name} {candidate}: {error}"
-                        ))
-                    })?;
+                    let version_doc: PypiJson =
+                        serde_json::from_str(&version_body).map_err(|error| {
+                            MgError::Other(format!(
+                                "parse Python compatibility metadata for {name} {candidate}: {error}"
+                            ))
+                        })?;
                     let required = version_doc.info.requires_python.clone().unwrap_or_default();
                     if required.trim().is_empty() || requires_python_allows(&required, major, minor)
                     {
@@ -836,19 +879,20 @@ impl RegistryProtocol for PypiProtocol {
                             ));
                             continue;
                         }
-                        selected = Some((candidate, candidate_files));
+                        selected = Some((candidate, candidate_files, version_doc.info));
                         break;
                     }
                     last_excluded = Some(format!("{candidate} requires {required}"));
                 }
-                selected.ok_or_else(|| {
+                let (version, files, info) = selected.ok_or_else(|| {
                     MgError::Other(format!(
                         "no version of {name} matches '{range}' on Python {major}.{minor}{}",
                         last_excluded
                             .map(|e| format!(" (newest excluded: {e})"))
                             .unwrap_or_default()
                     ))
-                })?
+                })?;
+                (version, files, Some(info))
             }
         };
         let file = select_file(&files, consumer)
@@ -867,13 +911,19 @@ impl RegistryProtocol for PypiProtocol {
 
         // Transitive deps: version-specific JSON carries the real requires_dist.
         // (Dep bắc cầu: JSON theo version mang requires_dist thật.)
-        let version_url = format!("{}/pypi/{name}/{version}/json", self.index_url);
-        let version_body = self.get_text(&version_url).await?;
-        let version_doc: PypiJson = serde_json::from_str(&version_body)
-            .map_err(|e| MgError::Other(format!("parse pypi version json failed: {e}")))?;
+        let version_info = match selected_version_info {
+            Some(info) => info,
+            None => {
+                let version_url = format!("{}/pypi/{name}/{version}/json", self.index_url);
+                let version_body = self.get_text(&version_url).await?;
+                let version_doc: PypiJson = serde_json::from_str(&version_body)
+                    .map_err(|e| MgError::Other(format!("parse pypi version json failed: {e}")))?;
+                version_doc.info
+            }
+        };
 
         let mut deps = Vec::new();
-        if let Some(requires) = version_doc.info.requires_dist {
+        if let Some(requires) = version_info.requires_dist {
             // Environment markers evaluated once per resolve (same
             // consumer for the whole graph — no per-dep env reads).
             let consumer = consumer_python();
@@ -1036,19 +1086,125 @@ fn wheel_platform_matches_host(filename: &str) -> bool {
 /// OS/arch platform check (no Python involved).
 /// (Kiểm tra OS/arch.)
 fn platform_matches_host(plat: &str) -> bool {
-    let os = std::env::consts::OS;
-    let arch = std::env::consts::ARCH;
-    if os == "macos" && arch == "aarch64" {
-        return plat.starts_with("macosx_")
-            && (plat.ends_with("_arm64") || plat.ends_with("_universal2"));
+    platform_tag_matches_target(
+        plat,
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        host_platform_version(),
+    )
+}
+
+fn platform_tag_matches_target(
+    plat: &str,
+    os: &str,
+    arch: &str,
+    platform_version: Option<(u64, u64)>,
+) -> bool {
+    plat.split('.').any(|tag| match (os, arch) {
+        ("macos", "aarch64") => {
+            tag.starts_with("macosx_")
+                && (tag.ends_with("_arm64") || tag.ends_with("_universal2"))
+                && platform_floor(tag, "macosx_")
+                    .zip(platform_version)
+                    .is_some_and(|(required, host)| host >= required)
+        }
+        ("macos", "x86_64") => {
+            tag.starts_with("macosx_")
+                && (tag.ends_with("_x86_64") || tag.ends_with("_universal2"))
+                && platform_floor(tag, "macosx_")
+                    .zip(platform_version)
+                    .is_some_and(|(required, host)| host >= required)
+        }
+        ("linux", "aarch64") => {
+            tag.ends_with("_aarch64")
+                && linux_wheel_floor(tag)
+                    .zip(platform_version)
+                    .is_some_and(|(required, host)| host >= required)
+        }
+        ("linux", "x86_64") => {
+            tag.ends_with("_x86_64")
+                && linux_wheel_floor(tag)
+                    .zip(platform_version)
+                    .is_some_and(|(required, host)| host >= required)
+        }
+        ("windows", "x86_64") => tag == "win_amd64",
+        ("windows", "aarch64") => tag == "win_arm64",
+        ("windows", "x86") => tag == "win32",
+        _ => false,
+    })
+}
+
+fn platform_floor(tag: &str, prefix: &str) -> Option<(u64, u64)> {
+    let mut parts = tag.strip_prefix(prefix)?.split('_');
+    Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
+}
+
+fn linux_wheel_floor(tag: &str) -> Option<(u64, u64)> {
+    if let Some(floor) = platform_floor(tag, "manylinux_") {
+        return Some(floor);
     }
-    if os == "linux" && arch == "aarch64" {
-        return (plat.starts_with("manylinux_")
-            || plat.starts_with("musllinux_")
-            || plat.starts_with("linux_"))
-            && plat.ends_with("_aarch64");
+    if let Some(floor) = platform_floor(tag, "musllinux_") {
+        return Some(floor);
     }
-    false
+    match tag {
+        value if value.starts_with("manylinux2014_") => Some((2, 17)),
+        value if value.starts_with("manylinux2010_") => Some((2, 12)),
+        value if value.starts_with("manylinux1_") => Some((2, 5)),
+        _ => None,
+    }
+}
+
+fn host_platform_version() -> Option<(u64, u64)> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::ffi::{CStr, CString};
+        let key = CString::new("kern.osproductversion").ok()?;
+        let mut buffer = [0u8; 64];
+        let mut size = buffer.len();
+        // Read the kernel's product version without launching a shell command.
+        // (Đọc phiên bản hệ điều hành từ kernel, không chạy shell command.)
+        let status = unsafe {
+            libc::sysctlbyname(
+                key.as_ptr(),
+                buffer.as_mut_ptr().cast(),
+                &mut size,
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        if status != 0 || size == 0 || size > buffer.len() {
+            return None;
+        }
+        let text = unsafe { CStr::from_ptr(buffer.as_ptr().cast()) }
+            .to_str()
+            .ok()?;
+        return parse_major_minor(text);
+    }
+
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    {
+        use std::ffi::CStr;
+        // glibc exposes its loaded runtime version directly; wheels requiring
+        // a newer baseline must not be selected for this host.
+        // (Lấy phiên bản glibc đang nạp để từ chối wheel yêu cầu mới hơn.)
+        let version = unsafe { libc::gnu_get_libc_version() };
+        if version.is_null() {
+            return None;
+        }
+        let text = unsafe { CStr::from_ptr(version) }.to_str().ok()?;
+        return parse_major_minor(text);
+    }
+
+    // A musl build has no portable in-process version query here. Keep native
+    // wheels fail-closed until a trusted musl version probe is available.
+    // (Musl chưa có truy vấn phiên bản portable; wheel native vẫn bị từ chối.)
+    #[allow(unreachable_code)]
+    None
+}
+
+fn parse_major_minor(value: &str) -> Option<(u64, u64)> {
+    let mut parts = value.split('.');
+    Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
 }
 
 /// Consumer Python from `MGC_PYTHON_VERSION` (`3.9`, `3.9.6`, `39` …).

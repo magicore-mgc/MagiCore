@@ -17,6 +17,7 @@ mgc-lockfile = { workspace = true }
 mgc-sbom = { workspace = true }
 mgc-cache = { workspace = true }
 mgc-config = { workspace = true }
+mgc-platform = { workspace = true }
 mgc-adapter-base = { workspace = true }
 mgc-lib-adapter = { path = "../lib" }
 
@@ -34,7 +35,6 @@ hex.workspace = true
 sha2.workspace = true
 
 # Utils
-dirs.workspace = true
 uuid.workspace = true
 
 # HTTP

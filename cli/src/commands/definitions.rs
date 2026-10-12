@@ -294,6 +294,17 @@ pub enum Commands {
             help = "Legacy flag; Bun/Deno execution is unsupported by the native engine"
         )]
         compat_runtime: Option<String>,
+        /// Delegated runner lane (npm|pnpm|yarn|bun) — explicit opt-in,
+        /// warned on every use; dependency/lifecycle operations are no
+        /// longer fully owned by MagiCore.
+        /// Lane runner ủy quyền — opt-in tường minh, cảnh báo mỗi lần
+        /// dùng; MagiCore không còn sở hữu toàn phần dependency/lifecycle.
+        #[arg(
+            long = "compat-runner",
+            value_name = "MANAGER",
+            help = "Delegate execution to a qualified package-manager runner (npm|pnpm|yarn|bun); warned + audit-logged"
+        )]
+        compat_runner: Option<String>,
     },
     #[command(about = "Run a script defined in package.json")]
     Run {
@@ -307,6 +318,17 @@ pub enum Commands {
             help = "Legacy flag; Bun/Deno execution is unsupported by the native engine"
         )]
         compat_runtime: Option<String>,
+        /// Delegated runner lane (npm|pnpm|yarn|bun) — explicit opt-in,
+        /// warned on every use; dependency/lifecycle operations are no
+        /// longer fully owned by MagiCore.
+        /// Lane runner ủy quyền — opt-in tường minh, cảnh báo mỗi lần
+        /// dùng; MagiCore không còn sở hữu toàn phần dependency/lifecycle.
+        #[arg(
+            long = "compat-runner",
+            value_name = "MANAGER",
+            help = "Delegate execution to a qualified package-manager runner (npm|pnpm|yarn|bun); warned + audit-logged"
+        )]
+        compat_runner: Option<String>,
     },
     #[command(about = "Run tests (auto-detect test runner: cargo/go/pytest/npm test)")]
     Test {
@@ -318,6 +340,17 @@ pub enum Commands {
             help = "Legacy flag; Bun/Deno execution is unsupported by the native engine"
         )]
         compat_runtime: Option<String>,
+        /// Delegated runner lane (npm|pnpm|yarn|bun) — explicit opt-in,
+        /// warned on every use; dependency/lifecycle operations are no
+        /// longer fully owned by MagiCore.
+        /// Lane runner ủy quyền — opt-in tường minh, cảnh báo mỗi lần
+        /// dùng; MagiCore không còn sở hữu toàn phần dependency/lifecycle.
+        #[arg(
+            long = "compat-runner",
+            value_name = "MANAGER",
+            help = "Delegate execution to a qualified package-manager runner (npm|pnpm|yarn|bun); warned + audit-logged"
+        )]
+        compat_runner: Option<String>,
     },
     #[command(about = "Optimize project for hardware (runtime detection + adapter pattern)")]
     Optimizer {
@@ -334,6 +367,17 @@ pub enum Commands {
             help = "Legacy flag; Bun/Deno execution is unsupported by the native engine"
         )]
         compat_runtime: Option<String>,
+        /// Delegated runner lane (npm|pnpm|yarn|bun) — explicit opt-in,
+        /// warned on every use; dependency/lifecycle operations are no
+        /// longer fully owned by MagiCore.
+        /// Lane runner ủy quyền — opt-in tường minh, cảnh báo mỗi lần
+        /// dùng; MagiCore không còn sở hữu toàn phần dependency/lifecycle.
+        #[arg(
+            long = "compat-runner",
+            value_name = "MANAGER",
+            help = "Delegate execution to a qualified package-manager runner (npm|pnpm|yarn|bun); warned + audit-logged"
+        )]
+        compat_runner: Option<String>,
     },
     #[command(about = "Flash firmware to a device (IoT esp32)")]
     Flash {
@@ -364,11 +408,30 @@ pub enum Commands {
         command: String,
         #[arg(last = true)]
         args: Vec<String>,
+        /// Delegated runner lane (npm|pnpm|yarn|bun) — explicit opt-in,
+        /// warned on every use; dependency/lifecycle operations are no
+        /// longer fully owned by MagiCore.
+        /// Lane runner ủy quyền — opt-in tường minh, cảnh báo mỗi lần
+        /// dùng; MagiCore không còn sở hữu toàn phần dependency/lifecycle.
+        #[arg(
+            long = "compat-runner",
+            value_name = "MANAGER",
+            help = "Delegate execution to a qualified package-manager runner (npm|pnpm|yarn|bun); warned + audit-logged"
+        )]
+        compat_runner: Option<String>,
     },
     #[command(about = "Download and execute a package without permanently installing it")]
     Dlx {
         #[arg(required = true)]
         package: String,
+        /// Select an executable declared by the requested package.
+        /// Chọn bin của package yêu cầu khi package cung cấp nhiều executable.
+        #[arg(
+            long,
+            value_name = "NAME",
+            help = "Select a declared executable when the package provides multiple binaries"
+        )]
+        bin: Option<String>,
         #[arg(last = true)]
         args: Vec<String>,
     },
@@ -417,7 +480,7 @@ pub enum Commands {
         )]
         compat_runtime: Option<String>,
     },
-    #[command(about = "Manage the Web core local package store (prune unreferenced packages)")]
+    #[command(about = "Check managed store routes and maintain the Web package store")]
     Store {
         #[command(subcommand)]
         cmd: crate::commands::store::StoreCmd,
@@ -725,6 +788,8 @@ pub enum Commands {
     )]
     InstallGame {
         packages: Vec<String>,
+        #[arg(long, help = "Fail if the lockfile is missing or stale")]
+        frozen: bool,
         /// Explicit toolchain-compat lane for delegated dependency
         /// operations (warned + audit-logged; excluded from
         /// native-support claims). Native lanes ignore it.
@@ -751,6 +816,10 @@ pub enum Commands {
         /// (never silently re-resolve).
         #[arg(long, help = "Fail if the lockfile is missing or stale")]
         frozen: bool,
+        /// Replay verified cached artifacts without registry access.
+        /// Replay artifact cache đã xác minh, không truy cập registry.
+        #[arg(long)]
+        offline: bool,
     },
     #[command(
         name = "install-clo",
@@ -759,6 +828,8 @@ pub enum Commands {
     )]
     InstallClo {
         packages: Vec<String>,
+        #[arg(long, help = "Fail if the lockfile is missing or stale")]
+        frozen: bool,
         /// Explicit toolchain-compat lane for delegated dependency
         /// operations (warned + audit-logged; excluded from
         /// native-support claims). Native lanes ignore it.
@@ -791,6 +862,8 @@ pub enum Commands {
     )]
     InstallIot {
         packages: Vec<String>,
+        #[arg(long, help = "Fail if the lockfile is missing or stale")]
+        frozen: bool,
         /// Explicit toolchain-compat lane for delegated dependency
         /// operations (warned + audit-logged; excluded from
         /// native-support claims). Native lanes ignore it.
@@ -819,6 +892,10 @@ pub enum Commands {
         /// (never silently re-resolve).
         #[arg(long, help = "Fail if the lockfile is missing or stale")]
         frozen: bool,
+        /// Replay verified Flutter archives without registry access.
+        /// Replay archive Flutter đã verify, không dùng registry.
+        #[arg(long)]
+        offline: bool,
     },
     #[command(
         name = "install-lib",

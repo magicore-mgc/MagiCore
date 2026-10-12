@@ -81,6 +81,88 @@ pub fn detect_runtimes(project_root: &Path, core: &str) -> Vec<DetectedRuntime> 
     runtimes
 }
 
+/// Add explicit web-language runtimes for optimizer dispatch without changing
+/// the narrower runtime contract consumed by `mgc test`.
+/// (Thêm runtime web theo manifest cho optimizer, không đổi hợp đồng của `mgc test`.)
+pub fn detect_optimizer_runtimes(project_root: &Path, core: &str) -> Vec<DetectedRuntime> {
+    let mut runtimes = detect_runtimes(project_root, core);
+    if core == "web" {
+        runtimes.retain(|runtime| *runtime != DetectedRuntime::Unknown);
+
+        let cargo_package = project_text(project_root, "Cargo.toml")
+            .and_then(|content| content.parse::<toml::Value>().ok())
+            .is_some_and(|manifest| {
+                manifest
+                    .get("package")
+                    .and_then(|package| package.get("name"))
+                    .and_then(toml::Value::as_str)
+                    .is_some_and(|name| !name.trim().is_empty())
+            });
+        if cargo_package {
+            runtimes.push(DetectedRuntime::RustLib);
+        }
+
+        let go_module = project_text(project_root, "go.mod").is_some_and(|content| {
+            content.lines().any(|line| {
+                let mut fields = line.split_whitespace();
+                fields.next() == Some("module") && fields.next().is_some()
+            })
+        });
+        if go_module {
+            runtimes.push(DetectedRuntime::GoLib);
+        }
+
+        let python_project = project_text(project_root, "pyproject.toml")
+            .and_then(|content| content.parse::<toml::Value>().ok())
+            .is_some_and(|manifest| {
+                manifest
+                    .get("project")
+                    .and_then(|project| project.get("name"))
+                    .and_then(toml::Value::as_str)
+                    .is_some_and(|name| !name.trim().is_empty())
+                    || manifest
+                        .get("tool")
+                        .and_then(|tool| tool.get("poetry"))
+                        .and_then(|poetry| poetry.get("name"))
+                        .and_then(toml::Value::as_str)
+                        .is_some_and(|name| !name.trim().is_empty())
+            })
+            || project_text(project_root, "setup.py").is_some_and(|content| {
+                content.lines().any(|line| {
+                    let line = line.trim_start();
+                    !line.starts_with('#')
+                        && [
+                            "setup(",
+                            "setup (",
+                            "setuptools.setup(",
+                            "setuptools.setup (",
+                        ]
+                        .iter()
+                        .any(|prefix| line.starts_with(prefix))
+                })
+            })
+            || project_text(project_root, "requirements.txt").is_some_and(|content| {
+                content.lines().any(|line| {
+                    let requirement = line.split('#').next().unwrap_or_default().trim();
+                    let is_nested_or_editable = requirement.starts_with("-r ")
+                        || requirement.starts_with("-e ")
+                        || requirement.starts_with("--requirement ")
+                        || requirement.starts_with("--editable ");
+                    !requirement.is_empty()
+                        && (!requirement.starts_with('-') || is_nested_or_editable)
+                })
+            });
+        if python_project {
+            runtimes.push(DetectedRuntime::PythonLib);
+        }
+    }
+
+    if runtimes.is_empty() {
+        runtimes.push(DetectedRuntime::Unknown);
+    }
+    runtimes
+}
+
 fn detect_cloud_node_runtime(project_root: &Path) -> bool {
     let Some(content) = project_text(project_root, "package.json") else {
         return false;

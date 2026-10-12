@@ -194,8 +194,22 @@ rustflags = ["-C", "opt-level=2", "--cfg", "mgc_lib_optimized"]
     )
     .unwrap();
 
-    // Run mgc build
+    // Prime MagiCore's dependency lock and Cargo.lock projection before build.
+    // (Tạo lock của MagiCore và projection Cargo.lock trước khi build.)
     let mgc = find_mgc_binary();
+    let install_output = Command::new(&mgc)
+        .arg("install-lib")
+        .current_dir(project)
+        .output()
+        .expect("mgc install-lib failed to execute");
+    let install_stdout = String::from_utf8_lossy(&install_output.stdout);
+    let install_stderr = String::from_utf8_lossy(&install_output.stderr);
+    assert!(
+        install_output.status.success(),
+        "mgc install-lib failed:\nSTDOUT: {install_stdout}\nSTDERR: {install_stderr}"
+    );
+
+    // Run mgc build after the managed install lifecycle has created mgc.lock.
     let output = Command::new(&mgc)
         .arg("build")
         .current_dir(project)

@@ -3,7 +3,6 @@
 //! Gradle + CocoaPods) must aggregate EVERY detected manifest into ONE
 //! report — never return the first scanner's result and stop.
 //!
-//! Rules (verbatim from the contract):
 //! - One scanner Failed → the whole report can never be Available.
 //! - One ecosystem unsupported → Partial or UnsupportedEcosystem.
 //! - Available only when EVERY recognized manifest was scanned.

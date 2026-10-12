@@ -11,6 +11,7 @@ description = "Exec passthrough + allowlist + audit sanitizer (MagiCore)"
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+mgc-crypto = { workspace = true }
 
 # libc: group-signals for the timeout process-tree kill (kill(-pgid)) —
 # already a workspace dependency elsewhere; no new external crate added.
@@ -28,6 +29,7 @@ sysinfo = { version = "0.38.4", default-features = false, features = ["system"] 
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     "Win32_Security",
+    "Win32_System_Console",
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_JobObjects",
     "Win32_System_Threading",
@@ -47,6 +49,34 @@ path = "tests/sanitizer.rs"
 [[test]]
 name = "test_run"
 path = "tests/run.rs"
+
+[[test]]
+name = "test_policy"
+path = "tests/policy.rs"
+
+[[test]]
+name = "test_compat_runner"
+path = "tests/compat_runner.rs"
+
+[[test]]
+name = "test_policy_manifest"
+path = "tests/policy_manifest.rs"
+
+[[test]]
+name = "test_parallel"
+path = "tests/parallel.rs"
+
+[[test]]
+name = "test_spawn_profile"
+path = "tests/spawn_profile.rs"
+
+[[test]]
+name = "test_shutdown"
+path = "tests/shutdown.rs"
+
+[[test]]
+name = "test_consultation"
+path = "tests/consultation.rs"
 
 [lints]
 workspace = true

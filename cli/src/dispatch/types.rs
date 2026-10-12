@@ -14,6 +14,7 @@ pub enum CommonCommand {
         port: Option<u16>,
         clear: bool,
         compat_runtime: Option<String>,
+        compat_runner: Option<String>,
     },
     Info {
         package: String,
@@ -69,10 +70,12 @@ pub enum CommonCommand {
         script: String,
         args: Vec<String>,
         compat_runtime: Option<String>,
+        compat_runner: Option<String>,
     },
     Test {
         args: Vec<String>,
         compat_runtime: Option<String>,
+        compat_runner: Option<String>,
     },
     Optimizer {
         force: bool,
@@ -80,6 +83,7 @@ pub enum CommonCommand {
     Build {
         target: Option<String>,
         compat_runtime: Option<String>,
+        compat_runner: Option<String>,
     },
     Flash {
         board: Option<String>,
@@ -94,9 +98,11 @@ pub enum CommonCommand {
     Exec {
         command: String,
         args: Vec<String>,
+        compat_runner: Option<String>,
     },
     Dlx {
         package: String,
+        bin: Option<String>,
         args: Vec<String>,
     },
     Cache {
@@ -248,6 +254,7 @@ pub enum CoreCommand {
     },
     InstallGame {
         packages: Vec<String>,
+        frozen: bool,
         compat_runtime: Option<String>,
     },
     InstallAi {
@@ -255,10 +262,12 @@ pub enum CoreCommand {
         dry_run: bool,
         compat_runtime: Option<String>,
         frozen: bool,
+        offline: bool,
     },
     InstallClo {
         packages: Vec<String>,
         dry_run: bool,
+        frozen: bool,
         compat_runtime: Option<String>,
     },
     InstallCicd {
@@ -268,6 +277,7 @@ pub enum CoreCommand {
     },
     InstallIot {
         packages: Vec<String>,
+        frozen: bool,
         compat_runtime: Option<String>,
     },
     InstallApp {
@@ -275,6 +285,7 @@ pub enum CoreCommand {
         dry_run: bool,
         compat_runtime: Option<String>,
         frozen: bool,
+        offline: bool,
     },
     InstallLib {
         packages: Vec<String>,

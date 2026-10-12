@@ -1,7 +1,7 @@
 //! App language detection for mgc-app-adapter.
 //! Nhận diện core app qua mgc.toml và marker file nền tảng.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppLanguage {
@@ -11,6 +11,8 @@ pub enum AppLanguage {
     ReactNative,
     ObjC,
     Multi,
+    Maui,
+    Tauri,
 }
 
 impl AppLanguage {
@@ -22,6 +24,8 @@ impl AppLanguage {
             AppLanguage::ReactNative => "react-native",
             AppLanguage::ObjC => "objc",
             AppLanguage::Multi => "multi",
+            AppLanguage::Maui => "maui",
+            AppLanguage::Tauri => "tauri",
         }
     }
 
@@ -38,6 +42,8 @@ impl AppLanguage {
             AppLanguage::ReactNative => "rn",
             AppLanguage::ObjC => "objc",
             AppLanguage::Multi => "multi",
+            AppLanguage::Maui => "dotnet",
+            AppLanguage::Tauri => "rust",
         }
     }
 }
@@ -59,6 +65,8 @@ pub fn detect_language(root: &Path) -> Option<AppLanguage> {
             "react-native" => Some(AppLanguage::ReactNative),
             "objc" => Some(AppLanguage::ObjC),
             "multi" => Some(AppLanguage::Multi),
+            "maui" => Some(AppLanguage::Maui),
+            "tauri" => Some(AppLanguage::Tauri),
             _ => None,
         };
     }
@@ -72,6 +80,14 @@ pub fn detect_language(root: &Path) -> Option<AppLanguage> {
     }
     if is_regular_manifest(&root.join("Package.swift")) {
         return Some(AppLanguage::Swift);
+    }
+    if is_regular_manifest(&root.join("src-tauri").join("Cargo.toml"))
+        && is_regular_manifest(&root.join("src-tauri").join("tauri.conf.json"))
+    {
+        return Some(AppLanguage::Tauri);
+    }
+    if maui_project_manifest(root).is_some() {
+        return Some(AppLanguage::Maui);
     }
     // let-chain edition 2024 — gộp điều kiện theo clippy 1.98.
     if let Ok(Some(content)) = mgc_config::project::read_regular_project_text(
@@ -89,9 +105,30 @@ pub fn detect_language(root: &Path) -> Option<AppLanguage> {
     None
 }
 
+/// Detect a .NET project only when its SDK manifest explicitly enables MAUI.
+/// Chỉ nhận project .NET khi manifest khai báo rõ MAUI.
+pub(crate) fn maui_project_manifest(root: &Path) -> Option<PathBuf> {
+    let entries = std::fs::read_dir(root).ok()?;
+    let mut projects = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "csproj")
+                && is_regular_manifest(path)
+                && mgc_config::project::read_regular_project_text(path, "MAUI project")
+                    .ok()
+                    .flatten()
+                    .is_some_and(|contents| contents.contains("<UseMaui>true</UseMaui>"))
+        })
+        .collect::<Vec<_>>();
+    projects.sort();
+    (projects.len() == 1).then(|| projects.remove(0))
+}
+
 /// Ignore symlinked and special-file framework markers during core selection.
 /// Bỏ qua marker framework là symlink hoặc file đặc biệt khi chọn core.
-fn is_regular_manifest(path: &Path) -> bool {
+pub(crate) fn is_regular_manifest(path: &Path) -> bool {
     std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_file())
 }
 

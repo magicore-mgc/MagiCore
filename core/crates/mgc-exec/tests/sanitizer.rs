@@ -56,3 +56,40 @@ fn dangling_sensitive_flag_gets_redacted() {
 fn empty_args_pass_through() {
     assert_eq!(redact_args(&[]), Vec::<String>::new());
 }
+
+#[test]
+fn redacts_sensitive_flags_embedded_in_shell_command_argument() {
+    let args = redact_args(&s(&[
+        "-c",
+        "npm install --token child-secret; echo done",
+        "--plain",
+    ]));
+    assert_eq!(args, s(&["-c", "[REDACTED]", "--plain"]));
+}
+
+#[test]
+fn redacts_shell_quoted_escaped_and_suffixed_sensitive_flags() {
+    let args = redact_args(&s(&[
+        "-c",
+        "npm install --'token' quoted-value",
+        "-c",
+        "npm install --token\\=escaped-value",
+        "-c",
+        "npm install --tokenFile camel-value",
+    ]));
+    assert_eq!(
+        args,
+        s(&["-c", "[REDACTED]", "-c", "[REDACTED]", "-c", "[REDACTED]",])
+    );
+}
+
+#[test]
+fn redacts_sensitive_flags_across_shell_line_continuations() {
+    let args = redact_args(&s(&[
+        "-c",
+        "npm install --to\\\nken line-value",
+        "-c",
+        "npm install --to\\\r\nken line-value",
+    ]));
+    assert_eq!(args, s(&["-c", "[REDACTED]", "-c", "[REDACTED]"]));
+}

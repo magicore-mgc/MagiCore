@@ -8,6 +8,7 @@ authors.workspace = true
 description = "HTTP helpers for MagiCore"
 
 [dependencies]
+mgc-platform = { workspace = true }
 reqwest = { workspace = true }
 url = { workspace = true }
 http = { workspace = true }

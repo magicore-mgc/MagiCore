@@ -157,19 +157,14 @@ pub fn parse_document(toml_str: &str) -> LockfileResult<LockDocument> {
         .ok_or_else(|| LockfileError::ParseError("missing lockfile version".to_string()))?
         .to_string();
 
+    if crate::v4::is_v4_schema_version(&version) {
+        let lock: crate::canonical::LockfileV4 = value
+            .try_into()
+            .map_err(|error| LockfileError::ParseError(format!("TOML parse failed: {error}")))?;
+        crate::canonical::validate_v4_revision(&lock)?;
+        return Ok(LockDocument::V4(lock));
+    }
     match version.as_str() {
-        "4" => {
-            let lock: crate::canonical::LockfileV4 = value.try_into().map_err(|error| {
-                LockfileError::ParseError(format!("TOML parse failed: {error}"))
-            })?;
-            if lock.version != crate::v4::LOCKFILE_SCHEMA_V4 {
-                return Err(LockfileError::ParseError(format!(
-                    "expected v4 lockfile, got version '{}'",
-                    lock.version
-                )));
-            }
-            Ok(LockDocument::V4(lock))
-        }
         "2" | LOCKFILE_SCHEMA_VERSION => parse_legacy_value(value).map(LockDocument::Legacy),
         other => Err(LockfileError::ParseError(format!(
             "unsupported lockfile version: {other}"
@@ -288,4 +283,30 @@ pub fn signature_file_presence(lockfile_path: &Path) -> LockfileResult<bool> {
 /// Get signature path for lockfile — Lấy đường dẫn signature cho lockfile
 pub fn signature_path_for(lockfile_path: &Path) -> std::path::PathBuf {
     lockfile_path.with_extension("lock.sig")
+}
+
+/// Fail closed with an actionable message when a v3-schema workflow meets
+/// a v4 lock on disk (instead of a bare parse error): either switch the
+/// project to `[lock] schema = "v4"` or re-install under v3.
+/// (Fail-closed với message hành động được khi luồng schema v3 gặp lock v4
+/// trên đĩa (thay vì lỗi parse trần): hoặc chuyển project sang
+/// `[lock] schema = "v4"` hoặc cài lại dưới v3.)
+pub fn ensure_v3_readable_lock(path: &Path) -> LockfileResult<()> {
+    let bytes = match read_lockfile_bytes(path) {
+        Ok(bytes) => bytes,
+        Err(LockfileError::IoError(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(());
+        }
+        Err(error) => return Err(error),
+    };
+    let text = std::str::from_utf8(&bytes).map_err(|error| {
+        LockfileError::ParseError(format!("lockfile is not valid UTF-8: {error}"))
+    })?;
+    if crate::migrate::detect_lockfile_version(text).is_ok_and(|version| version == 4) {
+        return Err(LockfileError::ParseError(format!(
+            "mgc.lock '{}' is a v4 lockfile but this operation runs under v3 schema: set mgc.toml [lock] schema = \"v4\" or re-install to rewrite it",
+            path.display()
+        )));
+    }
+    Ok(())
 }

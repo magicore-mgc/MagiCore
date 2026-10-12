@@ -129,16 +129,8 @@ pub(crate) fn v4_pins_for_audit(project_root: &Path) -> MgResult<Option<AuditPin
         );
     }
     let owner = web_lock_owner_core(project_root)?;
-    let empty_roots: Vec<String> = Vec::new();
-    let raw_roots = doc
-        .root_dependencies_by_owner
-        .get(&owner)
-        .unwrap_or(&empty_roots);
-    let raw_roots: &[String] = if raw_roots.is_empty() {
-        &doc.root_dependencies
-    } else {
-        raw_roots
-    };
+    let raw_roots = mgc_lockfile::v4_graph::v4_root_pins_for_owner(&doc, &owner)
+        .map_err(|error| MgError::Other(error.to_string()))?;
     // Index by the full v4 identity. Collapsing to name@version merges
     // distinct sources/peer variants and can silently audit the wrong node.
     // Lập chỉ mục bằng đủ identity v4; gộp theo name@version sẽ nhập nhằng
@@ -167,7 +159,7 @@ pub(crate) fn v4_pins_for_audit(project_root: &Path) -> MgResult<Option<AuditPin
     }
     let mut reached = vec![false; doc.packages.len()];
     let mut stack = Vec::new();
-    if raw_roots.is_empty() {
+    if raw_roots.is_empty() && doc.root_dependencies_by_owner.is_empty() {
         // Web v4 locks intentionally omit root pins, so use the manifest
         // as the root source and require one exact Web instance per range.
         // Lock Web v4 cố ý bỏ root pin; dùng manifest làm nguồn và yêu cầu

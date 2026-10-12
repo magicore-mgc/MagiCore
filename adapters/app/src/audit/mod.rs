@@ -22,5 +22,9 @@ pub async fn run_audit(language: AppLanguage, project_root: &Path) -> MgResult<A
         // ghim package.json.
         AppLanguage::ReactNative | AppLanguage::Multi => scanner::audit_multi(project_root).await,
         AppLanguage::ObjC => scanner::audit_cocoapods(project_root).await,
+        // MAUI and Tauri are detected so they cannot fall through to Flutter.
+        // Their package audit lanes are not wired into this adapter yet.
+        AppLanguage::Maui => Ok(AuditReport::unsupported_ecosystem("maui")),
+        AppLanguage::Tauri => Ok(AuditReport::unsupported_ecosystem("tauri")),
     }
 }

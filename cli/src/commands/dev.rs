@@ -59,6 +59,7 @@ pub async fn run(
     port: Option<u16>,
     clear: bool,
     compat_runtime: Option<&str>,
+    compat_runner: Option<&str>,
 ) -> anyhow::Result<()> {
     // Native-engine gate (2026-09-10): --compat-runtime chỉ chọn lane
     // compat tường minh; validate giá trị sớm để fail trước khi load ctx.
@@ -66,7 +67,19 @@ pub async fn run(
     // không còn parse rồi bỏ đi. Native mode = không runtime đối thủ nào
     // được spawn; web.rs dùng mode này để gate từng DevLaunch.
     let compat = crate::commands::compat::CompatMode::from_flag(compat_runtime)?;
+    // Delegated runner lane (Spec rev4 §7/§9): qualified only, warned loudly.
+    // (Lane runner ủy quyền (Spec rev4 §7/§9): chỉ qualified, cảnh báo lớn.)
+    let compat_runner = crate::commands::compat::parse_compat_runner(compat_runner)?;
     let ctx = ProjectContext::load_with_core(core)?;
+    // Spec rev4 §9/§11: compat contracts exist for web only; other cores
+    // fail loudly instead of silently ignoring the flag.
+    // (Spec rev4 §9/§11: mới web có compat contract; core khác fail rõ ràng
+    // thay vì lặng lẽ bỏ qua flag.)
+    if compat_runner.is_some() && ctx.adapter().name() != "web" {
+        return Err(crate::error::compat_runner_unsupported_core(
+            ctx.adapter().name(),
+        ));
+    }
     let host = host.unwrap_or_else(|| "localhost".to_string());
     let root = ctx.root().to_path_buf();
 
@@ -82,11 +95,21 @@ pub async fn run(
             // Port resolution qua bảng trung tâm dev_port (RULE §13 — hoán vị 4·3·1·5).
             // Port resolution goes through the centralized dev_port table.
             let port = crate::commands::core::dev_port::resolve_port("web", port);
-            crate::commands::core::dev::web::dev_at_root(&root, Some(host), port, &compat).await
+            crate::commands::core::dev::web::dev_at_root(
+                &root,
+                Some(host),
+                port,
+                &compat,
+                compat_runner.as_deref(),
+            )
+            .await
         }
         #[cfg(feature = "game")]
         "game" => {
             let (cmd, args) = game_dev_command(&root)?;
+            // Pre-flight freshness for Cargo-based lanes (Bevy).
+            // (Freshness pre-flight cho lane Cargo (Bevy).)
+            crate::commands::freshness::check_cargo_freshness(&root)?;
             let opts = mgc_exec::prelude::ExecOptions {
                 cwd: Some(root.clone()),
                 log_path: Some(root.join(".magicore").join("exec.log")),
@@ -113,6 +136,9 @@ pub async fn run(
         #[cfg(feature = "iot")]
         "iot" => {
             let (cmd, args) = iot_dev_command(&root)?;
+            // Pre-flight freshness for Cargo-based lanes (ESP32-Rust).
+            // (Freshness pre-flight cho lane Cargo (ESP32-Rust).)
+            crate::commands::freshness::check_cargo_freshness(&root)?;
             let opts = mgc_exec::prelude::ExecOptions {
                 cwd: Some(root.clone()),
                 log_path: Some(root.join(".magicore").join("exec.log")),

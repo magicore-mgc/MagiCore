@@ -17,6 +17,18 @@ fn test_help_shows_multi_core_commands() {
 }
 
 #[test]
+fn test_work_dir_is_removed_when_its_owner_thread_exits() {
+    let path = std::thread::spawn(common::work_dir)
+        .join()
+        .expect("test workspace owner thread should exit");
+    assert!(
+        !path.exists(),
+        "test workspace should be removed when its owner thread exits: {}",
+        path.display()
+    );
+}
+
+#[test]
 fn test_help_shows_core_option() {
     common::assert_help_contains("--core");
     for core in ["web", "ai", "app", "lib"] {

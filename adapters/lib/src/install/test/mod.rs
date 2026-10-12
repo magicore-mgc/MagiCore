@@ -2,14 +2,16 @@
 //! Kiểm thử ghi lock canonical — bảo vệ cập nhật nguyên tử và dọn theo ecosystem.
 
 use super::{
-    complete_lock_packages_from_existing, native_python_path_entries,
-    native_python_path_entries_from_store, python_site_dirname, read_cached_python_artifact,
-    read_existing_lock, run_install, select_python_packages_for_owner, validate_lock_coverage,
-    validate_python_importable_graph, write_canonical_lock, write_canonical_lock_with_roots,
+    complete_lock_packages_from_existing, install_rust_cached, native_python_path_entries,
+    native_python_path_entries_from_store, preflight_rust_artifact_cache, python_site_dirname,
+    read_cached_python_artifact, read_cached_rust_artifact, read_existing_lock, run_install,
+    select_python_packages_for_owner, validate_lock_coverage, validate_python_importable_graph,
+    write_canonical_lock, write_canonical_lock_with_roots,
 };
 use mgc_lockfile::{EcosystemTag, Lockfile, Package, parser, writer};
 use mgc_types::adapter::InstallOptions;
 use mgc_types::{PackageId, PackageName, ResolvedGraph, ResolvedPackage, Version};
+use sha2::Digest;
 use std::io::{Read, Write};
 
 fn package(name: &str, version: &str, ecosystem: EcosystemTag) -> Package {
@@ -34,6 +36,30 @@ fn resolved(name: &str, version: &str) -> ResolvedPackage {
         direct: true,
         dev: false,
     }
+}
+
+fn resolved_rust(name: &str, version: &str, archive: &[u8]) -> ResolvedPackage {
+    ResolvedPackage {
+        integrity: format!("sha256-{}", hex::encode(sha2::Sha256::digest(archive))),
+        tarball_url: format!("https://example.invalid/{name}-{version}.crate"),
+        ..resolved(name, version)
+    }
+}
+
+fn test_crate_archive(name: &str, version: &str) -> Vec<u8> {
+    let manifest =
+        format!("[package]\nname = \"{name}\"\nversion = \"{version}\"\nedition = \"2021\"\n");
+    let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    let mut archive = tar::Builder::new(encoder);
+    let path = format!("{name}-{version}/Cargo.toml");
+    let mut header = tar::Header::new_gnu();
+    header.set_size(manifest.len() as u64);
+    header.set_mode(0o644);
+    header.set_cksum();
+    archive
+        .append_data(&mut header, path, manifest.as_bytes())
+        .unwrap();
+    archive.into_inner().unwrap().finish().unwrap()
 }
 
 #[test]
@@ -122,8 +148,42 @@ fn install_refuses_graph_without_matching_lock_entry() {
 }
 
 #[tokio::test]
-async fn native_lib_offline_install_fails_before_store_or_lock_mutation() {
+async fn native_lib_empty_offline_install_does_not_write_lockfiles() {
     let project = tempfile::tempdir().unwrap();
+    std::fs::write(
+        project.path().join("Cargo.toml"),
+        "[package]\nname = \"empty-offline\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    run_install(
+        crate::language::LibLanguage::Rust,
+        None,
+        &ResolvedGraph::empty(),
+        project.path(),
+        InstallOptions {
+            offline: true,
+            ..InstallOptions::default()
+        },
+        None,
+        Vec::new(),
+    )
+    .await
+    .expect("empty offline install has nothing to fetch or materialize");
+    assert!(
+        !project.path().join("mgc.lock").exists(),
+        "offline install must not publish a lock"
+    );
+    assert!(!project.path().join("Cargo.lock").exists());
+}
+
+#[tokio::test]
+async fn native_lib_empty_offline_graph_refuses_declared_dependencies() {
+    let project = tempfile::tempdir().unwrap();
+    std::fs::write(
+        project.path().join("Cargo.toml"),
+        "[package]\nname = \"missing-graph\"\nversion = \"0.1.0\"\nedition = \"2021\"\n[dependencies]\nserde = \"1\"\n",
+    )
+    .unwrap();
     let error = run_install(
         crate::language::LibLanguage::Rust,
         None,
@@ -137,16 +197,112 @@ async fn native_lib_offline_install_fails_before_store_or_lock_mutation() {
         Vec::new(),
     )
     .await
-    .expect_err("native lib lanes do not implement cache-only reinstall yet");
+    .expect_err("an empty graph must not hide declared dependencies");
 
     assert!(
-        error.to_string().contains("offline install is unsupported"),
-        "unexpected failure did not prove the offline contract: {error:#}"
+        error
+            .to_string()
+            .contains("MGC resolved an empty Rust graph")
+    );
+    assert!(!project.path().join("mgc.lock").exists());
+    assert!(!project.path().join("Cargo.lock").exists());
+}
+
+#[test]
+fn rust_offline_cache_is_sha256_verified_and_rematerialized() {
+    let archive = test_crate_archive("mgcfixture", "1.0.0");
+    let graph = ResolvedGraph {
+        packages: vec![resolved_rust("mgcfixture", "1.0.0", &archive)],
+    };
+    let cargo_home = tempfile::tempdir().unwrap();
+    let archive_path = cargo_home
+        .path()
+        .join("registry/cache/mgcfixture-1.0.0.crate");
+    std::fs::create_dir_all(archive_path.parent().unwrap()).unwrap();
+    std::fs::write(&archive_path, &archive).unwrap();
+    preflight_rust_artifact_cache(&graph, cargo_home.path()).unwrap();
+
+    let cas_root = tempfile::tempdir().unwrap();
+    let store = mgc_store::ContentStore::new(cas_root.path().to_path_buf()).unwrap();
+    let summary =
+        install_rust_cached(&graph, cargo_home.path(), &store, std::time::Instant::now()).unwrap();
+
+    assert_eq!(summary.added.len(), 1);
+    assert_eq!(summary.bytes_from_cache, archive.len() as u64);
+    assert_eq!(std::fs::read(&archive_path).unwrap(), archive);
+    assert!(
+        cargo_home
+            .path()
+            .join("registry/src/mgcfixture-1.0.0/Cargo.toml")
+            .is_file()
+    );
+}
+
+#[test]
+fn rust_offline_cache_preflight_fails_before_materializing_partial_graph() {
+    let first_archive = test_crate_archive("firstcrate", "1.0.0");
+    let second_archive = test_crate_archive("secondcrate", "1.0.0");
+    let graph = ResolvedGraph {
+        packages: vec![
+            resolved_rust("firstcrate", "1.0.0", &first_archive),
+            resolved_rust("secondcrate", "1.0.0", &second_archive),
+        ],
+    };
+    let cargo_home = tempfile::tempdir().unwrap();
+    let first_path = cargo_home
+        .path()
+        .join("registry/cache/firstcrate-1.0.0.crate");
+    std::fs::create_dir_all(first_path.parent().unwrap()).unwrap();
+    std::fs::write(&first_path, &first_archive).unwrap();
+
+    let error = preflight_rust_artifact_cache(&graph, cargo_home.path()).unwrap_err();
+    assert!(
+        error.to_string().contains("secondcrate") && error.to_string().contains("1.0.0"),
+        "unexpected preflight error: {error:#}"
     );
     assert!(
-        !project.path().join("mgc.lock").exists(),
-        "unsupported offline install must not publish a lock"
+        !cargo_home
+            .path()
+            .join("registry/src/firstcrate-1.0.0")
+            .exists()
     );
+}
+
+#[test]
+fn rust_artifact_cache_refuses_corruption_and_symlinks() {
+    use sha2::Digest;
+    let cache = tempfile::tempdir().unwrap();
+    let artifact = cache.path().join("crate.crate");
+    let bytes = b"crate archive";
+    let expected = hex::encode(sha2::Sha256::digest(bytes));
+    std::fs::write(&artifact, bytes).unwrap();
+    assert_eq!(
+        read_cached_rust_artifact(&artifact, &expected).unwrap(),
+        Some(bytes.to_vec())
+    );
+    std::fs::write(&artifact, b"tampered crate").unwrap();
+    assert!(
+        read_cached_rust_artifact(&artifact, &expected)
+            .unwrap_err()
+            .to_string()
+            .contains("integrity mismatch")
+    );
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+        let outside = tempfile::tempdir().unwrap();
+        let target = outside.path().join("crate.crate");
+        std::fs::write(&target, bytes).unwrap();
+        std::fs::remove_file(&artifact).unwrap();
+        symlink(target, &artifact).unwrap();
+        assert!(
+            read_cached_rust_artifact(&artifact, &expected)
+                .unwrap_err()
+                .to_string()
+                .contains("regular file")
+        );
+    }
 }
 
 #[test]
@@ -265,7 +421,7 @@ fn python_install_rejects_unimportable_artifacts_during_preflight() {
         packages: vec![compiled],
     })
     .unwrap_err();
-    assert!(error.to_string().contains("does not yet support"));
+    assert!(error.to_string().contains("MGC_PYTHON_VERSION"));
 
     let mut source = resolved("example", "1.0.0");
     source.tarball_url = "https://files.pythonhosted.org/example-1.0.0.tar.gz".to_string();
@@ -518,6 +674,38 @@ fn python_runtime_verifies_cached_wheel_and_site_against_lock_before_exposing_pa
     let paths = native_python_path_entries_from_store(project.path(), store.path()).unwrap();
     assert_eq!(paths.len(), 1);
 
+    // The same installed bytes must verify after lossless V4 migration.
+    // Lock V4 đổi encoding không được làm hỏng wheel cache hoặc runtime Python.
+    lock.packages[0].registry = Some("https://pypi.org/simple".to_string());
+    mgc_lockfile::update_owner_root_pins(
+        &mut lock,
+        "ai",
+        EcosystemTag::Python,
+        ["demo-pkg@1.2.3".to_string()],
+    );
+    let (_, warnings) = mgc_lockfile::migrate::migrate_v3_to_v4(lock.clone()).unwrap();
+    assert!(
+        warnings.is_empty(),
+        "valid native digest must survive V4 migration"
+    );
+    let bytes = mgc_lockfile::migrate::finalize_migrated_v4(
+        lock,
+        "native-runtime-test",
+        "2026-10-11T00:00:00Z",
+    )
+    .unwrap();
+    std::fs::write(project.path().join("mgc.lock"), bytes).unwrap();
+    let config_path = project.path().join("mgc.toml");
+    let mut config = std::fs::read_to_string(&config_path)
+        .unwrap_or_else(|_| "name = \"runtime-integrity-probe\"\necosystem = \"ai\"\n".to_string());
+    config.push_str("\n[lock]\nschema = \"v4\"\n");
+    std::fs::write(&config_path, config).unwrap();
+    let v4_paths = native_python_path_entries_from_store(project.path(), store.path()).unwrap();
+    assert_eq!(
+        v4_paths, paths,
+        "V4 must use the same authenticated wheel materialization"
+    );
+
     // Existing basename-keyed cache entries remain usable only through the
     // same lock digest and authenticated wheel RECORD checks.
     // (Cache cũ chỉ được đọc khi qua cùng kiểm tra digest và RECORD.)
@@ -703,4 +891,192 @@ fn atomic_lock_publication_replaces_existing_file() {
 
     assert_eq!(std::fs::read(path).unwrap(), replacement);
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+}
+
+fn v4_lock_package(name: &str, version: &str) -> mgc_lockfile::Package {
+    mgc_lockfile::Package {
+        name: name.to_string(),
+        version: version.to_string(),
+        ecosystem: EcosystemTag::Python,
+        resolved: format!("https://pypi.org/packages/{name}-{version}.whl"),
+        integrity: "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+            .to_string(),
+        registry: Some("https://pypi.org/simple".to_string()),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn v4_schema_writes_v4_lock() {
+    let dir = tempfile::tempdir().unwrap();
+    mgc_config::project::ProjectConfig::write_core_marker_at(dir.path(), "lib").unwrap();
+    std::fs::write(
+        dir.path().join("mgc.toml"),
+        "name = \"lib\"\necosystem = \"lib\"\n[lock]\nschema = \"v4\"\n",
+    )
+    .unwrap();
+    write_canonical_lock(
+        dir.path(),
+        EcosystemTag::Python,
+        vec![v4_lock_package("requests", "2.0.0")],
+    )
+    .unwrap();
+    let text = std::fs::read_to_string(dir.path().join("mgc.lock")).unwrap();
+    assert_eq!(
+        mgc_lockfile::migrate::detect_lockfile_version(&text).unwrap(),
+        4
+    );
+    let doc = mgc_lockfile::canonical::parse_v4_document(&text).unwrap();
+    assert!(
+        mgc_lockfile::policy::verify_v4_math(&doc)
+            .unwrap()
+            .digest_ok
+    );
+    assert!(doc.packages.iter().any(|p| p.key.name == "requests"));
+}
+
+#[test]
+fn v4_new_owner_projection_is_empty_until_its_own_packages_are_written() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("mgc.toml");
+    std::fs::write(
+        &config,
+        "name = \"library\"\necosystem = \"lib\"\n[lock]\nschema = \"v4\"\n",
+    )
+    .unwrap();
+    write_canonical_lock_with_roots(
+        dir.path(),
+        EcosystemTag::Python,
+        vec![v4_lock_package("requests", "2.0.0")],
+        vec!["requests@2.0.0".into()],
+    )
+    .unwrap();
+    std::fs::write(&config, "name = \"agent\"\necosystem = \"ai\"\n[ai]\nframework = \"python-agent\"\n[lock]\nschema = \"v4\"\n").unwrap();
+    assert!(
+        read_existing_lock(dir.path()).unwrap().packages.is_empty(),
+        "a new AI owner cannot inherit the Lib dependency rows"
+    );
+    write_canonical_lock_with_roots(
+        dir.path(),
+        EcosystemTag::Python,
+        vec![v4_lock_package("six", "1.17.0")],
+        vec!["six@1.17.0".into()],
+    )
+    .unwrap();
+    let owned = read_existing_lock(dir.path()).unwrap();
+    assert_eq!(owned.packages.len(), 1);
+    assert_eq!(owned.packages[0].name, "six");
+    let doc = mgc_lockfile::canonical::parse_v4_document(
+        &std::fs::read_to_string(dir.path().join("mgc.lock")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(doc.packages.len(), 2);
+    assert!(doc.root_dependencies_by_owner.contains_key("lib"));
+    assert!(doc.root_dependencies_by_owner.contains_key("ai"));
+}
+
+#[test]
+fn v4_schema_reads_existing_lib_package_rows_in_document_order() {
+    let dir = tempfile::tempdir().unwrap();
+    mgc_config::project::ProjectConfig::write_core_marker_at(dir.path(), "lib").unwrap();
+    std::fs::write(
+        dir.path().join("mgc.toml"),
+        "name = \"lib\"\necosystem = \"lib\"\n[lock]\nschema = \"v4\"\n",
+    )
+    .unwrap();
+    write_canonical_lock_with_roots(
+        dir.path(),
+        EcosystemTag::Python,
+        vec![
+            v4_lock_package("requests", "2.0.0"),
+            v4_lock_package("urllib3", "2.0.0"),
+        ],
+        vec!["requests@2.0.0".to_string(), "urllib3@2.0.0".to_string()],
+    )
+    .unwrap();
+
+    let text = std::fs::read_to_string(dir.path().join("mgc.lock")).unwrap();
+    let document = mgc_lockfile::canonical::parse_v4_document(&text).unwrap();
+    let expected_order = document
+        .packages
+        .iter()
+        .map(|package| package.key.name.clone())
+        .collect::<Vec<_>>();
+    let lock = read_existing_lock(dir.path()).unwrap();
+    let projected_order = lock
+        .packages
+        .iter()
+        .map(|package| package.name.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(projected_order, expected_order);
+    assert_eq!(
+        read_existing_lock(dir.path()).unwrap().packages,
+        lock.packages
+    );
+
+    let requests = lock
+        .packages
+        .iter()
+        .find(|package| package.name == "requests")
+        .expect("V4 root package should project into the lib adapter model");
+    assert_eq!(requests.version, "2.0.0");
+    assert_eq!(requests.ecosystem, EcosystemTag::Python);
+    assert!(requests.integrity.starts_with("sha512-"));
+    assert_eq!(requests.owner_core.as_deref(), Some("lib"));
+}
+
+#[test]
+fn v4_schema_refuses_lossy_lane_rows() {
+    let dir = tempfile::tempdir().unwrap();
+    mgc_config::project::ProjectConfig::write_core_marker_at(dir.path(), "lib").unwrap();
+    std::fs::write(
+        dir.path().join("mgc.toml"),
+        "name = \"lib\"\necosystem = \"lib\"\n[lock]\nschema = \"v4\"\n",
+    )
+    .unwrap();
+    let mut bare = v4_lock_package("bare", "1.0.0");
+    bare.registry = None;
+    bare.integrity = String::new();
+    let err = write_canonical_lock(dir.path(), EcosystemTag::Python, vec![bare]).unwrap_err();
+    assert!(
+        err.to_string().contains("lossy"),
+        "expected lossy refusal, got: {err}"
+    );
+    assert!(
+        !dir.path().join("mgc.lock").exists(),
+        "refused v4 write must not publish any lock"
+    );
+}
+
+// Legacy and SRI encodings must reconstruct the same verified digest.
+// Lock V4 đổi encoding không được làm mất hash hoặc phá native frozen install.
+#[test]
+fn native_entry_preserves_digest_across_legacy_and_sri() {
+    let mut package = mgc_types::ResolvedPackage {
+        id: mgc_types::PackageId::new(
+            mgc_types::PackageName::new("fixture").unwrap(),
+            mgc_types::Version::parse("1.0.0").unwrap(),
+        ),
+        integrity: String::new(),
+        tarball_url: String::new(),
+        deps: vec![],
+        peer_deps: vec![],
+        direct: true,
+        dev: false,
+    };
+    for raw in [
+        "ab".repeat(32),
+        "AB".repeat(32),
+        "q6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6s=".to_string(),
+    ] {
+        package.integrity = format!("sha256-{raw}");
+        assert_eq!(super::entry_from_package(&package).sha256, "ab".repeat(32));
+    }
+    for bad in ["sha256-", "sha256-broken", "sha256-AAAA"] {
+        package.integrity = bad.to_string();
+        assert!(
+            !super::entry_from_package(&package).sha256.is_empty(),
+            "malformed SHA256 must not become missing digest"
+        );
+    }
 }

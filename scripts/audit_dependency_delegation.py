@@ -121,10 +121,10 @@ PYTHON_PROCESS_REVIEWS = {
         ),
     },
     "scripts/audit_capability_matrix.py": {
-        ("subprocess.run", "2599a48485297d50a52db1a693a0d4fb0d2c5973b52463b14dd1ac98e3da3db1"): (
+        ("subprocess.run", "4e9ac2d91afa104d26afe1fe48e3aa3ee6bf165b4b1d3f44c824250b25fcd44d"): (
             1, "Reads the current repository HEAD using fixed git arguments.",
         ),
-        ("subprocess.run", "0ac2cda94516ef5622fde0b140fcef302589f1bf901fd8594d7a1cc9cae15abc"): (
+        ("subprocess.run", "3afc406429a0d8dcfdee7a38f25a013b2781e53df69360466b405a644d560c45"): (
             1, "Reads repository dirty state using fixed git arguments.",
         ),
         ("subprocess.run", "a11d00e9c720f21b59dded08fa29501260f450b2a90717cad7a65fc3a167e8a2"): (
@@ -146,7 +146,7 @@ PYTHON_PROCESS_REVIEWS = {
         ("subprocess.Popen", "7b86bfefe6e49f3ae4cbd67739e790506858031072fc183fba63766f68b48bf8"): (
             1, "Starts the local mgc binary for a recovery fault-injection fixture and captures its output.",
         ),
-        ("subprocess.Popen", "6794237e578f851bba22f3ea59e7c1619dd0c8013b22653fede7bda3ba918e9b"): (
+        ("subprocess.Popen", "ef9a39ec0d317a4020fd6b5ed8a52b9aa8d36c7a076e3ac1caad9425466e5133"): (
             1, "Starts the local mgc binary with a source-defined lifecycle probe argv in a sandbox project.",
         ),
         ("subprocess.Popen", "a53a245f97a247c95efef054c891d2ed388e947173ba179567a90f518a662f98"): (
@@ -161,38 +161,45 @@ PYTHON_PROCESS_REVIEWS = {
             1, "Checks working-tree state using fixed read-only git arguments.",
         ),
     },
+    # Exact release.sh argument test — kiểm thử argv bằng cargo giả trong thư mục tạm.
+    "scripts/test_release_script.py": {
+        ("subprocess.run", "30189088871d987f63f90637069f395153c2256ba8d9fe638e82440f4b03ea11"): (
+            1,
+            "Runs the local release.sh against a temporary fake cargo executable; it validates argv and never builds or publishes artifacts.",
+        ),
+    },
     "scripts/test_audit_capability_matrix.py": {
-        ("subprocess.run", "2727cd5100e6142749b140d7708f37a2c43bfbc49724efd9118dba1b5def4335"): (
+        ("subprocess.run", "d8794996e3739e075be94219477e820eb1884f5178a30c5050c2dac04c6a60aa"): (
             1, "Creates an isolated temporary Git repository for a unit test.",
         ),
-        ("subprocess.run", "772c78f2dee4edc79f10f711d8b8eee3e46801c5ecac0e4a1e2d7ae0d9eaeb8e"): (
+        ("subprocess.run", "c8dd6f5373c83c8885fbed9206080e077999e4c5310624c6697738c20e9849e1"): (
             1, "Sets a test-only email identity in the isolated temporary Git repository.",
         ),
-        ("subprocess.run", "912af031dd06e11d70e2c37947a177fd93917015f44391b49208d11ade5db83d"): (
+        ("subprocess.run", "3cd39da9c1c3b6b5abba781e59ee53375341bf1a75536f8afe0294bfd97c7acd"): (
             1, "Sets a test-only name identity in the isolated temporary Git repository.",
         ),
-        ("subprocess.run", "299937726126c3045b95c26f05e4f3b80e5bac79057572a6643a218c0b7c96de"): (
+        ("subprocess.run", "fcc0b22c8eef8e5747a25d94d3528f56395765d2f50ac443fdc4346e286d393f"): (
             1, "Stages only the test fixture file in the isolated temporary Git repository.",
         ),
-        ("subprocess.run", "f8b434d00cbcd4282b6a7956c86ebec6c7bacf628a54a46a3039550e09514c45"): (
+        ("subprocess.run", "177895e8d7981a0613e09f616fcda3eb6df22224ba0f4de3163d0d378422389e"): (
             1, "Creates the base commit in the isolated temporary Git repository.",
         ),
     },
     # Windows path tests use only a fake Flutter SDK in a temporary fixture.
     # Test đường dẫn Windows chỉ dùng Flutter SDK giả trong fixture tạm.
     "scripts/test_native_pm_verdict.py": {
-        ("subprocess.run", "2f4663841eb2fe471692ce771206ab388c294997b133b185b1b45ffebcea0003"): (
+        ("subprocess.run", "4ae5f5630c8367a9a3d9c0823cb0fac5066b407f7cbe46d09222fea3d3574497"): (
             1, "Runs the fixed Flutter bootstrap script with POSIX Bash or the selected Git Bash executable and fake dart/flutter executables in a temporary SDK tree.",
         ),
-        ("subprocess.run", "0c8bcf6d3154d6c8571f100aace424e4d2b964aa3a93b9e2d2a851425dee76e4"): (
+        ("subprocess.run", "25c931822c0d7274b11af4b171494fe34324d14d613957c93024c6a36662fe40"): (
             1, "Runs a fixed Bash command with the platform-selected shell to source the repository bootstrap and resolve a constant Windows fixture path.",
         ),
-        ("subprocess.run", "9b0e4d3eb001046e3fba504d0a935d316337721443c2b7be1150b009660d7e13"): (
+        ("subprocess.run", "9172501f4f16afe766e79a03913395aef0c450371f411c00724990dc12b5126f"): (
             1, "Compiles a native test-only dart.exe stub with fixed rustc arguments for the Windows Flutter bootstrap fixture; no package or network mutation.",
         ),
     },
     "scripts/test_github_action_pin.py": {
-        ("subprocess.run", "bdbce93df67d6c33fc876bf6de34d93b23df8ccd025e294832a6cd1774340d4c"): (
+        ("subprocess.run", "b47a6572ab2b6f53fef5ad59a30ea2d07e32efd59aee7c826620234a1e126f21"): (
             1, "Runs a test-only bash verifier with positional arguments and a fake git on the test PATH.",
         ),
     },
@@ -202,6 +209,22 @@ PYTHON_PROCESS_REVIEWS = {
         ),
         ("subprocess.run", "c3630e647f65713d17db619174b4411964beeecbf7e0eb2c85997a63986fc725"): (
             1, "Runs the fixed default cargo test inventory command and captures test results.",
+        ),
+    },
+    "stress-test/src/stress_matrix.py": {
+        ("subprocess.run", "2a29fe6a0d0063d10a3aeac3db2ef1a138c63cc145b81d15578ebbbbff4bb529"): (
+            1,
+            "Runs only the selected local MagiCore binary with a source-defined argv vector, isolated project cwd/environment, captured output, timeout, and no shell.",
+        ),
+        # Stress provenance reads local repository metadata using fixed git arguments.
+        # (Stress provenance đọc metadata cục bộ với đối số git cố định.)
+        ("subprocess.run", "25d3e990bd8612601ad5b36cd197efae064275399bbbe331addbced29003c4f9"): (
+            1,
+            "Reads the repository HEAD with fixed read-only `git rev-parse HEAD` arguments, repository cwd, captured output, and timeout.",
+        ),
+        ("subprocess.run", "f0dd10cfdb69fc53b1ebec027f6c7b3d2a35275a28f762d3392bdbae21ce79e5"): (
+            1,
+            "Reads repository dirty state with fixed read-only `git status --porcelain=v1` arguments, repository cwd, captured output, and timeout.",
         ),
     },
     "tools/mgc-mcp/mcp_server.py": {
@@ -398,6 +421,13 @@ AUDITED_EXECUTOR_ROUTES = {
         "build_rust_with_env",
         "cargo",
     ): "mgc-exec BuildRunner; Cargo build requires --locked --offline",
+    # Managed Cargo remains a compiler runner after verified lock/source preflight.
+    # Cargo chỉ build sau preflight lock/source đã verify; không sở hữu resolution.
+    (
+        "cli/src/commands/build/web_engine.rs",
+        "build_rust_with_managed_source",
+        "cargo",
+    ): "mgc-exec BuildRunner; verified MGC directory source, Cargo build --locked --offline",
     (
         "cli/src/commands/build.rs",
         "build_lib",
@@ -458,7 +488,7 @@ AUDITED_EXECUTOR_ROUTES = {
         "<dynamic:cmd>",
     ): "closed app toolchain set + DevServer scope + mgc-exec package-manager deny",
     ("cli/src/commands/core/dev/app.rs", "flutter_dev_command", "flutter"):         "static Flutter device command; --no-pub and mgc-exec DevServer boundary",
-    ("cli/src/commands/core/dev/app.rs", "dev_ios", "swift"):         "static Swift run command disables package resolution through mgc-exec",
+    ("cli/src/commands/core/dev/app.rs", "run_swift_package", "swift"): "Swift app freshness preflight; fixed SwiftPM run argv disables updates and automatic resolution through mgc-exec DevServer scope",
     (
         "cli/src/commands/core/dev/iot.rs",
         "run_tool",
@@ -905,7 +935,10 @@ SHELL_DEPENDENCY_COMMAND_REVIEWS = {
         "c48b21609d842a372096e81333bbcacc21b4f4bc54d7a173490d6d6cf321521e",
     },
     'scripts/release.sh': {
-        "1e51177d8f8372894f8fd4a9e581a60a26b3f03778eabeeb06b37357aca006ee",
+        # Fixed `cargo run -p mgc-dist -- build-all`; review binds both argv branches.
+        # Lệnh cargo cố định cho build-all; fingerprint ràng buộc cả hai nhánh argv.
+        "94e77fed0f8ba8ce7e68d641d9049e6fc1e17b3a84b29ae112fc8eb37b4ad7b1",
+        "670c7e7c2b1b0da6b1a333e02ca655d6826088d32088c1e81342a26d9e0fde87",
     },
     'cli/tests/scripts/competitive_benchmark_impl.sh': {
         "629ce7020efb842bd715a9ab592f2203ee4755659dde73f8e26c1d9ca6e8a005",

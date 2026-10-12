@@ -288,6 +288,9 @@ pub fn owner_for(ctx: &DepContext) -> DepOwner {
             _,
         ) | ("lib", Some(eco::TS), _, _)
             | ("lib", Some(eco::PYTHON), _, _)
+            | ("ai", Some(eco::PYTHON), _, Some("mgc-pyproject"))
+            | ("lib", Some(eco::RUST), _, Some("cargo-toml"))
+            | ("app", Some(eco::FLUTTER), _, _)
             // CDK/Pulumi's CloudAdapter embeds WebAdapter, whose offline
             // install consumes the verified MGC lock and local CAS only.
             // (CDK/Pulumi nhúng WebAdapter; offline chỉ dùng lock/CAS của MGC.)
@@ -382,9 +385,11 @@ pub fn owner_for(ctx: &DepContext) -> DepOwner {
         // cells and must not inherit dependency support.
         // (MagiCore sở hữu install/add/update Flutter; remove nằm ở rule
         // ngay dưới, verb còn lại không được kế thừa capability này.)
-        ("app", Some(eco::FLUTTER), DepOp::Install | DepOp::Add | DepOp::Update) => {
-            DepOwner::Native
-        }
+        (
+            "app",
+            Some(eco::FLUTTER),
+            DepOp::Install | DepOp::Add | DepOp::Update | DepOp::OfflineReinstall,
+        ) => DepOwner::Native,
         // Flutter remove uses the journaled shared manifest path. Swift
         // source and Kotlin catalog edits are blocked until their writers
         // participate in the same crash-recovery transaction.
@@ -675,7 +680,9 @@ pub fn gate_native_adapter(
         ));
     }
     let required = match ctx.op {
-        DepOp::Install => mgc_types::capabilities::Capability::ContentStoreProvider,
+        DepOp::Install | DepOp::OfflineReinstall => {
+            mgc_types::capabilities::Capability::ContentStoreProvider
+        }
         DepOp::List => mgc_types::capabilities::Capability::LockfileProvider,
         DepOp::Add | DepOp::Remove | DepOp::Update => {
             mgc_types::capabilities::Capability::DependencyResolver

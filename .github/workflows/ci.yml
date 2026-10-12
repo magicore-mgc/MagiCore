@@ -193,7 +193,7 @@ jobs:
           ./target/debug/mgc-registry --host 127.0.0.1 --port 4315 --store-dir /tmp/mgc-reg-store >/tmp/mgc-reg.log 2>&1 &
           SRV=$!
           trap 'kill $SRV' EXIT
-          for i in $(seq 1 15); do curl -sf -o /dev/null http://127.0.0.1:4315/ && break || sleep 1; done
+          for i in $(seq 1 15); do curl -sf -o /dev/null http://127.0.0.1:4315/v2/ && break || sleep 1; done
           mkdir -p /tmp/mgc-tpl && git archive 1b69dd0^ templates | tar -x -C /tmp/mgc-tpl
           node -e '
             const fs = require("fs"), path = require("path");

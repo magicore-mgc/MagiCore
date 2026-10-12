@@ -19,6 +19,7 @@ fn create_signed_v4_lock(root: &std::path::Path, signer: &KeyPair) {
             variant: VariantKey::default(),
         },
         edges: vec![],
+        markers: None,
         artifact: None,
         provenance: None,
         toolchain: None,

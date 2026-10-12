@@ -46,8 +46,9 @@ pub async fn dispatch(command: CoreCommand) -> Result<()> {
         #[cfg(feature = "game")]
         CoreCommand::InstallGame {
             packages,
+            frozen,
             compat_runtime,
-        } => commands::core::install::game::install(packages, compat_runtime).await,
+        } => commands::core::install::game::install(packages, frozen, compat_runtime).await,
         #[cfg(not(feature = "game"))]
         CoreCommand::InstallGame { .. } => Err(crate::error::core_not_in_build("game")),
         #[cfg(feature = "ai")]
@@ -56,15 +57,20 @@ pub async fn dispatch(command: CoreCommand) -> Result<()> {
             dry_run,
             compat_runtime,
             frozen,
-        } => commands::core::install::ai::install(packages, dry_run, compat_runtime, frozen).await,
+            offline,
+        } => {
+            commands::core::install::ai::install(packages, dry_run, compat_runtime, frozen, offline)
+                .await
+        }
         #[cfg(not(feature = "ai"))]
         CoreCommand::InstallAi { .. } => Err(crate::error::core_not_in_build("ai")),
         #[cfg(feature = "clo")]
         CoreCommand::InstallClo {
             packages,
             dry_run,
+            frozen,
             compat_runtime,
-        } => commands::core::install::clo::install(packages, dry_run, compat_runtime).await,
+        } => commands::core::install::clo::install(packages, dry_run, frozen, compat_runtime).await,
         #[cfg(not(feature = "clo"))]
         CoreCommand::InstallClo { .. } => Err(crate::error::core_not_in_build("clo")),
         #[cfg(feature = "cicd")]
@@ -78,8 +84,9 @@ pub async fn dispatch(command: CoreCommand) -> Result<()> {
         #[cfg(feature = "iot")]
         CoreCommand::InstallIot {
             packages,
+            frozen,
             compat_runtime,
-        } => commands::core::install::iot::install(packages, compat_runtime).await,
+        } => commands::core::install::iot::install(packages, frozen, compat_runtime).await,
         #[cfg(not(feature = "iot"))]
         CoreCommand::InstallIot { .. } => Err(crate::error::core_not_in_build("iot")),
         #[cfg(feature = "app")]
@@ -88,7 +95,17 @@ pub async fn dispatch(command: CoreCommand) -> Result<()> {
             dry_run,
             compat_runtime,
             frozen,
-        } => commands::core::install::app::install(packages, dry_run, compat_runtime, frozen).await,
+            offline,
+        } => {
+            commands::core::install::app::install(
+                packages,
+                dry_run,
+                compat_runtime,
+                frozen,
+                offline,
+            )
+            .await
+        }
         #[cfg(not(feature = "app"))]
         CoreCommand::InstallApp { .. } => Err(crate::error::core_not_in_build("app")),
         #[cfg(feature = "lib")]

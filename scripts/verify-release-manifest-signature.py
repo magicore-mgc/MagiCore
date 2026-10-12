@@ -15,6 +15,7 @@ MAX_SIGNATURE_BYTES = 4096
 HASH_CHUNK_BYTES = 1024 * 1024
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 SIGNATURE_HEX = re.compile(r"^[0-9a-f]{128}$")
+TRUST_ROOT_HEX = re.compile(r"^[0-9a-fA-F]{64}$")
 REQUIRED_VARIANTS = (
     ("magicore", "linux", "x64"),
     ("magicore", "linux", "arm64"),
@@ -127,6 +128,23 @@ def _archive_name(identity, version):
     return f"{package}-{version}-{os_name}-{arch}.{extension}"
 
 
+def _configured_trust_roots():
+    """Read public Ed25519 pins; verification never needs the private seed.
+    Đọc public key pin Ed25519; xác minh không cần seed riêng tư.
+    """
+    value = os.environ.get("MGC_RELEASE_TRUST_ROOTS", "").strip()
+    if not value:
+        raise VerificationError(
+            "MGC_RELEASE_TRUST_ROOTS is required (comma-separated 64-hex Ed25519 public keys)"
+        )
+    encoded_roots = [item.strip() for item in value.split(",")]
+    if not encoded_roots or any(not TRUST_ROOT_HEX.fullmatch(item) for item in encoded_roots):
+        raise VerificationError(
+            "MGC_RELEASE_TRUST_ROOTS must contain comma-separated 64-hex Ed25519 public keys"
+        )
+    return [bytes.fromhex(item) for item in encoded_roots]
+
+
 def _verify_archive(path, assets_dir, artifacts):
     archive_path = os.path.abspath(path)
     assets_root = os.path.abspath(assets_dir)
@@ -168,23 +186,17 @@ def _verify_archive(path, assets_dir, artifacts):
 def main(argv):
     if len(argv) < 4:
         print(
-            "usage: verify-release-manifest-signature.py <assets-dir> <tag> <archive> [archive ...]",
+            "usage: MGC_RELEASE_TRUST_ROOTS=<public-keys> "
+            "verify-release-manifest-signature.py <assets-dir> <tag> <archive> [archive ...]",
             file=sys.stderr,
         )
         return 2
-
-    seed_hex = os.environ.get("MGC_RELEASE_SIGNING_KEY", "").strip()
-    if not re.fullmatch(r"[0-9a-fA-F]{64}", seed_hex):
-        print(
-            "verification failed: MGC_RELEASE_SIGNING_KEY is required and must be 64 hex characters",
-            file=sys.stderr,
-        )
-        return 1
 
     assets_dir, expected_tag, *archive_paths = argv[1:]
     manifest_path = os.path.join(assets_dir, "manifest.json")
     signature_path = os.path.join(assets_dir, "manifest.json.sig")
     try:
+        trust_roots = _configured_trust_roots()
         if not os.path.lexists(signature_path):
             raise VerificationError("manifest.json.sig is missing")
         manifest_bytes = _read_regular_file(
@@ -216,10 +228,14 @@ def main(argv):
             sys.path.insert(0, script_dir)
         import _ed25519
 
-        seed = bytes.fromhex(seed_hex)
-        public_key = _ed25519.public_key(seed)
-        if not _ed25519.verify(public_key, manifest_bytes, bytes.fromhex(signature_text)):
-            raise VerificationError("manifest signature verification failed")
+        signature = bytes.fromhex(signature_text)
+        if not any(
+            _ed25519.verify(public_key, manifest_bytes, signature)
+            for public_key in trust_roots
+        ):
+            raise VerificationError(
+                "manifest signature verification failed for configured trust roots"
+            )
 
         print(
             f"manifest signature VALID (Ed25519, version={expected_tag}, artifacts={len(artifacts)})"

@@ -33,6 +33,79 @@ fn clean_build_includes_build_cache_explicitly() {
 }
 
 #[test]
+fn shared_cache_path_uses_magi_core_data_root() {
+    let data_root = Path::new("/tmp/mgc-data");
+    assert_eq!(shared_cache_path(data_root, None), data_root.join("cache"));
+    assert_eq!(
+        shared_cache_path(data_root, Some("web")),
+        data_root.join("cache/web")
+    );
+}
+
+#[test]
+fn app_shared_cache_entries_include_flutter_and_swift_stores() {
+    let entries = cache_entries(CacheTarget::Shared, Some("app"), false).unwrap();
+    let data_root = mgc_platform::paths::mgc_data_dir();
+    assert!(entries.iter().any(|entry| {
+        entry.label == "app-pub-store" && entry.path == data_root.join("store/pub")
+    }));
+    assert!(entries.iter().any(|entry| {
+        entry.label == "app-swift-store" && entry.path == data_root.join("store/swift")
+    }));
+}
+
+#[test]
+fn all_shared_cache_entries_include_app_stores() {
+    let entries = cache_entries(CacheTarget::Shared, None, false).unwrap();
+    assert!(entries.iter().any(|entry| entry.label == "app-pub-store"));
+    assert!(entries.iter().any(|entry| entry.label == "app-swift-store"));
+}
+
+#[test]
+fn app_package_stores_are_not_pruned_without_live_reference_data() {
+    let root = tempfile::tempdir().unwrap();
+    let package = root.path().join("package/file.dart");
+    std::fs::create_dir_all(package.parent().unwrap()).unwrap();
+    std::fs::write(&package, "cached package").unwrap();
+    let entries = [CacheEntry {
+        label: "app-pub-store",
+        path: root.path().to_path_buf(),
+        removable: true,
+    }];
+
+    prune(&entries, true, false, Some("app")).unwrap();
+    assert!(package.exists());
+}
+
+#[test]
+fn combined_storage_size_does_not_double_count_nested_roots() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    let data = project.join("MagiCore-SystemData");
+    std::fs::create_dir_all(&data).unwrap();
+
+    assert_eq!(combined_path_size(&data, &project, 30, 100), 100);
+    assert_eq!(combined_path_size(&project, &data, 100, 30), 100);
+}
+
+#[test]
+#[cfg(unix)]
+fn measured_storage_size_counts_regular_files_and_symlink_entries() {
+    use std::os::unix::fs::symlink;
+
+    let root = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("payload"), [0u8; 7]).unwrap();
+    let external_file = outside.path().join("external");
+    std::fs::write(&external_file, [0u8; 1024]).unwrap();
+    let link = root.path().join("external-link");
+    symlink(&external_file, &link).unwrap();
+
+    let expected = 7 + std::fs::symlink_metadata(&link).unwrap().len();
+    assert_eq!(measured_path_size(root.path()).unwrap(), expected);
+}
+
+#[test]
 fn finds_workspace_target_from_nested_crate() {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(

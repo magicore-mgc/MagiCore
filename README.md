@@ -11,9 +11,9 @@ MagiCore (<code>mgc</code>) is a Rust CLI and workspace for scaffolding projects
 
 ## Current status
 
-- Workspace version: **1.1.0-rc.9**; Rust edition 2024; minimum Rust version 1.86.
+- Workspace version: **1.1.0-rc.10**; Rust edition 2024; minimum Rust version 1.86.
 - This is a pre-release, not a production-stable or drop-in replacement claim.
-- **Historical verification snapshot, 2026-10-06 12:24 +07:00, SHA `212a139c`:** GitHub showed PR [#3](https://github.com/mingd-153/MagiCore/pull/3) open and not merged into <code>main</code>, with 5 workflow runs and 41/41 jobs successful on the PR integration ref; GitHub reported the PR mergeable. That result applies to the listed SHA only; check the live PR for this checkout's status.
+- CI evidence is commit-specific. Before merging or tagging, review the PR's Checks and workflow artifacts for the exact source SHA; runs on another SHA do not qualify this checkout.
 - Green CI applies to declared lanes; it does not qualify every framework or operation.
 
 ## What MagiCore provides
@@ -28,11 +28,11 @@ Use <code>mgc capabilities</code> to inspect the capability manifest and <code>m
 
 ## Core support and CI evidence
 
-The lifecycle matrix passed its declared release-blocking lanes on Ubuntu, macOS, and Windows. This is not a claim that every framework in a core family has a complete lifecycle.
+The available three-OS GitHub lifecycle checks passed for committed base SHA `fd94f35343b08535c32a6f72e5d48cc7a6a543bf`. They do not include the uncommitted RC10 working-tree changes in this checkout; those changes have no exact-SHA remote run yet. This is not a claim that every framework in a core family has a complete lifecycle.
 
 | Core | Current evidence and limits |
 |---|---|
-| Web | JavaScript, Node, TypeScript, and vanilla lifecycle lanes passed. Other frameworks may have scaffold-only or narrower evidence. |
+| Web | Native JavaScript lifecycle E2E passed on macOS arm64 for 18 lanes: vanilla, TypeScript, Node, Express, Fastify, Hono, NestJS, Nuxt, Qwik, SolidJS, tRPC, Angular, Astro, Next.js, React Vite, Remix, SvelteKit, and Vue Vite. The remaining framework records and non-JavaScript web ecosystems have scaffold-only or narrower evidence; this does not qualify every web framework. |
 | AI | The Python lifecycle lane passed. Agent and MCP-server scaffolds do not inherit a full lifecycle guarantee. |
 | App | Flutter lifecycle passed. Swift E2E used a fallback project on all three OS because the distributed/registry scaffold was unavailable; that does not verify the Swift scaffold. Objective-C and React Native are not release-qualified. |
 | Lib | Rust, Python, TypeScript, and Go lanes passed. Java and .NET remain partial or outside release scope. |
@@ -43,6 +43,8 @@ The lifecycle matrix passed its declared release-blocking lanes on Ubuntu, macOS
 | Hardware | Optimizer and benchmark tooling; not a general package lifecycle. |
 
 The Native Dependency Lifecycle Evidence Matrix covers selected MagiCore-native dependency-install lanes only. Check <code>mgc capabilities</code> and workflow artifacts for lane-level detail.
+
+Native Python install can materialize compatible prebuilt wheels without invoking <code>pip</code>. For compiled wheels, set <code>MGC_PYTHON_VERSION</code> to the exact minor version used by <code>mgc run</code> or <code>mgc dev</code> (for example, <code>3.12</code>); MagiCore refuses an ABI-specific wheel when that version is unknown or incompatible. Source distributions are not built by the native installer.
 
 ## Build from source
 
@@ -57,6 +59,10 @@ cargo build --release --bin mgc --locked
 ~~~
 
 Add <code>target/release</code> to your PATH or install the binary using your platform's normal method. Tests/builds that need a language SDK still require that SDK.
+
+## Install a published release
+
+Release archives exist only for versions listed on the [GitHub Releases page](https://github.com/mingd-153/MagiCore/releases). The installer and current target matrix are documented in [`packaging/README.md`](packaging/README.md). The installer checks an archive against its SHA-256 sidecar; it does not verify the signed release manifest. See [`SECURITY.md`](SECURITY.md) for the trust model and limitations.
 
 ## Quick start
 
@@ -73,9 +79,15 @@ mgc audit
 
 Other scaffold command families include <code>create-ai</code>, <code>create-app</code>, <code>create-lib</code>, <code>create-clo</code>, <code>create-cicd</code>, <code>create-game</code>, <code>create-iot</code>, and <code>create-hardware</code>. Check capabilities before assuming a framework supports each operation.
 
+## Storage and caches
+
+MagiCore-managed global stores, shared caches, scaffold downloads, templates, search data, and telemetry default to <code>~/MagiCore-SystemData</code>. Set <code>MGC_DATA_DIR</code> to use another location. Existing store-specific overrides such as <code>MAGICORE_STORE_ROOT</code> remain available.
+
+Run <code>mgc cache status</code> from a project to see the MagiCore data size, project size, and combined usage. The default warning threshold is 50 GiB; override it with <code>MGC_STORAGE_BUDGET_GB</code>. This is a reporting threshold, not an operating-system quota: tools launched outside MagiCore may keep writing to their own cache locations.
+
 ## Verification and performance
 
-The five PR workflows cover CI, resolver archive security, lifecycle capability evidence, release archive E2E, and selected native dependency lanes. See the [CI workflow](.github/workflows/ci.yml), [lifecycle workflow](.github/workflows/lifecycle-matrix.yml), and [release E2E workflow](.github/workflows/release-binary-e2e.yml).
+The repository defines six PR workflows: CI, resolver archive security, lifecycle capability evidence, release archive E2E, delegated compatibility, and the cross-platform stress matrix. Path filters mean not every workflow runs for every PR; inspect that PR's Checks and workflow artifacts for the lanes actually exercised. See the [CI workflow](.github/workflows/ci.yml), [lifecycle workflow](.github/workflows/lifecycle-matrix.yml), [release E2E workflow](.github/workflows/release-binary-e2e.yml), [delegated compatibility workflow](.github/workflows/delegated-compatibility-matrix.yml), and [stress workflow](.github/workflows/stress-matrix.yml).
 
 This README makes no speed comparison. Do not claim an advantage over npm, pnpm, Bun, or another tool without current validated benchmarks and a published method/baseline.
 

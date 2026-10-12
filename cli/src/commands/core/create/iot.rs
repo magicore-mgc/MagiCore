@@ -5,18 +5,46 @@ use anyhow::Result;
 pub async fn run(framework: &str, project_name: &str) -> Result<()> {
     // Phase 4: Parse scaffold spec sớm với typo detection
     use crate::scaffold::spec::{CoreKind, parse_scaffold_spec};
-    if !framework.is_empty() {
-        let _spec = parse_scaffold_spec(CoreKind::Iot, framework).map_err(|e| {
+    let config = if !framework.is_empty() {
+        let spec = parse_scaffold_spec(CoreKind::Iot, framework).map_err(|e| {
             anyhow::anyhow!("Invalid IoT framework specification '{}': {}", framework, e)
         })?;
-    }
+        // Keep board IDs such as `nrf52dk_nrf52832` byte-exact: the generic
+        // scaffold parser normalizes underscores for registry template names.
+        // Giữ nguyên ID board có dấu gạch dưới; parser chung chuẩn hóa tên layer.
+        let requested = spec.name.to_ascii_lowercase();
+        let canonical =
+            crate::scaffold::processors::iot::IotProcessor::framework_for_board(&requested)
+                .unwrap_or(&requested)
+                .to_string();
+        if !crate::scaffold::processors::iot::IotProcessor::supports(&canonical) {
+            anyhow::bail!("Unsupported IoT framework '{}'.", requested);
+        }
+        let board =
+            if crate::scaffold::processors::iot::IotProcessor::framework_for_board(&requested)
+                .is_some()
+            {
+                Some(requested.clone())
+            } else {
+                crate::scaffold::processors::iot::IotProcessor::default_board(&canonical)
+                    .map(str::to_string)
+            }
+            .ok_or_else(|| anyhow::anyhow!("No default board is registered for '{canonical}'."))?;
+        crate::wizard::engine::ScaffoldConfig {
+            core: "iot".to_string(),
+            sub_type: String::new(),
+            frameworks: vec![canonical],
+            project_name: project_name.to_string(),
+            features: vec![board],
+            template_dir: std::path::PathBuf::new(),
+        }
+    } else {
+        crate::wizard::iot::IotWizard::run()
+    };
 
-    let mut config = crate::wizard::iot::IotWizard::run();
+    let mut config = config;
     config.project_name = project_name.to_string();
-    if !framework.is_empty() {
-        config.frameworks = vec![framework.to_string()];
-    }
-    if let Some(fw) = config.frameworks.first() {
+    if let Some(fw) = config.frameworks.last() {
         // Phase 3: Handle typed result
         match crate::commands::template::ensure_layer(&format!("iot/{fw}")).await {
             Ok(status) if status.is_available() => {}

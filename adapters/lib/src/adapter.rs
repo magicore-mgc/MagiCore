@@ -174,16 +174,6 @@ impl LibAdapter {
         token: Option<String>,
         fallbacks: &[(String, Option<String>)],
     ) -> Result<Self> {
-        // Java build-manifest kind: pom.xml is natively owned, gradle
-        // build scripts fail closed downstream.
-        // (Loại build-manifest Java: pom.xml sở hữu native, build script
-        // gradle fail-closed phía sau.)
-        let java_kind = match crate::language::dependency_manifest_format(root, language) {
-            Some("maven-pom") => JavaManifestKind::Pom,
-            Some("gradle") => JavaManifestKind::Gradle,
-            Some("ambiguous") => JavaManifestKind::Ambiguous,
-            _ => JavaManifestKind::None,
-        };
         let web = if language == LibLanguage::Ts {
             Some(match (registry_url, token) {
                 (Some(url), token) => mgc_web_adapter::WebAdapter::with_registry_chain(
@@ -195,6 +185,24 @@ impl LibAdapter {
             })
         } else {
             None
+        };
+        Self::from_web(language, root, web)
+    }
+
+    fn from_web(
+        language: LibLanguage,
+        root: &Path,
+        web: Option<mgc_web_adapter::WebAdapter>,
+    ) -> Result<Self> {
+        // Java build-manifest kind: pom.xml is natively owned, gradle
+        // build scripts fail closed downstream.
+        // (Loại build-manifest Java: pom.xml sở hữu native, build script
+        // gradle fail-closed phía sau.)
+        let java_kind = match crate::language::dependency_manifest_format(root, language) {
+            Some("maven-pom") => JavaManifestKind::Pom,
+            Some("gradle") => JavaManifestKind::Gradle,
+            Some("ambiguous") => JavaManifestKind::Ambiguous,
+            _ => JavaManifestKind::None,
         };
         Ok(Self {
             language,
@@ -1021,7 +1029,7 @@ impl ContentStoreProvider for LibAdapter {
                     .to_string(),
             )
         })?);
-        if !graph.packages.is_empty() {
+        if crate::install::needs_existing_lock_rows(graph, &lock_packages) {
             // Delta operations (add after an existing lock) stage markers
             // only for their newly resolved subgraph. Fill the rest from
             // the existing exact lock pins; lock-short-circuit installs use
@@ -1029,6 +1037,8 @@ impl ContentStoreProvider for LibAdapter {
             // matching lock/integrity record.
             // (Delta resolve chỉ stage subgraph mới; bổ sung entry còn lại
             // từ lock hiện hữu đúng version.)
+            // A complete fresh resolve does not borrow replay pins from an obsolete graph.
+            // Resolve mới đầy đủ không mượn pin replay từ đồ thị cũ không còn hợp lệ.
             if let Some(ecosystem) = lock_ecosystem(self.language) {
                 let existing = crate::install::read_existing_lock(project_root)?;
                 crate::install::complete_lock_packages_from_existing(
@@ -1161,6 +1171,25 @@ pub fn adapter_for_with_chain(
     )?))
 }
 
+/// Bind scoped npm credentials only to the embedded TypeScript engine.
+/// Lane ngoài npm không dựng WebAdapter hoặc diễn giải credential npm.
+pub fn adapter_for_with_scoped_chain(
+    root: &Path,
+    entries: Vec<mgc_config::chain::ScopedRegistry>,
+) -> Result<Option<LibAdapter>> {
+    let Some(language) = detect_language(root) else {
+        return Ok(None);
+    };
+    let web = if language == LibLanguage::Ts {
+        Some(mgc_web_adapter::WebAdapter::with_scoped_registry_chain(
+            entries,
+        )?)
+    } else {
+        None
+    };
+    Ok(Some(LibAdapter::from_web(language, root, web)?))
+}
+
 /// Construct a LibAdapter for an EXPLICIT language — the ai core's PyPI
 /// lane needs the lib python engine regardless of root-detect heuristics
 /// (an ai project's pyproject.toml must route to Python, never guess).
@@ -1173,6 +1202,17 @@ pub fn adapter_for_language(
     token: Option<String>,
 ) -> Result<LibAdapter> {
     LibAdapter::for_language(language, root, registry_url, token)
+}
+
+/// Construct the native library-language engine for a non-JS web backend.
+/// The adapter keeps its implementation identity (`lib`) while reading web
+/// security policy from the owning web project.
+/// Dựng engine ngôn ngữ native cho backend web ngoài JS. Adapter giữ identity
+/// implementation (`lib`) nhưng đọc security policy của project owner `web`.
+pub fn adapter_for_web_backend(language: LibLanguage, root: &Path) -> Result<LibAdapter> {
+    let mut adapter = LibAdapter::for_language(language, root, None, None)?;
+    adapter.security_core = "web";
+    Ok(adapter)
 }
 
 /// Construct the embedded Python engine with the AI core's security scope.

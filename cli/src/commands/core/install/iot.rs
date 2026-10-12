@@ -9,7 +9,11 @@ fn project_root() -> Result<PathBuf> {
     shared::core_project_root("iot")
 }
 
-pub async fn install(packages: Vec<String>, compat_runtime: Option<String>) -> Result<()> {
+pub async fn install(
+    packages: Vec<String>,
+    frozen: bool,
+    compat_runtime: Option<String>,
+) -> Result<()> {
     let root = project_root()?;
     let compat = crate::commands::dep_gate::from_dep_flag(compat_runtime.as_deref())?;
     // Full gate context (P0#2): the detected framework id IS the iot
@@ -61,7 +65,7 @@ pub async fn install(packages: Vec<String>, compat_runtime: Option<String>) -> R
             &*lib_adapter,
             &root,
             "mgc add",
-            false,
+            frozen,
             mgc_types::adapter::InstallOptions {
                 legacy_flat: false,
                 ..Default::default()

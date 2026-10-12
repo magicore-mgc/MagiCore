@@ -10,6 +10,40 @@ use mgc_types::capabilities::{
 use mgc_types::{PackageName, ResolvedGraph};
 use std::path::PathBuf;
 
+#[test]
+fn lock_replay_manifest_preserves_explicit_non_sdk_requirements() {
+    let project = tempfile::tempdir().unwrap();
+    std::fs::write(
+        project.path().join("pubspec.yaml"),
+        "name: app\ndependencies:\n  http: ^1.0.0\n",
+    )
+    .unwrap();
+    let mut manifest = mgc_types::Manifest::new("app", mgc_types::Ecosystem::App);
+    manifest.add_dep(
+        mgc_types::DependencySpec::new(
+            PackageName::new("http").unwrap(),
+            mgc_types::VersionRange::parse("^1.0.0").unwrap(),
+        ),
+        false,
+        false,
+        false,
+    );
+    for language in [
+        AppLanguage::Flutter,
+        AppLanguage::Swift,
+        AppLanguage::Kotlin,
+    ] {
+        let adapter = AppAdapter::new(language);
+        let replay = adapter
+            .lock_replay_manifest(project.path(), &manifest)
+            .unwrap();
+        assert_eq!(replay.name, manifest.name);
+        assert_eq!(replay.all_dependencies().count(), 1);
+        assert_eq!(replay.find_dep("http").unwrap().range.to_string(), "^1.0.0");
+        assert_eq!(manifest.all_dependencies().count(), 1);
+    }
+}
+
 fn tmp(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("mgc-app-itg-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -80,6 +114,66 @@ fn detect_swift_via_package_swift() {
     let dir = tmp("swift");
     std::fs::write(dir.join("Package.swift"), "// swift-tools-version:5.9\n").unwrap();
     assert_eq!(detect_language(&dir), Some(AppLanguage::Swift));
+}
+
+#[test]
+fn detect_maui_via_explicit_use_maui_csproj() {
+    let dir = tmp("maui");
+    std::fs::write(
+        dir.join("Sample.csproj"),
+        "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><UseMaui>true</UseMaui></PropertyGroup></Project>",
+    )
+    .unwrap();
+
+    assert_eq!(detect_language(&dir), Some(AppLanguage::Maui));
+    let adapter = adapter_for(&dir).unwrap();
+    let identity = adapter.manifest_identity().unwrap();
+    assert_eq!(identity.language, "maui");
+    assert_eq!(identity.format, "csproj");
+    assert_eq!(identity.relpath, "Sample.csproj");
+    assert!(
+        !adapter
+            .capabilities()
+            .contains(&mgc_types::capabilities::Capability::DependencyResolver)
+    );
+}
+
+#[test]
+fn maui_detection_refuses_ambiguous_root_projects() {
+    let dir = tmp("maui-ambiguous");
+    for name in ["First.csproj", "Second.csproj"] {
+        std::fs::write(
+            dir.join(name),
+            "<Project><PropertyGroup><UseMaui>true</UseMaui></PropertyGroup></Project>",
+        )
+        .unwrap();
+    }
+
+    assert_eq!(detect_language(&dir), None);
+}
+
+#[test]
+fn detect_tauri_via_rust_manifest_and_config() {
+    let dir = tmp("tauri");
+    std::fs::create_dir_all(dir.join("src-tauri")).unwrap();
+    std::fs::write(
+        dir.join("src-tauri/Cargo.toml"),
+        "[package]\nname='sample'\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("src-tauri/tauri.conf.json"), "{}\n").unwrap();
+
+    assert_eq!(detect_language(&dir), Some(AppLanguage::Tauri));
+    let adapter = adapter_for(&dir).unwrap();
+    let identity = adapter.manifest_identity().unwrap();
+    assert_eq!(identity.language, "tauri");
+    assert_eq!(identity.format, "Cargo.toml");
+    assert_eq!(identity.relpath, "src-tauri/Cargo.toml");
+    assert!(
+        !adapter
+            .capabilities()
+            .contains(&mgc_types::capabilities::Capability::DependencyResolver)
+    );
 }
 
 #[test]
@@ -186,6 +280,8 @@ fn applanguage_as_str_values() {
     assert_eq!(AppLanguage::ReactNative.as_str(), "react-native");
     assert_eq!(AppLanguage::ObjC.as_str(), "objc");
     assert_eq!(AppLanguage::Multi.as_str(), "multi");
+    assert_eq!(AppLanguage::Maui.as_str(), "maui");
+    assert_eq!(AppLanguage::Tauri.as_str(), "tauri");
 }
 
 // ── PackageAdapter trait ───────────────────────────────────────────────────
@@ -261,7 +357,7 @@ async fn kotlin_resolve_fails_closed_toolchain_owned() {
 }
 
 #[tokio::test]
-async fn native_flutter_install_does_not_use_provider_resolution() {
+async fn native_flutter_empty_install_writes_mgc_lock_without_provider_resolution() {
     let dir = tmp("install-ok");
     std::fs::write(dir.join("pubspec.yaml"), "name: a\n").unwrap();
     let a = adapter_for(&dir).unwrap();
@@ -274,8 +370,8 @@ async fn native_flutter_install_does_not_use_provider_resolution() {
         "empty native graph should finish without provider tools: {result:?}"
     );
     assert!(
-        !dir.join("mgc.lock").exists(),
-        "an empty native graph should not create a meaningless lockfile"
+        dir.join("mgc.lock").is_file(),
+        "an empty native graph must write the lock required by dev freshness"
     );
     assert!(!dir.join("pubspec.lock").exists());
 }

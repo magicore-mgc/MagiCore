@@ -42,7 +42,7 @@ lockfile_hash = ""
 name = "lodash"
 version = "4.17.21"
 resolved = "https://registry.npmjs.org/lodash/-/lodash-4.17.21.tgz"
-integrity = "sha512-v2kDEe57lecTulaDIuNTPy3Ry4gLGJAR/9kM4xCoYpMDZ/LaWM/2nha+WamLbg=="
+integrity = "sha512-q6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urqw=="
 dependencies = []
 registry = "https://registry.npmjs.org"
 
@@ -88,7 +88,7 @@ async fn migrate_lock_v3_to_v4_emits_lossless_v4_with_round_trip() {
     .expect("lossless migration must emit v4");
     let text = fs::read_to_string(dir.path().join("mgc.lock")).unwrap();
     let doc = mgc_lockfile::canonical::parse_v4_document(&text).unwrap();
-    assert_eq!(doc.version, "4");
+    assert_eq!(doc.version, mgc_lockfile::v4::LOCKFILE_SCHEMA_V4);
     let pin = doc
         .packages
         .iter()
@@ -100,6 +100,15 @@ async fn migrate_lock_v3_to_v4_emits_lossless_v4_with_round_trip() {
             .and_then(|artifact| artifact.integrity_sri.as_deref())
             .is_some_and(|sri| sri.starts_with("sha512-")),
         "migrated v4 pin must carry installer SRI"
+    );
+    assert_eq!(
+        pin.artifact
+            .as_ref()
+            .and_then(|artifact| artifact.integrity_sri.as_deref()),
+        Some(
+            "sha512-q6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urqw=="
+        ),
+        "lossless V4 migration must preserve the source digest bytes"
     );
     let report = mgc_lockfile::policy::verify_v4_math(&doc).unwrap();
     assert!(report.digest_ok, "emitted digest must verify");

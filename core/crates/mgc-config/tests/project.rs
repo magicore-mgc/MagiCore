@@ -503,3 +503,74 @@ fn lib_scaffold_maps_go_dotnet_java_languages() {
         );
     }
 }
+
+#[test]
+fn script_grammar_pin_wins_over_default() {
+    use mgc_config::project::default_script_grammar;
+    let dir = temp_test_dir("grammar-pin");
+    std::fs::write(
+        dir.join("mgc.toml"),
+        "name = \"g\"\necosystem = \"web\"\n[script]\ngrammar = \"web-script-v9\"\n",
+    )
+    .unwrap();
+    let loaded = ProjectConfig::load(&dir).unwrap().unwrap();
+    // Pinned version returned verbatim so the caller can fail closed on it.
+    // (Pin trả nguyên văn để caller fail-closed đúng version đó.)
+    assert_eq!(loaded.script_grammar(), "web-script-v9");
+    assert_eq!(default_script_grammar("web"), "web-script-v1");
+    assert_eq!(default_script_grammar("ai"), "ai-script-v1");
+    assert_eq!(default_script_grammar("unknown-eco"), "web-script-v1");
+}
+
+#[test]
+fn script_grammar_absent_falls_back_to_ecosystem_default() {
+    let dir = temp_test_dir("grammar-absent");
+    std::fs::write(dir.join("mgc.toml"), "name = \"g\"\necosystem = \"ai\"\n").unwrap();
+    let loaded = ProjectConfig::load(&dir).unwrap().unwrap();
+    assert!(loaded.script.is_none());
+    assert_eq!(loaded.script_grammar(), "ai-script-v1");
+}
+
+#[test]
+fn lock_schema_defaults_to_v3_and_accepts_v4() {
+    let dir = temp_test_dir("lock-schema");
+    std::fs::write(dir.join("mgc.toml"), "name = \"g\"\necosystem = \"web\"\n").unwrap();
+    let loaded = ProjectConfig::load(&dir).unwrap().unwrap();
+    assert!(loaded.lock.is_none());
+
+    std::fs::write(
+        dir.join("mgc.toml"),
+        "name = \"g\"\necosystem = \"web\"\n[lock]\nschema = \"v4\"\n",
+    )
+    .unwrap();
+    let loaded = ProjectConfig::load(&dir).unwrap().unwrap();
+    assert_eq!(loaded.lock.unwrap().schema.as_deref(), Some("v4"));
+}
+
+#[test]
+fn omitted_execution_uses_constructor_defaults_across_primary_cores() {
+    for core in ["web", "ai", "app", "lib"] {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("mgc.toml"),
+            format!("name = \"probe\"\necosystem = \"{core}\"\n"),
+        )
+        .unwrap();
+        let loaded = ProjectConfig::load(dir.path()).unwrap().unwrap();
+        assert_eq!(
+            loaded.execution,
+            ProjectConfig::new("probe", core).execution
+        );
+    }
+}
+
+#[test]
+fn explicit_execution_profile_is_preserved_when_loading_nonweb_core() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("mgc.toml"),
+        "name = \"probe\"\necosystem = \"lib\"\n[execution]\narchitecture = \"custom\"\nlane = \"custom-lane\"\ncompatibility_layer = \"custom-runtime\"\n").unwrap();
+    let loaded = ProjectConfig::load(dir.path()).unwrap().unwrap();
+    assert_eq!(loaded.execution.architecture, "custom");
+    assert_eq!(loaded.execution.lane, "custom-lane");
+    assert_eq!(loaded.execution.compatibility_layer, "custom-runtime");
+}

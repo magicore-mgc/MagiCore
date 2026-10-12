@@ -96,6 +96,234 @@ fn github_actions_publish_job_uses_trusted_oidc_and_is_opt_in() {
 }
 
 #[test]
+fn github_actions_scaffold_declares_least_privilege_workflow_permissions() {
+    let root = tempfile::tempdir().unwrap();
+    crate::scaffold::processors::cicd::CicdProcessor::files(
+        root.path(),
+        "sample",
+        "github-actions",
+    )
+    .unwrap();
+    let workflow = std::fs::read_to_string(root.path().join(".github/workflows/ci.yml")).unwrap();
+    assert!(workflow.contains("permissions:\n  contents: read\n"));
+    assert!(workflow.contains("    permissions:\n      contents: read\n      id-token: write\n"));
+}
+
+#[test]
+fn cicd_cloud_provider_scaffolds_have_native_build_descriptors() {
+    let root = tempfile::tempdir().unwrap();
+    for (framework, path, marker) in [
+        ("aws", "buildspec.yml", "version: 0.2"),
+        ("gcp", "cloudbuild.yaml", "CLOUD_LOGGING_ONLY"),
+    ] {
+        assert!(crate::scaffold::processors::cicd::CicdProcessor::supports(
+            framework
+        ));
+        crate::scaffold::processors::cicd::CicdProcessor::files(root.path(), "sample", framework)
+            .unwrap();
+        let contents = std::fs::read_to_string(root.path().join(path)).unwrap();
+        assert!(
+            contents.contains(marker),
+            "{framework} descriptor is incomplete"
+        );
+    }
+}
+
+#[test]
+fn iot_board_identifiers_resolve_to_their_registered_generator() {
+    for (board, framework) in [
+        ("esp32", "esp32-rust"),
+        ("esp32c3", "esp32-rust"),
+        ("esp32s3", "esp32-rust"),
+        ("esp32dev", "platformio"),
+        ("nodemcu-32s", "platformio"),
+        ("nrf52dk_nrf52832", "zephyr-arm"),
+        ("stm32f4_disc", "zephyr-arm"),
+    ] {
+        assert_eq!(
+            crate::scaffold::processors::iot::IotProcessor::framework_for_board(board),
+            Some(framework),
+            "board {board}"
+        );
+        assert!(crate::scaffold::processors::iot::IotProcessor::supports(
+            board
+        ));
+    }
+    assert_eq!(
+        crate::scaffold::processors::iot::IotProcessor::default_board("platformio"),
+        Some("esp32dev")
+    );
+}
+
+#[test]
+fn zephyr_scaffold_contains_a_real_build_entrypoint() {
+    let root = tempfile::tempdir().unwrap();
+    crate::scaffold::processors::iot::IotProcessor::files(
+        root.path(),
+        "sample",
+        "zephyr-arm",
+        "nrf52dk_nrf52832",
+    )
+    .unwrap();
+    assert!(root.path().join("west.yml").is_file());
+    assert!(root.path().join("CMakeLists.txt").is_file());
+    assert!(root.path().join("prj.conf").is_file());
+    let source = std::fs::read_to_string(root.path().join("src/main.c")).unwrap();
+    assert!(source.contains("int main(void)"));
+}
+
+#[test]
+fn dotnet_web_scaffold_has_a_minimal_api_source_without_a_node_manifest() {
+    let root = tempfile::tempdir().unwrap();
+    let project = root.path().join("dotnet-web");
+    let mut config = crate::scaffold::processor::Scaffolder::infer_web_create_config(
+        "dotnet-webapi",
+        project.to_str().unwrap(),
+    )
+    .unwrap();
+    config.project_name = project.to_string_lossy().to_string();
+    let out = crate::scaffold::processor::Scaffolder::scaffold(&config).unwrap();
+    assert!(out.join("dotnet-web.csproj").is_file());
+    let source = std::fs::read_to_string(out.join("Program.cs")).unwrap();
+    assert!(source.contains("WebApplication.CreateBuilder"));
+    assert!(!out.join("package.json").exists());
+}
+
+#[test]
+fn split_fullstack_presets_have_frontend_and_backend_source_fallbacks() {
+    let root = tempfile::tempdir().unwrap();
+    for (framework, frontend, backend_source) in [
+        ("react-fastify", "src/App.tsx", "server/src/server.js"),
+        (
+            "react-spring",
+            "src/App.tsx",
+            "server/src/main/java/App.java",
+        ),
+        ("vue-laravel", "src/App.vue", "server/public/index.php"),
+    ] {
+        let project = root.path().join(framework);
+        let config = crate::scaffold::processor::Scaffolder::infer_web_create_config(
+            framework,
+            project.to_str().unwrap(),
+        )
+        .unwrap();
+        let out = crate::scaffold::processor::Scaffolder::scaffold(&config).unwrap();
+        assert!(out.join(frontend).is_file(), "{framework} frontend");
+        assert!(out.join(backend_source).is_file(), "{framework} backend");
+    }
+}
+
+#[test]
+fn node_web_backend_fallbacks_generate_servers_and_framework_tests() {
+    let root = tempfile::tempdir().unwrap();
+    for (framework, source_file, framework_marker) in [
+        ("fastify", "src/app.js", "Fastify"),
+        ("hono", "src/app.js", "Hono"),
+        ("nestjs", "src/app.module.js", "AppModule"),
+        ("trpc", "src/router.js", "appRouter"),
+    ] {
+        let project = root.path().join(format!("{framework}-fallback"));
+        let config = ScaffoldConfig {
+            core: "web".to_string(),
+            sub_type: "backend".to_string(),
+            frameworks: vec!["node".to_string(), framework.to_string()],
+            project_name: project.to_string_lossy().to_string(),
+            features: vec![],
+            // Force the offline/missing-layer fallback used on a fresh install.
+            // (Buộc vào fallback thiếu template layer như máy mới/offline.)
+            template_dir: root.path().join("missing-template-layer").join(framework),
+        };
+
+        let out = Scaffolder::scaffold(&config).unwrap();
+        let server = std::fs::read_to_string(out.join("src/server.js")).unwrap();
+        let framework_source = std::fs::read_to_string(out.join(source_file)).unwrap();
+        let test = std::fs::read_to_string(out.join("test/scaffold.test.cjs")).unwrap();
+        let package: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(out.join("package.json")).unwrap()).unwrap();
+
+        assert!(
+            server.contains("process.env.PORT"),
+            "{framework} honors MGC dev port"
+        );
+        assert!(server.contains("127.0.0.1"), "{framework} binds loopback");
+        assert!(
+            framework_source.contains(framework_marker),
+            "{framework} source is real"
+        );
+        assert!(
+            test.contains("node:test"),
+            "{framework} includes a runtime test"
+        );
+        assert_eq!(
+            package["scripts"]["build"], "node --check src/server.js",
+            "{framework} exposes a real Node syntax-check build"
+        );
+        assert!(
+            !server.contains("service ready on 127.0.0.1:4315"),
+            "{framework} must not use a print-only placeholder"
+        );
+    }
+}
+
+#[test]
+fn cloudflare_scaffold_has_worker_entry_source() {
+    let root = tempfile::tempdir().unwrap();
+    crate::scaffold::processors::clo::CloProcessor::files(root.path(), "worker-demo", "cloudflare")
+        .unwrap();
+    let wrangler = std::fs::read_to_string(root.path().join("wrangler.toml")).unwrap();
+    assert!(wrangler.contains("main = \"src/index.ts\""));
+    assert!(root.path().join("src/index.ts").is_file());
+}
+
+#[test]
+fn godot_and_unreal_scaffolds_contain_engine_source() {
+    let root = tempfile::tempdir().unwrap();
+    let godot = root.path().join("godot");
+    crate::scaffold::processors::game::GameProcessor::files(&godot, "godot-demo", "godot").unwrap();
+    assert!(godot.join("Main.gd").is_file());
+    assert!(
+        std::fs::read_to_string(godot.join("Main.tscn"))
+            .unwrap()
+            .contains("res://Main.gd")
+    );
+
+    let unreal = root.path().join("unreal");
+    crate::scaffold::processors::game::GameProcessor::files(&unreal, "unreal-demo", "unreal")
+        .unwrap();
+    let descriptor: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(unreal.join("unreal-demo.uproject")).unwrap())
+            .unwrap();
+    assert_eq!(descriptor["Modules"][0]["Name"], "MagiCoreGame");
+    assert!(
+        unreal
+            .join("Source/MagiCoreGame/MagiCoreGame.cpp")
+            .is_file()
+    );
+    assert!(
+        unreal
+            .join("Source/MagiCoreGame/MagiCoreGame.Build.cs")
+            .is_file()
+    );
+}
+
+#[test]
+fn java_and_dotnet_library_scaffolds_include_library_source() {
+    let root = tempfile::tempdir().unwrap();
+    for framework in ["java", "dotnet"] {
+        let project = root.path().join(framework);
+        crate::scaffold::processors::lib::LibProcessor::files(&project, "sample-lib", framework)
+            .unwrap();
+        let source = if framework == "java" {
+            project.join("src/main/java/dev/magicore/Library.java")
+        } else {
+            project.join("Class1.cs")
+        };
+        assert!(source.is_file(), "{framework} source file");
+        assert!(!std::fs::read_to_string(source).unwrap().trim().is_empty());
+    }
+}
+
+#[test]
 fn web_scaffold_adds_a_native_smoke_test_when_template_has_no_test_script() {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(
@@ -191,6 +419,47 @@ fn web_scaffold_smoke_test_accepts_typescript_node_entrypoints() {
         "TypeScript Node entrypoints should satisfy the scaffold smoke test: {}",
         String::from_utf8_lossy(&output.stdout)
     );
+}
+
+#[test]
+fn web_scaffold_smoke_test_accepts_framework_entrypoints() {
+    if std::process::Command::new("node")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        eprintln!("skipped: Node.js is required to execute the generated web smoke test");
+        return;
+    }
+
+    for entry in [
+        "app.vue",
+        "pages/index.vue",
+        "src/pages/index.astro",
+        "src/routes/+page.svelte",
+        "src/root.tsx",
+        "app/page.tsx",
+        "app/page.jsx",
+        "src/app/page.jsx",
+        "app/routes/_index.tsx",
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let entry_path = root.path().join(entry);
+        std::fs::create_dir_all(entry_path.parent().unwrap()).unwrap();
+        std::fs::write(&entry_path, "// generated framework entrypoint\n").unwrap();
+        Scaffolder::ensure_web_test_runner(root.path(), "sample").unwrap();
+
+        let output = std::process::Command::new("node")
+            .args(["--test", "test/scaffold.test.cjs"])
+            .current_dir(root.path())
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "framework entrypoint {entry} should pass the generated smoke test: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+    }
 }
 
 #[test]
@@ -323,6 +592,78 @@ fn swift_scaffold_has_a_real_test_target() {
     let tests =
         std::fs::read_to_string(target.join("Tests/MagiCoreAppTests/AppTests.swift")).unwrap();
     assert!(tests.contains("XCTAssertEqual(greeting(), \"MagiCore Swift app scaffold\")"));
+}
+
+#[test]
+fn maui_scaffold_has_project_and_xaml_entrypoints() {
+    let root = tempfile::tempdir().unwrap();
+    let target = root.path().join("maui-demo");
+
+    crate::scaffold::processors::app::AppProcessor::files(&target, "maui-demo", "maui").unwrap();
+
+    let project = std::fs::read_to_string(target.join("maui-demo.csproj")).unwrap();
+    assert!(project.contains("<UseMaui>true</UseMaui>"));
+    assert!(target.join("MauiProgram.cs").is_file());
+    assert!(target.join("App.xaml").is_file());
+    assert!(target.join("App.xaml.cs").is_file());
+    assert!(target.join("MainPage.xaml").is_file());
+    assert!(target.join("MainPage.xaml.cs").is_file());
+}
+
+#[test]
+fn tauri_scaffold_has_frontend_rust_and_v2_config() {
+    let root = tempfile::tempdir().unwrap();
+    let target = root.path().join("tauri-demo");
+
+    crate::scaffold::processors::app::AppProcessor::files(&target, "tauri-demo", "tauri").unwrap();
+
+    let package: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(target.join("package.json")).unwrap()).unwrap();
+    let tauri: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(target.join("src-tauri/tauri.conf.json")).unwrap())
+            .unwrap();
+    assert_eq!(package["name"], "tauri-demo");
+    assert!(target.join("src/main.js").is_file());
+    assert!(target.join("dist/index.html").is_file());
+    assert!(target.join("src-tauri/Cargo.toml").is_file());
+    assert!(target.join("src-tauri/src/main.rs").is_file());
+    assert_eq!(tauri["build"]["frontendDist"], "../dist");
+}
+
+#[test]
+fn react_native_scaffold_has_expo_package_and_registered_entrypoint() {
+    let root = tempfile::tempdir().unwrap();
+    let target = root.path().join("native-demo");
+
+    crate::scaffold::processors::app::AppProcessor::files(&target, "native-demo", "react-native")
+        .unwrap();
+
+    let package: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(target.join("package.json")).unwrap()).unwrap();
+    let config: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(target.join("app.json")).unwrap()).unwrap();
+    assert_eq!(package["name"], "native-demo");
+    assert_eq!(package["dependencies"]["expo"], "~57.0.27");
+    assert_eq!(package["dependencies"]["react-native"], "0.86.3");
+    assert_eq!(package["scripts"]["start"], "expo start");
+    assert_eq!(config["expo"]["slug"], "native-demo");
+    assert!(target.join("index.js").is_file());
+    assert!(target.join("App.js").is_file());
+}
+
+#[test]
+fn unknown_app_framework_does_not_silently_generate_flutter() {
+    let root = tempfile::tempdir().unwrap();
+    let target = root.path().join("unknown-app");
+
+    let result = crate::scaffold::processors::app::AppProcessor::files(
+        &target,
+        "unknown-app",
+        "not-a-framework",
+    );
+
+    assert!(result.is_err());
+    assert!(!target.join("pubspec.yaml").exists());
 }
 
 #[test]

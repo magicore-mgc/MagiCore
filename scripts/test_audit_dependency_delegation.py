@@ -2460,6 +2460,36 @@ class RepoLedgerContract(unittest.TestCase):
         ):
             self.assertIn(token, function_body)
 
+    def test_managed_rust_build_has_reviewed_offline_executor_boundary(self):
+        # Bind the reviewed route to its source/preflight invariants.
+        # Khóa route đã review với source và preflight hiện hành.
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        rel = "cli/src/commands/build/web_engine.rs"
+        with open(os.path.join(repo_root, rel), encoding="utf-8") as handle:
+            source = handle.read()
+        start = source.index("pub(crate) fn build_rust_with_managed_source(")
+        body = source[start:source.index("\n}\n", start) + 2]
+        for token in ('"--locked"', '"--offline"', 'source.crates-io.replace-with=',
+                      'source.mgc-managed.directory=', 'ExecutionScope::BuildRunner',
+                      'mgc_exec::prelude::run("cargo", &args, &opts)'):
+            self.assertIn(token, body)
+        with open(os.path.join(repo_root, "cli/src/commands/build.rs"), encoding="utf-8") as handle:
+            caller = handle.read()
+        start = caller.index("async fn build_lib(")
+        caller = caller[start:caller.index("\n}\n", start) + 2]
+        freshness = caller.index("check_lib_cargo_freshness(root)?")
+        verify = caller.index("cargo_compat::validate_build(root)?")
+        launch = caller.index("build_rust_with_managed_source(root,")
+        self.assertLess(freshness, verify)
+        self.assertLess(verify, launch)
+        findings = [row for row in gate.scan_file(rel, os.path.join(repo_root, rel))
+                    if row["function"] == "build_rust_with_managed_source"]
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["status"], "allowed")
+        direct = scan_snippet(rel, 'fn build_rust_with_managed_source() {\n'
+                              'std::process::Command::new("cargo").status();\n}\n')
+        self.assertEqual(direct[0]["status"], "violation")
+
     def test_direct_spawn_in_a_delegated_function_does_not_inherit_its_route(self):
         findings = scan_snippet(
             "cli/src/commands/build/web_engine.rs",

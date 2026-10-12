@@ -236,6 +236,17 @@ fn multi_language_without_a_recognized_manifest_fails_closed() {
 }
 
 #[test]
+fn maui_and_tauri_manifest_parsing_fail_with_explicit_unsupported_result() {
+    let dir = tmp("unsupported-native-app-manifests");
+    for language in [AppLanguage::Maui, AppLanguage::Tauri] {
+        assert!(matches!(
+            parse_manifest(language, &dir),
+            Err(mgc_types::MgError::Unsupported { .. })
+        ));
+    }
+}
+
+#[test]
 fn parse_multi_detects_flutter() {
     let dir = tmp("multi-flutter");
     std::fs::write(dir.join("pubspec.yaml"), "name: multiapp\n").unwrap();

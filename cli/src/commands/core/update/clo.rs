@@ -3,7 +3,6 @@
 use anyhow::Result;
 
 use super::super::shared;
-use mgc_types::Ecosystem;
 
 pub async fn update(
     packages: Vec<String>,
@@ -18,6 +17,6 @@ pub async fn update(
         crate::commands::dep_gate::DepOp::Update,
         compat_runtime.as_deref(),
     )?;
-    let adapter = shared::core_adapter(&Ecosystem::Cloud);
+    let adapter = shared::cloud_adapter(&root)?;
     shared::update(&*adapter, &root, packages, install).await
 }

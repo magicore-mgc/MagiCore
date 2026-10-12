@@ -338,6 +338,23 @@ fn test_publish_lifecycle_requires_explicit_opt_in_flag() {
 }
 
 #[test]
+fn native_game_cloud_and_iot_install_commands_parse_frozen() {
+    for command in [
+        ["mgc", "install-game", "--frozen"],
+        ["mgc", "install-clo", "--frozen"],
+        ["mgc", "install-iot", "--frozen"],
+    ] {
+        let parsed = Cli::try_parse_from(command).unwrap();
+        match parsed.command.unwrap() {
+            Commands::InstallGame { frozen, .. }
+            | Commands::InstallClo { frozen, .. }
+            | Commands::InstallIot { frozen, .. } => assert!(frozen),
+            _ => panic!("expected a frozen native install command"),
+        }
+    }
+}
+
+#[test]
 fn trusted_publish_and_signature_audit_cli_arguments_parse() {
     let publish = Cli::try_parse_from(["mgc", "publish", "--trusted", "--dry-run"]).unwrap();
     match publish.command.unwrap() {
@@ -643,10 +660,12 @@ fn test_dev_command_accepts_host_and_port() {
             port,
             clear: _,
             compat_runtime,
+            compat_runner,
         } => {
             assert_eq!(host.as_deref(), Some("127.0.0.1"));
             assert_eq!(port, Some(4315));
             assert!(compat_runtime.is_none());
+            assert!(compat_runner.is_none());
         }
         _ => panic!("expected dev command"),
     }
@@ -688,5 +707,17 @@ fn test_workspace_list_parses_filter_and_json() {
             }
         },
         _ => panic!("expected workspace command"),
+    }
+}
+
+#[test]
+fn test_dev_accepts_compat_runner_flag() {
+    let cli = Cli::try_parse_from(["mgc", "dev", "--compat-runner", "npm"]).unwrap();
+
+    match cli.command.unwrap() {
+        Commands::Dev { compat_runner, .. } => {
+            assert_eq!(compat_runner.as_deref(), Some("npm"));
+        }
+        _ => panic!("expected dev command"),
     }
 }

@@ -2,13 +2,95 @@
 //! (passthrough run: dry-run, audit log, không shell injection, fail → bail kèm log trích)
 
 use crate::allowlist::FORBIDDEN_TOOLS;
-use crate::audit::{AuditEntry, append, now_ts};
+use crate::audit::{
+    AuditEntry, NativeChildDenial, append, append_compat_child, append_compat_scope,
+    append_native_child_denial, now_ts,
+};
 use crate::sanitizer::redact_args;
 use anyhow::{Context, Result, bail};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
+
+/// Process-wide shutdown request (Spec rev4 §16.3 — decided): SIGINT/SIGTERM
+/// ask every running exec tree to terminate instead of dying mid-write with
+/// orphaned children. Set once per process; embedders and tests can also
+/// drive it directly.
+/// (Yêu cầu dừng toàn process (Spec rev4 §16.3 — đã chốt): SIGINT/SIGTERM
+/// yêu cầu mọi cây exec đang chạy terminate thay vì chết giữa chừng, bỏ
+/// orphan. Bật một lần mỗi process; embedder và test cũng lái trực tiếp được.)
+static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+/// Install async-signal-safe SIGINT/SIGTERM handlers (unix only) that only
+/// flip the shutdown flag — no I/O, no locks inside the handler.
+/// (Cài handler SIGINT/SIGTERM async-signal-safe (chỉ unix) chỉ bật cờ
+/// shutdown — không I/O, không lock trong handler.)
+pub fn ensure_signal_handlers() {
+    static INSTALL: std::sync::Once = std::sync::Once::new();
+    INSTALL.call_once(|| {
+        #[cfg(unix)]
+        {
+            // SAFETY: `signal` with a handler that only performs a lock-free
+            // atomic store is async-signal-safe; installed once per process.
+            // (AN TOÀN: `signal` với handler chỉ store atomic lock-free là
+            // async-signal-safe; cài một lần mỗi process.)
+            #[allow(unsafe_code)]
+            unsafe {
+                extern "C" fn flag_shutdown(_signal: libc::c_int) {
+                    SHUTDOWN_REQUESTED.store(true, Ordering::SeqCst);
+                }
+                libc::signal(libc::SIGINT, flag_shutdown as *const () as usize);
+                libc::signal(libc::SIGTERM, flag_shutdown as *const () as usize);
+            }
+        }
+        // Windows: install a console control handler that only flips the
+        // shutdown flag; teardown stays in the wait loop. NOT
+        // compiler-verified on this host (no Windows toolchain) — the CI
+        // Windows lane must cover it.
+        // (Windows: cài console control handler chỉ bật cờ shutdown; teardown
+        // vẫn ở vòng chờ. CHƯA biên dịch kiểm chứng local (không có toolchain
+        // Windows) — lane CI Windows phải cover.)
+        #[cfg(windows)]
+        {
+            // SAFETY: the handler performs a single lock-free atomic store
+            // and returns immediately; console handlers must not block.
+            // (AN TOÀN: handler chỉ store atomic lock-free rồi trả ngay;
+            // handler console không được block.)
+            #[allow(unsafe_code)]
+            unsafe {
+                unsafe extern "system" fn flag_shutdown_console(_ctrl: u32) -> i32 {
+                    SHUTDOWN_REQUESTED.store(true, Ordering::SeqCst);
+                    windows_sys::Win32::Foundation::TRUE
+                }
+                let _ = windows_sys::Win32::System::Console::SetConsoleCtrlHandler(
+                    Some(flag_shutdown_console),
+                    windows_sys::Win32::Foundation::TRUE,
+                );
+            }
+        }
+    });
+}
+
+/// Drive a shutdown request directly (tests, embedders).
+/// (Lái yêu cầu dừng trực tiếp (test, embedder).)
+pub fn request_shutdown() {
+    SHUTDOWN_REQUESTED.store(true, Ordering::SeqCst);
+}
+
+/// Clear a shutdown request after the owning supervisor has reaped its process tree.
+/// Tests also use this to reset the process-global flag between cases.
+/// (Xóa cờ dừng sau khi supervisor đã thu hồi cây process; test cũng dùng để reset giữa case.)
+pub fn clear_shutdown() {
+    SHUTDOWN_REQUESTED.store(false, Ordering::SeqCst);
+}
+
+/// True after SIGINT/SIGTERM or a direct request.
+/// (Đúng sau SIGINT/SIGTERM hoặc yêu cầu trực tiếp.)
+pub fn shutdown_requested() -> bool {
+    SHUTDOWN_REQUESTED.load(Ordering::SeqCst)
+}
 
 const DEFAULT_EXEC_TIMEOUT_SECS: u64 = 1800;
 const EXEC_TIMEOUT_ENV: &str = "MGC_EXEC_TIMEOUT_SECS";
@@ -144,6 +226,25 @@ pub struct ExecOptions {
     /// authorizes Bun/Deno or an external package manager.
     /// Trường cũ đã deprecated; executor bỏ qua và không cấp quyền spawn.
     pub compat_runtime: Option<String>,
+    /// Declared `--compat-runner` manager (lowercase basename, qualified).
+    /// Native-deny still applies to every other tool; this runner's own
+    /// invocation opens a named subtree scope; the scope decision is audited
+    /// before spawn and the root command remains in the normal audit record.
+    /// Runner compat đã khai báo (basename lowercase, qualified).
+    /// Native-deny vẫn áp mọi tool khác; scope của runner được ghi audit
+    /// trước spawn và command gốc vẫn có dòng audit bình thường.
+    pub compat_runner: Option<String>,
+    /// Verified exception manifest consulted for exact read-only probes
+    /// (Spec rev4 §5/§7). `None` keeps pure native-deny.
+    /// Manifest exception đã xác minh để tra probe đọc chính xác
+    /// (Spec rev4 §5/§7). `None` giữ native-deny thuần.
+    pub policy_manifest: Option<crate::policy_manifest::PolicyManifest>,
+    /// Lane context for manifest lookup (framework/version/os/operation).
+    /// Ngữ cảnh lane để tra manifest (framework/version/os/operation).
+    pub policy_context: Option<crate::policy::PolicyContext>,
+    /// Active machine-local profile for the exact lane tuple and lock digest.
+    /// Profile máy hiệu lực cho đúng lane tuple và digest lock.
+    pub policy_profile: Option<crate::policy::LaneProfile>,
 }
 
 /// Kết quả chạy — args trong report ĐÃ redact (không lộ secret).
@@ -231,20 +332,162 @@ fn resolve_windows_shim(cmd: &str, search_path: Option<&std::ffi::OsStr>) -> std
     find_windows_command(cmd, search_path).unwrap_or_else(|| OsString::from(cmd))
 }
 
-/// Chạy `cmd args` sau khi check allowlist. Không dùng shell — args là Vec riêng (§5.6).
-pub fn run(cmd: &str, args: &[String], opts: &ExecOptions) -> Result<ExecReport> {
+/// Exact-manifest consultation (Spec rev4 §5/§7): true when the verified
+/// manifest holds this precise invocation for the caller-supplied lane
+/// context. Lifts only the name-based deny — verb and script guards still
+/// run, and profile binding for profiled lanes is enforced by the caller
+/// through `policy::resolve`.
+/// (Tra manifest chính xác (Spec rev4 §5/§7): đúng khi manifest đã xác minh
+/// chứa đúng invocation này cho ngữ cảnh lane caller đưa. Chỉ gỡ deny theo
+/// tên — guard verb và script vẫn chạy, ràng buộc profile cho lane đã profile
+/// do caller thực thi qua `policy::resolve`.)
+fn manifest_exception_allows(cmd: &str, args: &[String], opts: &ExecOptions) -> bool {
+    let (Some(manifest), Some(ctx)) = (opts.policy_manifest.as_ref(), opts.policy_context.as_ref())
+    else {
+        return false;
+    };
+    let Some(profile) = opts.policy_profile.as_ref() else {
+        return false;
+    };
+    let Some(exception) = crate::policy_manifest::find_exception(
+        manifest,
+        cmd,
+        args,
+        &ctx.framework,
+        &ctx.version,
+        &ctx.os,
+        &ctx.operation,
+    ) else {
+        return false;
+    };
+    matches!(
+        crate::policy::resolve(
+            &crate::policy::PolicyMode::Native,
+            &crate::policy::Invocation {
+                program: cmd.to_string(),
+                args: args.to_vec(),
+                env: opts.env.clone(),
+                in_compat_subtree: false,
+            },
+            Some(profile),
+            Some(&exception),
+        ),
+        crate::policy::PolicyDecision::Allow
+    )
+}
+
+/// MGC-answered probe short-circuit (Spec rev4 §5): exact probes MGC can
+/// answer itself return without spawning anything, audited like a spawn.
+/// Mirrors the clean-env PATH deny shim answering `npm --version`.
+/// (Ngắt probe do MGC tự trả lời (Spec rev4 §5): probe chính xác MGC tự trả
+/// lời được thì trả về không spawn, audit như spawn. Mirror PATH deny shim
+/// trả lời `npm --version`.)
+fn self_answered_report(
+    cmd: &str,
+    args: &[String],
+    opts: &ExecOptions,
+    answer: &str,
+) -> Result<ExecReport> {
+    let cwd = opts
+        .cwd
+        .clone()
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    let report = ExecReport {
+        cmd: cmd.to_string(),
+        args: args.to_vec(),
+        exit_code: 0,
+        duration_ms: 0,
+        stdout_tail: answer.to_string(),
+        stderr_tail: String::new(),
+        stdout_full: String::new(),
+        dry_run: false,
+    };
+    if let Some(path) = &opts.log_path {
+        append(path, &entry_from(&report, &cwd))?;
+    }
+    Ok(report)
+}
+
+/// Compat-runner exemption for the declared runner itself (Spec rev4 §7).
+/// When `--compat-runner <manager>` names this exact basename, the three
+/// pre-spawn name/verb guards are skipped for this invocation only — its
+/// subtree runs under the compat audit-only monitor and the spawn is
+/// warning-logged. Every other tool keeps native-deny.
+/// (Miễn trừ compat cho đúng runner đã khai báo (Spec rev4 §7). Khi
+/// `--compat-runner <manager>` nêu đúng basename này, ba guard tên/verb
+/// trước spawn được bỏ qua chỉ cho invocation này — subtree của nó chịu
+/// monitor audit-only compat và lần spawn được log cảnh báo. Mọi tool khác
+/// giữ native-deny.)
+pub(crate) fn compat_runner_exempt(cmd: &str, opts: &ExecOptions) -> bool {
+    compat_runner_declared(cmd, opts)
+}
+
+pub(super) fn compat_runner_declared(cmd: &str, opts: &ExecOptions) -> bool {
+    crate::allowlist::compat_runner_allows(cmd, opts.compat_runner.as_deref())
+}
+
+pub(super) fn check_invocation_policy(
+    cmd: &str,
+    args: &[String],
+    opts: &ExecOptions,
+) -> Result<Option<String>> {
+    // Dependency mutation policy has precedence over runtime allowlist and
+    // read-only exceptions, regardless of the requested execution scope.
+    // (Mutation dependency ưu tiên cao hơn allowlist runtime và exception đọc,
+    // bất kể scope được yêu cầu.)
+    reject_external_dependency_resolution(cmd, args, &opts.env)?;
+    if let Some(answer) = crate::policy::self_answer_for(cmd, args) {
+        return Ok(Some(answer));
+    }
     let scope = opts
         .execution_scope
         .unwrap_or(crate::allowlist::ExecutionScope::Install);
-    crate::allowlist::check_tool_with_scope_compat(
-        cmd,
-        scope,
-        opts.cwd.as_deref(),
-        opts.compat_runtime.as_deref(),
-    )?;
-    reject_external_dependency_resolution(cmd, args, &opts.env)?;
+    if !manifest_exception_allows(cmd, args, opts) {
+        crate::allowlist::check_tool_with_scope_compat(
+            cmd,
+            scope,
+            opts.cwd.as_deref(),
+            opts.compat_runtime.as_deref(),
+        )?;
+    }
     reject_forbidden_script_file(cmd)?;
-    execute_command(cmd, args, opts, OutputMode::Capture)
+    Ok(None)
+}
+
+/// Chạy `cmd args` sau khi check allowlist. Không dùng shell — args là Vec riêng (§5.6).
+pub fn run(cmd: &str, args: &[String], opts: &ExecOptions) -> Result<ExecReport> {
+    if !compat_runner_exempt(cmd, opts)
+        && let Some(answer) = check_invocation_policy(cmd, args, opts)?
+    {
+        return self_answered_report(cmd, args, opts, &answer);
+    }
+    execute_command(cmd, args, opts, OutputMode::Capture, None, true)
+}
+
+/// Run a preflighted parallel task with the shared process-tree monitor.
+/// Chạy task song song đã preflight qua monitor cây tiến trình dùng chung.
+pub(super) fn run_cancellable_capture(
+    cmd: &str,
+    args: &[String],
+    opts: &ExecOptions,
+    cancel_flag: &AtomicBool,
+) -> Result<ExecReport> {
+    if cancel_flag.load(Ordering::SeqCst) {
+        bail!("execution cancelled by its supervisor before preflight");
+    }
+    if !compat_runner_exempt(cmd, opts)
+        && let Some(answer) = check_invocation_policy(cmd, args, opts)?
+    {
+        return self_answered_report(cmd, args, opts, &answer);
+    }
+    execute_command(
+        cmd,
+        args,
+        opts,
+        OutputMode::Capture,
+        Some(cancel_flag),
+        false,
+    )
 }
 
 /// Run an allowlisted tool with inherited stdio for streaming commands.
@@ -252,28 +495,60 @@ pub fn run(cmd: &str, args: &[String], opts: &ExecOptions) -> Result<ExecReport>
 /// Chạy tool allowlist với stdio trực tiếp cho lệnh streaming.
 /// Trên Unix, session riêng không kế thừa `/dev/tty` hoặc job control.
 pub fn run_inherited(cmd: &str, args: &[String], opts: &ExecOptions) -> Result<ExecReport> {
-    let scope = opts
-        .execution_scope
-        .unwrap_or(crate::allowlist::ExecutionScope::Install);
-    crate::allowlist::check_tool_with_scope_compat(
-        cmd,
-        scope,
-        opts.cwd.as_deref(),
-        opts.compat_runtime.as_deref(),
-    )?;
-    reject_external_dependency_resolution(cmd, args, &opts.env)?;
-    reject_forbidden_script_file(cmd)?;
-    execute_command(cmd, args, opts, OutputMode::Inherit)
+    run_inherited_with_cancel(cmd, args, opts, None)
+}
+
+/// Run an allowlisted tool with inherited stdio and supervisor cancellation.
+/// Chạy tool allowlist với stdio trực tiếp và hỗ trợ supervisor hủy process tree.
+pub fn run_inherited_cancellable(
+    cmd: &str,
+    args: &[String],
+    opts: &ExecOptions,
+    cancel_flag: &AtomicBool,
+) -> Result<ExecReport> {
+    run_inherited_with_cancel(cmd, args, opts, Some(cancel_flag))
+}
+
+fn run_inherited_with_cancel(
+    cmd: &str,
+    args: &[String],
+    opts: &ExecOptions,
+    cancel_flag: Option<&AtomicBool>,
+) -> Result<ExecReport> {
+    if !compat_runner_exempt(cmd, opts)
+        && let Some(answer) = check_invocation_policy(cmd, args, opts)?
+    {
+        return self_answered_report(cmd, args, opts, &answer);
+    }
+    execute_command(cmd, args, opts, OutputMode::Inherit, cancel_flag, true)
 }
 
 /// Reject package-manager operations and require offline/frozen modes for
 /// compiler drivers that also resolve dependencies. This is a guardrail, not
 /// a claim that executing arbitrary project code is an OS sandbox.
-fn reject_external_dependency_resolution(
+pub(crate) fn reject_external_dependency_resolution(
     command: &str,
     args: &[String],
     env: &[(String, String)],
 ) -> Result<()> {
+    if let Some(reason) = dependency_resolution_deny_reason(command, args, env) {
+        anyhow::bail!("external dependency resolution blocked: {reason}");
+    }
+    Ok(())
+}
+
+/// Shared verb classifier: the single source of truth for "does this
+/// invocation resolve/fetch/publish dependencies" (Spec rev4 §7 row 4).
+/// Both enforcement (`reject_external_dependency_resolution`) and the policy
+/// resolver (`policy::is_mutation_invocation`) consult it — no mirrors.
+/// (Bộ phân loại verb dùng chung: nguồn chân lý duy nhất cho "invocation này
+/// có resolve/tải/publish dependency không" (Spec rev4 §7 hàng 4). Cả
+/// enforcement lẫn policy resolver đều hỏi nó — không mirror.)
+pub(crate) fn dependency_resolution_deny_reason(
+    command: &str,
+    args: &[String],
+    env: &[(String, String)],
+) -> Option<String> {
     let mut tool = process_basename(command);
     if tool.starts_with("python") {
         tool = "python".to_string();
@@ -431,13 +706,15 @@ fn reject_external_dependency_resolution(
         "mvn" | "mvnw" if !has("-o") && !has("--offline") => {
             Some("Maven commands must include offline mode (-o)")
         }
+        "zig" if args == ["version"] => None,
+        "zig" if args.len() == 2 && args[0] == "run" && args[1].ends_with(".zig") => None,
+        "zig" => Some(
+            "Zig package/build commands are blocked; only direct source execution is allowed through mgc-exec",
+        ),
         _ => None,
     };
 
-    if let Some(reason) = reason {
-        anyhow::bail!("external dependency resolution blocked: {reason}");
-    }
-    Ok(())
+    reason.map(str::to_string)
 }
 
 fn has_module(args: &[String], module: &str) -> bool {
@@ -524,7 +801,7 @@ fn first_command(args: &[String]) -> (&str, &str) {
 /// Run a concrete project/package binary path with guardrails but without static tool allowlist.
 /// Chạy binary cụ thể đã định vị trong project/cache, vẫn có clean env + blocker + audit.
 pub fn run_project_binary(path: &Path, args: &[String], opts: &ExecOptions) -> Result<ExecReport> {
-    execute_project_binary(path, args, opts, OutputMode::Capture)
+    execute_project_binary(path, args, opts, OutputMode::Capture, None)
 }
 
 /// Run a concrete project/package binary path with inherited stdio.
@@ -534,7 +811,18 @@ pub fn run_project_binary_inherited(
     args: &[String],
     opts: &ExecOptions,
 ) -> Result<ExecReport> {
-    execute_project_binary(path, args, opts, OutputMode::Inherit)
+    execute_project_binary(path, args, opts, OutputMode::Inherit, None)
+}
+
+/// Run a project binary with inherited stdio and supervisor cancellation.
+/// Chạy binary project với stdio trực tiếp và hỗ trợ supervisor hủy process tree.
+pub fn run_project_binary_inherited_cancellable(
+    path: &Path,
+    args: &[String],
+    opts: &ExecOptions,
+    cancel_flag: &AtomicBool,
+) -> Result<ExecReport> {
+    execute_project_binary(path, args, opts, OutputMode::Inherit, Some(cancel_flag))
 }
 
 fn execute_project_binary(
@@ -542,6 +830,7 @@ fn execute_project_binary(
     args: &[String],
     opts: &ExecOptions,
     mode: OutputMode,
+    cancel_flag: Option<&AtomicBool>,
 ) -> Result<ExecReport> {
     let canonical = path.canonicalize().map_err(|e| {
         anyhow::anyhow!("project binary '{}' is not executable: {e}", path.display())
@@ -551,18 +840,46 @@ fn execute_project_binary(
     }
 
     let basename = process_basename(&canonical.display().to_string());
-    if FORBIDDEN_TOOLS.contains(&basename.as_str()) {
-        bail!(
-            "project binary '{}' resolves to forbidden package manager '{}'",
-            canonical.display(),
-            basename
-        );
+    let compat_exempt = compat_runner_exempt(&canonical.display().to_string(), opts);
+    // Self-answered probes return before any deny (any program, like run()).
+    // (Probe tự trả lời trả về trước mọi deny (mọi program, như run()).)
+    if !compat_exempt
+        && let Some(answer) = crate::policy::self_answer_for(&canonical.display().to_string(), args)
+    {
+        return self_answered_report(&canonical.display().to_string(), args, opts, &answer);
+    }
+    if !compat_exempt && FORBIDDEN_TOOLS.contains(&basename.as_str()) {
+        // Exact manifest exceptions lift only the name-based deny (verb and
+        // script guards below still run).
+        // (Exception manifest chính xác chỉ gỡ deny theo tên (guard verb và
+        // script dưới vẫn chạy).)
+        if manifest_exception_allows(&canonical.display().to_string(), args, opts) {
+            eprintln!(
+                "WARNING: exact policy exception permits '{}'; verb and script guards still apply (audit-logged)",
+                canonical.display()
+            );
+        } else {
+            bail!(
+                "project binary '{}' resolves to forbidden package manager '{}'",
+                canonical.display(),
+                basename
+            );
+        }
     }
 
-    reject_external_dependency_resolution(&canonical.display().to_string(), args, &opts.env)?;
+    if !compat_exempt {
+        reject_external_dependency_resolution(&canonical.display().to_string(), args, &opts.env)?;
 
-    reject_forbidden_script_file(&canonical.display().to_string())?;
-    execute_command(&canonical.display().to_string(), args, opts, mode)
+        reject_forbidden_script_file(&canonical.display().to_string())?;
+    }
+    execute_command(
+        &canonical.display().to_string(),
+        args,
+        opts,
+        mode,
+        cancel_flag,
+        true,
+    )
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -686,7 +1003,13 @@ fn execute_command(
     args: &[String],
     opts: &ExecOptions,
     mode: OutputMode,
+    cancel_flag: Option<&AtomicBool>,
+    enforce_exit_code: bool,
 ) -> Result<ExecReport> {
+    if cancel_flag.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
+        anyhow::bail!("execution cancelled by its supervisor before spawn");
+    }
+
     // SECURITY: Validate args không chứa path traversal
     // Pass project_root (from cwd) để validator có context
     let project_root = opts.cwd.as_deref();
@@ -699,13 +1022,52 @@ fn execute_command(
         .clone()
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
-    // Forbidden PM tools stay blocked in every cwd.
-    // PM ngoài bị chặn tuyệt đối, không còn ngoại lệ React Native.
-    // No package manager is exempt in any scope. A compatibility runtime
-    // may be invoked only as a runtime; the PM executable itself stays
-    // blocked by the command validator and descendant monitor.
-    // No package manager or rival runtime receives a process-tree exemption.
-    let scoped_exempt: &[&str] = &[];
+    // Audit the declared exception before any command or child process can
+    // start. Missing log configuration therefore cannot silently enable the
+    // compatibility subtree.
+    // (Ghi audit ngoại lệ đã khai báo trước khi command/cây con bắt đầu.
+    // Thiếu cấu hình log sẽ không thể mở compat subtree trong im lặng.)
+    let compat_manager = opts
+        .compat_runner
+        .as_deref()
+        .map(|raw| crate::allowlist::parse_compat_runner(Some(raw)))
+        .transpose()?
+        .flatten();
+    let compat_log_path = if compat_manager.is_some() {
+        Some(opts.log_path.as_deref().ok_or_else(|| {
+            anyhow::anyhow!("--compat-runner requires an audit log path; refusing to spawn")
+        })?)
+    } else {
+        None
+    };
+    if let (Some(manager), Some(log_path)) = (compat_manager.as_deref(), compat_log_path) {
+        append_compat_scope(log_path, manager, cmd, &safe_args, &cwd, opts.dry_run)?;
+        if opts.dry_run {
+            eprintln!(
+                "WARNING: --compat-runner '{manager}' would delegate its launched process tree; dry-run did not spawn a process"
+            );
+        } else {
+            eprintln!(
+                "WARNING: --compat-runner '{manager}' delegates matching package-manager processes in this command's process tree; dependency/lifecycle ownership is reduced (scope recorded in '{}')",
+                log_path.display()
+            );
+        }
+    }
+
+    // Native-deny (Spec rev4 §1/§7): forbidden PM tools stay blocked in every
+    // cwd — unless this invocation declared `--compat-runner` naming exactly
+    // this manager. The compat escape hatch is explicit, warned and audited;
+    // every other tool keeps native-deny.
+    // (Native-deny (Spec rev4 §1/§7): PM cấm vẫn bị chặn ở mọi cwd — trừ khi
+    // invocation này khai báo `--compat-runner` đúng manager đó. Escape hatch
+    // compat tường minh, có cảnh báo và audit; mọi tool khác giữ native-deny.)
+    // No package manager or rival runtime receives a process-tree exemption
+    // outside the declared compat subtree.
+    let compat_exemption: Option<[&str; 1]> = compat_manager.as_deref().map(|runner| [runner]);
+    let scoped_exempt: &[&str] = compat_exemption
+        .as_ref()
+        .map(|slots| slots.as_slice())
+        .unwrap_or(&[]);
 
     if opts.dry_run {
         // dry-run: in lệnh, không chạy, vẫn ghi audit với exit_code 0 + dry_run flag (§5.5)
@@ -725,6 +1087,16 @@ fn execute_command(
         }
         return Ok(report);
     }
+
+    let compat_audit = match (compat_manager.as_deref(), compat_log_path) {
+        (Some(manager), Some(log_path)) => Some(CompatAuditContext {
+            manager,
+            log_path,
+            cwd: &cwd,
+            seen_processes: std::sync::Mutex::new(std::collections::HashSet::new()),
+        }),
+        _ => None,
+    };
 
     let start = Instant::now();
     // Windows: rust std Command does NOT resolve .cmd/.bat shims through PATH
@@ -844,6 +1216,11 @@ fn execute_command(
     let process_tree_tracking_token = process_tree_tracking_token();
     #[cfg(unix)]
     command.env(PROCESS_TREE_TRACKING_ENV, &process_tree_tracking_token);
+    // Spec rev4 §16.3 (decided): arm process-wide SIGINT/SIGTERM handling
+    // before any spawn so Ctrl-C terminates the tree instead of orphaning it.
+    // (Spec rev4 §16.3 (đã chốt): bật xử lý SIGINT/SIGTERM toàn process trước
+    // mọi spawn để Ctrl-C terminate cây thay vì bỏ orphan.)
+    ensure_signal_handlers();
     #[cfg_attr(not(windows), allow(unused_mut))]
     let mut child = command
         .spawn()
@@ -861,9 +1238,17 @@ fn execute_command(
     } else {
         Some(opts.timeout.unwrap_or_else(default_timeout))
     };
+    let native_audit = opts.log_path.as_deref().map(|log_path| NativeAuditContext {
+        log_path,
+        root_cmd: cmd,
+        root_args: &safe_args,
+        cwd: &cwd,
+    });
     let process_monitor = ProcessMonitor {
         enabled: monitor_forbidden_children,
         exempt: scoped_exempt,
+        compat_audit: compat_audit.as_ref(),
+        native_audit: native_audit.as_ref(),
         #[cfg(unix)]
         shadow_dir: shadow_path.path(),
         #[cfg(windows)]
@@ -871,7 +1256,14 @@ fn execute_command(
         #[cfg(unix)]
         tracking_token: &process_tree_tracking_token,
     };
-    let outcome = wait_with_timeout(child, timeout, process_monitor, process_tree_guard, mode)?;
+    let outcome = wait_with_timeout(
+        child,
+        timeout,
+        process_monitor,
+        process_tree_guard,
+        mode,
+        cancel_flag,
+    )?;
     let duration_ms = start.elapsed().as_millis() as u64;
     let exit_code = outcome.status.code().unwrap_or(-1);
 
@@ -893,7 +1285,7 @@ fn execute_command(
         append(path, &entry_from(&report, &cwd))?;
     }
 
-    if exit_code != 0 && !opts.allowed_exit_codes.contains(&exit_code) {
+    if enforce_exit_code && exit_code != 0 && !opts.allowed_exit_codes.contains(&exit_code) {
         // 00 §5.8: exit ≠ 0 → bail kèm log trích (trừ exit code được khai
         // báo trước trong allowed_exit_codes — escape hatch tường minh).
         // 00 §5.8: exit ≠ 0 → bail kèm log excerpt (except exit codes
@@ -1008,6 +1400,34 @@ fn unique_temp_dir(prefix: &str) -> PathBuf {
     ))
 }
 
+/// Match only a direct child directory produced by `unique_temp_dir`.
+/// Chỉ nhận thư mục con trực tiếp có tên đúng mẫu `unique_temp_dir` tạo ra.
+fn is_generated_shadow_directory(dir: &Path) -> bool {
+    let Some(parent) = dir.parent() else {
+        return false;
+    };
+    let (Ok(actual_parent), Ok(temp_root)) = (
+        std::fs::canonicalize(parent),
+        std::fs::canonicalize(std::env::temp_dir()),
+    ) else {
+        return false;
+    };
+    if actual_parent != temp_root {
+        return false;
+    }
+    let Some(name) = dir.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    let Some(suffix) = name.strip_prefix("mgc-exec-shadow-path-") else {
+        return false;
+    };
+    let fields = suffix.split('-').collect::<Vec<_>>();
+    fields.len() == 3
+        && fields
+            .iter()
+            .all(|field| !field.is_empty() && field.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
 #[cfg(unix)]
 fn write_blocker(dir: &Path, tool: &str) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
@@ -1063,6 +1483,8 @@ fn write_blocker(dir: &Path, tool: &str) -> Result<()> {
                     )
                 })?;
             }
+            let digest = windows_sha256_file(&executable)?;
+            write_windows_npm_probe_marker(dir, &digest)?;
             return Ok(());
         }
     }
@@ -1079,6 +1501,53 @@ fn write_blocker(dir: &Path, tool: &str) -> Result<()> {
         .open(path)?;
     file.write_all(content.as_bytes())?;
     Ok(())
+}
+
+#[cfg(windows)]
+fn windows_sha256_hex(digest: &[u8; 32]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(64);
+    for byte in digest {
+        encoded.push(HEX[(byte >> 4) as usize] as char);
+        encoded.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    encoded
+}
+
+#[cfg(windows)]
+fn write_windows_npm_probe_marker(dir: &Path, digest: &[u8; 32]) -> Result<()> {
+    use std::io::Write;
+
+    let marker = dir.join(".mgc-npm-probe-v1");
+    let content = format!("mgc-npm-probe-v1\n{}\n", windows_sha256_hex(digest));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&marker)?;
+    file.write_all(content.as_bytes())?;
+    drop(file);
+    let mut permissions = std::fs::metadata(&marker)?.permissions();
+    permissions.set_readonly(true);
+    std::fs::set_permissions(&marker, permissions)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn windows_npm_probe_marker_matches(dir: &Path, executable_path: &Path) -> bool {
+    let marker = dir.join(".mgc-npm-probe-v1");
+    let Ok(metadata) = std::fs::symlink_metadata(&marker) else {
+        return false;
+    };
+    if !metadata.file_type().is_file() || !metadata.permissions().readonly() {
+        return false;
+    }
+    let (Ok(content), Ok(digest)) = (
+        std::fs::read_to_string(&marker),
+        windows_sha256_file(executable_path),
+    ) else {
+        return false;
+    };
+    content == format!("mgc-npm-probe-v1\n{}\n", windows_sha256_hex(&digest))
 }
 
 #[cfg(windows)]
@@ -1131,7 +1600,7 @@ fn guarded_path_env(shadow_dir: &Path, explicit_env: &[(String, String)]) -> Res
     Ok(std::env::join_paths(paths)?)
 }
 
-fn reject_forbidden_script_file(cmd: &str) -> Result<()> {
+pub(crate) fn reject_forbidden_script_file(cmd: &str) -> Result<()> {
     let path = Path::new(cmd);
     if !path.is_file() {
         return Ok(());
@@ -1144,10 +1613,18 @@ fn reject_forbidden_script_file(cmd: &str) -> Result<()> {
         return Ok(());
     }
 
-    let content = String::from_utf8_lossy(&bytes);
-    if let Some(tool) = forbidden_process_name("", &content, &[]) {
+    // Inspect only the interpreter declaration; later mentions can be benign.
+    // Chỉ kiểm tra khai báo interpreter; nội dung sau đó có thể nhắc tên hợp lệ.
+    // Runtime process guards still block forbidden package-manager execution.
+    // Cơ chế giám sát tiến trình vẫn chặn package manager khi được thực thi.
+    let shebang = bytes
+        .split(|byte| *byte == b'\n')
+        .next()
+        .unwrap_or_default();
+    let shebang = String::from_utf8_lossy(shebang);
+    if let Some(tool) = forbidden_process_name("", &shebang, &[]) {
         bail!(
-            "script '{}' references forbidden package manager '{}'",
+            "script '{}' uses forbidden package manager '{}' as its interpreter",
             path.display(),
             tool
         );
@@ -1167,6 +1644,8 @@ fn default_timeout() -> Duration {
 struct ProcessMonitor<'a> {
     enabled: bool,
     exempt: &'a [&'a str],
+    compat_audit: Option<&'a CompatAuditContext<'a>>,
+    native_audit: Option<&'a NativeAuditContext<'a>>,
     #[cfg(unix)]
     shadow_dir: &'a Path,
     #[cfg(windows)]
@@ -1175,12 +1654,80 @@ struct ProcessMonitor<'a> {
     tracking_token: &'a str,
 }
 
+struct CompatAuditContext<'a> {
+    manager: &'a str,
+    log_path: &'a Path,
+    cwd: &'a Path,
+    seen_processes: std::sync::Mutex<std::collections::HashSet<(u32, String)>>,
+}
+
+struct NativeAuditContext<'a> {
+    log_path: &'a Path,
+    root_cmd: &'a str,
+    root_args: &'a [String],
+    cwd: &'a Path,
+}
+
+/// Record a matching package-manager process once when it appears in the
+/// monitored subtree. Its arguments pass through the same secret redactor as
+/// top-level exec audit rows.
+/// (Ghi một lần process package manager khớp khi nó xuất hiện trong subtree
+/// được giám sát. Args đi qua cùng bộ che secret như audit exec gốc.)
+fn audit_compat_process(
+    audit: Option<&CompatAuditContext<'_>>,
+    pid: u32,
+    image: &str,
+    command: &[OsString],
+) -> Result<()> {
+    let Some(audit) = audit else {
+        return Ok(());
+    };
+    let command_line = command
+        .iter()
+        .map(|arg| arg.to_string_lossy())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if forbidden_process_match_argv(image, command, &[])
+        .is_none_or(|(name, _, _, _)| name != audit.manager)
+    {
+        return Ok(());
+    }
+    let key = (pid, command_line);
+    let mut seen = audit
+        .seen_processes
+        .lock()
+        .map_err(|_| anyhow::anyhow!("compat audit process set was poisoned"))?;
+    if !seen.insert(key) {
+        return Ok(());
+    }
+    drop(seen);
+    let program = command
+        .first()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let args = command
+        .iter()
+        .skip(1)
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    append_compat_child(
+        audit.log_path,
+        audit.manager,
+        pid,
+        image,
+        &program,
+        &redact_args(&args),
+        audit.cwd,
+    )
+}
+
 fn wait_with_timeout(
     mut child: std::process::Child,
     timeout: Option<Duration>,
     process_monitor: ProcessMonitor<'_>,
     _process_tree_guard: ProcessTreeGuard,
     mode: OutputMode,
+    cancel_flag: Option<&std::sync::atomic::AtomicBool>,
 ) -> Result<ExecOutcome> {
     let started = Instant::now();
     #[cfg(unix)]
@@ -1264,6 +1811,44 @@ fn wait_with_timeout(
         };
     let _ = mode;
     loop {
+        // Spec rev4 §16.3 (decided): a shutdown request terminates the tree
+        // and fails the wait instead of leaving orphans behind.
+        // (Spec rev4 §16.3 (đã chốt): yêu cầu dừng terminate cây và fail
+        // vòng chờ thay vì bỏ orphan.)
+        if shutdown_requested() || cancel_flag.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
+            #[cfg(unix)]
+            terminate_process_tree_tracked(
+                child.id(),
+                &mut observed_process_groups,
+                process_monitor.tracking_token,
+                process_monitor.exempt,
+                process_monitor.shadow_dir,
+                root_reaped,
+            );
+            #[cfg(windows)]
+            let termination_error = _process_tree_guard.terminate().err();
+            #[cfg(windows)]
+            drop(_process_tree_guard);
+            #[cfg(not(any(unix, windows)))]
+            let _ = child.kill();
+            #[cfg(windows)]
+            let _ = child.kill();
+            let _ = drain(&mut child, Some(Duration::from_millis(POST_KILL_DRAIN_MS)));
+            #[cfg(windows)]
+            if let Some(error) = termination_error {
+                return Err(
+                    error.context("failed to terminate Windows process tree after cancellation")
+                );
+            }
+            if shutdown_requested() {
+                return Err(anyhow::anyhow!(
+                    "interrupted by shutdown request (SIGINT/SIGTERM); process tree terminated"
+                ));
+            }
+            return Err(anyhow::anyhow!(
+                "execution cancelled by its supervisor; process tree terminated"
+            ));
+        }
         #[cfg(unix)]
         let process_scan = if process_monitor.enabled {
             find_forbidden_descendant_tracking(
@@ -1272,6 +1857,7 @@ fn wait_with_timeout(
                 process_monitor.shadow_dir,
                 process_monitor.tracking_token,
                 &mut observed_process_groups,
+                process_monitor.compat_audit,
             )
         } else {
             Ok(None)
@@ -1292,6 +1878,7 @@ fn wait_with_timeout(
                 out.status,
                 &out.stderr,
                 &out.stdout,
+                process_monitor.native_audit,
             ));
         }
 
@@ -1312,6 +1899,8 @@ fn wait_with_timeout(
                         _process_tree_guard,
                         process_monitor.exempt,
                         process_monitor.shadow_path,
+                        process_monitor.compat_audit,
+                        process_monitor.native_audit,
                         drain,
                     );
                 }
@@ -1340,6 +1929,7 @@ fn wait_with_timeout(
                                 out.status,
                                 &out.stderr,
                                 &out.stdout,
+                                process_monitor.native_audit,
                             ));
                         }
                         Err(error) if error.downcast_ref::<MonitoredRootNotVisible>().is_some() => {
@@ -1409,6 +1999,7 @@ fn wait_with_timeout(
                 child.id(),
                 process_monitor.exempt,
                 process_monitor.shadow_path,
+                process_monitor.compat_audit,
                 started,
                 timeout,
                 || Ok(child.try_wait()?.is_some()),
@@ -1423,6 +2014,8 @@ fn wait_with_timeout(
                         _process_tree_guard,
                         process_monitor.exempt,
                         process_monitor.shadow_path,
+                        process_monitor.compat_audit,
+                        process_monitor.native_audit,
                         drain,
                     );
                 }
@@ -1462,6 +2055,7 @@ fn wait_with_timeout(
                                 process_monitor.shadow_dir,
                                 process_monitor.tracking_token,
                                 &mut observed_process_groups,
+                                process_monitor.compat_audit,
                             ) {
                                 Ok(scan) => {
                                     process_scan = Ok(scan);
@@ -1489,6 +2083,7 @@ fn wait_with_timeout(
                                 process_monitor.shadow_dir,
                                 process_monitor.tracking_token,
                                 &mut observed_process_groups,
+                                process_monitor.compat_audit,
                             ) {
                                 Ok(scan) => {
                                     process_scan = Ok(scan);
@@ -1531,6 +2126,7 @@ fn wait_with_timeout(
                     process_monitor.shadow_dir,
                     process_monitor.tracking_token,
                     &mut observed_process_groups,
+                    process_monitor.compat_audit,
                 ) {
                     Ok(scan) => Ok(scan),
                     Err(error) if error.downcast_ref::<MonitoredRootNotVisible>().is_some() => {
@@ -1564,6 +2160,7 @@ fn wait_with_timeout(
                         out.status,
                         &out.stderr,
                         &out.stdout,
+                        process_monitor.native_audit,
                     ));
                 }
                 Ok(None) => {}
@@ -1626,9 +2223,11 @@ fn finish_monitored_root_exit(
     guard: ProcessTreeGuard,
     exempt: &[&str],
     shadow_path: &ShadowPath,
+    compat_audit: Option<&CompatAuditContext<'_>>,
+    native_audit: Option<&NativeAuditContext<'_>>,
     drain: impl Fn(&mut std::process::Child, Option<Duration>) -> (ExecOutcome, bool),
 ) -> Result<ExecOutcome> {
-    let survivors = windows_job_descendants(&guard, child.id(), exempt, shadow_path)?;
+    let survivors = windows_job_descendants(&guard, child.id(), exempt, shadow_path, compat_audit)?;
     if survivors.is_empty() {
         let active_process_ids = guard.active_process_ids()?;
         if windows_job_has_active_descendants(child.id(), &active_process_ids) {
@@ -1662,10 +2261,16 @@ fn finish_monitored_root_exit(
             &ForbiddenProcess {
                 pid: *pid,
                 name: name.clone(),
+                image_name: None,
+                match_source: "process-table scan",
+                matched_token: None,
+                matched_token_index: None,
+                matched_operation: "unavailable".to_string(),
             },
             out.status,
             &out.stderr,
             &out.stdout,
+            native_audit,
         ));
     }
     if let Err(error) = termination {
@@ -2040,8 +2645,9 @@ fn windows_job_descendants(
     root_pid: u32,
     exempt: &[&str],
     shadow_path: &ShadowPath,
+    compat_audit: Option<&CompatAuditContext<'_>>,
 ) -> Result<Vec<(u32, Option<String>)>> {
-    let inspection = inspect_windows_job(guard, root_pid, exempt, Some(shadow_path))?;
+    let inspection = inspect_windows_job(guard, root_pid, exempt, Some(shadow_path), compat_audit)?;
     if let Some((pid, image_name)) = inspection.missing_command_line {
         validate_monitored_child_command_line(&image_name, &[], pid)?;
     }
@@ -2056,10 +2662,12 @@ fn inspect_windows_job(
     root_pid: u32,
     exempt: &[&str],
     shadow_path: Option<&ShadowPath>,
+    compat_audit: Option<&CompatAuditContext<'_>>,
 ) -> Result<WindowsJobInspection> {
     use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
     let mut executable_paths = std::collections::HashMap::new();
+    let mut go_policy_env = std::collections::HashMap::new();
     let process_ids = guard.active_process_ids()?;
     if process_ids.is_empty() {
         return Ok(WindowsJobInspection::default());
@@ -2089,7 +2697,34 @@ fn inspect_windows_job(
                         .with_cmd(UpdateKind::Always)
                         .with_exe(UpdateKind::Always),
                 );
+                let is_go = system.process(process_id).is_some_and(|process| {
+                    process_basename(&process.name().to_string_lossy()) == "go"
+                });
+                if is_go {
+                    // Read this confirmed Job member's environment, never inherit policy from its parent.
+                    // Chỉ môi trường của Go thuộc Job được xét; thiếu bằng chứng vẫn deny.
+                    system.refresh_processes_specifics(
+                        ProcessesToUpdate::Some(&process_ids),
+                        true,
+                        ProcessRefreshKind::nothing()
+                            .with_cmd(UpdateKind::Always)
+                            .with_exe(UpdateKind::Always)
+                            .with_environ(UpdateKind::Always),
+                    );
+                }
                 if let Some(process) = system.process(process_id) {
+                    if is_go && process_basename(&process.name().to_string_lossy()) == "go" {
+                        let observed = process
+                            .environ()
+                            .iter()
+                            .filter_map(|entry| {
+                                let (key, value) = entry.to_str()?.split_once('=')?;
+                                key.eq_ignore_ascii_case("GOPROXY")
+                                    .then(|| ("GOPROXY".to_owned(), value.to_owned()))
+                            })
+                            .collect::<Vec<_>>();
+                        go_policy_env.insert(process_id.as_u32(), observed);
+                    }
                     if let Some(executable) = process.exe() {
                         executable_paths.insert(process_id.as_u32(), executable.to_path_buf());
                     }
@@ -2123,13 +2758,17 @@ fn inspect_windows_job(
         .iter()
         .map(|(process_id, _)| *process_id)
         .collect::<Vec<_>>();
-    inspect_windows_job_processes_with_image_paths(
+    inspect_windows_job_processes_with_policy_metadata(
         root_pid,
         &captured_job_process_ids,
         &captured_snapshots.snapshots,
         exempt,
         shadow_path,
-        &executable_paths,
+        &WindowsProcessPolicyMetadata {
+            executable_paths: &executable_paths,
+            go_policy_env: &go_policy_env,
+        },
+        compat_audit,
     )
 }
 
@@ -2235,10 +2874,11 @@ fn inspect_windows_job_processes_with_shadow(
         exempt,
         shadow_path,
         &std::collections::HashMap::new(),
+        None,
     )
 }
 
-#[cfg(any(windows, test))]
+#[cfg(test)]
 fn inspect_windows_job_processes_with_image_paths(
     root_pid: u32,
     job_process_ids: &[u32],
@@ -2246,6 +2886,39 @@ fn inspect_windows_job_processes_with_image_paths(
     exempt: &[&str],
     shadow_path: Option<&ShadowPath>,
     executable_paths: &std::collections::HashMap<u32, PathBuf>,
+    compat_audit: Option<&CompatAuditContext<'_>>,
+) -> Result<WindowsJobInspection> {
+    inspect_windows_job_processes_with_policy_metadata(
+        root_pid,
+        job_process_ids,
+        processes,
+        exempt,
+        shadow_path,
+        &WindowsProcessPolicyMetadata {
+            executable_paths,
+            go_policy_env: &std::collections::HashMap::new(),
+        },
+        compat_audit,
+    )
+}
+
+/// Observed metadata for confirmed Job members; no parent environment is trusted.
+/// Metadata quan sát của thành viên Job; không dùng môi trường cha làm quyền chạy.
+#[cfg(any(windows, test))]
+struct WindowsProcessPolicyMetadata<'a> {
+    executable_paths: &'a std::collections::HashMap<u32, PathBuf>,
+    go_policy_env: &'a std::collections::HashMap<u32, Vec<(String, String)>>,
+}
+
+#[cfg(any(windows, test))]
+fn inspect_windows_job_processes_with_policy_metadata(
+    root_pid: u32,
+    job_process_ids: &[u32],
+    processes: &[WindowsProcessSnapshot],
+    exempt: &[&str],
+    shadow_path: Option<&ShadowPath>,
+    policy_metadata: &WindowsProcessPolicyMetadata<'_>,
+    compat_audit: Option<&CompatAuditContext<'_>>,
 ) -> Result<WindowsJobInspection> {
     use std::collections::{HashMap, HashSet};
 
@@ -2269,13 +2942,15 @@ fn inspect_windows_job_processes_with_image_paths(
             .collect::<Vec<_>>()
             .join(" ");
         let image_name = process.image_name.clone();
+        audit_compat_process(compat_audit, process_id, &image_name, &process.command)?;
         if command_line.is_empty() && inspected.missing_command_line.is_none() {
             inspected.missing_command_line = Some((process_id, image_name.clone()));
         }
-        let forbidden = forbidden_process_name(&image_name, &command_line, exempt).filter(|name| {
-            name != "npm"
-                || !shadow_path.is_some_and(|shadow_path| {
-                    executable_paths
+        let npm_probe_allowed =
+            is_npm_version_shell_probe(process.image_name.as_bytes(), command_line.as_bytes())
+                || shadow_path.is_some_and(|shadow_path| {
+                    policy_metadata
+                        .executable_paths
                         .get(&process_id)
                         .is_some_and(|executable_path| {
                             is_shadow_windows_npm_version_probe(
@@ -2284,8 +2959,24 @@ fn inspect_windows_job_processes_with_image_paths(
                                 shadow_path,
                             )
                         })
-                })
-        });
+                });
+        let observed_env = if process_basename(&image_name) == "go" {
+            policy_metadata
+                .go_policy_env
+                .get(&process_id)
+                .map(Vec::as_slice)
+                .unwrap_or(&[])
+        } else {
+            &[]
+        };
+        let forbidden = forbidden_process_match_argv_with_env(
+            &image_name,
+            &process.command,
+            exempt,
+            observed_env,
+        )
+        .map(|(name, _, _, _)| name)
+        .filter(|name| name != "npm" || !npm_probe_allowed);
         inspected.descendants.push((process_id, forbidden));
     }
     Ok(inspected)
@@ -2330,7 +3021,15 @@ fn windows_job_scan_from_inspection(inspection: WindowsJobInspection) -> Windows
         .into_iter()
         .find(|(_, forbidden)| forbidden.is_some())
     {
-        return WindowsProcessScan::Forbidden(ForbiddenProcess { pid, name });
+        return WindowsProcessScan::Forbidden(ForbiddenProcess {
+            pid,
+            name,
+            image_name: None,
+            match_source: "Windows job scan",
+            matched_token: None,
+            matched_token_index: None,
+            matched_operation: "unavailable".to_string(),
+        });
     }
     if let Some((pid, image_name)) = inspection.missing_command_line {
         return WindowsProcessScan::MissingCommandLine { pid, image_name };
@@ -2404,6 +3103,7 @@ fn terminate_process_tree_tracked(
             shadow_dir,
             tracking_token,
             observed_process_groups,
+            None,
         );
         let new_groups = observed_process_groups
             .difference(&term_signaled_groups)
@@ -2436,6 +3136,7 @@ fn terminate_process_tree_tracked(
             shadow_dir,
             tracking_token,
             observed_process_groups,
+            None,
         );
         signal_process_groups(
             root_pid,
@@ -2595,6 +3296,11 @@ fn windows_batch_command(script_path: &str, args: &[String], cwd: &Path) -> Resu
 struct ForbiddenProcess {
     pid: u32,
     name: String,
+    image_name: Option<String>,
+    match_source: &'static str,
+    matched_token: Option<String>,
+    matched_token_index: Option<usize>,
+    matched_operation: String,
 }
 
 #[cfg(unix)]
@@ -2628,6 +3334,7 @@ fn find_forbidden_descendant(
         shadow_dir,
         "",
         &mut observed_process_groups,
+        None,
     )
 }
 
@@ -2638,6 +3345,7 @@ fn find_forbidden_descendant_tracking(
     shadow_dir: &Path,
     tracking_token: &str,
     observed_process_groups: &mut std::collections::HashSet<u32>,
+    compat_audit: Option<&CompatAuditContext<'_>>,
 ) -> Result<Option<ForbiddenProcess>> {
     use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System, UpdateKind};
 
@@ -2647,6 +3355,23 @@ fn find_forbidden_descendant_tracking(
         true,
         ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always),
     );
+    // Read the policy environment from the actual Go process, never from its parent.
+    // Chỉ đọc env của process Go thực tế; env không đọc được vẫn bị từ chối.
+    let go_pids = system
+        .processes()
+        .iter()
+        .filter(|(_, process)| process_basename(&process.name().to_string_lossy()) == "go")
+        .map(|(pid, _)| *pid)
+        .collect::<Vec<_>>();
+    if !go_pids.is_empty() {
+        system.refresh_processes_specifics(
+            ProcessesToUpdate::Some(&go_pids),
+            true,
+            ProcessRefreshKind::nothing()
+                .with_cmd(UpdateKind::Always)
+                .with_environ(UpdateKind::Always),
+        );
+    }
     let root = Pid::from_u32(root_pid);
     let live_process_groups = system
         .processes()
@@ -2687,8 +3412,14 @@ fn find_forbidden_descendant_tracking(
             live_descendant_found = true;
             observed_process_groups.insert(process_group);
             if first_forbidden.is_none() {
+                audit_compat_process(
+                    compat_audit,
+                    pid.as_u32(),
+                    &process.name().to_string_lossy(),
+                    process.cmd(),
+                )?;
                 first_forbidden = forbidden_process_entry(pid, process, exempt).filter(|found| {
-                    !is_shadow_npm_version_probe(
+                    let allowed = is_allowed_shadow_npm_version_probe(
                         process.name().to_string_lossy().as_bytes(),
                         process
                             .cmd()
@@ -2698,7 +3429,9 @@ fn find_forbidden_descendant_tracking(
                             .join(" ")
                             .as_bytes(),
                         shadow_dir,
-                    ) || found.name != "npm"
+                        &found.name,
+                    );
+                    !allowed
                 });
             }
         }
@@ -2730,6 +3463,12 @@ fn find_forbidden_descendant_tracking(
                 observed_process_groups.insert(process_group);
             }
             if first_forbidden.is_none() {
+                audit_compat_process(
+                    compat_audit,
+                    pid.as_u32(),
+                    &process.name().to_string_lossy(),
+                    process.cmd(),
+                )?;
                 first_forbidden = forbidden_process_entry(pid, process, exempt).filter(|found| {
                     let command_line = process
                         .cmd()
@@ -2737,12 +3476,13 @@ fn find_forbidden_descendant_tracking(
                         .map(|arg| arg.to_string_lossy())
                         .collect::<Vec<_>>()
                         .join(" ");
-                    found.name != "npm"
-                        || !is_shadow_npm_version_probe(
-                            process.name().to_string_lossy().as_bytes(),
-                            command_line.as_bytes(),
-                            shadow_dir,
-                        )
+                    let allowed = is_allowed_shadow_npm_version_probe(
+                        process.name().to_string_lossy().as_bytes(),
+                        command_line.as_bytes(),
+                        shadow_dir,
+                        &found.name,
+                    );
+                    !allowed
                 });
             }
             frontier.push(*pid);
@@ -2791,16 +3531,34 @@ fn forbidden_process_entry(
     exempt: &[&str],
 ) -> Option<ForbiddenProcess> {
     let image_name = process.name().to_string_lossy().into_owned();
-    let command_line = process
-        .cmd()
-        .iter()
-        .map(|arg| arg.to_string_lossy())
-        .collect::<Vec<_>>()
-        .join(" ");
-    forbidden_process_name(&image_name, &command_line, exempt).map(|name| ForbiddenProcess {
-        pid: pid.as_u32(),
-        name,
-    })
+    let policy_env = if process_basename(&image_name) == "go" {
+        process
+            .environ()
+            .iter()
+            .filter_map(|entry| {
+                let entry = entry.to_str()?;
+                let (key, value) = entry.split_once('=')?;
+                (key == "GOPROXY").then(|| (key.to_owned(), value.to_owned()))
+            })
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    forbidden_process_match_argv_with_env(&image_name, process.cmd(), exempt, &policy_env).map(
+        |(name, match_source, matched_token, matched_token_index)| {
+            let matched_operation =
+                matched_invocation_shape_argv(&name, process.cmd(), matched_token_index);
+            ForbiddenProcess {
+                pid: pid.as_u32(),
+                name,
+                image_name: Some(process_basename(&image_name)),
+                match_source,
+                matched_token,
+                matched_token_index,
+                matched_operation,
+            }
+        },
+    )
 }
 
 #[cfg(unix)]
@@ -2881,12 +3639,25 @@ fn inspect_forbidden_process_table(
         {
             let command_text = String::from_utf8_lossy(command);
             let command_line_text = String::from_utf8_lossy(command_line);
-            if let Some(name) = forbidden_process_name(&command_text, &command_line_text, exempt) {
-                if name == "npm" && is_shadow_npm_version_probe(command, command_line, shadow_dir) {
+            if let Some((name, match_source, matched_token, matched_token_index)) =
+                forbidden_process_match(&command_text, &command_line_text, exempt)
+            {
+                if is_allowed_shadow_npm_version_probe(command, command_line, shadow_dir, &name) {
                     frontier.push(*pid);
                     continue;
                 }
-                return Ok(Some(ForbiddenProcess { pid: *pid, name }));
+                return Ok(Some(ForbiddenProcess {
+                    pid: *pid,
+                    name,
+                    image_name: Some(process_basename(&command_text)),
+                    match_source,
+                    matched_token,
+                    matched_token_index,
+                    matched_operation: matched_invocation_shape(
+                        &command_line_text,
+                        matched_token_index,
+                    ),
+                }));
             }
             frontier.push(*pid);
         }
@@ -3101,19 +3872,24 @@ fn scan_windows_process_snapshot(
         .iter()
         .filter(|process| process.pid != root_pid && verified_current_pids.contains(&process.pid))
     {
-        let command_line = process
-            .command
-            .iter()
-            .map(|arg| arg.to_string_lossy())
-            .collect::<Vec<_>>()
-            .join(" ");
         if process.command.is_empty() && missing_command_line.is_none() {
             missing_command_line = Some((process.pid, process.image_name.clone()));
         }
-        if let Some(name) = forbidden_process_name(&process.image_name, &command_line, exempt) {
+        if let Some((name, match_source, matched_token, matched_token_index)) =
+            forbidden_process_match_argv(&process.image_name, &process.command, exempt)
+        {
             return Ok(WindowsProcessScan::Forbidden(ForbiddenProcess {
                 pid: process.pid,
+                matched_operation: matched_invocation_shape_argv(
+                    &name,
+                    &process.command,
+                    matched_token_index,
+                ),
                 name,
+                image_name: Some(process_basename(&process.image_name)),
+                match_source,
+                matched_token,
+                matched_token_index,
             }));
         }
     }
@@ -3277,6 +4053,7 @@ fn find_forbidden_job_descendant_with_timeout(
     root_pid: u32,
     exempt: &[&str],
     shadow_path: &ShadowPath,
+    compat_audit: Option<&CompatAuditContext<'_>>,
     started: Instant,
     timeout: Option<Duration>,
     child_has_exited: impl FnMut() -> Result<bool>,
@@ -3287,6 +4064,7 @@ fn find_forbidden_job_descendant_with_timeout(
             root_pid,
             exempt,
             Some(shadow_path),
+            compat_audit,
         )?))
     })
 }
@@ -3414,20 +4192,35 @@ fn is_shadow_windows_npm_version_probe(
         return false;
     }
 
-    let shim_path = shadow_path.path().join("npm.exe");
     let Some(program) = process.command.first() else {
         return false;
     };
-    let (Ok(program_path), Ok(image_path), Ok(expected_path)) = (
+    let (Ok(program_path), Ok(image_path)) = (
         std::fs::canonicalize(program),
         std::fs::canonicalize(executable_path),
-        std::fs::canonicalize(&shim_path),
     ) else {
         return false;
     };
-    program_path == expected_path
-        && image_path == expected_path
-        && windows_sha256_file(&shim_path).is_ok_and(|digest| digest == expected_digest)
+    if program_path != image_path
+        || !image_path
+            .file_name()
+            .is_some_and(|name| name.eq_ignore_ascii_case(OsStr::new("npm.exe")))
+    {
+        return false;
+    }
+
+    let parent = image_path.parent();
+    let is_current_executor_shim = parent.is_some_and(|parent| {
+        std::fs::canonicalize(shadow_path.path()).is_ok_and(|expected_dir| {
+            parent == expected_dir
+                && windows_sha256_file(&image_path).is_ok_and(|digest| digest == expected_digest)
+        })
+    });
+    let is_nested_executor_shim = parent.is_some_and(|parent| {
+        is_generated_shadow_directory(parent)
+            && windows_npm_probe_marker_matches(parent, &image_path)
+    });
+    is_current_executor_shim || is_nested_executor_shim
 }
 
 #[cfg(all(test, not(windows)))]
@@ -3442,22 +4235,9 @@ fn is_shadow_windows_npm_version_probe(
 #[cfg(unix)]
 fn is_shadow_npm_version_probe(command: &[u8], command_line: &[u8], shadow_dir: &Path) -> bool {
     use std::os::unix::ffi::OsStrExt;
-    use std::os::unix::fs::PermissionsExt;
 
-    let Ok(directory_metadata) = std::fs::metadata(shadow_dir) else {
-        return false;
-    };
     let shim_path = shadow_dir.join("npm");
-    let Ok(shim_metadata) = std::fs::metadata(&shim_path) else {
-        return false;
-    };
-    let Ok(shim_content) = std::fs::read(&shim_path) else {
-        return false;
-    };
-    if directory_metadata.permissions().mode() & 0o222 != 0
-        || shim_metadata.permissions().mode() & 0o222 != 0
-        || shim_content != NPM_VERSION_PROBE_SHIM_CONTENT.as_bytes()
-    {
+    if !is_verified_shadow_npm_probe_shim(shadow_dir) {
         return false;
     }
 
@@ -3470,24 +4250,211 @@ fn is_shadow_npm_version_probe(command: &[u8], command_line: &[u8], shadow_dir: 
 }
 
 #[cfg(unix)]
+fn is_verified_shadow_npm_probe_shim(shadow_dir: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+
+    let Ok(directory_metadata) = std::fs::metadata(shadow_dir) else {
+        return false;
+    };
+    let shim_path = shadow_dir.join("npm");
+    let Ok(shim_metadata) = std::fs::metadata(&shim_path) else {
+        return false;
+    };
+    let Ok(shim_content) = std::fs::read(&shim_path) else {
+        return false;
+    };
+    directory_metadata.permissions().mode() & 0o222 == 0
+        && shim_metadata.permissions().mode() & 0o222 == 0
+        && shim_content == NPM_VERSION_PROBE_SHIM_CONTENT.as_bytes()
+}
+
+#[cfg(unix)]
+fn is_allowed_shadow_npm_version_probe(
+    command: &[u8],
+    command_line: &[u8],
+    own_shadow_dir: &Path,
+    forbidden_name: &str,
+) -> bool {
+    forbidden_name == "npm"
+        && (is_shadow_npm_version_probe(command, command_line, own_shadow_dir)
+            || is_generated_shadow_npm_version_probe(command, command_line)
+            || (is_verified_shadow_npm_probe_shim(own_shadow_dir)
+                && is_npm_version_shell_probe(command, command_line)))
+}
+
+/// Recognize only the shell wrapper used for the exact read-only npm probe.
+/// The resulting npm child is still checked against the authenticated shim.
+/// Chỉ nhận shell wrapper của probe npm chỉ đọc chính xác; process npm con
+/// vẫn phải qua xác thực shim riêng.
+fn is_npm_version_shell_probe(command: &[u8], command_line: &[u8]) -> bool {
+    let process = process_basename(&String::from_utf8_lossy(command));
+    let Ok(line) = std::str::from_utf8(command_line) else {
+        return false;
+    };
+    let Some((argv0, args)) = line.split_once(' ') else {
+        return false;
+    };
+    match process.as_str() {
+        // macOS may report the `/bin/sh` interpreter's image as `bash` while
+        // argv[0] remains `/bin/sh`; accept the alias only for this exact probe.
+        // (macOS có thể báo image của `/bin/sh` là `bash` dù argv[0] là `/bin/sh`;
+        // chỉ nhận alias cho đúng probe này.)
+        "sh" | "dash" | "bash" => {
+            matches!(process_basename(argv0).as_str(), "sh" | "dash" | "bash")
+                && args == "-c npm --version"
+        }
+        "busybox" => process_basename(argv0) == "busybox" && args == "sh -c npm --version",
+        "cmd" => {
+            if !process_basename(argv0).eq_ignore_ascii_case("cmd") {
+                return false;
+            }
+            let mut parts = args.splitn(4, ' ');
+            let (Some(disable_auto_run), Some(extensions), Some(command_flag), Some(script)) =
+                (parts.next(), parts.next(), parts.next(), parts.next())
+            else {
+                return false;
+            };
+            disable_auto_run.eq_ignore_ascii_case("/d")
+                && extensions.eq_ignore_ascii_case("/s")
+                && command_flag.eq_ignore_ascii_case("/c")
+                && script.trim_matches('"') == "npm --version"
+        }
+        _ => false,
+    }
+}
+
+#[cfg(unix)]
+fn is_generated_shadow_npm_version_probe(command: &[u8], command_line: &[u8]) -> bool {
+    use std::os::unix::ffi::OsStringExt;
+
+    let process = process_basename(&String::from_utf8_lossy(command));
+    let Some(shim_bytes) = generated_npm_probe_shim_from_command_line(&process, command_line)
+    else {
+        return false;
+    };
+    let shim_path = PathBuf::from(OsString::from_vec(shim_bytes));
+    if !shim_path.file_name().is_some_and(|name| name == "npm") {
+        return false;
+    }
+    let Some(parent) = shim_path.parent() else {
+        return false;
+    };
+    if !is_generated_shadow_directory(parent) {
+        return false;
+    }
+    let (Ok(directory_metadata), Ok(shim_metadata)) = (
+        std::fs::symlink_metadata(parent),
+        std::fs::symlink_metadata(&shim_path),
+    ) else {
+        return false;
+    };
+    if !directory_metadata.file_type().is_dir()
+        || !shim_metadata.file_type().is_file()
+        || directory_metadata.file_type().is_symlink()
+        || shim_metadata.file_type().is_symlink()
+    {
+        return false;
+    }
+    is_shadow_npm_version_probe(command, command_line, parent)
+}
+
+#[cfg(unix)]
+fn generated_npm_probe_shim_from_command_line(
+    process: &str,
+    command_line: &[u8],
+) -> Option<Vec<u8>> {
+    use std::os::unix::ffi::{OsStrExt, OsStringExt};
+
+    const POSIX_SHELL_PREFIXES: &[&[u8]] = &[
+        b"sh ",
+        b"/bin/sh ",
+        b"dash ",
+        b"/bin/dash ",
+        b"bash ",
+        b"/bin/bash ",
+    ];
+    let prefixes: &[&[u8]] = match process {
+        "sh" | "dash" | "bash" => POSIX_SHELL_PREFIXES,
+        "busybox" => &[b"busybox sh ", b"/bin/busybox sh "],
+        "npm" => &[
+            b"",
+            POSIX_SHELL_PREFIXES[0],
+            POSIX_SHELL_PREFIXES[1],
+            POSIX_SHELL_PREFIXES[2],
+            POSIX_SHELL_PREFIXES[3],
+            POSIX_SHELL_PREFIXES[4],
+            POSIX_SHELL_PREFIXES[5],
+            b"busybox sh ",
+            b"/bin/busybox sh ",
+        ],
+        _ => return None,
+    };
+    let temp_root = std::env::temp_dir();
+    let temp_root_bytes = temp_root.as_os_str().as_bytes();
+
+    for prefix in prefixes {
+        let Some(tail) = command_line.strip_prefix(*prefix) else {
+            continue;
+        };
+        let path_bytes = if let Some(quoted) = tail.strip_prefix(b"\"") {
+            quoted.strip_suffix(b"\" --version")?
+        } else {
+            tail.strip_suffix(b" --version")?
+        };
+        if path_bytes.is_empty() {
+            continue;
+        }
+        let mut expected_prefix = temp_root_bytes.to_vec();
+        if !expected_prefix.ends_with(b"/") {
+            expected_prefix.push(b'/');
+        }
+        expected_prefix.extend_from_slice(b"mgc-exec-shadow-path-");
+        if !path_bytes.starts_with(&expected_prefix) {
+            continue;
+        }
+        let path = PathBuf::from(OsString::from_vec(path_bytes.to_vec()));
+        let Some(parent) = path.parent() else {
+            continue;
+        };
+        if !is_generated_shadow_directory(parent)
+            || !npm_probe_command_line_matches_shim_path(
+                process,
+                command_line,
+                path.as_os_str().as_bytes(),
+            )
+        {
+            continue;
+        }
+        return Some(path.as_os_str().as_bytes().to_vec());
+    }
+    None
+}
+
+#[cfg(unix)]
 fn npm_probe_command_line_matches_shim_path(
     process: &str,
     command_line: &[u8],
     shim: &[u8],
 ) -> bool {
+    const POSIX_SHELL_PREFIXES: &[&[u8]] = &[
+        b"sh",
+        b"/bin/sh",
+        b"dash",
+        b"/bin/dash",
+        b"bash",
+        b"/bin/bash",
+    ];
     let prefixes: &[&[u8]] = match process {
-        "sh" => &[b"sh", b"/bin/sh"],
-        "dash" => &[b"dash", b"/bin/dash"],
-        "bash" => &[b"bash", b"/bin/bash"],
+        "sh" | "dash" | "bash" => POSIX_SHELL_PREFIXES,
         "busybox" => &[b"busybox sh", b"/bin/busybox sh"],
         "npm" => &[
             b"",
-            b"sh",
-            b"/bin/sh",
-            b"dash",
-            b"/bin/dash",
-            b"bash",
-            b"/bin/bash",
+            POSIX_SHELL_PREFIXES[0],
+            POSIX_SHELL_PREFIXES[1],
+            POSIX_SHELL_PREFIXES[2],
+            POSIX_SHELL_PREFIXES[3],
+            POSIX_SHELL_PREFIXES[4],
+            POSIX_SHELL_PREFIXES[5],
             b"busybox sh",
             b"/bin/busybox sh",
         ],
@@ -3563,16 +4530,591 @@ fn validate_monitored_child_command_line(
 }
 
 fn forbidden_process_name(command: &str, command_line: &str, exempt: &[&str]) -> Option<String> {
+    forbidden_process_match(command, command_line, exempt).map(|(name, _, _, _)| name)
+}
+
+#[cfg(test)]
+fn matched_invocation_shape(command_line: &str, matched_index: Option<usize>) -> String {
+    let Some(index) = matched_index else {
+        return "unavailable".to_string();
+    };
+    let args = command_line
+        .split_whitespace()
+        .skip(index + 1)
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    if args.is_empty() {
+        return "no arguments after matched token".to_string();
+    }
+    if crate::policy::is_read_only_probe("npm", &args) {
+        return "exact read-only probe".to_string();
+    }
+    if crate::policy::is_mutation_invocation("npm", &args, &[]) {
+        return format!(
+            "dependency-mutation invocation; args=[{}]",
+            safe_pm_argument_shape(&args)
+        );
+    }
+    format!(
+        "unrecognized invocation; args=[{}]",
+        safe_pm_argument_shape(&args)
+    )
+}
+
+fn safe_pm_argument_shape(args: &[String]) -> String {
+    const SAFE_COMMANDS_AND_FLAGS: &[&str] = &[
+        "--version",
+        "-v",
+        "--help",
+        "-h",
+        "install",
+        "ci",
+        "add",
+        "remove",
+        "uninstall",
+        "update",
+        "upgrade",
+        "publish",
+        "unpublish",
+        "link",
+        "unlink",
+        "dedupe",
+        "prune",
+        "rebuild",
+        "root",
+        "prefix",
+        "config",
+        "get",
+        "list",
+        "ls",
+        "view",
+        "info",
+        "whoami",
+        "ping",
+        "cache",
+        "exec",
+        "run",
+    ];
+    let mut shape = args
+        .iter()
+        .take(8)
+        .map(|arg| {
+            let lowercase = arg.to_ascii_lowercase();
+            if SAFE_COMMANDS_AND_FLAGS.contains(&lowercase.as_str()) {
+                lowercase
+            } else if arg.starts_with('-')
+                && !arg.contains('=')
+                && arg[1..]
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric() || character == '-')
+            {
+                arg.clone()
+            } else {
+                "<arg>".to_string()
+            }
+        })
+        .collect::<Vec<_>>();
+    if args.len() > 8 {
+        shape.push("…".to_string());
+    }
+    shape.join(", ")
+}
+
+/// Inspect an OS-provided argv vector without searching arbitrary argument
+/// text for package-manager names. Direct manager images and known runtime
+/// entrypoint forms remain detectable; opaque script/code arguments are left
+/// to the process-tree monitor to observe their actual child processes.
+/// (Đọc argv từ OS mà không dò tên package manager trong nội dung tham số.
+/// Vẫn nhận diện image trực tiếp và entrypoint runtime đã biết; chuỗi code
+/// mờ được để monitor bắt process con thực sự khi chúng được tạo.)
+fn forbidden_process_match_argv(
+    image: &str,
+    argv: &[OsString],
+    exempt: &[&str],
+) -> Option<(String, &'static str, Option<String>, Option<usize>)> {
+    forbidden_process_match_argv_with_env(image, argv, exempt, &[])
+}
+
+// Invoke the same policy with narrowly observed process environment.
+// Cùng policy nhưng có env quan sát được; không suy ra quyền từ env cha.
+fn forbidden_process_match_argv_with_env(
+    image: &str,
+    argv: &[OsString],
+    exempt: &[&str],
+    policy_env: &[(String, String)],
+) -> Option<(String, &'static str, Option<String>, Option<usize>)> {
+    let exempt = |name: &str| exempt.contains(&name);
+    let image_name = process_basename(image);
+    if FORBIDDEN_TOOLS.contains(&image_name.as_str()) && !exempt(&image_name) {
+        return Some((image_name, "executable image", None, None));
+    }
+
+    if let Some(program) = argv
+        .first()
+        .and_then(|arg| forbidden_entry_name(&arg.to_string_lossy(), false))
+        && !exempt(&program)
+    {
+        return Some((
+            program,
+            "argv executable",
+            argv.first()
+                .map(|arg| process_basename(&arg.to_string_lossy())),
+            Some(0),
+        ));
+    }
+
+    let runtime = process_basename(image);
+    if let Some((index, module_name, invocation_args)) = runtime_invocation(&runtime, argv) {
+        if let Some(name) = forbidden_entry_name(&module_name, runtime.starts_with("python")) {
+            if !exempt(&name) {
+                return Some((
+                    name,
+                    "runtime entrypoint",
+                    Some(process_basename(&module_name)),
+                    Some(index),
+                ));
+            }
+        } else {
+            let program = process_invocation_program(&module_name);
+            // `rustc` is an execution tool, not a dependency mutator. A
+            // managed Cargo build launches it as a descendant; keep the
+            // direct-spawn restriction in the executor's preflight, while
+            // this tree monitor enforces only dependency-resolution policy.
+            // (`rustc` là công cụ thực thi, không sửa dependency. Cargo được
+            // quản lý sẽ gọi nó như process con; giữ hạn chế direct-spawn ở
+            // preflight của executor, còn monitor cây chỉ áp policy resolve.)
+            if process_basename(&program) != "rustc" {
+                dependency_resolution_deny_reason(&program, &invocation_args, policy_env)?;
+                let name = process_basename(&program);
+                if !exempt(&name) {
+                    return Some((
+                        name.clone(),
+                        "dependency-resolution command",
+                        Some(name),
+                        Some(index),
+                    ));
+                }
+            }
+        }
+    }
+
+    let direct_args = argv
+        .iter()
+        .skip(1)
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    // Rust compiler descendants are expected during a managed Cargo build.
+    // Direct root invocations remain subject to `reject_external_dependency_resolution`.
+    // (Rust compiler con là luồng bình thường của Cargo build được quản lý;
+    // direct root vẫn chịu `reject_external_dependency_resolution`.)
+    if runtime != "rustc"
+        && !exempt(&runtime)
+        && dependency_resolution_deny_reason(&runtime, &direct_args, policy_env).is_some()
+    {
+        return Some((
+            runtime.clone(),
+            "dependency-resolution command",
+            Some(runtime),
+            None,
+        ));
+    }
+    None
+}
+
+fn process_invocation_program(candidate: &str) -> String {
+    let normalized = crate::allowlist::normalize_script_token(candidate)
+        .unwrap_or_else(|| process_basename(candidate));
+    normalized
+        .strip_suffix(".bash")
+        .or_else(|| normalized.strip_suffix(".sh"))
+        .unwrap_or(&normalized)
+        .to_string()
+}
+
+/// Return the actual runtime entrypoint and arguments it receives. For shell
+/// and cmd wrappers this is the first executable operand only; inline shell
+/// source remains opaque, while a real child executable is inspected separately.
+/// (Trả entrypoint runtime và args thực. Với shell/cmd chỉ lấy executable đầu;
+/// source inline giữ opaque, process con thật được monitor riêng.)
+fn runtime_invocation(runtime: &str, argv: &[OsString]) -> Option<(usize, String, Vec<String>)> {
+    if runtime == "cmd" {
+        return windows_cmd_invocation(argv);
+    }
+    let entrypoint = match runtime {
+        "node" | "nodejs" => node_script_argument(argv),
+        "python" | "python3" | "py" => python_script_argument(argv),
+        name if name.starts_with("python3.") => python_script_argument(argv),
+        "php" => php_script_argument(argv),
+        "sh" | "bash" | "dash" | "zsh" | "ksh" | "ash" => shell_script_argument(argv),
+        "dart" | "flutter" => dart_pub_argument(argv),
+        _ => None,
+    }?;
+    let (index, program) = entrypoint;
+    let args = argv
+        .iter()
+        .skip(index + 1)
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect();
+    Some((index, program, args))
+}
+
+/// Resolve a candidate script/module to a forbidden manager name.
+/// Python module names may include a package suffix such as `pip._internal`.
+/// (Chuẩn hóa script/module sang tên manager bị chặn; module Python có thể có
+/// hậu tố package như `pip._internal`.)
+fn forbidden_entry_name(candidate: &str, python_module: bool) -> Option<String> {
+    let normalized = crate::allowlist::normalize_script_token(candidate)?;
+    if FORBIDDEN_TOOLS.contains(&normalized.as_str()) {
+        return Some(normalized);
+    }
+    if python_module {
+        return FORBIDDEN_TOOLS
+            .iter()
+            .find(|name| {
+                candidate.eq_ignore_ascii_case(name)
+                    || candidate.get(name.len()..).is_some_and(|suffix| {
+                        candidate[..name.len()].eq_ignore_ascii_case(name)
+                            && suffix.starts_with('.')
+                    })
+            })
+            .map(|name| (*name).to_string());
+    }
+    None
+}
+
+fn argv_text(argv: &[OsString], index: usize) -> Option<&str> {
+    argv.get(index)?.to_str()
+}
+
+/// Locate Node's script operand while skipping known value-taking flags.
+/// `-e`/`-p` execute inline source, so their source text is intentionally opaque.
+/// (Tìm script operand của Node, bỏ flag đã biết có giá trị. `-e`/`-p` chạy
+/// code inline nên nội dung được coi là opaque.)
+fn node_script_argument(argv: &[OsString]) -> Option<(usize, String)> {
+    const VALUE_FLAGS: &[&str] = &[
+        "-r",
+        "--require",
+        "--import",
+        "--loader",
+        "--experimental-loader",
+        "--conditions",
+        "-C",
+        "--inspect-port",
+        "--input-type",
+        "--title",
+        "--stack-trace-limit",
+        "--max-http-header-size",
+        "--icu-data-dir",
+        "--openssl-config",
+        "--redirect-warnings",
+        "--diagnostic-dir",
+        "--experimental-default-type",
+        "--unhandled-rejections",
+        "--watch-path",
+    ];
+    const SWITCH_FLAGS: &[&str] = &[
+        "--trace-warnings",
+        "--no-warnings",
+        "--enable-source-maps",
+        "--experimental-strip-types",
+        "--experimental-transform-types",
+        "--experimental-global-customevent",
+        "--pending-deprecation",
+        "--preserve-symlinks",
+        "--preserve-symlinks-main",
+        "--throw-deprecation",
+        "--trace-deprecation",
+        "--trace-uncaught",
+        "--use-bundled-ca",
+        "--use-openssl-ca",
+        "--watch",
+        "--watch-preserve-output",
+    ];
+    let mut index = 1;
+    while let Some(argument) = argv_text(argv, index) {
+        if matches!(
+            argument,
+            "-e" | "--eval" | "-p" | "--print" | "-c" | "--check"
+        ) {
+            return None;
+        }
+        if argument == "--" {
+            return argv_text(argv, index + 1).map(|script| (index + 1, script.to_string()));
+        }
+        if !argument.starts_with('-') {
+            return Some((index, argument.to_string()));
+        }
+        if VALUE_FLAGS.contains(&argument) {
+            index += 2;
+            continue;
+        }
+        if VALUE_FLAGS
+            .iter()
+            .any(|flag| argument.starts_with(&format!("{flag}=")))
+        {
+            index += 1;
+            continue;
+        }
+        if SWITCH_FLAGS.contains(&argument) {
+            index += 1;
+            continue;
+        }
+        // Unknown options may take a value. Stop rather than mistaking that
+        // value for the executable script target.
+        // (Option lạ có thể nhận value; dừng để không nhầm value thành script.)
+        return None;
+    }
+    None
+}
+
+/// Locate Python's `-m` module or a script operand without inspecting `-c`
+/// source text. Common interpreter flags with separate values are skipped.
+/// (Tìm module `-m` hoặc script của Python, không đọc source của `-c`; bỏ qua
+/// value của các flag interpreter phổ biến.)
+fn python_script_argument(argv: &[OsString]) -> Option<(usize, String)> {
+    let mut index = 1;
+    while let Some(argument) = argv_text(argv, index) {
+        if matches!(argument, "-c" | "-c0" | "-c1" | "-c2" | "-c3") {
+            return None;
+        }
+        if argument == "-m" {
+            return argv_text(argv, index + 1).map(|module| (index + 1, module.to_string()));
+        }
+        if argument == "--" {
+            return argv_text(argv, index + 1).map(|script| (index + 1, script.to_string()));
+        }
+        if !argument.starts_with('-') {
+            return Some((index, argument.to_string()));
+        }
+        if matches!(argument, "-W" | "-X") {
+            index += 2;
+            continue;
+        }
+        if argument.starts_with("-W") || argument.starts_with("-X") {
+            index += 1;
+            continue;
+        }
+        // Python's `-cCODE` is inline code too; never scan the source string.
+        // (Dạng `-cCODE` cũng là code inline, không dò chuỗi source.)
+        if argument.starts_with("-c") {
+            return None;
+        }
+        // Other single interpreter switches carry no separate value.
+        // (Các switch interpreter còn lại không nhận value riêng.)
+        index += 1;
+    }
+    None
+}
+
+/// PHP's `-r` and `-a` modes do not name a script file.
+/// (Chế độ PHP `-r` và `-a` không chỉ định file script.)
+fn php_script_argument(argv: &[OsString]) -> Option<(usize, String)> {
+    let mut index = 1;
+    while let Some(argument) = argv_text(argv, index) {
+        if matches!(argument, "-r" | "--run" | "-a") {
+            return None;
+        }
+        if matches!(argument, "-d" | "-c" | "-z") {
+            index += 2;
+            continue;
+        }
+        if matches!(argument, "-f" | "--file") {
+            let value_index = index + 1;
+            return argv_text(argv, value_index).map(|script| (value_index, script.to_string()));
+        }
+        if let Some(script) = argument.strip_prefix("--file=") {
+            return Some((index, script.to_string()));
+        }
+        if argument.starts_with('-') {
+            index += 1;
+            continue;
+        }
+        return Some((index, argument.to_string()));
+    }
+    None
+}
+
+/// Only shell file operands are inspected. `sh -c` strings are deliberately
+/// opaque; a real manager spawn/exec is then observed by its own process image.
+/// (Chỉ soi file operand của shell. Chuỗi `sh -c` opaque; manager thực sự
+/// spawn/exec sẽ được nhận diện qua process image của nó.)
+fn shell_script_argument(argv: &[OsString]) -> Option<(usize, String)> {
+    let mut index = 1;
+    while let Some(argument) = argv_text(argv, index) {
+        if argument == "--" {
+            return argv_text(argv, index + 1).map(|script| (index + 1, script.to_string()));
+        }
+        if !argument.starts_with('-') {
+            return Some((index, argument.to_string()));
+        }
+        if argument == "-" || argument.starts_with("-c") || argument.starts_with("-s") {
+            return None;
+        }
+        // Ignore ordinary shell switches such as `-e`/`-x`, but do not
+        // interpret shell source supplied through `-c` or stdin via `-s`.
+        // (Bỏ switch shell thường như `-e`/`-x`, không đọc source `-c`/stdin `-s`.)
+        if argument[1..]
+            .chars()
+            .all(|character| character.is_ascii_alphabetic())
+        {
+            index += 1;
+            continue;
+        }
+        return None;
+    }
+    None
+}
+
+fn dart_pub_argument(argv: &[OsString]) -> Option<(usize, String)> {
+    let mut index = 1;
+    while let Some(argument) = argv_text(argv, index) {
+        if argument.eq_ignore_ascii_case("pub") {
+            return Some((index, argument.to_string()));
+        }
+        if !argument.starts_with('-') {
+            return None;
+        }
+        index += 1;
+    }
+    None
+}
+
+/// Inspect only the first command operand passed to Windows `cmd /c` or `/k`.
+/// This catches `.cmd` package-manager shims without searching the rest of an
+/// opaque command string (for example, `echo npm install`).
+/// (Chỉ đọc command operand đầu tiên của `cmd /c` hoặc `/k` trên Windows.
+/// Nhận shim `.cmd` nhưng không dò phần còn lại của chuỗi opaque như `echo npm install`.)
+fn windows_cmd_invocation(argv: &[OsString]) -> Option<(usize, String, Vec<String>)> {
+    for index in 1..argv.len() {
+        let argument = argv_text(argv, index)?;
+        if argument.eq_ignore_ascii_case("/c")
+            || argument.eq_ignore_ascii_case("/k")
+            || argument.eq_ignore_ascii_case("-c")
+            || argument.eq_ignore_ascii_case("-k")
+        {
+            let command_index = index + 1;
+            let command = argv_text(argv, command_index)?;
+            let mut words = windows_command_words(command);
+            if words.is_empty() {
+                return None;
+            }
+            let program = words.remove(0);
+            return Some((command_index, program, words));
+        }
+    }
+    None
+}
+
+/// Split only enough of a Windows command string to isolate its executable
+/// and argv. A quoted path remains one token; quotes enclosing a whole command
+/// are removed as `cmd /s /c` commonly does.
+/// (Tách vừa đủ executable và argv của chuỗi Windows; giữ quoted path và gỡ
+/// quote bọc toàn command như cách `cmd /s /c` thường truyền.)
+fn windows_command_words(command: &str) -> Vec<String> {
+    let trimmed = command.trim();
+    let command = if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
+        &trimmed[1..trimmed.len() - 1]
+    } else {
+        trimmed
+    };
+    let mut words = Vec::new();
+    let mut word = String::new();
+    let mut quoted = false;
+    let mut started = false;
+    for character in command.chars() {
+        match character {
+            '"' => {
+                quoted = !quoted;
+                started = true;
+            }
+            character if character.is_whitespace() && !quoted => {
+                if started {
+                    words.push(std::mem::take(&mut word));
+                    started = false;
+                }
+            }
+            _ => {
+                word.push(character);
+                started = true;
+            }
+        }
+    }
+    if started {
+        words.push(word);
+    }
+    words
+}
+
+fn matched_invocation_shape_argv(
+    manager: &str,
+    argv: &[OsString],
+    matched_index: Option<usize>,
+) -> String {
+    let cmd_command_index = matched_index.filter(|index| {
+        index
+            .checked_sub(1)
+            .and_then(|previous| argv_text(argv, previous))
+            .is_some_and(|argument| {
+                ["/c", "/k", "-c", "-k"]
+                    .iter()
+                    .any(|flag| argument.eq_ignore_ascii_case(flag))
+            })
+    });
+    let args = if cmd_command_index.is_some() {
+        windows_cmd_invocation(argv)
+            .filter(|(_, program, _)| process_invocation_program(program) == manager)
+            .map(|(_, _, args)| args)
+            .unwrap_or_default()
+    } else {
+        let start = matched_index.map_or(1, |index| index + 1);
+        argv.iter()
+            .skip(start)
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+    };
+    if args.is_empty() {
+        return "no arguments after matched entrypoint".to_string();
+    }
+    if crate::policy::is_read_only_probe(manager, &args) {
+        return "exact read-only probe".to_string();
+    }
+    if crate::policy::is_mutation_invocation(manager, &args, &[]) {
+        return format!(
+            "dependency-mutation invocation; args=[{}]",
+            safe_pm_argument_shape(&args)
+        );
+    }
+    format!(
+        "unrecognized invocation; args=[{}]",
+        safe_pm_argument_shape(&args)
+    )
+}
+
+fn forbidden_process_match(
+    command: &str,
+    command_line: &str,
+    exempt: &[&str],
+) -> Option<(String, &'static str, Option<String>, Option<usize>)> {
     let exempt = |name: &str| exempt.contains(&name);
     let process_name = process_basename(command);
     if FORBIDDEN_TOOLS.contains(&process_name.as_str()) && !exempt(&process_name) {
-        return Some(process_name);
+        return Some((process_name, "executable image", None, None));
     }
 
     command_line
         .split_whitespace()
-        .filter_map(crate::allowlist::normalize_script_token)
-        .find(|name| FORBIDDEN_TOOLS.contains(&name.as_str()) && !exempt(name))
+        .enumerate()
+        .find_map(|(index, token)| {
+            let name = crate::allowlist::normalize_script_token(token)?;
+            (FORBIDDEN_TOOLS.contains(&name.as_str()) && !exempt(&name)).then(|| {
+                (
+                    name,
+                    "command-line token",
+                    Some(process_basename(token)),
+                    Some(index),
+                )
+            })
+        })
 }
 
 fn forbidden_child_error(
@@ -3580,6 +5122,7 @@ fn forbidden_child_error(
     status: ExitStatus,
     stderr: &[u8],
     stdout: &[u8],
+    audit: Option<&NativeAuditContext<'_>>,
 ) -> anyhow::Error {
     let err_tail = tail(stderr);
     let out_tail = tail(stdout);
@@ -3588,11 +5131,43 @@ fn forbidden_child_error(
     } else {
         err_tail
     };
+    let audit_status = match audit {
+        Some(audit) => match append_native_child_denial(
+            audit.log_path,
+            NativeChildDenial {
+                root_cmd: audit.root_cmd,
+                root_args: audit.root_args,
+                cwd: audit.cwd,
+                child_pid: found.pid,
+                child_name: &found.name,
+                child_image: found.image_name.as_deref().unwrap_or("unavailable"),
+                matched_by: found.match_source,
+                matched_operation: &found.matched_operation,
+            },
+        ) {
+            Ok(()) => "audit event recorded".to_string(),
+            Err(error) => format!("audit event write failed: {error}"),
+        },
+        None => "audit event unavailable: no log path configured".to_string(),
+    };
     anyhow::anyhow!(
-        "forbidden package manager '{}' spawned in child process {} (status after kill: {})\n--- tail ---\n{}",
+        "forbidden package manager '{}' spawned in child process {} (image: {}; matched by: {}{}{}; invocation: {}; status after kill: {}; {})\n--- tail ---\n{}",
         found.name,
         found.pid,
+        found.image_name.as_deref().unwrap_or("unavailable"),
+        found.match_source,
+        found
+            .matched_token
+            .as_deref()
+            .map(|token| format!(" '{token}'"))
+            .unwrap_or_default(),
+        found
+            .matched_token_index
+            .map(|index| format!(" at argv[{index}]"))
+            .unwrap_or_default(),
+        found.matched_operation,
         status,
+        audit_status,
         output_tail
     )
 }

@@ -154,6 +154,14 @@ pub struct ProjectConfig {
     /// (Policy script lifecycle commit được — hợp nhất với trust DB.)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scripts: Option<ScriptsPolicy>,
+    /// Native script grammar pin (mgc.toml [script]) — Spec rev4 §4.
+    /// Unknown versions fail closed in both directions (new MGC reading an
+    /// old pin, old MGC meeting a new pin); absence falls back to the
+    /// stable per-ecosystem default.
+    /// (Ghim grammar script native (mgc.toml [script]) — Spec rev4 §4.
+    /// Version lạ fail-closed cả hai chiều; vắng thì dùng default ổn định.)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub script: Option<ScriptGrammarConfig>,
 }
 
 /// Exact pre-operation snapshot of MagiCore-owned project identity files.
@@ -284,6 +292,76 @@ pub struct ScriptsPolicy {
     pub deny: Vec<String>,
 }
 
+/// Native script grammar pin — `mgc.toml [script] grammar` (Spec rev4 §4).
+/// Ghim grammar script native — `mgc.toml [script] grammar` (Spec rev4 §4).
+///
+/// Versioned per script/core family (e.g. `web-script-v1`); adding a
+/// previously-rejected construct is a compatible extension, reinterpreting a
+/// previously-accepted script requires a new version + migration.
+/// (Version theo họ script/core (vd `web-script-v1`); thêm cú pháp từng bị
+/// từ chối là mở rộng tương thích, đổi nghĩa script đã chạy được cần version
+/// mới + migration.)
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ScriptGrammarConfig {
+    /// Pinned grammar version (e.g. `"web-script-v1"`).
+    /// Version grammar được ghim (vd `"web-script-v1"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grammar: Option<String>,
+}
+
+impl ProjectConfig {
+    /// Resolve the effective script grammar: explicit pin wins, otherwise the
+    /// stable per-ecosystem default. Unknown pins are returned as-is so the
+    /// caller can fail closed with the exact version string.
+    /// (Xác định grammar hiệu lực: pin tường minh thắng, còn lại dùng default
+    /// ổn định theo ecosystem. Pin lạ trả nguyên để caller fail-closed đúng
+    /// version đó.)
+    pub fn script_grammar(&self) -> String {
+        if let Some(pinned) = self.script.as_ref().and_then(|s| s.grammar.clone()) {
+            return pinned;
+        }
+        default_script_grammar(&self.ecosystem)
+    }
+}
+
+/// Stable default grammar per ecosystem family (Spec rev4 §4).
+/// Grammar mặc định ổn định theo họ ecosystem (Spec rev4 §4).
+pub fn default_script_grammar(ecosystem: &str) -> String {
+    match ecosystem {
+        "ai" => "ai-script-v1".to_string(),
+        "app" => "app-script-v1".to_string(),
+        "lib" => "lib-script-v1".to_string(),
+        "game" => "game-script-v1".to_string(),
+        "iot" => "iot-script-v1".to_string(),
+        "cloud" | "clo" => "cloud-script-v1".to_string(),
+        "cicd" => "cicd-script-v1".to_string(),
+        "hardware" => "hardware-script-v1".to_string(),
+        _ => "web-script-v1".to_string(),
+    }
+}
+
+/// Write-target lockfile schema for new locks, shared by every adapter
+/// write path (one rule, no per-lane drift): v4 only with explicit
+/// `mgc.toml [lock] schema = "4"` (the documented `"v4"` spelling also
+/// works); absent means v3; anything else fails closed.
+/// (Schema lockfile đích ghi cho lock mới, dùng chung mọi đường ghi
+/// adapter (một luật, không lệch lane): chỉ v4 khi tường minh;
+/// vắng nghĩa là v3; còn lại fail-closed.)
+pub fn lock_schema_is_v4(project_root: &std::path::Path) -> anyhow::Result<bool> {
+    let schema = ProjectConfig::load(project_root)?
+        .and_then(|config| config.lock)
+        .and_then(|lock| lock.schema)
+        .unwrap_or_else(|| "3".to_string());
+    let normalized = schema.strip_prefix('v').unwrap_or(&schema);
+    match normalized {
+        "4" => Ok(true),
+        "3" => Ok(false),
+        _ => anyhow::bail!(
+            "mgc.toml [lock] schema = \"{schema}\" is not supported (expected \"3\" or \"4\")"
+        ),
+    }
+}
+
 /// AI core config — `[ai] framework` (python-agent/mcp-server).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AiConfig {
@@ -386,6 +464,7 @@ impl ProjectConfig {
             compat: None,
             sources: None,
             scripts: None,
+            script: None,
         }
     }
 
@@ -524,6 +603,7 @@ impl ProjectConfig {
             compat: None,
             sources: None,
             scripts: None,
+            script: None,
         }
     }
 
@@ -533,7 +613,14 @@ impl ProjectConfig {
         let Some(content) = read_regular_project_text(&path, "project config")? else {
             return Ok(None);
         };
-        Ok(Some(toml::from_str(&content)?))
+        let document: toml::Value = toml::from_str(&content)?;
+        let mut config: Self = toml::from_str(&content)?;
+        // Omitted execution metadata follows the same core defaults as project creation.
+        // Thiếu bảng execution dùng default theo core; pin tường minh giữ nguyên.
+        if document.get("execution").is_none() {
+            config.execution = default_execution_for(&config.ecosystem, &config.features);
+        }
+        Ok(Some(config))
     }
 
     /// Save to project root (mgc.toml)
@@ -1148,6 +1235,14 @@ pub struct LockConfig {
     /// Stale-temp grace period in seconds before cleanup may unlink.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tmp_grace_secs: Option<u64>,
+    /// Lockfile schema newly written locks target: `"3"` (default) or
+    /// `"4"`. Readers accept every schema either way; this only chooses
+    /// the write target. Anything else fails closed with a clear error.
+    /// (Schema lockfile cho lock mới ghi: `"3"` (mặc định) hoặc `"4"`.
+    /// Reader nhận mọi schema; đây chỉ chọn đích ghi. Giá trị khác
+    /// fail-closed với lỗi rõ.)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema: Option<String>,
 }
 
 /// Trust roots — `mgc.toml [trust]`: key ids accepted when the lock

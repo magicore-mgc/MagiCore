@@ -457,6 +457,7 @@ fn npm_version_probe_requires_exact_executor_shim_path_and_arguments() {
     let shim = shadow.path().join("npm");
     let unquoted_sh_probe = format!("/bin/sh {} --version", shim.display());
     let quoted_sh_probe = format!("/bin/sh \"{}\" --version", shim.display());
+    let bash_image_sh_probe = format!("/bin/sh {} --version", shim.display());
     let impostor_then_shim = format!(
         "/bin/sh /real/path/npm --version {} --version",
         shim.display()
@@ -470,6 +471,11 @@ fn npm_version_probe_requires_exact_executor_shim_path_and_arguments() {
     assert!(is_shadow_npm_version_probe(
         b"sh",
         quoted_sh_probe.as_bytes(),
+        shadow.path()
+    ));
+    assert!(is_shadow_npm_version_probe(
+        b"bash",
+        bash_image_sh_probe.as_bytes(),
         shadow.path()
     ));
     assert!(is_shadow_npm_version_probe(
@@ -502,6 +508,56 @@ fn npm_version_probe_requires_exact_executor_shim_path_and_arguments() {
         format!("node {} --version", shim.display()).as_bytes(),
         shadow.path()
     ));
+}
+
+#[cfg(unix)]
+#[test]
+fn nested_generated_npm_version_probe_is_read_only_and_exact() {
+    let shadow = ShadowPath::create(&[]).expect("create generated executor shims");
+    let shim = shadow.path().join("npm");
+    let exact_probe = format!("/bin/sh \"{}\" --version", shim.display());
+
+    assert!(super::is_generated_shadow_npm_version_probe(
+        b"sh",
+        exact_probe.as_bytes()
+    ));
+    assert!(super::is_generated_shadow_npm_version_probe(
+        b"bash",
+        exact_probe.as_bytes()
+    ));
+    assert!(!super::is_generated_shadow_npm_version_probe(
+        b"sh",
+        format!("/bin/sh \"{}\" install", shim.display()).as_bytes()
+    ));
+    assert!(!super::is_generated_shadow_npm_version_probe(
+        b"sh",
+        format!("/bin/sh \"{}\" --version install", shim.display()).as_bytes()
+    ));
+
+    let fake_root = tempfile::tempdir().expect("create arbitrary shim directory");
+    let fake_dir = fake_root.path().join("mgc-exec-shadow-path-1-2-3");
+    std::fs::create_dir(&fake_dir).expect("create fake generated-name directory");
+    let fake_shim = fake_dir.join("npm");
+    std::fs::write(&fake_shim, super::NPM_VERSION_PROBE_SHIM_CONTENT)
+        .expect("write exact probe bytes to an untrusted directory");
+    assert!(!super::is_generated_shadow_npm_version_probe(
+        b"sh",
+        format!("/bin/sh {} --version", fake_shim.display()).as_bytes()
+    ));
+}
+
+#[cfg(unix)]
+#[test]
+fn shell_wrapped_npm_probe_accepts_mac_sh_image_alias_only_for_exact_probe() {
+    assert!(super::is_npm_version_shell_probe(
+        b"bash",
+        b"/bin/sh -c npm --version"
+    ));
+    assert!(!super::is_npm_version_shell_probe(
+        b"bash",
+        b"/bin/sh -c npm install"
+    ));
+    assert!(!super::is_npm_version_shell_probe(b"npm", b"npm --version"));
 }
 
 #[cfg(unix)]
@@ -705,6 +761,67 @@ fn windows_npm_probe_exemption_requires_exact_native_shim_and_arguments() {
     ));
 }
 
+#[cfg(windows)]
+#[test]
+fn windows_nested_npm_probe_requires_generated_path_marker_and_version_verb() {
+    use std::ffi::OsString;
+
+    let dir = super::unique_temp_dir("mgc-exec-shadow-path");
+    std::fs::create_dir(&dir).expect("create generated nested shadow directory");
+    let shim = dir.join("npm.exe");
+    std::fs::copy(
+        std::env::current_exe().expect("resolve test executable"),
+        &shim,
+    )
+    .expect("copy executor image as Windows npm shim");
+    let digest = super::windows_sha256_file(&shim).expect("hash nested shim");
+    super::write_windows_npm_probe_marker(&dir, &digest).expect("write probe marker");
+    let shadow_path = super::ShadowPath {
+        dir: dir.join("outer-executor-shadow"),
+    };
+    let probe = super::WindowsProcessSnapshot {
+        pid: 301,
+        parent_pid: Some(300),
+        creation_time: Some(301),
+        image_name: "npm.exe".to_owned(),
+        command: vec![shim.as_os_str().to_os_string(), OsString::from("--version")],
+    };
+
+    assert!(super::is_shadow_windows_npm_version_probe(
+        &probe,
+        &shim,
+        &shadow_path
+    ));
+    let install = super::WindowsProcessSnapshot {
+        pid: 301,
+        parent_pid: Some(300),
+        creation_time: Some(301),
+        image_name: "npm.exe".to_owned(),
+        command: vec![shim.as_os_str().to_os_string(), OsString::from("install")],
+    };
+    assert!(!super::is_shadow_windows_npm_version_probe(
+        &install,
+        &shim,
+        &shadow_path
+    ));
+
+    let marker = dir.join(".mgc-npm-probe-v1");
+    let mut marker_permissions = std::fs::metadata(&marker)
+        .expect("read nested probe marker permissions")
+        .permissions();
+    marker_permissions.set_readonly(false);
+    std::fs::set_permissions(&marker, marker_permissions)
+        .expect("make marker writable for rejection check");
+    assert!(!super::is_shadow_windows_npm_version_probe(
+        &probe,
+        &shim,
+        &shadow_path
+    ));
+
+    drop(shadow_path);
+    std::fs::remove_dir_all(&dir).expect("remove nested Windows shim fixture");
+}
+
 #[test]
 fn cargo_compile_is_allowed_only_with_locked_offline_flags() {
     assert!(reject_external_dependency_resolution("cargo", &["build".into()], &[]).is_err());
@@ -738,6 +855,25 @@ fn rustc_is_limited_to_the_read_only_host_target_probe() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn zig_allows_only_direct_source_execution_without_package_resolution() {
+    assert!(
+        reject_external_dependency_resolution("zig", &["run".into(), "probe.zig".into()], &[])
+            .is_ok()
+    );
+    assert!(reject_external_dependency_resolution("zig", &["version".into()], &[]).is_ok());
+    for args in [
+        vec!["fetch".into(), "https://example.invalid/pkg".into()],
+        vec!["build".into()],
+        vec!["run".into(), "probe.zig".into(), "--fetch".into()],
+    ] {
+        assert!(
+            reject_external_dependency_resolution("zig", &args, &[]).is_err(),
+            "Zig invocation must stay direct and dependency-free: {args:?}"
+        );
+    }
 }
 
 #[test]
@@ -817,6 +953,236 @@ fn monitor_recognizes_runtime_package_manager_entrypoints() {
         );
         assert!(super::forbidden_process_name("node.exe", &command, &[expected]).is_none());
     }
+}
+
+#[test]
+fn monitor_reports_whether_forbidden_name_matched_image_or_argv() {
+    assert_eq!(
+        super::forbidden_process_match(
+            "node",
+            "node /project/node_modules/npm/bin/npm-cli.js dev",
+            &[]
+        ),
+        Some((
+            "npm".to_owned(),
+            "command-line token",
+            Some("npm-cli.js".to_owned()),
+            Some(1)
+        ))
+    );
+    assert_eq!(
+        super::forbidden_process_match("/usr/local/bin/npm", "npm install", &[]),
+        Some(("npm".to_owned(), "executable image", None, None))
+    );
+    assert_eq!(
+        super::matched_invocation_shape("node npm --version", Some(1)),
+        "exact read-only probe"
+    );
+}
+
+#[test]
+fn runtime_monitor_matches_structured_manager_invocations_without_scanning_code_text() {
+    use std::ffi::OsString;
+
+    let args = |values: &[&str]| values.iter().map(OsString::from).collect::<Vec<_>>();
+
+    for (image, argv) in [
+        ("sh", args(&["sh", "-c", "echo npm install"])),
+        (
+            "python3",
+            args(&["python3", "-c", "print('npm install; pip install evil')"]),
+        ),
+        ("node", args(&["node", "-e", "console.log('npm install')"])),
+        (
+            "node",
+            args(&["node", "--require", "/project/npm-cli.js", "app.js"]),
+        ),
+    ] {
+        assert_eq!(
+            super::forbidden_process_match_argv(image, &argv, &[]),
+            None,
+            "opaque script/code text must not be treated as a manager process: {image} {argv:?}"
+        );
+    }
+
+    let node_args = args(&[
+        "node",
+        "--require",
+        "/project/bootstrap.js",
+        "--trace-warnings",
+        "/project/node_modules/npm/bin/npm-cli.js",
+        "install",
+    ]);
+    let node_match = super::forbidden_process_match_argv("node", &node_args, &[])
+        .expect("Node's npm CLI entrypoint must still be detected");
+    assert_eq!(node_match.0, "npm");
+    assert_eq!(node_match.1, "runtime entrypoint");
+    assert_eq!(node_match.3, Some(4));
+    assert!(super::forbidden_process_match_argv("node", &node_args, &["npm"]).is_none());
+    assert!(
+        super::matched_invocation_shape_argv("npm", &node_args, node_match.3)
+            .starts_with("dependency-mutation invocation")
+    );
+
+    let python_args = args(&["python3", "-X", "dev", "-m", "pip._internal", "install"]);
+    let python_match = super::forbidden_process_match_argv("python3", &python_args, &[])
+        .expect("Python -m package manager invocation must be detected");
+    assert_eq!(python_match.0, "pip");
+    assert_eq!(python_match.1, "runtime entrypoint");
+    assert_eq!(python_match.3, Some(4));
+
+    let php_args = args(&["php", "/project/composer.phar", "install"]);
+    assert_eq!(
+        super::forbidden_process_match_argv("php", &php_args, &[])
+            .map(|(name, _, _, _)| name.as_str().to_string()),
+        Some("composer".to_string())
+    );
+
+    let shell_file_args = args(&["sh", "/project/bin/npm", "install"]);
+    assert_eq!(
+        super::forbidden_process_match_argv("sh", &shell_file_args, &[])
+            .map(|(name, _, _, _)| name),
+        Some("npm".to_string()),
+        "a shell script whose actual file operand is a manager remains detectable"
+    );
+
+    let direct_args = args(&["/tools/npm", "--version"]);
+    assert_eq!(
+        super::forbidden_process_match_argv("npm", &direct_args, &[]).map(|(name, _, _, _)| name),
+        Some("npm".to_string()),
+        "a manager executable image remains forbidden regardless of its arguments"
+    );
+
+    for command in [
+        "npm install",
+        "\"C:\\Program Files\\nodejs\\npm.cmd\" install",
+        "\"npm install\"",
+        "\"\"C:\\Program Files\\nodejs\\npm.cmd\" install\"",
+    ] {
+        let cmd_args = args(&["cmd.exe", "/d", "/s", "/c", command]);
+        assert_eq!(
+            super::forbidden_process_match_argv("cmd.exe", &cmd_args, &[])
+                .map(|(name, _, _, _)| name),
+            Some("npm".to_string()),
+            "cmd /c must expose only its first executable: {command}"
+        );
+    }
+
+    for command in ["echo npm install", "\"echo npm install\""] {
+        let cmd_args = args(&["cmd.exe", "/d", "/s", "/c", command]);
+        assert_eq!(
+            super::forbidden_process_match_argv("cmd.exe", &cmd_args, &[]),
+            None,
+            "a manager name after cmd's first executable is not an invocation: {command}"
+        );
+    }
+
+    for (image, argv, expected) in [
+        (
+            "rustc",
+            args(&[
+                "rustc",
+                "--crate-name",
+                "test_lib",
+                "--crate-type",
+                "lib",
+                "/project/src/lib.rs",
+            ]),
+            None, // Compiler descendants are execution, not dependency mutation.
+        ),
+        ("cargo", args(&["cargo", "fetch"]), Some("cargo")),
+        (
+            "go",
+            args(&["go", "get", "example.com/acme/lib"]),
+            Some("go"),
+        ),
+        ("flutter", args(&["flutter", "pub", "get"]), Some("pub")),
+        (
+            "swift",
+            args(&["swift", "package", "resolve"]),
+            Some("swift"),
+        ),
+        (
+            "dotnet",
+            args(&["dotnet", "add", "package", "Example"]),
+            Some("dotnet"),
+        ),
+        ("gradle", args(&["gradle", "build"]), Some("gradle")),
+        ("mvn", args(&["mvn", "test"]), Some("mvn")),
+        (
+            "go",
+            args(&["go", "build", "-mod=readonly"]),
+            Some("go"), // GOPROXY cannot be verified from a descendant environment.
+        ),
+        (
+            "cargo",
+            args(&["cargo", "build", "--locked", "--offline"]),
+            None,
+        ),
+        ("flutter", args(&["flutter", "run", "--no-pub"]), None),
+        ("gradle", args(&["gradle", "build", "--offline"]), None),
+        ("mvn", args(&["mvn", "test", "-o"]), None),
+    ] {
+        let found =
+            super::forbidden_process_match_argv(image, &argv, &[]).map(|(name, _, _, _)| name);
+        assert_eq!(
+            found.as_deref(),
+            expected,
+            "dependency mutation policy mismatch: {image} {argv:?}"
+        );
+    }
+
+    for command in [
+        "cargo fetch",
+        "\"C:\\Program Files\\Rust\\cargo.exe\" fetch",
+    ] {
+        let cmd_args = args(&["cmd.exe", "/d", "/s", "/c", command]);
+        assert_eq!(
+            super::forbidden_process_match_argv("cmd.exe", &cmd_args, &[])
+                .map(|(name, _, _, _)| name),
+            Some("cargo".to_string()),
+            "cmd /c must enforce dependency mutation verbs: {command}"
+        );
+    }
+
+    let shell_cargo = args(&["sh", "/project/bin/cargo.sh", "fetch"]);
+    assert_eq!(
+        super::forbidden_process_match_argv("sh", &shell_cargo, &[]).map(|(name, _, _, _)| name),
+        Some("cargo".to_string()),
+        "a script wrapper must not hide a dependency mutation verb"
+    );
+}
+
+#[test]
+fn script_gate_ignores_package_manager_mentions_after_shebang()
+-> Result<(), Box<dyn std::error::Error>> {
+    let root = tempfile::tempdir()?;
+    let script = root.path().join("next");
+    std::fs::write(
+        &script,
+        "#!/usr/bin/env node\n// npm is mentioned in a comment\nconst note = 'npm install';\n",
+    )?;
+
+    super::reject_forbidden_script_file(script.to_str().ok_or("script path is not UTF-8")?)?;
+    Ok(())
+}
+
+#[test]
+fn script_gate_rejects_forbidden_package_manager_interpreter()
+-> Result<(), Box<dyn std::error::Error>> {
+    let root = tempfile::tempdir()?;
+    let script = root.path().join("bad-script");
+    std::fs::write(&script, "#!/usr/bin/env npm\ninstall\n")?;
+
+    let error =
+        super::reject_forbidden_script_file(script.to_str().ok_or("script path is not UTF-8")?)
+            .expect_err("npm must remain forbidden as the script interpreter");
+    assert!(
+        error
+            .to_string()
+            .contains("forbidden package manager 'npm'")
+    );
+    Ok(())
 }
 
 #[test]
@@ -1663,5 +2029,114 @@ fn root_exit_completion_inspects_and_terminates_a_forbidden_job_child()
         error.contains("forbidden package manager 'npm' spawned"),
         "root-exit helper did not inspect the surviving job child: {error}"
     );
+    Ok(())
+}
+
+#[test]
+fn observed_go_proxy_is_required_for_readonly_execution_but_never_allows_mutation() {
+    use std::ffi::OsString;
+    let argv = |args: &[&str]| args.iter().map(OsString::from).collect::<Vec<_>>();
+    let off = vec![("GOPROXY".to_string(), "off".to_string())];
+    let online = [("GOPROXY".to_string(), "https://proxy.example".to_string())];
+    for env in [&[][..], &online[..]] {
+        assert!(
+            super::forbidden_process_match_argv_with_env(
+                "go",
+                &argv(&["go", "run", "-mod=readonly", "main.go"]),
+                &[],
+                env
+            )
+            .is_some()
+        );
+    }
+    assert!(
+        super::forbidden_process_match_argv_with_env(
+            "go",
+            &argv(&["go", "run", "-mod=readonly", "main.go"]),
+            &[],
+            &off
+        )
+        .is_none()
+    );
+    for args in [
+        vec!["go", "get", "example.com/pkg"],
+        vec!["go", "run", "main.go"],
+        vec!["go", "mod", "download"],
+    ] {
+        assert!(
+            super::forbidden_process_match_argv_with_env("go", &argv(&args), &[], &off).is_some()
+        );
+    }
+    assert!(
+        super::forbidden_process_match_argv_with_env("npm", &argv(&["npm", "install"]), &[], &off)
+            .is_some()
+    );
+}
+
+#[test]
+fn windows_go_policy_uses_only_observed_member_environment()
+-> Result<(), Box<dyn std::error::Error>> {
+    use std::collections::HashMap;
+    use std::ffi::OsString;
+    let snapshot = |pid, image: &str, args: &[&str]| super::WindowsProcessSnapshot {
+        pid,
+        parent_pid: Some(100),
+        creation_time: Some(u64::from(pid)),
+        image_name: image.into(),
+        command: args.iter().map(OsString::from).collect(),
+    };
+    let processes = [
+        snapshot(
+            101,
+            "go.exe",
+            &["go.exe", "run", "-mod=readonly", "main.go"],
+        ),
+        snapshot(
+            102,
+            "go.exe",
+            &["go.exe", "run", "-mod=readonly", "main.go"],
+        ),
+        snapshot(103, "go.exe", &["go.exe", "get", "example.com/evil"]),
+        snapshot(104, "npm.exe", &["npm.exe", "install"]),
+    ];
+    let paths = HashMap::new();
+    let off = vec![("GOPROXY".into(), "off".into())];
+    for allowed_env in [false, true] {
+        let mut environments = HashMap::from([
+            (
+                102,
+                vec![("GOPROXY".into(), "https://proxy.example".into())],
+            ),
+            (103, off.clone()),
+            (104, off.clone()),
+            // Root environment must never authorize a child.
+            // Môi trường root không được cấp quyền cho child thiếu bằng chứng.
+            (100, off.clone()),
+        ]);
+        if allowed_env {
+            environments.insert(101, off.clone());
+        }
+        let inspection = super::inspect_windows_job_processes_with_policy_metadata(
+            100,
+            &[100, 101, 102, 103, 104],
+            &processes,
+            &[],
+            None,
+            &super::WindowsProcessPolicyMetadata {
+                executable_paths: &paths,
+                go_policy_env: &environments,
+            },
+            None,
+        )?;
+        assert_eq!(
+            inspection.descendants,
+            vec![
+                (101, (!allowed_env).then(|| "go".into())),
+                (102, Some("go".into())),
+                (103, Some("go".into())),
+                (104, Some("npm".into())),
+            ]
+        );
+    }
     Ok(())
 }

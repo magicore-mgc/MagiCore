@@ -154,6 +154,15 @@ async fn app_swift_project_resolves_and_installs_natively() {
             .install(&graph, tmp.path(), Default::default())
             .await?;
         assert_eq!(summary.added.len(), 1);
+        let fetched_checkout = mgc_app_adapter::install::fetch::fetch_swift_package(
+            tmp.path(),
+            &graph.packages[0].id,
+        )?;
+        assert_eq!(
+            fetched_checkout,
+            store_root.path().join("checkouts").join("scope.lib-1.0.0"),
+            "fetch must return the exact checkout written by native Swift install"
+        );
         // Swift install owns resolution, verified archive materialization,
         // and Package.resolved export; it deliberately does not rewrite the
         // executable Package.swift source.

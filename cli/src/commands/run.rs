@@ -1,5 +1,5 @@
 use anyhow::Result;
-use mgc_ui::info;
+use mgc_ui::{info, warning};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -24,38 +24,138 @@ pub async fn run(
     args: Vec<String>,
     core: Option<&str>,
     compat_runtime: Option<&str>,
+    compat_runner: Option<&str>,
 ) -> Result<()> {
     let compat = crate::commands::compat::CompatMode::from_flag(compat_runtime)?;
+    // Delegated runner lane (Spec rev4 §7/§9): qualified only, warned loudly.
+    // (Lane runner ủy quyền (Spec rev4 §7/§9): chỉ qualified, cảnh báo lớn.)
+    let compat_runner = crate::commands::compat::parse_compat_runner(compat_runner)?;
     let ctx = crate::context::ProjectContext::load_with_core(core)?;
     let project_root = ctx.root();
+    crate::commands::policy::refresh_url_manifest_if_configured(project_root).await;
 
-    // 1. Try mgc.toml first (native MagiCore task definition)
-    let mgc_toml_path = project_root.join("mgc.toml");
-    // let-chain edition 2024 — gộp điều kiện theo clippy 1.98.
-    if mgc_toml_path.exists()
-        && let Some(cmd) = resolve_mgc_toml_script(&mgc_toml_path, &script)?
-    {
-        gate_script_program(&compat, &cmd)?;
-        return execute_task_with_bin(&cmd, &args, project_root, &script, None, &compat);
-    }
-
-    // 2. Fall back to package.json (web ecosystem compatibility)
-    let package_json_path = project_root.join("package.json");
-    // let-chain edition 2024 — gộp điều kiện theo clippy 1.98.
-    if package_json_path.exists()
-        && let Some(cmd) = resolve_package_json_script(&package_json_path, &script)?
-    {
-        reject_external_package_manager_script(&cmd, &package_json_path)?;
-        gate_script_program(&compat, &cmd)?;
-        let bin = project_root.join("node_modules").join(".bin");
-        return execute_task_with_bin(&cmd, &args, project_root, &script, Some(bin), &compat);
-    }
-
-    Err(crate::error::script_not_found(&script))
+    // Script source precedence (Spec rev4 §16.2 — decided): `mgc.toml`
+    // wins over the ecosystem manifest; package.json is the fallback.
+    // (Ưu tiên nguồn script (Spec rev4 §16.2 — đã chốt): `mgc.toml` thắng
+    // manifest ecosystem; package.json là fallback.)
+    run_with_hooks(
+        project_root,
+        &script,
+        &args,
+        &compat,
+        compat_runner.as_deref(),
+        "run",
+    )
 }
 
-fn reject_external_package_manager_script(cmd: &str, manifest_path: &Path) -> Result<()> {
-    if let Some(pm) = mgc_exec::allowlist::find_forbidden_tool_in_script(cmd) {
+/// Pre/post lifecycle orchestration (Spec rev4 §16.1 — decided):
+/// `pre<script>` runs first and aborts the chain on failure; `post<script>`
+/// always runs once; a main failure is reported even when post also fails
+/// (the hook failure is still warned).
+/// (Điều phối lifecycle pre/post (Spec rev4 §16.1 — đã chốt): `pre<script>`
+/// chạy trước, hỏng thì dừng chuỗi; `post<script>` luôn chạy một lần; lỗi
+/// main được báo kể cả khi post cũng hỏng (lỗi hook vẫn cảnh báo).)
+pub(crate) fn run_with_hooks(
+    project_root: &Path,
+    script: &str,
+    args: &[String],
+    compat: &crate::commands::compat::CompatMode,
+    compat_runner: Option<&str>,
+    operation: &str,
+) -> Result<()> {
+    let pre = format!("pre{script}");
+    if resolve_task_script(project_root, &pre)?.is_some() {
+        run_task_script(project_root, &pre, &[], compat, compat_runner, operation)?;
+    }
+    let main_result = run_task_script(project_root, script, args, compat, compat_runner, operation);
+    let post = format!("post{script}");
+    if resolve_task_script(project_root, &post)?.is_some() {
+        let post_result =
+            run_task_script(project_root, &post, &[], compat, compat_runner, operation);
+        if let Err(post_err) = post_result {
+            // Main failure wins the report; the hook failure is still loud.
+            // A post failure after main success IS the result.
+            // (Lỗi main thắng khi báo; lỗi hook vẫn ồn ào. Post hỏng sau
+            // main thành công CHÍNH là kết quả.)
+            warning(&format!("post hook '{post}' failed: {post_err:#}"));
+            if main_result.is_ok() {
+                return Err(post_err);
+            }
+        }
+    }
+    main_result
+}
+
+/// Execute one resolved task script with the parsed compat values.
+/// Shared by `run()` (main + pre/post hooks) and `mgc dev` hook wiring.
+/// (Thực thi một task script đã resolve với giá trị compat đã parse. Dùng
+/// chung cho `run()` (main + pre/post hook) và hook của `mgc dev`.)
+pub(crate) fn run_task_script(
+    project_root: &Path,
+    script: &str,
+    args: &[String],
+    compat: &crate::commands::compat::CompatMode,
+    compat_runner: Option<&str>,
+    operation: &str,
+) -> Result<()> {
+    let Some((cmd, from_mgc_toml)) = resolve_task_script(project_root, script)? else {
+        return Err(crate::error::script_not_found(script));
+    };
+    // Exception-manifest lane context for this operation (exact-match only).
+    // (Ngữ cảnh lane cho manifest exception của operation này (chỉ khớp chính xác).)
+    let (policy_manifest, policy_context, policy_profile) =
+        crate::commands::policy::load_policy_for_run(project_root, operation);
+    if from_mgc_toml {
+        gate_script_program(compat, compat_runner, &cmd)?;
+        return execute_task_with_bin(TaskRequest {
+            cmd: &cmd,
+            args,
+            cwd: project_root,
+            script_name: script,
+            bin_path: None,
+            compat,
+            compat_runner,
+            policy_manifest,
+            policy_context,
+            policy_profile,
+        });
+    }
+
+    // 2. Fall back to package.json (web ecosystem compatibility).
+    // `cmd` above already came from the winning source; this branch only
+    // runs for the package.json source (mgc.toml returned early).
+    // (`cmd` trên đã từ nguồn thắng; nhánh này chỉ chạy cho nguồn
+    // package.json (mgc.toml đã return sớm).)
+    let package_json_path = project_root.join("package.json");
+    reject_external_package_manager_script(&cmd, &package_json_path, compat_runner)?;
+    gate_script_program(compat, compat_runner, &cmd)?;
+    let bin = project_root.join("node_modules").join(".bin");
+    execute_task_with_bin(TaskRequest {
+        cmd: &cmd,
+        args,
+        cwd: project_root,
+        script_name: script,
+        bin_path: Some(bin),
+        compat,
+        compat_runner,
+        policy_manifest,
+        policy_context,
+        policy_profile,
+    })
+}
+
+fn reject_external_package_manager_script(
+    cmd: &str,
+    manifest_path: &Path,
+    compat_runner: Option<&str>,
+) -> Result<()> {
+    // Spec rev4 §7/§9: the declared `--compat-runner` manager is exempt from
+    // the script-token check; its subtree runs compat-audit downstream.
+    // (Spec rev4 §7/§9: manager `--compat-runner` đã khai báo được miễn
+    // check token script; subtree của nó chịu compat-audit phía sau.)
+    if let Some(pm) = mgc_exec::allowlist::find_forbidden_tool_in_script(cmd)
+        && !mgc_exec::prelude::compat_runner_allows(pm, compat_runner)
+    {
         return Err(crate::error::forbidden_pm_script(cmd, manifest_path, pm));
     }
 
@@ -82,26 +182,83 @@ fn resolve_package_json_script(path: &Path, script: &str) -> Result<Option<Strin
         .map(|s| s.to_string()))
 }
 
+/// Resolve a task script with source precedence (Spec rev4 §16.2, decided):
+/// `mgc.toml [scripts]` wins; the ecosystem manifest is the fallback.
+/// Returns the command and whether it came from `mgc.toml`.
+/// (Resolve task script kèm ưu tiên nguồn (Spec rev4 §16.2, đã chốt):
+/// `mgc.toml [scripts]` thắng; manifest ecosystem là fallback. Trả lệnh và
+/// cờ cho biết có từ `mgc.toml` không.)
+pub(crate) fn resolve_task_script(
+    project_root: &Path,
+    script: &str,
+) -> Result<Option<(String, bool)>> {
+    let mgc_toml_path = project_root.join("mgc.toml");
+    if mgc_toml_path.exists()
+        && let Some(cmd) = resolve_mgc_toml_script(&mgc_toml_path, script)?
+    {
+        return Ok(Some((cmd, true)));
+    }
+    let package_json_path = project_root.join("package.json");
+    if package_json_path.exists()
+        && let Some(cmd) = resolve_package_json_script(&package_json_path, script)?
+    {
+        return Ok(Some((cmd, false)));
+    }
+    Ok(None)
+}
+
 /// Gate the script's PROGRAM against the native-engine contract: rival
 /// JS runtimes need an explicit compat opt-in; external PMs are never
 /// spawnable. The program token is inspected WITHOUT spawning anything.
 /// Chặn PROGRAM của script theo hợp đồng engine native: runtime đối thủ
 /// cần compat tường minh; PM ngoài không bao giờ spawn. Token program
 /// được soi KHÔNG spawn gì cả.
-fn gate_script_program(compat: &crate::commands::compat::CompatMode, cmd: &str) -> Result<()> {
+fn gate_script_program(
+    compat: &crate::commands::compat::CompatMode,
+    compat_runner: Option<&str>,
+    cmd: &str,
+) -> Result<()> {
     let invocation = mgc_exec::allowlist::parse_script_invocation(cmd)
         .map_err(|e| crate::error::unsupported_script("run", &e))?;
+    // The exact, qualified runner selected by the user enters the scoped
+    // compat path in mgc-exec. Every other program keeps the native gate.
+    // Runner đã chọn chính xác đi vào compat scope của mgc-exec. Mọi
+    // chương trình khác vẫn chịu native gate.
+    if mgc_exec::prelude::compat_runner_allows(&invocation.program, compat_runner) {
+        return Ok(());
+    }
     crate::commands::compat::gate_runtime_spawn(compat, &invocation.program)
 }
 
-fn execute_task_with_bin(
-    cmd: &str,
-    args: &[String],
-    cwd: &Path,
-    script_name: &str,
+/// One script execution request — bundling keeps the arg list reviewable.
+/// (Một yêu cầu thực thi script — gom lại để danh sách tham số dễ review.)
+#[allow(clippy::too_many_arguments)]
+struct TaskRequest<'a> {
+    cmd: &'a str,
+    args: &'a [String],
+    cwd: &'a Path,
+    script_name: &'a str,
     bin_path: Option<PathBuf>,
-    compat: &crate::commands::compat::CompatMode,
-) -> Result<()> {
+    compat: &'a crate::commands::compat::CompatMode,
+    compat_runner: Option<&'a str>,
+    policy_manifest: Option<mgc_exec::policy_manifest::PolicyManifest>,
+    policy_context: Option<mgc_exec::policy::PolicyContext>,
+    policy_profile: Option<mgc_exec::policy::LaneProfile>,
+}
+
+fn execute_task_with_bin(request: TaskRequest<'_>) -> Result<()> {
+    let TaskRequest {
+        cmd,
+        args,
+        cwd,
+        script_name,
+        bin_path,
+        compat,
+        compat_runner,
+        policy_manifest,
+        policy_context,
+        policy_profile,
+    } = request;
     let invocation = mgc_exec::allowlist::parse_script_invocation(cmd)
         .map_err(|e| crate::error::unsupported_script(script_name, &e))?;
     let program = invocation.program;
@@ -162,6 +319,11 @@ fn execute_task_with_bin(
         env,
         clean_env: true,
         compat_runtime,
+        compat_runner: compat_runner.map(str::to_string),
+        policy_manifest,
+        policy_context,
+        policy_profile,
+        execution_scope: Some(mgc_exec::allowlist::ExecutionScope::ScriptRunner),
         ..Default::default()
     };
     mgc_exec::prelude::run_inherited(&program, &script_args, &opts)?;

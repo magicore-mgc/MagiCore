@@ -90,6 +90,210 @@ pub fn extract_tar_gz(bytes: &[u8], dest: &Path) -> MgResult<()> {
     Ok(())
 }
 
+/// Validate and extract a Cargo `.crate` archive whose entries all live under
+/// the expected `{name}-{version}` root. Unlike the general tarball extractor,
+/// the destination is the shared `registry/src` directory, so this prefix
+/// check prevents one package archive from writing into another package's
+/// source directory. No destination is touched unless every archive entry is
+/// structurally valid and the package contains its root `Cargo.toml`.
+/// Xác minh và giải nén archive Cargo dưới đúng thư mục gốc `{name}-{version}`.
+/// Đích là `registry/src` dùng chung, vì vậy check prefix ngăn archive package
+/// ghi vào source của package khác; không ghi gì trước khi toàn archive hợp lệ.
+pub fn extract_crate_tar_gz(bytes: &[u8], dest: &Path, expected_root: &str) -> MgResult<()> {
+    use std::path::Component;
+
+    let expected = Path::new(expected_root);
+    if expected.components().count() != 1
+        || !matches!(expected.components().next(), Some(Component::Normal(_)))
+    {
+        return Err(MgError::Integrity(format!(
+            "invalid Cargo crate archive root '{expected_root}'"
+        )));
+    }
+
+    let decoder = flate2::read::GzDecoder::new(bytes);
+    let mut archive = tar::Archive::new(decoder);
+    let mut saw_manifest = false;
+    let mut total_uncompressed = 0_u64;
+
+    for entry in archive.entries()? {
+        let entry = entry?;
+        let archive_path = sanitize_archive_path(entry.path()?.as_ref())?;
+        let relative = archive_path.strip_prefix(expected).map_err(|_| {
+            MgError::Integrity(format!(
+                "Cargo crate archive entry '{}' is outside expected root '{expected_root}'",
+                archive_path.display()
+            ))
+        })?;
+        let entry_type = entry.header().entry_type();
+        if entry_type.is_symlink() || entry_type.is_hard_link() {
+            return Err(MgError::Integrity(format!(
+                "Cargo crate archive links are not allowed: {}",
+                archive_path.display()
+            )));
+        }
+        if relative.as_os_str().is_empty() {
+            if entry_type.is_dir() {
+                continue;
+            }
+            return Err(MgError::Integrity(format!(
+                "Cargo crate archive root '{expected_root}' must be a directory"
+            )));
+        }
+        if entry_type.is_dir() {
+            continue;
+        }
+        // pax metadata entries are bookkeeping, not package files. Preserve
+        // the same allowance as `extract_tar_gz` after validating their path.
+        if matches!(entry_type.as_byte(), b'g' | b'x') {
+            continue;
+        }
+        if !entry_type.is_file() {
+            return Err(MgError::Integrity(format!(
+                "unsupported Cargo crate archive entry type for {}",
+                archive_path.display()
+            )));
+        }
+        let size = entry.size();
+        if size > MAX_TAR_ENTRY_UNCOMPRESSED {
+            return Err(MgError::Integrity(format!(
+                "Cargo crate archive entry '{}' exceeds the per-entry size limit",
+                archive_path.display()
+            )));
+        }
+        total_uncompressed = total_uncompressed
+            .checked_add(size)
+            .ok_or_else(|| MgError::Integrity("Cargo crate archive size overflow".to_string()))?;
+        if total_uncompressed > MAX_TAR_TOTAL_UNCOMPRESSED {
+            return Err(MgError::Integrity(
+                "Cargo crate archive exceeds the total uncompressed size limit".to_string(),
+            ));
+        }
+        if relative == Path::new("Cargo.toml") {
+            saw_manifest = true;
+        }
+    }
+
+    if !saw_manifest {
+        return Err(MgError::Integrity(format!(
+            "Cargo crate archive '{expected_root}' has no root Cargo.toml"
+        )));
+    }
+
+    extract_tar_gz(bytes, dest)
+}
+
+/// Hash Cargo crate files directly from a verified archive without extracting them.
+/// Tính hash file crate trực tiếp từ archive đã verify, không giải nén ra đĩa.
+pub fn cargo_source_file_hashes(
+    bytes: &[u8],
+    expected_root: &str,
+) -> MgResult<std::collections::BTreeMap<String, String>> {
+    use sha2::{Digest, Sha256};
+    use std::collections::BTreeMap;
+
+    let expected = Path::new(expected_root);
+    if expected.components().count() != 1
+        || !matches!(expected.components().next(), Some(Component::Normal(_)))
+    {
+        return Err(MgError::Integrity(format!(
+            "invalid Cargo crate archive root '{expected_root}'"
+        )));
+    }
+
+    let decoder = flate2::read::GzDecoder::new(bytes);
+    let mut archive = tar::Archive::new(decoder);
+    let mut total_uncompressed = 0_u64;
+    let mut saw_manifest = false;
+    let mut hashes = BTreeMap::new();
+
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let archive_path = sanitize_archive_path(entry.path()?.as_ref())?;
+        let relative = archive_path.strip_prefix(expected).map_err(|_| {
+            MgError::Integrity(format!(
+                "Cargo crate archive entry '{}' is outside expected root '{expected_root}'",
+                archive_path.display()
+            ))
+        })?;
+        let entry_type = entry.header().entry_type();
+        if entry_type.is_symlink() || entry_type.is_hard_link() {
+            return Err(MgError::Integrity(format!(
+                "Cargo crate archive links are not allowed: {}",
+                archive_path.display()
+            )));
+        }
+        if relative.as_os_str().is_empty() {
+            if entry_type.is_dir() {
+                continue;
+            }
+            return Err(MgError::Integrity(format!(
+                "Cargo crate archive root '{expected_root}' must be a directory"
+            )));
+        }
+        if entry_type.is_dir() {
+            continue;
+        }
+        if matches!(entry_type.as_byte(), b'g' | b'x') {
+            continue;
+        }
+        if !entry_type.is_file() {
+            return Err(MgError::Integrity(format!(
+                "unsupported Cargo crate archive entry type for {}",
+                archive_path.display()
+            )));
+        }
+
+        let size = entry.size();
+        if size > MAX_TAR_ENTRY_UNCOMPRESSED {
+            return Err(MgError::Integrity(format!(
+                "Cargo crate archive entry '{}' exceeds the per-entry size limit",
+                archive_path.display()
+            )));
+        }
+        total_uncompressed = total_uncompressed
+            .checked_add(size)
+            .ok_or_else(|| MgError::Integrity("Cargo crate archive size overflow".to_string()))?;
+        if total_uncompressed > MAX_TAR_TOTAL_UNCOMPRESSED {
+            return Err(MgError::Integrity(
+                "Cargo crate archive exceeds the total uncompressed size limit".to_string(),
+            ));
+        }
+
+        let mut parts = Vec::new();
+        for component in relative.components() {
+            let Component::Normal(part) = component else {
+                return Err(MgError::Integrity(
+                    "Cargo crate archive path has an unsafe component".to_string(),
+                ));
+            };
+            parts.push(part.to_str().ok_or_else(|| {
+                MgError::Integrity("Cargo crate archive path is not UTF-8".to_string())
+            })?);
+        }
+        let relative_path = parts.join("/");
+        if relative_path == "Cargo.toml" {
+            saw_manifest = true;
+        }
+        let mut contents = Vec::with_capacity(size as usize);
+        entry.read_to_end(&mut contents)?;
+        if hashes
+            .insert(relative_path.clone(), hex::encode(Sha256::digest(contents)))
+            .is_some()
+        {
+            return Err(MgError::Integrity(format!(
+                "Cargo crate archive contains duplicate file '{relative_path}'"
+            )));
+        }
+    }
+    if !saw_manifest {
+        return Err(MgError::Integrity(format!(
+            "Cargo crate archive '{expected_root}' has no root Cargo.toml"
+        )));
+    }
+    Ok(hashes)
+}
+
 pub(crate) fn ensure_extract_root(dest: &Path) -> MgResult<PathBuf> {
     match std::fs::symlink_metadata(dest) {
         Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
@@ -324,6 +528,27 @@ mod tests {
             .append_data(&mut header, path, Cursor::new(bytes))
             .unwrap();
         archive.into_inner().unwrap().finish().unwrap()
+    }
+
+    #[test]
+    fn crate_extraction_uses_the_expected_package_root() {
+        let root = tempfile::tempdir().unwrap();
+        let archive = tar_gz_file("mgcfixture-1.0.0/Cargo.toml", b"[package]\n");
+
+        extract_crate_tar_gz(&archive, root.path(), "mgcfixture-1.0.0").unwrap();
+
+        assert!(root.path().join("mgcfixture-1.0.0/Cargo.toml").is_file());
+    }
+
+    #[test]
+    fn crate_extraction_refuses_wrong_package_root_before_writing() {
+        let root = tempfile::tempdir().unwrap();
+        let archive = tar_gz_file("othercrate-1.0.0/Cargo.toml", b"[package]\n");
+
+        let error = extract_crate_tar_gz(&archive, root.path(), "mgcfixture-1.0.0").unwrap_err();
+
+        assert!(error.to_string().contains("outside expected root"));
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
     }
 
     #[cfg(unix)]

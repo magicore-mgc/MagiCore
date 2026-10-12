@@ -109,6 +109,16 @@ const WEB_FRAMEWORKS: &[WebFrameworkConfig] = &[
         base: Some("java"),
     },
     WebFrameworkConfig {
+        name: "dotnet-minimal",
+        sub_type: "backend",
+        base: Some("dotnet"),
+    },
+    WebFrameworkConfig {
+        name: "dotnet-webapi",
+        sub_type: "backend",
+        base: Some("dotnet"),
+    },
+    WebFrameworkConfig {
         name: "gin",
         sub_type: "backend",
         base: Some("go"),
@@ -627,23 +637,55 @@ impl Scaffolder {
         let write_result = match Self::resolve_web_template_layers(config) {
             Ok(layers) => Self::materialize_web_templates(target, config, &layers),
             Err(err) => {
-                if let Some(files) =
+                if config.sub_type == "monorepo" {
+                    Self::ensure_web_fallback_common_files(target, name, framework)?;
+                    Self::write_monorepo_fallback(target, name, config)
+                } else if let Some(files) =
                     crate::scaffold::embedded_kernel::get_embedded_template("web", framework)
                 {
                     Self::ensure_web_fallback_common_files(target, name, framework)?;
                     crate::scaffold::embedded_kernel::materialize_embedded(target, name, &files)
+                } else if framework == "vanilla" {
+                    Self::ensure_web_fallback_common_files(target, name, framework)?;
+                    Self::write_vanilla_web_fallback(target, name)
                 } else if effective_web_mode(config) == "backend"
                     && let Some(language) = infer_backend_language(framework)
                 {
                     Self::ensure_web_fallback_common_files(target, name, framework)?;
                     Self::write_minimal_backend_fallback(target, name, framework, language)
+                } else if let Some((frontend, backend, language)) =
+                    fullstack_fallback_parts(framework)
+                {
+                    Self::ensure_web_fallback_common_files(target, name, framework)?;
+                    let files =
+                        crate::scaffold::embedded_kernel::get_embedded_template("web", frontend)
+                            .ok_or_else(|| {
+                                crate::error::unsupported_fullstack_framework(framework)
+                            })?;
+                    crate::scaffold::embedded_kernel::materialize_embedded(target, name, &files)?;
+                    Self::write_minimal_backend_fallback(
+                        &target.join("server"),
+                        name,
+                        backend,
+                        language,
+                    )
                 } else {
                     return Err(err);
                 }
             }
         };
         write_result?;
-        Self::ensure_web_test_runner(target, name)
+        if effective_web_mode(config) == "monorepo" {
+            return Ok(());
+        }
+        let backend_without_js_manifest = effective_web_mode(config) == "backend"
+            && infer_backend_language(framework).is_some_and(|language| language != "node")
+            && !target.join("package.json").is_file();
+        if backend_without_js_manifest {
+            Ok(())
+        } else {
+            Self::ensure_web_test_runner(target, name)
+        }
     }
 
     fn ensure_web_test_runner(target: &Path, name: &str) -> Result<()> {
@@ -683,7 +725,7 @@ impl Scaffolder {
         if !smoke_test.exists() {
             Self::write_file(
                 &smoke_test,
-                "const test = require('node:test');\nconst assert = require('node:assert/strict');\nconst fs = require('node:fs');\nconst path = require('node:path');\n\nconst root = path.resolve(__dirname, '..');\nconst htmlPath = path.join(root, 'index.html');\nif (fs.existsSync(htmlPath)) {\n  test('HTML document has valid local script entries', () => {\n    const html = fs.readFileSync(htmlPath, 'utf8');\n    assert.match(html, /<html\\b/i);\n    for (const [, entry] of html.matchAll(/<script[^>]+src=[\\\"']([^\\\"']+)[\\\"']/gi)) {\n      const url = new URL(entry, 'http://magicore.local');\n      if (url.origin !== 'http://magicore.local') continue;\n      const relative = decodeURIComponent(url.pathname).replace(/^\\/+/, '');\n      const localPath = path.resolve(root, relative);\n      assert.ok(localPath === root || localPath.startsWith(root + path.sep), 'script entry escapes project: ' + entry);\n      assert.ok(fs.existsSync(localPath), 'missing local script entry: ' + entry);\n    }\n  });\n} else {\n  const candidates = ['src/server', 'src/index', 'src/main', 'src/app', 'server', 'index', 'main', 'app'].flatMap((base) => ['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts'].map((extension) => base + extension));\n  const entry = candidates.map((file) => path.join(root, file)).find((file) => fs.existsSync(file));\n  test('Node project contains a source entrypoint', () => {\n    assert.ok(entry, 'no Node source entrypoint found');\n    assert.ok(fs.readFileSync(entry, 'utf8').trim().length > 0, 'Node source entrypoint is empty');\n  });\n}\n",
+                "const test = require('node:test');\nconst assert = require('node:assert/strict');\nconst fs = require('node:fs');\nconst path = require('node:path');\n\nconst root = path.resolve(__dirname, '..');\nconst htmlPath = path.join(root, 'index.html');\nif (fs.existsSync(htmlPath)) {\n  test('HTML document has valid local script entries', () => {\n    const html = fs.readFileSync(htmlPath, 'utf8');\n    assert.match(html, /<html\\b/i);\n    for (const [, entry] of html.matchAll(/<script[^>]+src=[\\\"']([^\\\"']+)[\\\"']/gi)) {\n      const url = new URL(entry, 'http://magicore.local');\n      if (url.origin !== 'http://magicore.local') continue;\n      const relative = decodeURIComponent(url.pathname).replace(/^\\/+/, '');\n      const localPath = path.resolve(root, relative);\n      assert.ok(localPath === root || localPath.startsWith(root + path.sep), 'script entry escapes project: ' + entry);\n      assert.ok(fs.existsSync(localPath), 'missing local script entry: ' + entry);\n    }\n  });\n} else {\n  const frameworkEntries = ['app.vue', 'pages/index.vue', 'src/pages/index.astro', 'src/routes/+page.svelte', 'src/root.tsx', 'app/page.tsx', 'app/page.jsx', 'src/app/page.jsx', 'app/routes/_index.tsx'];\n  const sourceEntries = ['src/server', 'src/index', 'src/main', 'src/app', 'server', 'index', 'main', 'app'].flatMap((base) => ['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts'].map((extension) => base + extension));\n  const entry = frameworkEntries.concat(sourceEntries).map((file) => path.join(root, file)).find((file) => fs.existsSync(file));\n  test('web project contains a source entrypoint', () => {\n    assert.ok(entry, 'no framework source entrypoint found');\n    assert.ok(fs.readFileSync(entry, 'utf8').trim().length > 0, 'framework source entrypoint is empty');\n  });\n}\n",
             )?;
         }
         Ok(())
@@ -703,6 +745,75 @@ impl Scaffolder {
             )?;
         }
         Ok(())
+    }
+
+    /// Write a small static HTML/JavaScript project when the optional
+    /// vanilla registry layer is unavailable.
+    /// Sinh project HTML/JavaScript tĩnh khi thiếu layer vanilla tùy chọn.
+    fn write_vanilla_web_fallback(target: &Path, name: &str) -> Result<()> {
+        let html_name = name
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+            .replace('\'', "&#39;");
+        Self::write_file(
+            &target.join("package.json"),
+            &format!(
+                "{{\n  \"name\": \"{}\",\n  \"private\": true,\n  \"version\": \"0.1.0\",\n  \"type\": \"module\",\n  \"scripts\": {{\n    \"dev\": \"vite --host 0.0.0.0\",\n    \"build\": \"vite build\",\n    \"preview\": \"vite preview --port 4315 --strictPort\"\n  }}\n}}\n",
+                slugify(name)
+            ),
+        )?;
+        Self::write_file(
+            &target.join("index.html"),
+            &format!(
+                "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>{html_name}</title>\n    <link rel=\"stylesheet\" href=\"/src/style.css\" />\n  </head>\n  <body>\n    <main id=\"app\"></main>\n    <script type=\"module\" src=\"/src/main.js\"></script>\n  </body>\n</html>\n"
+            ),
+        )?;
+        Self::write_file(
+            &target.join("src/main.js"),
+            "document.querySelector('#app').innerHTML = '<h1>Welcome to MagiCore</h1><p>Your vanilla web project is ready.</p>';\n",
+        )?;
+        Self::write_file(
+            &target.join("src/style.css"),
+            "body { margin: 0; min-height: 100vh; display: grid; place-items: center; font: 16px system-ui, sans-serif; }\nmain { padding: 2rem; }\n",
+        )
+    }
+
+    /// Materialize an offline monorepo fallback with one embedded frontend
+    /// and one native backend entry.
+    /// Dựng monorepo offline gồm frontend embedded và backend native.
+    fn write_monorepo_fallback(target: &Path, name: &str, config: &ScaffoldConfig) -> Result<()> {
+        let (frontend, backend) = match config.frameworks.as_slice() {
+            [frontend, backend, ..] => (frontend.as_str(), backend.as_str()),
+            _ => return Err(crate::error::web_scaffold_needs_fe_be()),
+        };
+        let files = crate::scaffold::embedded_kernel::get_embedded_template("web", frontend)
+            .ok_or_else(|| crate::error::unsupported_monorepo_frontend(frontend))?;
+        crate::scaffold::embedded_kernel::materialize_embedded(
+            &target.join("apps/frontend"),
+            name,
+            &files,
+        )?;
+        let language = infer_backend_language(backend)
+            .ok_or_else(|| crate::error::unsupported_monorepo_backend(backend))?;
+        Self::write_minimal_backend_fallback(
+            &target.join("apps/backend"),
+            name,
+            backend,
+            language,
+        )?;
+        Self::write_file(
+            &target.join("magicore.workspace.toml"),
+            "mode = \"monorepo\"\n\n[layout]\napps_dir = \"apps\"\npackages_dir = \"packages\"\n",
+        )?;
+        Self::write_file(
+            &target.join("package.json"),
+            &format!(
+                "{{\n  \"name\": \"{}\",\n  \"private\": true,\n  \"workspaces\": [\"apps/frontend\", \"apps/backend\"]\n}}\n",
+                slugify(name)
+            ),
+        )
     }
 
     fn write_minimal_backend_fallback(
@@ -782,23 +893,201 @@ impl Scaffolder {
                     ),
                 )
             }
+            "dotnet" => {
+                Self::write_file(
+                    &target.join(format!("{}.csproj", slugify(name))),
+                    "<Project Sdk=\"Microsoft.NET.Sdk.Web\">\n  <PropertyGroup>\n    <TargetFramework>net8.0</TargetFramework>\n    <Nullable>enable</Nullable>\n    <ImplicitUsings>enable</ImplicitUsings>\n  </PropertyGroup>\n</Project>\n",
+                )?;
+                Self::write_file(
+                    &target.join("Program.cs"),
+                    &format!(
+                        "var builder = WebApplication.CreateBuilder(args);\nvar app = builder.Build();\napp.MapGet(\"/\", () => \"MagiCore {framework} service ready\");\napp.Run(\"http://127.0.0.1:4315\");\n"
+                    ),
+                )
+            }
             "node" => {
                 Self::write_file(
                     &target.join("package.json"),
                     &format!(
-                        "{{\n  \"name\": \"{}\",\n  \"private\": true,\n  \"version\": \"0.1.0\",\n  \"type\": \"module\",\n  \"scripts\": {{ \"dev\": \"node src/server.js\" }}\n}}\n",
+                        "{{\n  \"name\": \"{}\",\n  \"private\": true,\n  \"version\": \"0.1.0\",\n  \"type\": \"module\",\n  \"scripts\": {{ \"dev\": \"node src/server.js\", \"build\": \"node --check src/server.js\" }}\n}}\n",
                         slugify(name)
                     ),
                 )?;
-                Self::write_file(
-                    &target.join("src/server.js"),
-                    &format!(
-                        "console.log('MagiCore {framework} service ready on 127.0.0.1:4315')\n"
+                match framework {
+                    "fastify" => Self::write_fastify_fallback(target),
+                    "hono" => Self::write_hono_fallback(target),
+                    "nestjs" => Self::write_nestjs_fallback(target),
+                    "trpc" => Self::write_trpc_fallback(target),
+                    _ => Self::write_file(
+                        &target.join("src/server.js"),
+                        &format!(
+                            "console.log('MagiCore {framework} service ready on 127.0.0.1:4315')\n"
+                        ),
                     ),
-                )
+                }
             }
             _ => Err(crate::error::unsupported_scaffold_framework(framework)),
         }
+    }
+
+    fn write_fastify_fallback(target: &Path) -> Result<()> {
+        Self::write_file(
+            &target.join("src/app.js"),
+            r#"import Fastify from 'fastify';
+
+export const app = Fastify({ logger: false });
+app.get('/', async () => ({ status: 'ok', message: 'Hello from MagiCore Fastify!' }));
+"#,
+        )?;
+        Self::write_file(
+            &target.join("src/server.js"),
+            r#"import { app } from './app.js';
+
+const port = Number(process.env.PORT ?? 4315);
+await app.listen({ host: '127.0.0.1', port });
+console.log(`Fastify listening on http://127.0.0.1:${port}`);
+"#,
+        )?;
+        Self::write_file(
+            &target.join("test/scaffold.test.cjs"),
+            r#"const test = require('node:test');
+const assert = require('node:assert/strict');
+
+test('Fastify serves its root route', async (t) => {
+  const { app } = await import('../src/app.js');
+  t.after(() => app.close());
+  const response = await app.inject({ method: 'GET', url: '/' });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json().status, 'ok');
+});
+"#,
+        )
+    }
+
+    fn write_hono_fallback(target: &Path) -> Result<()> {
+        Self::write_file(
+            &target.join("src/app.js"),
+            r#"import { Hono } from 'hono';
+
+export const app = new Hono();
+app.get('/', (context) => context.json({ status: 'ok', message: 'Hello from MagiCore Hono!' }));
+"#,
+        )?;
+        Self::write_file(
+            &target.join("src/server.js"),
+            r#"import { serve } from '@hono/node-server';
+import { app } from './app.js';
+
+const port = Number(process.env.PORT ?? 4315);
+serve({ fetch: app.fetch, hostname: '127.0.0.1', port });
+console.log(`Hono listening on http://127.0.0.1:${port}`);
+"#,
+        )?;
+        Self::write_file(
+            &target.join("test/scaffold.test.cjs"),
+            r#"const test = require('node:test');
+const assert = require('node:assert/strict');
+
+test('Hono serves its root route', async () => {
+  const { app } = await import('../src/app.js');
+  const response = await app.request('/');
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).status, 'ok');
+});
+"#,
+        )
+    }
+
+    fn write_nestjs_fallback(target: &Path) -> Result<()> {
+        Self::write_file(
+            &target.join("src/app.controller.js"),
+            r#"import { Controller, Get } from '@nestjs/common';
+
+class AppController {
+  health() {
+    return { status: 'ok', message: 'Hello from MagiCore NestJS!' };
+  }
+}
+
+Controller()(AppController);
+Get('/')(AppController.prototype, 'health', Object.getOwnPropertyDescriptor(AppController.prototype, 'health'));
+export { AppController };
+"#,
+        )?;
+        Self::write_file(
+            &target.join("src/app.module.js"),
+            r#"import { Module } from '@nestjs/common';
+import { AppController } from './app.controller.js';
+
+class AppModule {}
+Module({ controllers: [AppController] })(AppModule);
+export { AppModule };
+"#,
+        )?;
+        Self::write_file(
+            &target.join("src/server.js"),
+            r#"import 'reflect-metadata';
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module.js';
+
+const port = Number(process.env.PORT ?? 4315);
+const app = await NestFactory.create(AppModule, { logger: false });
+await app.listen(port, '127.0.0.1');
+console.log(`NestJS listening on http://127.0.0.1:${port}`);
+"#,
+        )?;
+        Self::write_file(
+            &target.join("test/scaffold.test.cjs"),
+            r#"const test = require('node:test');
+const assert = require('node:assert/strict');
+require('reflect-metadata');
+
+test('NestJS module registers its root controller', async () => {
+  const { AppModule } = await import('../src/app.module.js');
+  const controllers = Reflect.getMetadata('controllers', AppModule);
+  assert.equal(controllers.length, 1);
+  assert.equal(Reflect.getMetadata('path', controllers[0]), '/');
+});
+"#,
+        )
+    }
+
+    fn write_trpc_fallback(target: &Path) -> Result<()> {
+        Self::write_file(
+            &target.join("src/router.js"),
+            r#"import { initTRPC } from '@trpc/server';
+
+const t = initTRPC.create();
+export const appRouter = t.router({
+  hello: t.procedure.query(() => ({ status: 'ok', message: 'Hello from MagiCore tRPC!' })),
+});
+"#,
+        )?;
+        Self::write_file(
+            &target.join("src/server.js"),
+            r#"import express from 'express';
+import { createExpressMiddleware } from '@trpc/server/adapters/express';
+import { appRouter } from './router.js';
+
+const app = express();
+const port = Number(process.env.PORT ?? 4315);
+app.get('/', (_request, response) => response.json({ status: 'ok', message: 'Hello from MagiCore tRPC!' }));
+app.use('/trpc', createExpressMiddleware({ router: appRouter }));
+app.listen(port, '127.0.0.1', () => console.log(`tRPC listening on http://127.0.0.1:${port}`));
+"#,
+        )?;
+        Self::write_file(
+            &target.join("test/scaffold.test.cjs"),
+            r#"const test = require('node:test');
+const assert = require('node:assert/strict');
+
+test('tRPC hello procedure returns a response', async () => {
+  const { appRouter } = await import('../src/router.js');
+  const response = await appRouter.createCaller({}).hello();
+  assert.equal(response.status, 'ok');
+});
+"#,
+        )
     }
 
     /// C9 — multi-platform: shared Kotlin (KMP) + android/ios (swift+objc)/react-native/flutter.
@@ -1759,6 +2048,15 @@ fn legacy_template_target(board: &str) -> String {
 fn normalize_web_framework(framework: &str) -> String {
     match framework {
         "next" | "next-app" => "nextjs".to_string(),
+        "ts" | "frontend" | "custom" => "vanilla".to_string(),
+        "node" | "backend" => "express".to_string(),
+        "fullstack" => "remix".to_string(),
+        "go" => "gin".to_string(),
+        "java" => "spring-boot".to_string(),
+        "php" => "laravel".to_string(),
+        "python" => "fastapi".to_string(),
+        "rust" => "axum".to_string(),
+        "dotnet" => "dotnet-minimal".to_string(),
         "react-express" | "react-hono" | "react-nestjs" | "react-trpc" => framework.to_string(),
         "vue-express" | "vue-hono" | "vue-nestjs" => framework.to_string(),
         "svelte-express" | "svelte-hono" => framework.to_string(),
@@ -1804,6 +2102,47 @@ pub fn infer_backend_language(framework: &str) -> Option<&'static str> {
         .iter()
         .find(|f| f.name == framework)
         .and_then(|f| f.base)
+}
+
+/// Return the embedded frontend and native language fallback for a split
+/// fullstack preset when its optional composite registry template is missing.
+/// Trả frontend embedded và backend fallback khi thiếu composite fullstack.
+fn fullstack_fallback_parts(framework: &str) -> Option<(&'static str, &'static str, &'static str)> {
+    if is_all_in_one_fullstack(framework) {
+        return None;
+    }
+    let backend = match framework {
+        "react-fastify" => "fastify",
+        "react-spring" => "spring-boot",
+        "vue-laravel" => "laravel",
+        "react-express" | "svelte-express" | "vue-express" => "express",
+        "react-hono" | "svelte-hono" | "vue-hono" => "hono",
+        "react-nestjs" | "vue-nestjs" => "nestjs",
+        "react-trpc" => "trpc",
+        "react-axum" | "vue-axum" | "svelte-axum" => "axum",
+        "react-actix-web" | "vue-actix-web" => "actix-web",
+        "react-gin" | "vue-gin" | "svelte-gin" => "gin",
+        "react-echo" | "vue-echo" => "echo",
+        "react-fiber" | "vue-fiber" => "fiber",
+        "react-fastapi" | "vue-fastapi" | "svelte-fastapi" => "fastapi",
+        "react-django" | "vue-django" => "django",
+        "react-flask" | "vue-flask" => "flask",
+        "react-quarkus" | "vue-quarkus" | "svelte-quarkus" => "quarkus",
+        "react-symfony" | "vue-symfony" => "symfony",
+        _ => return None,
+    };
+    let frontend = if framework.starts_with("react-") {
+        "react-vite"
+    } else if framework.starts_with("vue-") {
+        "vue-vite"
+    } else if framework.starts_with("svelte-") {
+        "sveltekit"
+    } else {
+        return None;
+    };
+    crate::scaffold::embedded_kernel::get_embedded_template("web", frontend)?;
+    let language = infer_backend_language(backend)?;
+    Some((frontend, backend, language))
 }
 
 #[cfg(test)]

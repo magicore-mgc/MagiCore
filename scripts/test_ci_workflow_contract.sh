@@ -15,13 +15,35 @@ fail() {
   exit 1
 }
 
+python3 "$ROOT/scripts/test_release_script.py" || fail "release script argument handling regression tests failed"
+
 grep -q 'run: bash scripts/test_ci_workflow_contract.sh' "$ROOT/.github/workflows/ci.yml" \
   || fail "CI must execute this contract before its release and action-pin assertions are treated as gates"
+seeded_ci_registry="$(sed -n '/Seed registry + cargo test/,/^  build:/p' "$ROOT/.github/workflows/ci.yml")"
+grep -Fq 'curl -sf -o /dev/null http://127.0.0.1:4315/v2/' <<<"$seeded_ci_registry" \
+  || fail "seeded CI registry readiness must probe its registered OCI /v2/ ping route"
+if grep -Eq 'curl -sf -o /dev/null http://127\.0\.0\.1:4315/[[:space:]]' <<<"$seeded_ci_registry"; then
+  fail "seeded CI registry readiness must not probe the unregistered root route"
+fi
 grep -Fq 'python3 "$ROOT/scripts/audit_workflow_action_pins.py"' "$ROOT/scripts/test_ci_workflow_contract.sh" \
   || fail "the CI-invoked workflow contract must audit every workflow action reference"
 python3 "$ROOT/scripts/test_workflow_action_pins.py" || fail "workflow action-pin audit regression tests failed"
 python3 "$ROOT/scripts/audit_workflow_action_pins.py" "$ROOT/.github/workflows" \
   || fail "a workflow action reference is not immutably pinned"
+python3 "$ROOT/scripts/test_workflow_shell_inputs.py" \
+  || fail "workflow shell-input audit regression tests failed"
+python3 "$ROOT/scripts/audit_workflow_shell_inputs.py" "$ROOT/.github/workflows" \
+  || fail "a workflow dispatch input is interpolated into a shell run block"
+grep -Fq 'RELEASE_VERSION_INPUT: ${{ inputs.version }}' "$RELEASE" \
+  || fail "release workflow must transfer the dispatch version through step env"
+grep -Fq 'VERSION="$RELEASE_VERSION_INPUT"' "$RELEASE" \
+  || fail "release workflow must use its safely transferred dispatch version"
+grep -Fq 'if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then' "$RELEASE" \
+  || fail "release workflow must validate the version before exporting it to later jobs"
+grep -Fq 'RELEASE_TAG: ${{ inputs.tag }}' "$VERIFY_DISTRIBUTION" \
+  || fail "distribution verifier must transfer the dispatch tag through step env"
+grep -Fq 'TAG="$RELEASE_TAG"' "$VERIFY_DISTRIBUTION" \
+  || fail "distribution verifier must use its safely transferred dispatch tag"
 
 grep -q '^  pull_request:' "$ALL_CORE" || fail "delegated-compatibility matrix must run on pull requests"
 grep -q '"core/\*\*"' "$ALL_CORE" || fail "delegated-compatibility matrix path filter misses the core directory"
@@ -53,6 +75,16 @@ grep -Fq "$cross_install" "$ROOT/scripts/build_all_platforms.sh" \
 manifest_signing="$(sed -n '/^      # Release provenance (P0)/,/^      # Note: Attestations/p' "$RELEASE")"
 grep -q 'MGC_RELEASE_REQUIRE_SIGNED: "1"' <<<"$manifest_signing" \
   || fail "release manifest signing must require a signature"
+grep -Fq 'MGC_RELEASE_TRUST_ROOTS: ${{ vars.MGC_RELEASE_TRUST_ROOTS }}' <<<"$manifest_signing" \
+  || fail "release workflow must verify the signed manifest with its configured public trust root"
+grep -q 'scripts/verify-release-manifest-signature.py' <<<"$manifest_signing" \
+  || fail "release workflow must cross-check its signature and every archive binding before creating a draft"
+public_manifest_verify="$(sed -n '/^      - name: Verify signed release manifest using public trust roots/,/^      # Note: Attestations/p' "$RELEASE")"
+grep -Fq 'MGC_RELEASE_TRUST_ROOTS: ${{ vars.MGC_RELEASE_TRUST_ROOTS }}' <<<"$public_manifest_verify" \
+  || fail "the post-signing release verifier must receive the public trust-root variable"
+if grep -q 'MGC_RELEASE_SIGNING_KEY' <<<"$public_manifest_verify"; then
+  fail "the post-signing release verifier must not receive the private signing seed"
+fi
 if grep -Eiq 'without the secret.*(publishes|publish).*unsigned|publishes an unsigned manifest' <<<"$manifest_signing"; then
   fail "release workflow must not claim that unsigned manifests can be published when signing is mandatory"
 fi
@@ -60,10 +92,13 @@ fi
 signed_distribution="$(sed -n '/^  verify-signed-manifest:/,$p' "$ROOT/.github/workflows/verify-release-distribution.yml")"
 grep -q 'python3 scripts/verify-release-manifest-signature.py' <<<"$signed_distribution" \
   || fail "distribution verification must run the tested native signature-and-archive verifier"
-grep -q 'MGC_RELEASE_SIGNING_KEY:.*secrets.MGC_RELEASE_SIGNING_KEY' <<<"$signed_distribution" \
-  || fail "distribution verification must require the configured release trust key"
-grep -q 'contents: write' <<<"$signed_distribution" \
-  || fail "signed distribution verification must be able to read draft release assets before promotion"
+grep -q 'MGC_RELEASE_TRUST_ROOTS:.*vars.MGC_RELEASE_TRUST_ROOTS' <<<"$signed_distribution" \
+  || fail "distribution verification must use the configured public release trust root"
+if grep -q 'MGC_RELEASE_SIGNING_KEY' <<<"$signed_distribution"; then
+  fail "distribution verification must never receive the private release signing seed"
+fi
+grep -q 'contents: read' <<<"$signed_distribution" \
+  || fail "post-publication distribution verification must use read-only repository access"
 if grep -Eiq 'pip[[:space:]]+install.*cryptography|signature NOT verified|gh release download.*\|\|[[:space:]]*true' <<<"$signed_distribution"; then
   fail "signed distribution verification must not install an external verifier or waive missing evidence"
 fi
@@ -75,6 +110,29 @@ grep -q 'every signed archive must be downloaded and verified' "$ROOT/scripts/ve
   || fail "signed distribution verifier must reject omitted manifest-bound archives"
 grep -q 'missing required release variants' "$ROOT/scripts/verify-release-manifest-signature.py" \
   || fail "signed distribution verifier must enforce required cross-platform variants"
+
+homebrew_asset_download="$(sed -n '/^      - name: Download the formula shipped on the release/,/^      - name:/p' "$ROOT/.github/workflows/verify-release-distribution.yml")"
+grep -Fq -- '--pattern "magicore.rb"' <<<"$homebrew_asset_download" \
+  || fail "Homebrew release verifier must download the flat release asset name"
+grep -Fq -- '--pattern "magicore-web.rb"' <<<"$homebrew_asset_download" \
+  || fail "Homebrew release verifier must include the web-only formula asset"
+grep -Fq 'cp downloaded/magicore.rb packaging/homebrew/magicore.rb' <<<"$homebrew_asset_download" \
+  || fail "Homebrew verifier must restore the formula path after downloading the flat asset"
+grep -Fq "grep -Eq 'PLACEHOLDER|PENDING_[A-Z0-9_]+|UPDATE_ME|0000000000000000' packaging/homebrew/*.rb" <<<"$homebrew_asset_download" \
+  || fail "Homebrew verifier must reject placeholder hashes in both release formulas"
+if ! printf '%s\n' 'PENDING_RC10_SHA256_DO_NOT_PUBLISH' | grep -Eq 'PLACEHOLDER|PENDING_[A-Z0-9_]+|UPDATE_ME|0000000000000000'; then
+  fail "distribution placeholder detector must match the current RC checksum token"
+fi
+
+scoop_asset_download="$(sed -n '/^      - name: Download the manifest shipped on the release/,/^      - name:/p' "$ROOT/.github/workflows/verify-release-distribution.yml")"
+grep -Fq -- '--pattern "magicore.json"' <<<"$scoop_asset_download" \
+  || fail "Scoop release verifier must download the flat release asset name"
+grep -Fq -- '--pattern "magicore-web.json"' <<<"$scoop_asset_download" \
+  || fail "Scoop release verifier must include the web-only manifest asset"
+grep -Fq 'cp downloaded/magicore.json packaging/scoop/magicore.json' <<<"$scoop_asset_download" \
+  || fail "Scoop verifier must restore the bucket path after downloading the flat asset"
+grep -Fq "grep -Eq 'PLACEHOLDER|PENDING_[A-Z0-9_]+|UPDATE_ME|0000000000000000' packaging/scoop/*.json" <<<"$scoop_asset_download" \
+  || fail "Scoop verifier must reject placeholder hashes in both release manifests"
 
 # Verify each published architecture, including Apple Silicon; select exactly
 # one all-core archive so the web-only match cannot make ARCHIVE ambiguous.
@@ -124,6 +182,8 @@ checkout_sha='3d3c42e5aac5ba805825da76410c181273ba90b1' # v7.0.1 real
 setup_node_sha='820762786026740c76f36085b0efc47a31fe5020' # v7.0.0 real
 setup_python_sha='5fda3b95a4ea91299a34e894583c3862153e4b97' # v7.0.0 real
 setup_go_sha='b7ad1dad31e06c5925ef5d2fc7ad053ef454303e' # v7.0.0 real
+setup_java_sha='de7274f081f381c8f8158605e0321c36c376e2e6' # v6.0.1 real
+setup_dotnet_sha='a98b56852c35b8e3190ac28c8c2271da59106c68' # v6.0.0 real
 
 grep -q "actions/checkout@${checkout_sha}" "$ALL_CORE" || fail "delegated-compatibility checkout SHA must be v7.0.1 real commit"
 grep -q "actions/setup-node@${setup_node_sha}" "$ALL_CORE" || fail "delegated-compatibility setup-node SHA must be v7.0.0 real commit"
@@ -136,6 +196,8 @@ if command -v git >/dev/null 2>&1; then
     verify_pin actions/setup-node v7.0.0 "$setup_node_sha"
     verify_pin actions/setup-python v7.0.0 "$setup_python_sha"
     verify_pin actions/setup-go v7.0.0 "$setup_go_sha"
+    verify_pin actions/setup-java v6.0.1 "$setup_java_sha"
+    verify_pin actions/setup-dotnet v6.0.0 "$setup_dotnet_sha"
     verify_pin Swatinem/rust-cache v2.9.2 '6323deb102c322ba6fcbdcafc7e3dddab59af2b6'
     verify_pin actions/upload-artifact v7.0.1 '043fb46d1a93c77aae656e7c1c64a875d1fc6a0a'
     verify_pin actions/download-artifact v8.0.1 '3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c'

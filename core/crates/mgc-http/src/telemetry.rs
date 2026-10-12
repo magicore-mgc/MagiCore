@@ -86,9 +86,13 @@ impl Telemetry {
 }
 
 fn default_log_dir() -> PathBuf {
+    if std::env::var_os(mgc_platform::paths::MGC_DATA_DIR_ENV)
+        .is_some_and(|value| !value.is_empty())
+    {
+        return mgc_platform::paths::mgc_data_dir().join("telemetry");
+    }
     if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
         return PathBuf::from(xdg).join("magicore/telemetry");
     }
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    PathBuf::from(home).join(".magicore/telemetry")
+    mgc_platform::paths::mgc_data_dir().join("telemetry")
 }

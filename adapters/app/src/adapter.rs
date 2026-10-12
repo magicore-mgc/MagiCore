@@ -130,13 +130,15 @@ impl ContentStoreProvider for AppAdapter {
                 "content_store",
                 "React Native install is not available until JS, Android and iOS artifacts can be committed atomically",
             )),
-            AppLanguage::Kotlin | AppLanguage::ObjC | AppLanguage::Multi => {
-                Err(mgc_types::capabilities::unsupported_capability(
-                    "app",
-                    "content_store",
-                    "this ecosystem has no MagiCore-native install path",
-                ))
-            }
+            AppLanguage::Kotlin
+            | AppLanguage::ObjC
+            | AppLanguage::Multi
+            | AppLanguage::Maui
+            | AppLanguage::Tauri => Err(mgc_types::capabilities::unsupported_capability(
+                "app",
+                "content_store",
+                "this ecosystem has no MagiCore-native install path",
+            )),
         }
     }
 
@@ -150,7 +152,7 @@ impl ContentStoreProvider for AppAdapter {
             return Err(mgc_types::capabilities::unsupported_capability(
                 "app",
                 "install",
-                "Kotlin, Objective-C and multi-platform dependency installation are unsupported until MagiCore owns their complete native lifecycle",
+                "this app ecosystem has no complete MagiCore-owned native dependency lifecycle",
             ));
         }
         // Use new install pipeline (pending native-resolve lock entries are
@@ -185,13 +187,15 @@ impl LockfileProvider for AppAdapter {
                 "lockfile_provider",
                 "React Native install is not available until all ecosystem lock entries can be committed atomically",
             )),
-            AppLanguage::Kotlin | AppLanguage::ObjC | AppLanguage::Multi => {
-                Err(mgc_types::capabilities::unsupported_capability(
-                    "app",
-                    "lockfile_provider",
-                    "this ecosystem has no MagiCore-owned lockfile writer",
-                ))
-            }
+            AppLanguage::Kotlin
+            | AppLanguage::ObjC
+            | AppLanguage::Multi
+            | AppLanguage::Maui
+            | AppLanguage::Tauri => Err(mgc_types::capabilities::unsupported_capability(
+                "app",
+                "lockfile_provider",
+                "this ecosystem has no MagiCore-owned lockfile writer",
+            )),
         }
     }
 
@@ -228,6 +232,14 @@ impl AuditProvider for AppAdapter {
 
 #[async_trait]
 impl PackageAdapter for AppAdapter {
+    fn lock_replay_manifest(&self, project_root: &Path, manifest: &Manifest) -> MgResult<Manifest> {
+        if self.language == AppLanguage::Flutter {
+            crate::manifest::flutter::expand_flutter_sdk_dependencies(project_root, manifest)
+        } else {
+            Ok(manifest.clone())
+        }
+    }
+
     fn resolves_implicit_dependencies(&self, project_root: &Path) -> MgResult<bool> {
         if self.language == AppLanguage::Flutter {
             crate::manifest::flutter::has_flutter_sdk_dependencies(project_root)
@@ -246,6 +258,28 @@ impl PackageAdapter for AppAdapter {
             AppLanguage::ReactNative => ("react-native", "package.json", "package.json"),
             AppLanguage::ObjC => ("objc", "Podfile", "Podfile"),
             AppLanguage::Multi => ("multi", "multi", "multi"),
+            AppLanguage::Maui => {
+                let path = crate::language::maui_project_manifest(&self.project_root)?;
+                let relpath = path
+                    .strip_prefix(&self.project_root)
+                    .ok()?
+                    .to_str()?
+                    .to_string();
+                return Some(mgc_types::ManifestIdentity {
+                    core: "app".to_string(),
+                    language: "maui".to_string(),
+                    format: "csproj".to_string(),
+                    relpath,
+                });
+            }
+            AppLanguage::Tauri => {
+                if !crate::language::is_regular_manifest(
+                    &self.project_root.join("src-tauri/Cargo.toml"),
+                ) {
+                    return None;
+                }
+                ("tauri", "Cargo.toml", "src-tauri/Cargo.toml")
+            }
         };
         Some(mgc_types::ManifestIdentity {
             core: "app".to_string(),
@@ -260,7 +294,11 @@ impl PackageAdapter for AppAdapter {
         match self.language {
             AppLanguage::Flutter | AppLanguage::Swift => Self::CAPABILITIES_RESOLVER,
             AppLanguage::ReactNative => Self::CAPABILITIES_BASE,
-            AppLanguage::Kotlin | AppLanguage::ObjC | AppLanguage::Multi => Self::CAPABILITIES_BASE,
+            AppLanguage::Kotlin
+            | AppLanguage::ObjC
+            | AppLanguage::Multi
+            | AppLanguage::Maui
+            | AppLanguage::Tauri => Self::CAPABILITIES_BASE,
         }
     }
 
@@ -364,16 +402,18 @@ impl DependencyResolver for AppAdapter {
                 "resolve",
                 "React Native dependency resolution is not exposed until JS, Android and iOS can be installed and committed atomically",
             )),
-            AppLanguage::Kotlin | AppLanguage::ObjC | AppLanguage::Multi => {
-                Err(mgc_types::MgError::Unsupported {
-                    core: "app",
-                    capability: "resolve",
-                    guidance: format!(
-                        "{} has no native resolve engine; dependency resolution is owned by its toolchain",
-                        self.language.as_str()
-                    ),
-                })
-            }
+            AppLanguage::Kotlin
+            | AppLanguage::ObjC
+            | AppLanguage::Multi
+            | AppLanguage::Maui
+            | AppLanguage::Tauri => Err(mgc_types::MgError::Unsupported {
+                core: "app",
+                capability: "resolve",
+                guidance: format!(
+                    "{} has no native resolve engine; dependency resolution is owned by its toolchain",
+                    self.language.as_str()
+                ),
+            }),
         }
     }
 
@@ -425,7 +465,9 @@ impl DependencyResolver for AppAdapter {
             AppLanguage::ReactNative
             | AppLanguage::Kotlin
             | AppLanguage::ObjC
-            | AppLanguage::Multi => Err(mgc_types::MgError::Unsupported {
+            | AppLanguage::Multi
+            | AppLanguage::Maui
+            | AppLanguage::Tauri => Err(mgc_types::MgError::Unsupported {
                 core: "app",
                 capability: "resolve",
                 guidance: format!(

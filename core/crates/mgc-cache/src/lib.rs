@@ -3,7 +3,7 @@
 
 pub mod memory;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -48,9 +48,13 @@ impl PackageCache {
     }
 
     /// Get default cache directory — Lấy thư mục cache mặc định
+    /// Managed web package cache: MGC_DATA_DIR/cache/web/package-cache.
+    /// Cache package web do MGC quản: MGC_DATA_DIR/cache/web/package-cache.
     pub fn default_cache_dir() -> Result<PathBuf> {
-        let home = dirs::home_dir().context("No home directory")?;
-        Ok(home.join(".magicore").join("cache"))
+        Ok(mgc_platform::paths::mgc_data_dir()
+            .join("cache")
+            .join("web")
+            .join("package-cache"))
     }
 
     /// Check if package cached — Kiểm tra package có trong cache không

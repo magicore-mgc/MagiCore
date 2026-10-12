@@ -62,13 +62,13 @@ pub fn optimize_project(project_root: &Path, core: &str, force: bool) -> Result<
     }
 
     // Detect runtimes for this project — phát hiện runtimes cho project này
-    let detected_runtimes = runtime_detect::detect_runtimes(project_root, core);
-    if detected_runtimes.is_empty()
+    let detected_runtimes = runtime_detect::detect_optimizer_runtimes(project_root, core);
+    let runtime_unavailable = detected_runtimes.is_empty()
         || matches!(
             detected_runtimes[0],
             runtime_detect::DetectedRuntime::Unknown
-        )
-    {
+        );
+    if runtime_unavailable && !generators::has_core_level_optimization(core) {
         // Fail closed: automation reading Ok(()) here would report a
         // successful optimization that never happened (V1.2: no success
         // without verifiable state change).

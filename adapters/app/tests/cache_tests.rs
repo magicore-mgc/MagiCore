@@ -7,35 +7,28 @@ use mgc_app_adapter::AppLanguage;
 use mgc_app_adapter::cache::{cache_dir, cache_size, clear_cache};
 
 #[test]
-fn flutter_cache_dir_points_to_pub_cache() {
+fn flutter_cache_dir_points_to_mgc_store() {
     let dir = cache_dir(AppLanguage::Flutter).unwrap();
-    assert!(dir.to_string_lossy().contains(".pub-cache"));
+    assert_eq!(dir, mgc_platform::paths::mgc_data_dir().join("store/pub"));
 }
 
 #[test]
-fn kotlin_cache_dir_points_to_gradle() {
-    let dir = cache_dir(AppLanguage::Kotlin).unwrap();
-    assert!(dir.to_string_lossy().contains(".gradle"));
+fn app_lanes_without_native_cache_ownership_are_not_managed() {
+    assert!(cache_dir(AppLanguage::Kotlin).is_err());
+    assert!(cache_dir(AppLanguage::ReactNative).is_err());
+    assert!(cache_dir(AppLanguage::ObjC).is_err());
 }
 
 #[test]
 fn swift_cache_dir_platform_specific() {
     let dir = cache_dir(AppLanguage::Swift).unwrap();
-    assert!(dir.to_string_lossy().contains("swiftpm"));
+    assert_eq!(dir, mgc_platform::paths::mgc_data_dir().join("store/swift"));
 }
 
 #[test]
-fn react_native_cache_uses_npm() {
-    let dir = cache_dir(AppLanguage::ReactNative).unwrap();
-    assert!(dir.to_string_lossy().contains(".npm"));
-}
-
-#[test]
-fn objc_cache_uses_cocoapods() {
-    let dir = cache_dir(AppLanguage::ObjC).unwrap();
-    assert!(
-        dir.to_string_lossy().contains("CocoaPods") || dir.to_string_lossy().contains("cocoapods")
-    );
+fn external_dotnet_and_rust_caches_are_not_exposed_as_mgc_managed_cache() {
+    assert!(cache_dir(AppLanguage::Maui).is_err());
+    assert!(cache_dir(AppLanguage::Tauri).is_err());
 }
 
 #[test]

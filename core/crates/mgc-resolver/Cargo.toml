@@ -32,6 +32,7 @@ tar = { workspace = true }
 tokio = { workspace = true }
 time = { workspace = true }
 tracing = { workspace = true }
+libc = { workspace = true }
 # Go engine: base64 for the sumdb h1 dirhash (already-pinned workspace deps —
 # no new external crates). (Engine Go: base64 cho dirhash h1 của sumdb —
 # workspace dep đã ghim sẵn, không thêm crate ngoài.)

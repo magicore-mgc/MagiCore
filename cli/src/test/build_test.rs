@@ -97,6 +97,18 @@ fn build_manifest_presence_rejects_external_symlinks() {
     assert!(project_manifest_present(project.path(), "platformio.ini").is_err());
 }
 
+#[cfg(all(unix, feature = "web"))]
+#[test]
+fn go_build_output_directory_rejects_project_symlink() {
+    let project = tempfile::tempdir().unwrap();
+    let external = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(external.path(), project.path().join(".magicore")).unwrap();
+
+    let error = ensure_go_build_output_dir(project.path()).unwrap_err();
+    assert!(error.to_string().contains("refusing native build output"));
+    assert!(!external.path().join("build").exists());
+}
+
 #[test]
 fn detects_native_engine_crate_in_frontend_layouts() {
     let dir = tempfile::tempdir().unwrap();
@@ -119,7 +131,7 @@ fn framework_build_script_maps_vite_and_next() {
     fs::write(bin_dir.join("vite"), "").unwrap();
     fs::write(bin_dir.join("next"), "").unwrap();
 
-    let vite = map_framework_build_script(dir.path(), &["vite", "build"])
+    let vite = map_framework_build_script(dir.path(), &["vite", "build"], None)
         .unwrap()
         .unwrap();
     assert_eq!(vite.0, Path::new("node"));
@@ -136,7 +148,7 @@ fn framework_build_script_maps_vite_and_next() {
         vite.1.clone()
     });
 
-    let next = map_framework_build_script(dir.path(), &["next", "build"])
+    let next = map_framework_build_script(dir.path(), &["next", "build"], None)
         .unwrap()
         .unwrap();
     assert_eq!(next.0, Path::new("node"));
@@ -155,10 +167,66 @@ fn framework_build_script_maps_vite_and_next() {
 }
 
 #[test]
+fn node_syntax_check_build_script_is_limited_to_project_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("src/server.js");
+    fs::create_dir_all(source.parent().unwrap()).unwrap();
+    fs::write(&source, "console.log('ok');\n").unwrap();
+
+    let mapped =
+        map_framework_build_script(dir.path(), &["node", "--check", "src/server.js"], None)
+            .unwrap()
+            .unwrap();
+    assert_eq!(mapped.0, Path::new("node"));
+    assert_eq!(mapped.1[0], "--check");
+    assert_eq!(mapped.1[1], source.canonicalize().unwrap().as_os_str());
+
+    assert!(
+        map_framework_build_script(dir.path(), &["node", "--check", "../outside.js"], None,)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        map_framework_build_script(
+            dir.path(),
+            &["node", "--check", "src/server.js", "--input-type=module"],
+            None,
+        )
+        .unwrap()
+        .is_none()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn node_syntax_check_build_rejects_a_symlink_outside_the_project() {
+    let dir = tempfile::tempdir().unwrap();
+    let external = tempfile::tempdir().unwrap();
+    fs::write(
+        external.path().join("server.js"),
+        "console.log('outside');\n",
+    )
+    .unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    std::os::unix::fs::symlink(
+        external.path().join("server.js"),
+        dir.path().join("src/server.js"),
+    )
+    .unwrap();
+
+    assert!(
+        map_framework_build_script(dir.path(), &["node", "--check", "src/server.js"], None,)
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
 fn framework_build_script_rejects_external_pm_wrappers() {
     let err = reject_external_package_manager_script(
         "npm run build:inner",
         Path::new("/tmp/package.json"),
+        None,
     )
     .unwrap_err();
     assert!(err.to_string().contains("delegates to 'npm'"));
@@ -169,6 +237,7 @@ fn framework_build_script_rejects_external_pm_wrappers_after_separator() {
     let err = reject_external_package_manager_script(
         "vite build && yarn install",
         Path::new("/tmp/package.json"),
+        None,
     )
     .unwrap_err();
     assert!(err.to_string().contains("delegates to 'yarn'"));
@@ -179,6 +248,7 @@ fn framework_build_script_rejects_package_manager_javascript_entrypoint() {
     let error = reject_external_package_manager_script(
         "node ./node_modules/npm/bin/npm-cli.js install",
         Path::new("/tmp/package.json"),
+        None,
     )
     .unwrap_err();
     assert!(error.to_string().contains("delegates to 'npm'"));
@@ -574,7 +644,7 @@ fn framework_build_script_maps_ng_without_preserve_symlinks() {
     fs::create_dir_all(&bin_dir).unwrap();
     fs::write(bin_dir.join("ng"), "").unwrap();
 
-    let ng = map_framework_build_script(dir.path(), &["ng", "build"])
+    let ng = map_framework_build_script(dir.path(), &["ng", "build"], None)
         .unwrap()
         .unwrap();
     assert_eq!(ng.0, Path::new("node"));
@@ -592,6 +662,34 @@ fn framework_build_script_maps_ng_without_preserve_symlinks() {
     assert_eq!(args.last().unwrap(), "build");
 }
 
+/// Remix's nested mlly/pkg-types cycle recurses forever with symlink-preserving resolution.
+/// Vòng phụ thuộc lồng mlly/pkg-types của Remix lặp vô hạn khi giữ nguyên symlink.
+#[test]
+fn framework_build_script_maps_remix_without_preserve_symlinks() {
+    let dir = tempfile::tempdir().unwrap();
+    let bin_dir = dir.path().join("node_modules/.bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    fs::write(bin_dir.join("remix"), "").unwrap();
+
+    let remix = map_framework_build_script(dir.path(), &["remix", "vite:build"], None)
+        .unwrap()
+        .unwrap();
+    assert_eq!(remix.0, Path::new("node"));
+    let args = remix
+        .1
+        .iter()
+        .map(|value| value.to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+    assert!(
+        !args
+            .iter()
+            .any(|arg| arg == "--preserve-symlinks" || arg == "--preserve-symlinks-main"),
+        "remix must not carry preserve-symlinks flags, got: {args:?}"
+    );
+    assert!(args.iter().any(|arg| arg.contains("node_modules")));
+    assert_eq!(args.last().unwrap(), "vite:build");
+}
+
 #[test]
 fn framework_build_chain_keeps_typecheck_separate_and_rejects_shell_controls() {
     let dir = tempfile::tempdir().unwrap();
@@ -601,21 +699,22 @@ fn framework_build_chain_keeps_typecheck_separate_and_rejects_shell_controls() {
     fs::write(bin.join("tsc"), "").unwrap();
     fs::write(bin.join("vue-tsc"), "").unwrap();
     let compat = crate::commands::compat::CompatMode::Native;
-    let chain = map_framework_build_chain(dir.path(), "vite build && tsc --noEmit", &compat)
+    let chain = map_framework_build_chain(dir.path(), "vite build && tsc --noEmit", &compat, None)
         .unwrap()
         .unwrap();
     assert_eq!(chain.len(), 2);
     assert_eq!(chain[0].1.last().unwrap(), "build");
     assert_eq!(chain[1].1.last().unwrap(), "--noEmit");
-    let vue = map_framework_build_chain(dir.path(), "vue-tsc --noEmit && vite build", &compat)
-        .unwrap()
-        .unwrap();
+    let vue =
+        map_framework_build_chain(dir.path(), "vue-tsc --noEmit && vite build", &compat, None)
+            .unwrap()
+            .unwrap();
     assert_eq!(vue.len(), 2);
     for script in [
         r#"vite build --base "dist&&preview""#,
         r"vite build --base dist\&\&preview",
     ] {
-        let quoted = map_framework_build_chain(dir.path(), script, &compat)
+        let quoted = map_framework_build_chain(dir.path(), script, &compat, None)
             .unwrap()
             .unwrap();
         assert_eq!(quoted.len(), 1);
@@ -630,8 +729,42 @@ fn framework_build_chain_keeps_typecheck_separate_and_rejects_shell_controls() {
         "vite build && npm install",
     ] {
         assert!(
-            map_framework_build_chain(dir.path(), script, &compat).is_err(),
+            map_framework_build_chain(dir.path(), script, &compat, None).is_err(),
             "unsafe or unsupported build chain accepted: {script}"
         );
     }
+}
+
+#[test]
+fn compat_runner_exempts_declared_manager_in_build_chain() {
+    // Spec rev4 §7/§9: declared `--compat-runner` maps to a direct launch;
+    // undeclared PM tokens still fall through to unsupported handling.
+    // (Spec rev4 §7/§9: runner đã khai báo map thành launch trực tiếp;
+    // token PM không khai báo vẫn rơi về unsupported.)
+    let dir = tempfile::TempDir::new().unwrap();
+    let compat = crate::commands::compat::CompatMode::Native;
+    let launch = map_framework_build_chain(dir.path(), "npm run build:all", &compat, Some("npm"))
+        .unwrap()
+        .unwrap();
+    assert_eq!(launch.len(), 1);
+    assert_eq!(launch[0].0, Path::new("npm"));
+
+    reject_external_package_manager_script(
+        "npm run build:all",
+        Path::new("/tmp/package.json"),
+        Some("npm"),
+    )
+    .unwrap();
+
+    let err = reject_external_package_manager_script(
+        "npm run build:all",
+        Path::new("/tmp/package.json"),
+        Some("yarn"),
+    )
+    .unwrap_err();
+    assert!(err.to_string().contains("delegates to 'npm'"));
+
+    let err =
+        map_framework_build_chain(dir.path(), "npm run build:all", &compat, None).unwrap_err();
+    assert!(err.to_string().contains("npm"));
 }

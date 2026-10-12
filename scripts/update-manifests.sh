@@ -15,13 +15,13 @@ Updates package manager manifests with:
   - Remove unsupported architectures
 
 Options:
-  --version <version>  Release version (e.g. 1.1.0-rc.9)
+  --version <version>  Release version (e.g. 1.1.0-rc.10)
   --artifacts <dir>    Directory containing release artifacts
   --verify-only        Only verify, do not update
   -h, --help           Show this help
 
 Example:
-  ./scripts/update-manifests.sh --version 1.1.0-rc.9 --artifacts release-assets
+  ./scripts/update-manifests.sh --version 1.1.0-rc.10 --artifacts release-assets
 USAGE
 }
 

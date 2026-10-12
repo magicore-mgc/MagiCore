@@ -1026,6 +1026,31 @@ pub fn dlx_no_binary(bin: &str, pkg: &str) -> Error {
     anyhow!("dlx: no binary '{bin}' found for package '{pkg}'. Is it an executable package?")
 }
 
+/// Reject malformed registry requests before creating dlx work directories.
+/// Chặn request sai trước khi tạo project tạm, không lặp lại input nhạy cảm.
+pub fn dlx_invalid_request(reason: &str) -> Error {
+    anyhow!("dlx: invalid registry package request: {reason}")
+}
+
+/// Refuse unreadable caller policy without exposing configuration credential values.
+/// Không in dòng TOML có thể chứa credential khi policy caller hỏng.
+pub fn dlx_invalid_caller_policy() -> Error {
+    anyhow!("dlx: cannot read caller project policy; fix mgc.toml before running dlx")
+}
+
+/// Refuse redirected cache directories and unexpected executable targets.
+/// Không cho cache symlink hoặc executable thoát project tạm được chạy.
+pub fn dlx_cache_path_unsafe(path: &std::path::Path) -> Error {
+    anyhow!(
+        "dlx: cache directory '{}' must be a real directory without symlinks",
+        path.display()
+    )
+}
+
+pub fn dlx_binary_outside_project() -> Error {
+    anyhow!("dlx: executable resolves outside the verified temporary project")
+}
+
 // ===== hooks.rs =====
 
 pub fn hook_failed(event: &str, e: &dyn std::fmt::Display) -> Error {
@@ -1216,6 +1241,18 @@ pub fn web_no_dev_entrypoint(root: &std::path::Path) -> Error {
         "No 'dev' script found in '{}' and no supported native dev entrypoint was detected",
         root.display()
     )
+}
+
+/// A dev process group received SIGINT/SIGTERM.
+/// Nhóm dev nhận SIGINT/SIGTERM và đang được dọn dẹp.
+pub fn web_dev_interrupted() -> Error {
+    anyhow!("dev server group interrupted by SIGINT/SIGTERM")
+}
+
+/// A sibling dev target ended and this target is being cleaned up.
+/// Target dev cùng nhóm kết thúc nên target này đang được dọn dẹp.
+pub fn web_dev_target_cancelled() -> Error {
+    anyhow!("dev target cancelled because a sibling target stopped")
 }
 
 pub fn web_no_install_flow(root: &std::path::Path) -> Error {
@@ -1451,6 +1488,10 @@ pub fn unsupported_monorepo_backend(backend: &str) -> Error {
     anyhow!("Unsupported monorepo backend '{backend}'")
 }
 
+pub fn unsupported_monorepo_frontend(frontend: &str) -> Error {
+    anyhow!("Scaffold for monorepo frontend framework '{frontend}' is not implemented yet")
+}
+
 pub fn scaffold_not_implemented(label: &str, layer: &str) -> Error {
     anyhow!(
         "Scaffold for {} is not implemented yet at '{}'",
@@ -1640,6 +1681,89 @@ pub fn store_core_identity_conflict(marker: &str, configured: &str) -> Error {
     )
 }
 
+/// Store doctor requires a core marker matching the requested native lane.
+/// Store doctor cần marker core khớp lane native được yêu cầu.
+pub fn store_core_marker_required(core: &str) -> Error {
+    anyhow!("store doctor requires a valid .mgc.core marker for core '{core}'")
+}
+
+/// Refuse shared-store access when project markers disagree.
+/// Từ chối shared-store nếu marker project không thống nhất.
+pub fn store_core_identity_conflict_any(marker: &str, configured: &str) -> Error {
+    anyhow!(
+        "project core identity conflict: .mgc.core says '{marker}' but mgc.toml says '{configured}'; refusing store access"
+    )
+}
+
+/// Refuse shared-store access when markers identify another core.
+/// Từ chối shared-store nếu marker chỉ sang core khác.
+pub fn store_core_identity_mismatch(expected: &str, marker: &str, configured: &str) -> Error {
+    anyhow!(
+        "store doctor requested core '{expected}' but project markers identify '{marker}' and '{configured}'"
+    )
+}
+
+/// Store doctor requires framework metadata to resolve a native store route.
+/// Store doctor cần framework metadata để tìm native store route.
+pub fn store_doctor_framework_metadata_required(core: &str, framework: &str) -> Error {
+    anyhow!(
+        "store doctor cannot verify core '{core}' framework '{framework}' because mgc.toml is missing"
+    )
+}
+
+/// Refuse to inspect a route that disagrees with the project's framework declaration.
+/// Từ chối kiểm tra route không khớp khai báo framework của project.
+pub fn store_doctor_framework_mismatch(core: &str, requested: &str, declared: &[String]) -> Error {
+    let declared = if declared.is_empty() {
+        "<none>".to_string()
+    } else {
+        declared.join(", ")
+    };
+    anyhow!(
+        "store doctor requested core '{core}' framework '{requested}' but mgc.toml declares '{declared}'"
+    )
+}
+
+/// Unsupported store/framework pair; never inspect a different store by guess.
+/// Cặp core/framework chưa hỗ trợ; không đoán sang store khác.
+pub fn store_doctor_route_unsupported(core: &str, framework: Option<&str>) -> Error {
+    match framework {
+        Some(framework) => anyhow!(
+            "store doctor has no MagiCore-owned store route for core '{core}' framework '{framework}'"
+        ),
+        None => anyhow!(
+            "store doctor requires --framework for core '{core}' because its store route is framework-specific"
+        ),
+    }
+}
+
+/// Global shared-root doctor has no safe automatic repair operation.
+/// Doctor shared root global chưa có thao tác repair an toàn tự động.
+pub fn store_doctor_repair_unsupported(core: &str) -> Error {
+    anyhow!(
+        "store doctor --repair is unsupported for core '{core}' shared roots; no files were changed"
+    )
+}
+
+/// One or more configured shared roots failed the path-safety check.
+/// Một hoặc nhiều shared root không qua kiểm tra an toàn đường dẫn.
+pub fn store_global_root_unsafe() -> Error {
+    anyhow!("store doctor: one or more MGC-managed store roots are unsafe")
+}
+
+/// Give a recovery command that retains the core/framework scope being checked.
+/// Gợi ý lệnh chạy lại mà giữ nguyên core/framework đang kiểm tra.
+pub fn store_doctor_unhealthy(core: &str, framework: Option<&str>) -> Error {
+    match framework {
+        Some(framework) => anyhow!(
+            "store doctor: NEEDS REPAIR — prune/install refuse until fixed (re-run `mgc store doctor --core {core} --framework {framework}` for details)"
+        ),
+        None => anyhow!(
+            "store doctor: NEEDS REPAIR — prune/install refuse until fixed (re-run `mgc store doctor --core {core}` for details)"
+        ),
+    }
+}
+
 /// Legacy compat flag named a tool for a lane without native ownership.
 /// Compatibility execution is disabled; tool identity does not grant an exception.
 pub fn dep_gate_wrong_tool(
@@ -1819,6 +1943,23 @@ pub fn web_backend_flag_unsupported(flag: &str, language: &str) -> Error {
     )
 }
 
+/// A native build output path contains a symlink or a non-directory component.
+/// Đường dẫn output build native chứa symlink hoặc thành phần không phải thư mục.
+pub fn build_output_path_unsafe(path: &std::path::Path, reason: &str) -> Error {
+    anyhow!(
+        "refusing native build output '{}': {reason}",
+        path.display()
+    )
+}
+
+/// Go build cannot prove dependency ownership from the current manifest shape.
+/// Go build không chứng minh được dependency ownership từ dạng manifest hiện tại.
+pub fn go_build_freshness_unverified(reason: &str) -> Error {
+    anyhow!(
+        "cannot verify Go dependency ownership before build: {reason}; remove unsupported go.mod replace directives or use a qualified native install flow"
+    )
+}
+
 /// Generic install with package arguments on a manifest MagiCore cannot mutate.
 /// Install tổng quát không được sửa manifest mà MagiCore chưa sở hữu.
 pub fn install_packages_toolchain_owned(adapter_name: &str) -> Error {
@@ -1870,7 +2011,7 @@ pub fn tool_manifest_mismatch(package: &str, adapter: &str, detail: &str) -> Err
 /// self-update: explicit version failed validation (anchored semver).
 /// (Version self-update không hợp lệ.)
 pub fn self_update_invalid_version(version: &str) -> Error {
-    anyhow!("invalid version: {version} (expected like 1.1.0-rc.9, with or without a leading 'v')")
+    anyhow!("invalid version: {version} (expected like 1.1.0-rc.10, with or without a leading 'v')")
 }
 
 /// self-update: unknown release variant.
@@ -1927,4 +2068,73 @@ pub fn self_update_signature_invalid(detail: &str) -> Error {
 /// (Từ chối đường unsigned — provenance fail-closed.)
 pub fn self_update_unsigned_refused(detail: &str) -> Error {
     anyhow!("unsigned self-update refused: {detail}")
+}
+
+/// `mgc dev` pre-flight: manifest declares dependencies missing from the lock.
+/// (Pre-flight `mgc dev`: manifest khai báo dependency không có trong lock.)
+pub fn stale_lock_needs_install(detail: &str) -> Error {
+    anyhow!(
+        "project dependencies changed since mgc.lock was written ({detail}) — run `mgc install` first"
+    )
+}
+
+/// A dependency manifest has an invalid shape for freshness projection.
+/// Manifest dependency có cấu trúc không hợp lệ để kiểm freshness.
+pub fn freshness_manifest_invalid(file: &str, detail: &str) -> Error {
+    anyhow!("cannot check dependency freshness: {file} {detail}")
+}
+
+/// A signed policy cache update must not roll back issue time or revocations.
+/// Từ chối cập nhật cache policy có ký nếu lùi thời gian hoặc mất revocation.
+pub fn policy_manifest_update_rejected(detail: &str) -> Error {
+    anyhow!("signed policy manifest update rejected: {detail}")
+}
+
+/// A policy cache could not acquire its cross-process writer lock.
+/// Không lấy được khóa ghi xuyên tiến trình cho cache policy.
+pub fn policy_manifest_cache_lock_failed(detail: &str) -> Error {
+    anyhow!("cannot lock signed policy manifest cache: {detail}")
+}
+
+/// `--compat-runner` on a core without a qualified compat contract.
+/// (`--compat-runner` trên core chưa có compat contract.)
+pub fn compat_runner_unsupported_core(core: &str) -> Error {
+    anyhow!(
+        "--compat-runner is only supported for the web core right now; refusing to claim compat parity for '{core}'"
+    )
+}
+
+/// Pre-flight profile gate: this lane observably requires package managers
+/// at runtime, so native mode refuses before spawning anything.
+/// (Cổng profile pre-flight: lane này chắc chắn cần package manager lúc
+/// runtime, nên native mode từ chối trước khi spawn.)
+pub fn lane_needs_compat_runner(framework: &str, managers: &[String]) -> Error {
+    anyhow!(
+        "lane '{framework}' requires package managers at runtime ({}) — native mode refuses before spawning; rerun with --compat-runner <manager> or use a native alternative",
+        managers.join(", ")
+    )
+}
+
+/// Refuse native dev when a stored spawn profile exists but cannot be read.
+/// (Từ chối native dev khi spawn profile đã lưu tồn tại nhưng không đọc được.)
+pub fn invalid_spawn_profile(detail: &str) -> Error {
+    anyhow!("invalid spawn profile; refusing native dev pre-flight: {detail}")
+}
+
+/// Reject executable selection that cannot be attributed to the requested package.
+/// Từ chối bin sai tên, mơ hồ hoặc target không thuộc package được yêu cầu.
+pub fn dlx_invalid_bin() -> Error {
+    anyhow!("dlx: invalid executable name; use a simple declared bin name")
+}
+pub fn dlx_undeclared_bin() -> Error {
+    anyhow!("dlx: selected executable is not declared by the requested package")
+}
+pub fn dlx_ambiguous_bin() -> Error {
+    anyhow!("dlx: package declares multiple executables; select one with --bin NAME")
+}
+pub fn dlx_invalid_package_bins() -> Error {
+    anyhow!("dlx: installed package identity or executable metadata is invalid")
+}
+pub fn dlx_bin_target_mismatch() -> Error {
+    anyhow!("dlx: executable does not match the requested package's declared target")
 }

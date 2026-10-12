@@ -5,6 +5,7 @@
 
 use mgc_app_adapter::install::fetch::*;
 use mgc_app_adapter::install::verify::*;
+use mgc_types::{PackageId, PackageName, Version};
 
 #[test]
 fn pub_dev_package_url_format() {
@@ -18,6 +19,21 @@ fn maven_central_url_format() {
     assert_eq!(
         url,
         "https://repo1.maven.org/maven2/com/google/android/material/1.0.0/material-1.0.0.jar"
+    );
+}
+
+#[test]
+fn kotlin_package_fetch_refuses_external_gradle_cache() {
+    let project = tempfile::tempdir().unwrap();
+    let package = PackageId::new(
+        PackageName::new("sample").unwrap(),
+        Version::parse("1.0.0").unwrap(),
+    );
+    let error = fetch_kotlin_package(project.path(), &package).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("does not own a native Gradle resolver")
     );
 }
 

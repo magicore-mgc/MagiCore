@@ -2356,7 +2356,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-adapter-base"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2375,7 +2375,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-ai-adapter"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "async-trait",
  "dirs",
@@ -2401,7 +2401,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-app-adapter"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2436,7 +2436,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-audit"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "futures-util",
  "mgc-http",
@@ -2452,7 +2452,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-cache"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "blake3",
@@ -2466,7 +2466,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-cicd-adapter"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "async-trait",
  "mgc-adapter-base",
@@ -2485,7 +2485,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-cloud-adapter"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2506,7 +2506,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-config"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "dirs",
@@ -2524,7 +2524,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-crypto"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
@@ -2543,7 +2543,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-exec"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "libc",
@@ -2554,7 +2554,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-fetcher"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "flate2",
@@ -2570,7 +2570,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-game-adapter"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2595,7 +2595,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-hardware-adapter"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2618,7 +2618,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-http"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2647,7 +2647,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-iot-adapter"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2671,7 +2671,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-lib-adapter"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2708,7 +2708,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-lockfile"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2730,7 +2730,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-oci"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2748,7 +2748,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-pack"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2764,7 +2764,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-platform"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "dirs",
@@ -2775,7 +2775,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-plugin"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "async-trait",
  "mgc-types",
@@ -2784,7 +2784,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-publish"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2802,7 +2802,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-registry-server"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "axum",
@@ -2838,7 +2838,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-resolver"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2870,7 +2870,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-sbom"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2884,7 +2884,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-search"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2906,7 +2906,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-store"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "async-compression",
@@ -2941,7 +2941,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-types"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2963,7 +2963,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-ui"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "colored 2.2.0",
@@ -2976,7 +2976,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-web-adapter"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3025,7 +3025,7 @@ dependencies = [
 
 [[package]]
 name = "mgc-workspace"
-version = "1.1.0-rc.9"
+version = "1.1.0-rc.10"
 dependencies = [
  "anyhow",
  "mgc-adapter-base",

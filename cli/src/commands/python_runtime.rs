@@ -12,9 +12,9 @@ pub fn native_python_path_value(
     project_root: &Path,
     preserve_existing: bool,
 ) -> Result<Option<OsString>> {
-    #[cfg(feature = "lib")]
+    #[cfg(feature = "native-python-runtime")]
     let entries = mgc_lib_adapter::install::native_python_path_entries(project_root)?;
-    #[cfg(not(feature = "lib"))]
+    #[cfg(not(feature = "native-python-runtime"))]
     let entries: Vec<PathBuf> = {
         let _ = project_root;
         Vec::new()

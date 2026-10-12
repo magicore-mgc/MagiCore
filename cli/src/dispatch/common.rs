@@ -36,11 +36,31 @@ pub async fn dispatch_common(
             port,
             clear,
             compat_runtime,
-        } => commands::dev::run(core, host, port, clear, compat_runtime.as_deref()).await,
+            compat_runner,
+        } => {
+            commands::dev::run(
+                core,
+                host,
+                port,
+                clear,
+                compat_runtime.as_deref(),
+                compat_runner.as_deref(),
+            )
+            .await
+        }
         CommonCommand::Build {
             target,
             compat_runtime,
-        } => commands::build::run(core, target, compat_runtime.as_deref()).await,
+            compat_runner,
+        } => {
+            commands::build::run(
+                core,
+                target,
+                compat_runtime.as_deref(),
+                compat_runner.as_deref(),
+            )
+            .await
+        }
         #[cfg(feature = "iot")]
         CommonCommand::Flash { board, skip_build } => {
             commands::core::dev::iot::flash(board.as_deref(), skip_build).await
@@ -69,7 +89,11 @@ pub async fn dispatch_common(
         #[cfg(not(feature = "cicd"))]
         CommonCommand::Verify => Err(crate::error::core_not_in_build("cicd")),
         CommonCommand::Start => commands::start::run(core).await,
-        CommonCommand::Exec { command, args } => commands::exec::run(core, command, args),
+        CommonCommand::Exec {
+            command,
+            args,
+            compat_runner,
+        } => commands::exec::run(core, command, args, compat_runner.as_deref()),
         CommonCommand::Info { package, json } => commands::info::run(package, json).await,
         CommonCommand::Search {
             query,
@@ -117,13 +141,32 @@ pub async fn dispatch_common(
             script,
             args,
             compat_runtime,
-        } => commands::run::run(script, args, core, compat_runtime.as_deref()).await,
+            compat_runner,
+        } => {
+            commands::run::run(
+                script,
+                args,
+                core,
+                compat_runtime.as_deref(),
+                compat_runner.as_deref(),
+            )
+            .await
+        }
         CommonCommand::Test {
             args,
             compat_runtime,
-        } => commands::test::test(args, core, compat_runtime.as_deref()).await,
+            compat_runner,
+        } => {
+            commands::test::test(
+                args,
+                core,
+                compat_runtime.as_deref(),
+                compat_runner.as_deref(),
+            )
+            .await
+        }
         CommonCommand::Optimizer { force } => commands::optimizer::run(core, force).await,
-        CommonCommand::Dlx { package, args } => commands::dlx::run(package, args).await,
+        CommonCommand::Dlx { package, bin, args } => commands::dlx::run(package, bin, args).await,
         CommonCommand::Cache {
             action,
             target,

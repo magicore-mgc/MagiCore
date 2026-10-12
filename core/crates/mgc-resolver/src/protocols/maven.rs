@@ -90,6 +90,12 @@ impl MavenProtocol {
                 "maven coordinate has an empty part: '{name}'"
             )));
         }
+        // Each dot-separated group segment becomes a cache directory.
+        // Mỗi phần group thành thư mục; kiểm tra trước mọi thao tác ghi cache.
+        for segment in group.split('.') {
+            validate_maven_cache_component(segment, "group")?;
+        }
+        validate_maven_cache_component(artifact, "artifact")?;
         Ok((group.to_string(), artifact.to_string()))
     }
 
@@ -256,6 +262,7 @@ impl MavenProtocol {
         m2_root: &std::path::Path,
     ) -> MgResult<PathBuf> {
         let (group, artifact) = Self::split_coordinate(&entry.name)?;
+        validate_maven_cache_component(&entry.version, "version")?;
         let gpath = group.replace('.', "/");
         let version = &entry.version;
         let dir = m2_root
@@ -288,6 +295,24 @@ impl MavenProtocol {
         }
         Ok(dir.join(jar_name))
     }
+}
+
+/// Reject coordinates that can change the cache path's directory structure.
+/// Chặn component thay đổi cấu trúc đường dẫn, giữ nguyên version Maven thô.
+fn validate_maven_cache_component(value: &str, kind: &str) -> MgResult<()> {
+    if value.is_empty()
+        || matches!(value, "." | "..")
+        || value.trim() != value
+        || value.ends_with('.')
+        || value
+            .chars()
+            .any(|c| c.is_control() || matches!(c, '/' | '\\' | ':'))
+    {
+        return Err(MgError::Other(format!(
+            "unsafe Maven cache {kind} component"
+        )));
+    }
+    Ok(())
 }
 
 impl Default for MavenProtocol {

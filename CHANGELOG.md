@@ -8,6 +8,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [1.1.0-rc.10] - 2026-10-10
+
+### Added
+- Native dev preflight and execution-policy controls, including explicit compatibility-runner mode.
+- Lockfile V4 write and replay support for lanes with complete verified metadata.
+- MGC-owned execution for supported project scripts, with dependency-freshness checks before dev and opt-in package-manager runner compatibility.
+- V4 lock writing and replay for Web, App, and Lib adapters when the resolved graph carries the required integrity metadata; V3 remains the default.
+
+### Changed
+- Dependency freshness checks and capability reporting now distinguish declared ownership from runtime evidence.
+- PR, manual, reusable, and release workflows now require the universal framework/language evidence gate; release publication stays blocked until every advertised lane meets it.
+
+### Fixed
+- Preserve NuGet SHA-512 catalog integrity through Web backend resolution and V3/V4 lock writes.
+- Native FastAPI dev now launches its declared ASGI app through Uvicorn and receives MGC-verified Python package paths.
+- Single-core Web and AI builds now include the internal Python runtime adapter needed to import MGC-owned packages, without exposing the Lib CLI core.
+- Native Python install can materialize a compiled wheel only when its declared Python ABI and host platform floor match; configure `MGC_PYTHON_VERSION` for ABI-specific wheels. Source distributions remain unsupported.
+- Reuse the selected PyPI version metadata for compatibility and dependency checks, avoiding a duplicate registry request.
+
+### Scope
+- A generated scaffold is not proof that every lifecycle operation is supported. Use `mgc capabilities` for lane-level ownership; this RC does not claim universal framework or language runtime support.
+
 ## [1.1.0-rc.9] - 2026-09-19
 
 ### Added

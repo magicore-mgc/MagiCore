@@ -3,6 +3,58 @@
 
 use std::path::{Path, PathBuf};
 
+pub const MGC_DATA_DIR_ENV: &str = "MGC_DATA_DIR";
+
+/// Resolve the visible root for MagiCore-managed stores and caches.
+/// Tìm root dễ thấy cho store/cache do MagiCore quản lý.
+/// `MGC_DATA_DIR` overrides the default `~/MagiCore-SystemData` location.
+/// `MGC_DATA_DIR` ghi đè vị trí mặc định `~/MagiCore-SystemData`.
+pub fn mgc_data_dir() -> PathBuf {
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    if let Some(raw) = std::env::var_os(MGC_DATA_DIR_ENV).filter(|value| !value.is_empty()) {
+        let path = PathBuf::from(raw);
+        return if path.is_absolute() {
+            path
+        } else {
+            home.join(path)
+        };
+    }
+    home.join("MagiCore-SystemData")
+}
+
+/// Resolve stable per-project data outside the project's source tree.
+/// Tách dữ liệu từng project khỏi cây mã nguồn.
+pub fn project_data_dir(project_root: &Path) -> PathBuf {
+    let canonical = project_root
+        .canonicalize()
+        .unwrap_or_else(|_| project_root.to_path_buf());
+    let identity = canonical.to_string_lossy();
+    let digest = blake3::hash(identity.as_bytes()).to_hex();
+    let name = canonical
+        .file_name()
+        .and_then(|value| value.to_str())
+        .map(safe_data_component)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "project".to_string());
+    mgc_data_dir()
+        .join("projects")
+        .join(format!("{name}-{}", &digest[..16]))
+}
+
+fn safe_data_component(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
+                character
+            } else {
+                '-'
+            }
+        })
+        .take(48)
+        .collect()
+}
+
 /// Standard subdirectories under project root (.magicore/)
 pub struct ProjectPaths {
     pub root: PathBuf,
@@ -57,7 +109,7 @@ impl ProjectPaths {
     }
 }
 
-/// User-global paths (~/.magicore/)
+/// User-global MagiCore data paths (MGC_DATA_DIR or ~/MagiCore-SystemData).
 pub struct GlobalPaths {
     pub root: PathBuf,
     pub store: PathBuf,
@@ -77,11 +129,10 @@ pub struct GlobalPaths {
 
 impl GlobalPaths {
     /// Resolve user-global paths; `MAGICORE_STORE_ROOT` overrides only `store`.
-    /// Tìm các đường dẫn global; `MAGICORE_STORE_ROOT` chỉ thay đường dẫn `store`.
+    /// Resolve global paths from the visible data root; the legacy store override remains supported.
+    /// Dùng root dữ liệu tập trung và vẫn hỗ trợ override store cũ.
     pub fn new() -> std::io::Result<Self> {
-        let home = dirs::home_dir()
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no home dir"))?;
-        let mgc_dir = home.join(".magicore");
+        let mgc_dir = mgc_data_dir();
         // Keep shared ecosystem stores aligned with the CAS override used by
         // mgc-store, including isolated Windows test and CI sandboxes.
         // Đồng bộ store ecosystem với override CAS của mgc-store, kể cả

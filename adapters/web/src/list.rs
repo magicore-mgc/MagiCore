@@ -9,7 +9,20 @@ use crate::manifest::parse_manifest;
 
 pub async fn run_list(project_root: &Path) -> MgResult<Vec<InstalledPackage>> {
     let manifest = parse_manifest(project_root)?;
-    let lockfile = read_web_lockfile_checked(project_root)?;
+    // Dispatch verified V4 separately; never parse it through the legacy reader.
+    // V4 vẫn qua verify digest/chữ ký, rồi chọn graph theo owner của project.
+    let v4_graph = crate::lockfile::read_v4_document_if_present(project_root)?
+        .map(|document| {
+            let owner = crate::lockfile::web_lock_owner_core(project_root)?;
+            mgc_lockfile::v4_graph::graph_from_v4_lockfile(&document, &owner)
+                .map_err(|error| MgError::Other(error.to_string()))
+        })
+        .transpose()?;
+    let lockfile = if v4_graph.is_some() {
+        None
+    } else {
+        read_web_lockfile_checked(project_root)?
+    };
     let node_modules = project_root.join("node_modules");
     let mut packages = Vec::new();
 
@@ -30,15 +43,28 @@ pub async fn run_list(project_root: &Path) -> MgResult<Vec<InstalledPackage>> {
                 ),
             })?;
 
-            let integrity = lockfile.as_ref().and_then(|lock| {
-                lock.packages
-                    .iter()
-                    .find(|pkg| {
-                        pkg.name == dep.name.as_str()
-                            && Version::parse(&pkg.version).ok().as_ref() == Some(&version)
+            let integrity = v4_graph
+                .as_ref()
+                .and_then(|graph| {
+                    graph
+                        .packages
+                        .iter()
+                        .find(|pkg| {
+                            pkg.id.name_str() == dep.name.as_str() && pkg.id.version() == &version
+                        })
+                        .map(|pkg| pkg.integrity.clone())
+                })
+                .or_else(|| {
+                    lockfile.as_ref().and_then(|lock| {
+                        lock.packages
+                            .iter()
+                            .find(|pkg| {
+                                pkg.name == dep.name.as_str()
+                                    && Version::parse(&pkg.version).ok().as_ref() == Some(&version)
+                            })
+                            .map(|pkg| pkg.integrity.clone())
                     })
-                    .map(|pkg| pkg.integrity.clone())
-            });
+                });
             let is_direct = lockfile
                 .as_ref()
                 .map(|lock| {

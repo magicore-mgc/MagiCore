@@ -16,7 +16,7 @@
 //! approved compilers and runtimes, but never package resolution/install tools.
 
 use anyhow::{Result, bail};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Execution scope — determines security policy for tool execution.
 /// Install scope: HIGH RISK (arbitrary package fetch, transitive deps).
@@ -36,6 +36,10 @@ pub enum ExecutionScope {
 
     /// Dev server execution; package managers remain forbidden.
     DevServer,
+
+    /// Explicit `mgc run` project script execution.
+    /// Chạy script project tường minh qua `mgc run`.
+    ScriptRunner,
 
     /// Explicit control of a local development device or emulator.
     /// Điều khiển thiết bị hoặc emulator cục bộ trong luồng phát triển.
@@ -75,6 +79,7 @@ impl ExecutionScope {
             ExecutionScope::TestRunner
             | ExecutionScope::BuildRunner
             | ExecutionScope::DevServer
+            | ExecutionScope::ScriptRunner
             | ExecutionScope::DeviceControl => ScopeConstraints {
                 cwd_locked: true,        // Must run in project root
                 no_network: false,       // Tests may need network (integration tests)
@@ -140,6 +145,21 @@ pub const ALLOWED_TOOLS: &[&str] = &[
     "dart",
     "gradle",
     "mvn",
+    // Language runtimes and compilers — ngôn ngữ chạy và compiler native.
+    // These execute project code; dependency-manager verbs remain guarded below.
+    // Chúng chạy code của project; verb quản lý dependency vẫn bị policy chặn.
+    "bash",
+    "clang",
+    "clang++",
+    "dotnet",
+    "gcc",
+    "g++",
+    "java",
+    // Java compilation executes project processors; restrict it to project scopes.
+    // Compiler Java có thể chạy processor của project, không dùng cho install hook.
+    "javac",
+    "kotlinc",
+    "php",
     // NOTE: `composer` is deliberately ABSENT here — it is a PHP package
     // manager and lives in FORBIDDEN_TOOLS below. (An older revision
     // listed it in both tables; the forbidden check runs first so it was
@@ -149,6 +169,7 @@ pub const ALLOWED_TOOLS: &[&str] = &[
     "node",
     "swift",
     "cargo",
+    "zig",
     // `rustc -vV` is a read-only host-target probe; other direct calls are rejected below.
     // `rustc -vV` chỉ đọc host target; các lời gọi trực tiếp khác bị chặn bên dưới.
     "rustc",
@@ -193,6 +214,15 @@ pub const ALLOWED_TOOLS: &[&str] = &[
     "govulncheck", // Official Go vulnerability scanner (golang.org/x/vuln)
 ];
 
+/// Language runtimes/compilers that execute project code, limited to explicit
+/// project execution scopes. Install and device-control calls cannot use them.
+/// (Runtime/compiler chạy code project, chỉ dùng trong scope chạy code tường
+/// minh; Install và DeviceControl không được gọi.)
+const PROJECT_LANGUAGE_EXECUTABLES: &[&str] = &[
+    "bash", "clang", "clang++", "dotnet", "gcc", "g++", "godot", "java", "javac", "kotlinc", "php",
+    "zig",
+];
+
 /// Package-manager executables are forbidden in every execution scope.
 pub const FORBIDDEN_TOOLS: &[&str] = &[
     "npm",
@@ -221,6 +251,63 @@ pub const FORBIDDEN_TOOLS: &[&str] = &[
     "pip-sync",
 ];
 
+/// Managers that may be named by `--compat-runner` (Spec rev4 §7/§9).
+/// Only JS-ecosystem managers have a compat contract today (the reported
+/// Next/Angular pain); Python/Gradle/Dart/etc. need separate analysis and
+/// stay rejected with a clear error until their contracts exist.
+/// (Manager được `--compat-runner` nhận (Spec rev4 §7/§9). Hiện chỉ manager
+/// JS có compat contract (đúng chỗ đau Next/Angular đã báo); Python/Gradle/
+/// Dart... cần phân tích riêng, vẫn bị từ chối rõ ràng.)
+pub const QUALIFIED_COMPAT_RUNNERS: &[&str] = &["npm", "pnpm", "yarn", "bun"];
+
+/// Parse `--compat-runner <manager>`: lowercase basename, must be qualified.
+/// `None` (flag absent) means native mode — no delegation.
+/// (Parse `--compat-runner <manager>`: basename lowercase, phải qualified.
+/// `None` (không truyền flag) nghĩa là native mode — không ủy quyền.)
+pub fn parse_compat_runner(flag: Option<&str>) -> Result<Option<String>> {
+    let Some(raw) = flag else {
+        return Ok(None);
+    };
+    let name = raw
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(raw)
+        .to_ascii_lowercase();
+    let name = name
+        .strip_suffix(".exe")
+        .or_else(|| name.strip_suffix(".cmd"))
+        .unwrap_or(&name)
+        .to_string();
+    if !QUALIFIED_COMPAT_RUNNERS.contains(&name.as_str()) {
+        bail!(
+            "--compat-runner '{raw}' is not a qualified compat manager (qualified: {}); dependency/lifecycle operations stay owned by MagiCore",
+            QUALIFIED_COMPAT_RUNNERS.join(", ")
+        );
+    }
+    Ok(Some(name))
+}
+
+/// True when `cmd` is the declared compat runner itself (basename match).
+/// The subtree it spawns is governed by the compat audit-only monitor, not
+/// by this name check.
+/// (Đúng khi `cmd` chính là runner compat đã khai báo (khớp basename).
+/// Subtree nó spawn chịu monitor audit-only compat, không chịu name check.)
+pub fn compat_runner_allows(cmd: &str, runner: Option<&str>) -> bool {
+    let Some(runner) = runner else {
+        return false;
+    };
+    let base = cmd
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(cmd)
+        .to_ascii_lowercase();
+    let base = base
+        .strip_suffix(".exe")
+        .or_else(|| base.strip_suffix(".cmd"))
+        .unwrap_or(&base);
+    base == runner
+}
+
 /// Kiểm tool trước khi exec: cấm vĩnh viễn → lỗi rõ lý do; ngoài allowlist → lỗi.
 /// DEPRECATED: Use check_tool_with_scope for new code (supports ExecutionScope).
 pub fn check_tool(name: &str) -> Result<()> {
@@ -244,7 +331,7 @@ pub fn check_tool_with_scope(
 pub fn check_tool_with_scope_compat(
     name: &str,
     scope: ExecutionScope,
-    _project_root: Option<&Path>,
+    project_root: Option<&Path>,
     _compat_runtime: Option<&str>,
 ) -> Result<()> {
     let name = name.trim();
@@ -275,6 +362,36 @@ pub fn check_tool_with_scope_compat(
         bail!("tool 'xcrun' is only allowed in DeviceControl scope");
     }
 
+    // These runtimes execute project code; keep them out of install hooks and
+    // device-control calls. `mgc run` supplies ScriptRunner explicitly.
+    // (Runtime này chạy code project; không cho install hook/device-control
+    // gọi. `mgc run` truyền ScriptRunner tường minh.)
+    if PROJECT_LANGUAGE_EXECUTABLES.contains(&normalized.as_str())
+        && !matches!(
+            scope,
+            ExecutionScope::TestRunner
+                | ExecutionScope::BuildRunner
+                | ExecutionScope::DevServer
+                | ExecutionScope::ScriptRunner
+        )
+    {
+        bail!(
+            "language runtime '{name}' requires a project execution scope; it is not allowed in {scope:?}"
+        );
+    }
+
+    if matches!(
+        scope,
+        ExecutionScope::TestRunner
+            | ExecutionScope::BuildRunner
+            | ExecutionScope::DevServer
+            | ExecutionScope::ScriptRunner
+    ) && let Some(root) = project_root
+        && is_project_local_executable(name, root)
+    {
+        return Ok(());
+    }
+
     // Non-PM tools: check against general allowlist
     if !ALLOWED_TOOLS.contains(&normalized.as_str()) {
         bail!(
@@ -283,6 +400,52 @@ pub fn check_tool_with_scope_compat(
     }
 
     Ok(())
+}
+
+/// Allow an explicitly addressed executable only when it resolves inside the project root.
+/// Chỉ cho binary được gọi bằng path tường minh khi nó nằm trong project root.
+fn is_project_local_executable(name: &str, project_root: &Path) -> bool {
+    if !name.contains('/') && !name.contains('\\') {
+        return false;
+    }
+    let requested = PathBuf::from(name);
+    let root = match project_root.canonicalize() {
+        Ok(root) => root,
+        Err(_) => return false,
+    };
+    let candidate = if requested.is_absolute() {
+        requested
+    } else {
+        project_root.join(requested)
+    };
+    let executable = match candidate.canonicalize() {
+        Ok(executable) => executable,
+        Err(_) => return false,
+    };
+    if !executable.starts_with(&root) {
+        return false;
+    }
+    let metadata = match executable.metadata() {
+        Ok(metadata) if metadata.is_file() => metadata,
+        _ => return false,
+    };
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(windows)]
+    {
+        executable
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("exe"))
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = metadata;
+        false
+    }
 }
 
 /// Scoped check kept for callers that pass cwd, but PM tools stay forbidden everywhere.

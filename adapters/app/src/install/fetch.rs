@@ -10,10 +10,12 @@ pub fn fetch_flutter_package(
     _project_root: &std::path::Path,
     _package_id: &PackageId,
 ) -> MgResult<PathBuf> {
-    // Flutter packages are cached in ~/.pub-cache
-    let cache_dir = dirs::home_dir()
-        .ok_or_else(|| MgError::Other("cannot find home directory".to_string()))?
-        .join(".pub-cache/hosted/pub.dev");
+    // Flutter packages fetched by MGC live in its managed pub store.
+    let cache_dir = mgc_platform::paths::mgc_data_dir()
+        .join("store")
+        .join("pub")
+        .join("hosted")
+        .join("pub.dev");
 
     let package_dir = cache_dir.join(format!("{}-{}", _package_id.name(), _package_id.version()));
 
@@ -33,23 +35,13 @@ pub fn fetch_kotlin_package(
     _project_root: &std::path::Path,
     _package_id: &PackageId,
 ) -> MgResult<PathBuf> {
-    // Gradle caches in ~/.gradle/caches/modules-2/files-2.1/
-    let cache_dir = dirs::home_dir()
-        .ok_or_else(|| MgError::Other("cannot find home directory".to_string()))?
-        .join(".gradle/caches/modules-2/files-2.1");
-
-    // Maven coordinates: group:artifact:version
-    // Cache structure: group/artifact/version/hash/artifact-version.jar
-    let package_dir = cache_dir.join(_package_id.name().as_str());
-
-    if package_dir.exists() {
-        Ok(package_dir)
-    } else {
-        Err(MgError::Other(format!(
-            "Gradle package not found in cache: {}",
-            package_dir.display()
-        )))
-    }
+    Err(MgError::Unsupported {
+        core: "app",
+        capability: "native Kotlin package fetch",
+        guidance:
+            "MagiCore does not own a native Gradle resolver or verified Kotlin package store yet"
+                .to_string(),
+    })
 }
 
 /// Fetch Swift package from Swift Package Manager cache.
@@ -58,20 +50,24 @@ pub fn fetch_swift_package(
     _project_root: &std::path::Path,
     _package_id: &PackageId,
 ) -> MgResult<PathBuf> {
-    // SPM caches in ~/Library/Caches/org.swift.swiftpm/
-    let cache_dir = if cfg!(target_os = "macos") {
-        dirs::home_dir()
-            .ok_or_else(|| MgError::Other("cannot find home directory".to_string()))?
-            .join("Library/Caches/org.swift.swiftpm")
-    } else {
-        dirs::cache_dir()
-            .ok_or_else(|| MgError::Other("cannot find cache directory".to_string()))?
-            .join("org.swift.swiftpm")
-    };
+    // Resolve the same managed root used by native install, including its
+    // override, and address the versioned checkout produced by SwiftPM.
+    // (Dùng cùng gốc store với native install, gồm cả override, và tìm
+    // checkout SwiftPM có ghim phiên bản.)
+    let swift_root = std::env::var("MGC_SWIFT_STORE_ROOT")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            mgc_platform::paths::mgc_data_dir()
+                .join("store")
+                .join("swift")
+        });
 
-    let package_dir = cache_dir
-        .join("repositories")
-        .join(_package_id.name().as_str());
+    let identity = _package_id.name().as_str().replace('/', ".");
+    let package_dir = swift_root
+        .join("checkouts")
+        .join(format!("{identity}-{}", _package_id.version()));
 
     if package_dir.exists() {
         Ok(package_dir)

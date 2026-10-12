@@ -37,7 +37,7 @@ pub fn detect_lockfile_version(toml_str: &str) -> LockfileResult<u8> {
         "1" => Ok(1),
         "2" => Ok(2),
         "3" => Ok(3),
-        "4" => Ok(4),
+        version if crate::v4::is_v4_schema_version(version) => Ok(4),
         _ => Err(LockfileError::ParseError(format!(
             "unknown version: {}",
             version
@@ -110,26 +110,27 @@ pub fn migrate_v2_to_v3(mut lockfile: Lockfile) -> Lockfile {
     lockfile
 }
 
-/// Carry the v3 SRI string into the v4 artifact when — and only when —
-/// it parses as installer-enforced SRI. Unsupported/empty values stay
-/// absent (with a warning) instead of being converted or fabricated:
-/// only the registry lane that fetched the bytes can mint a hash.
-/// Mang chuỗi SRI v3 sang artifact v4 khi — và chỉ khi — parse được SRI
-/// mà installer bắt buộc. Giá trị không hỗ trợ/trống giữ nguyên vắng
-/// (kèm warning), không convert hay bịa: chỉ lane registry tải byte mới
-/// được đúc hash.
-/// Carry the v3 SRI string into the v4 artifact when — and only when —
-/// it parses as installer-enforced SRI. Unsupported/empty values stay
-/// absent (with a warning) instead of being converted or fabricated:
-/// only the registry lane that fetched the bytes can mint a hash.
-/// A missing v3 artifact block is rebuilt from the pin's own resolved
-/// URL and registry (preservation, not fabrication); a pin with no URL
-/// at all stays absent with a warning.
-/// Mang chuỗi SRI v3 sang artifact v4 khi — và chỉ khi — parse được SRI
-/// mà installer bắt buộc. Giá trị không hỗ trợ/trống giữ nguyên vắng
-/// (kèm warning), không convert hay bịa: chỉ lane registry tải byte mới
-/// được đúc hash. Artifact v3 vắng được dựng lại từ URL/registry của
-/// chính pin (giữ liệu, không bịa); pin không URL giữ vắng kèm warning.
+// Convert the native V3 SHA-256 hex representation without calculating a new hash.
+// Chỉ đổi mã hóa của cùng 32 byte digest; không tạo bằng chứng artifact mới.
+fn native_sha256_sri(integrity: &str) -> Option<String> {
+    use base64::Engine;
+    let raw = integrity.strip_prefix("sha256-")?;
+    if raw.len() != 64 {
+        return None;
+    }
+    let digest = hex::decode(raw).ok()?;
+    Some(format!(
+        "sha256-{}",
+        base64::engine::general_purpose::STANDARD.encode(digest)
+    ))
+}
+
+/// Preserve supported SRI or normalize the native V3 SHA-256 hex encoding.
+/// Encoding conversion retains the existing digest; it never calculates a hash.
+/// Unsupported digests are refused with warnings. A missing artifact uses the
+/// pin's own URL/registry; pins without an artifact URL remain unavailable.
+/// Giữ SRI hợp lệ hoặc đổi mã hóa digest SHA-256 hex V3 mà không tạo hash mới.
+/// Marker không hỗ trợ vẫn cảnh báo; artifact chỉ dùng URL/registry sẵn có của pin.
 fn carry_install_sri(
     package: &Package,
     warnings: &mut Vec<String>,
@@ -153,6 +154,8 @@ fn carry_install_sri(
     }
     if crate::policy::check_install_sri(&package.integrity).is_ok() {
         artifact.integrity_sri = Some(package.integrity.clone());
+    } else if let Some(sri) = native_sha256_sri(&package.integrity) {
+        artifact.integrity_sri = Some(sri);
     } else if !package.integrity.is_empty() {
         warnings.push(format!(
             "pin {}@{} has SRI '{}' the installer cannot enforce: dropped from v4 artifact (re-resolve to refresh)",
@@ -314,6 +317,7 @@ pub fn migrate_v3_to_v4(
         packages_v4.push(PackageV4 {
             key,
             edges,
+            markers: package.markers.clone(),
             artifact: carry_install_sri(package, &mut warnings),
             provenance: package.provenance.clone(),
             toolchain: package.toolchain.clone(),
@@ -402,4 +406,137 @@ fn blake3_placeholder_hash(s: &str) -> String {
     use mgc_crypto::blake3_signer::Blake3Hasher;
     let hash = Blake3Hasher::hash_string(s);
     hash.to_base64()
+}
+
+/// Lossy migration refusal — the v3 rows cannot become v4 without dropping
+/// evidence the installer needs (edges, peers, sources, SRI). The caller
+/// keeps the v3 lock untouched and reports these warnings loudly.
+/// (Từ chối migration hao hụt — row v3 không thành v4 được mà không rớt bằng
+/// chứng installer cần. Caller giữ nguyên lock v3 và báo warnings rõ.)
+#[derive(Debug, Clone)]
+pub struct LossyMigration {
+    /// Every dropped piece of evidence — Mọi bằng chứng bị rớt.
+    pub warnings: Vec<String>,
+}
+
+impl std::fmt::Display for LossyMigration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "v3 lock cannot become v4 losslessly ({} gap(s)): {}; resolve or re-install to fill them, or stay on v3",
+            self.warnings.len(),
+            self.warnings.join("; ")
+        )
+    }
+}
+
+impl std::error::Error for LossyMigration {}
+
+/// Migrate a merged v3 lock to a finalized v4 document text, refusing
+/// lossy migrations fail-closed (shared by every adapter write path so the
+/// gate cannot drift between lanes).
+/// (Migrate lock v3 đã merge thành text v4 hoàn thiện, từ chối hao hụt
+/// fail-closed (dùng chung mọi đường ghi adapter để gate không lệch giữa
+/// các lane).)
+pub fn finalize_migrated_v4(
+    legacy: Lockfile,
+    generator: &str,
+    generated_at: &str,
+) -> Result<String, LossyMigration> {
+    let (mut v4, warnings) = migrate_v3_to_v4(legacy).map_err(|error| LossyMigration {
+        warnings: vec![error.to_string()],
+    })?;
+    if !warnings.is_empty() {
+        return Err(LossyMigration { warnings });
+    }
+    v4.metadata.generator = generator.to_string();
+    v4.metadata.generated_at = generated_at.to_string();
+    v4.metadata.lockfile_hash = crate::canonical::payload_digest(&v4.payload());
+    let text = crate::canonical::write_v4_document(&v4).map_err(|_| LossyMigration {
+        warnings: vec!["v4 serialization failed".to_string()],
+    })?;
+    let round_trip = crate::canonical::parse_v4_document(&text).map_err(|_| LossyMigration {
+        warnings: vec!["v4 round-trip parse failed".to_string()],
+    })?;
+    if round_trip != v4 {
+        return Err(LossyMigration {
+            warnings: vec!["v4 serializer drift".to_string()],
+        });
+    }
+    Ok(text)
+}
+
+/// Convert one lane's freshly resolved v3 rows into v4 packages + sources,
+/// refusing lossy rows fail-closed (shared by every adapter write path).
+/// The lane rows — not a merged multi-core lock — are converted, so a
+/// lane can never silently inherit another lane's lossy history.
+/// (Chuyển row v3 vừa resolve của một lane thành package + source v4,
+/// từ chối row hao hụt fail-closed (dùng chung mọi đường ghi adapter).
+/// Chỉ convert row của lane, không bao giờ lặng lẽ thừa hưởng hao hụt
+/// của lane khác.)
+pub fn lane_rows_to_v4(
+    packages: Vec<Package>,
+    generator: &str,
+) -> Result<(Vec<crate::canonical::PackageV4>, Vec<crate::v4::SourceRef>), LossyMigration> {
+    let lane_lock = Lockfile {
+        version: LOCKFILE_SCHEMA_VERSION.to_string(),
+        metadata: crate::schema::LockfileMetadata {
+            generated_at: String::new(),
+            generator: generator.to_string(),
+            lockfile_hash: String::new(),
+            signer: None,
+            dependency_ownership: Vec::new(),
+        },
+        root_dependencies: Vec::new(),
+        root_dependencies_by_owner: Default::default(),
+        packages,
+        workspace: None,
+        optimizer_profile: None,
+    };
+    let (v4, warnings) = migrate_v3_to_v4(lane_lock).map_err(|error| LossyMigration {
+        warnings: vec![error.to_string()],
+    })?;
+    if !warnings.is_empty() {
+        return Err(LossyMigration { warnings });
+    }
+    Ok((v4.packages, v4.sources))
+}
+
+/// Read a v4 merge base for lane writes: `Some` document when the lock on
+/// disk is already v4; `None` with `had_legacy_rows` telling whether
+/// sibling pins were left behind by a non-v4 base (the caller warns loudly
+/// instead of silently dropping them).
+/// (Đọc base v4 để lane merge: `Some` khi lock đĩa đã v4; `None` kèm
+/// `had_legacy_rows` cho biết có pin khác bị bỏ lại vì base không v4
+/// (caller cảnh báo rõ thay vì lặng lẽ rớt).)
+pub fn read_v4_merge_base(
+    path: &std::path::Path,
+) -> LockfileResult<(Option<crate::canonical::LockfileV4>, bool)> {
+    let bytes = match crate::parser::read_lockfile_bytes(path) {
+        Ok(bytes) => bytes,
+        Err(LockfileError::IoError(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok((None, false));
+        }
+        Err(error) => return Err(error),
+    };
+    let text = std::str::from_utf8(&bytes).map_err(|error| {
+        LockfileError::ParseError(format!("lockfile is not valid UTF-8: {error}"))
+    })?;
+    match crate::parser::parse_document(text)? {
+        crate::parser::LockDocument::V4(doc) => Ok((Some(doc), false)),
+        crate::parser::LockDocument::Legacy(lock) => Ok((None, !lock.packages.is_empty())),
+    }
+}
+
+/// Verify a v4 merge base before an adapter preserves its sibling rows:
+/// digest math must hold (Warn policy, no trust roots — same contract as
+/// the web lane reader). A tampered base fails instead of being copied
+/// verbatim into the new lock.
+/// (Xác minh base v4 trước khi adapter giữ row khác của nó: toán digest
+/// phải đúng (policy Warn, không trust root — cùng hợp đồng với reader
+/// lane web). Base bị sửa thì fail thay vì copy nguyên vào lock mới.)
+pub fn verify_v4_merge_base(doc: &crate::canonical::LockfileV4) -> LockfileResult<()> {
+    let report = crate::policy::verify_v4_math(doc)?;
+    crate::policy::enforce_policy(&report, crate::policy::LockPolicyMode::Warn, &[])?;
+    Ok(())
 }

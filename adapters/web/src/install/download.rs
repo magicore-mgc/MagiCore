@@ -12,7 +12,6 @@ use crate::cache::{SharedWebCache, download_concurrency_limit};
 use crate::install::extract::{
     ensure_extracted_package_root, ensure_extracted_package_root_from_bytes, tarball_prefetch_lock,
 };
-use crate::lockfile::compute_tarball_integrity;
 use crate::native;
 use crate::profile::{PipelineProfile, TarballPayload};
 
@@ -25,6 +24,7 @@ pub use crate::install::integrity::{
 
 // Re-export fetch helpers để caller/test cũ không đổi import
 // Re-export fetch helpers so old callers/tests don't need to change imports
+use crate::install::fetch::get_tarball_bytes_with_registry;
 use crate::install::fetch::{
     DownloadStagingGuard, publish_downloaded_tarball, unique_tarball_staging_path,
 };
@@ -45,8 +45,6 @@ pub async fn prefetch_tarballs(
     shared_cache: Option<&SharedWebCache>,
     registry: &native::npm_registry::NpmRegistry,
 ) -> MgResult<u64> {
-    use native::npm_registry::LARGE_PKG_THRESHOLD_BYTES;
-
     enum PrefetchOutcome {
         CacheHit(u64),
         Downloaded(ResolvedPackage, Vec<u8>),
@@ -73,10 +71,7 @@ pub async fn prefetch_tarballs(
         let local_cache = cache.clone();
         let shared_package_cache = shared_package_cache.clone();
         let download_semaphore = Arc::clone(&download_semaphore);
-        let registry = native::npm_registry::NpmRegistry::new_with_token(
-            registry.registry_url(),
-            registry.auth_token().map(str::to_string),
-        );
+        let registry = registry.clone_for_downloads();
         downloads.spawn(async move {
             let prefetch_lock = tarball_prefetch_lock(&pkg_clone.id);
             let _guard = prefetch_lock.lock().await;
@@ -115,50 +110,31 @@ pub async fn prefetch_tarballs(
                 .await
                 .map_err(|e| MgError::Other(format!("download semaphore closed: {e}")))?;
 
-            let content_length = {
-                let client = native::npm_registry::batch_http_client()?;
-                client
-                    .head(&url)
-                    .send()
-                    .await
-                    .ok()
-                    .and_then(|r| {
-                        r.headers()
-                            .get(reqwest::header::CONTENT_LENGTH)
-                            .and_then(|v| v.to_str().ok())
-                            .and_then(|s| s.parse::<u64>().ok())
-                    })
-                    .unwrap_or(0)
-            };
-
-            if content_length > LARGE_PKG_THRESHOLD_BYTES {
-                let temp_path =
-                    unique_tarball_staging_path(&local_cache.tarball_path(&pkg_clone.id));
-                let staging = DownloadStagingGuard::new(temp_path);
-                let computed_integrity = registry
-                    .download_tarball_to_file(&url, staging.path())
-                    .await
-                    .map_err(|e| {
-                        MgError::Network(format!(
-                            "stream download failed for '{}': {}",
-                            pkg_clone.id.name_str(),
-                            e
-                        ))
-                    })?;
-                Ok::<_, MgError>(PrefetchOutcome::StreamedToTemp {
-                    pkg: pkg_clone,
-                    staging,
-                    computed_integrity,
-                })
-            } else {
-                let bytes = registry.download_tarball(&url).await.map_err(|e| {
+            // Use the authenticated GET response to select buffer or stream.
+            // Bỏ HEAD không có scope; một GET giữ policy và biết kích thước thật.
+            let temp_path = unique_tarball_staging_path(&local_cache.tarball_path(&pkg_clone.id));
+            let staging = DownloadStagingGuard::new(temp_path);
+            let downloaded = registry
+                .download_tarball_auto(&url, staging.path())
+                .await
+                .map_err(|error| {
                     MgError::Network(format!(
                         "download failed for '{}': {}",
                         pkg_clone.id.name_str(),
-                        e
+                        error
                     ))
                 })?;
-                Ok::<_, MgError>(PrefetchOutcome::Downloaded(pkg_clone, bytes))
+            match downloaded {
+                native::npm_registry::DownloadedTarball::Bytes(bytes) => {
+                    Ok::<_, MgError>(PrefetchOutcome::Downloaded(pkg_clone, bytes))
+                }
+                native::npm_registry::DownloadedTarball::Streamed {
+                    computed_integrity, ..
+                } => Ok::<_, MgError>(PrefetchOutcome::StreamedToTemp {
+                    pkg: pkg_clone,
+                    staging,
+                    computed_integrity,
+                }),
             }
         });
     }
@@ -169,10 +145,7 @@ pub async fn prefetch_tarballs(
                 bytes_from_cache += bytes;
             }
             PrefetchOutcome::Downloaded(mut pkg, bytes) => {
-                if pkg.integrity.is_empty() {
-                    pkg.integrity = compute_tarball_integrity(&bytes);
-                }
-                verify_tarball_integrity(&pkg, &bytes)?;
+                prepare_verified_tarball_for_cache(&mut pkg, &bytes)?;
                 cache
                     .cache_tarball(&pkg.id, &bytes)
                     .map_err(|e| MgError::Store(e.to_string()))?;
@@ -186,14 +159,8 @@ pub async fn prefetch_tarballs(
                 staging,
                 computed_integrity,
             } => {
-                if !pkg.integrity.is_empty() && pkg.integrity != computed_integrity {
-                    return Err(MgError::Other(format!(
-                        "integrity mismatch for '{}': expected '{}', got '{}'",
-                        pkg.id.name_str(),
-                        pkg.integrity,
-                        computed_integrity
-                    )));
-                }
+                crate::install::integrity::verify_tarball_file_integrity(&pkg, staging.path())?;
+
                 if pkg.integrity.is_empty() {
                     pkg.integrity = computed_integrity.clone();
                 }
@@ -252,8 +219,7 @@ pub async fn pipeline_download_and_extract(
         let cache = cache.clone();
         let shared_cache = shared_cache.cloned();
         let shared_package_cache = shared_package_cache.clone();
-        let registry_url = registry.map(|r| r.registry_url().to_string());
-        let registry_token = registry.and_then(|r| r.auth_token().map(str::to_string));
+        let registry = registry.map(|registry| registry.clone_for_downloads());
         let layout = layout.clone();
         let store = store.clone();
         let download_sem = Arc::clone(&download_sem);
@@ -265,12 +231,11 @@ pub async fn pipeline_download_and_extract(
             let _guard = lock.lock().await;
 
             let download_started_at = std::time::Instant::now();
-            let fetch = get_tarball_bytes(
+            let fetch = get_tarball_bytes_with_registry(
                 &pkg,
                 &cache,
                 shared_package_cache.as_ref(),
-                registry_url.as_deref(),
-                registry_token.as_deref(),
+                registry.as_ref(),
                 &download_sem,
             )
             .await?;

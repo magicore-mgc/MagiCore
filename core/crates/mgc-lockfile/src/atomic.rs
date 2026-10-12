@@ -304,3 +304,88 @@ fn windows_replace(tmp_path: &Path, dest: &Path) -> std::io::Result<()> {
     }
     Ok(())
 }
+
+/// Refuse to rewrite a signed v4 lock through an ordinary (unsigned) writer.
+/// Unsigned v4 passes: single-file atomicity needs no sidecar dance.
+/// (Từ chối ghi đè lock v4 đã ký bằng writer thường. v4 không ký được qua:
+/// atomic một file không cần sidecar.)
+pub fn ensure_v4_unsigned_for_rewrite(
+    doc: &crate::canonical::LockfileV4,
+) -> crate::LockfileResult<()> {
+    if doc.metadata.signature.is_some() {
+        return Err(crate::LockfileError::SignedLockMutation(
+            "signed v4 mgc.lock cannot be rewritten without explicit re-signing; verify, remove the signature explicitly, then rewrite".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// Atomically replace the lock with verified v4 bytes (staging create_new +
+/// fsync + rename + dir sync). The caller owns signature policy: unsigned
+/// rewrites go through `ensure_v4_unsigned_for_rewrite` first.
+/// (Thay atomic lock bằng byte v4 đã xác minh (staging create_new + fsync +
+/// rename + sync dir). Caller sở hữu policy chữ ký: ghi đè unsigned qua
+/// `ensure_v4_unsigned_for_rewrite` trước.)
+pub fn atomic_write_v4_bytes(dest: &Path, final_bytes: &[u8]) -> crate::LockfileResult<()> {
+    use std::io::Write;
+    let dir: PathBuf = dest
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let name = dest
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            crate::LockfileError::WriteFailed("mgc.lock path has no valid filename".to_string())
+        })?;
+    let tmp_path = dir.join(format!(
+        ".{}.v4.{}.{}.tmp",
+        name,
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    let result = (|| -> crate::LockfileResult<()> {
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(libc::O_NOFOLLOW);
+        }
+        #[cfg(windows)]
+        {
+            if std::fs::symlink_metadata(&tmp_path).is_ok_and(|m| m.file_type().is_symlink()) {
+                return Err(crate::LockfileError::WriteFailed(
+                    "refusing to write through a symlink temp path".to_string(),
+                ));
+            }
+        }
+        let mut tmp = options.open(&tmp_path).map_err(|e| {
+            crate::LockfileError::WriteFailed(format!("cannot create lock staging file: {e}"))
+        })?;
+        tmp.write_all(final_bytes).map_err(|e| {
+            crate::LockfileError::WriteFailed(format!("cannot write lock staging file: {e}"))
+        })?;
+        tmp.sync_all().map_err(|e| {
+            crate::LockfileError::WriteFailed(format!("cannot sync lock staging file: {e}"))
+        })?;
+        drop(tmp);
+        atomic_replace_file(&tmp_path, dest).map_err(|e| {
+            crate::LockfileError::WriteFailed(format!("cannot atomically replace mgc.lock: {e}"))
+        })?;
+        #[cfg(unix)]
+        std::fs::File::open(&dir)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|e| {
+                crate::LockfileError::WriteFailed(format!("cannot sync lock directory: {e}"))
+            })?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp_path);
+    }
+    result
+}

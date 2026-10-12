@@ -115,25 +115,16 @@ async fn run_lock(dir: Option<PathBuf>, to: &str) -> Result<()> {
             // cũng giữ nguyên lock cũ.)
             let legacy = mgc_lockfile::parser::parse_lockfile(&text)
                 .map_err(|error| anyhow::anyhow!("{error}"))?;
-            let (mut v4, warnings) = mgc_lockfile::migrate_v3_to_v4(legacy)
-                .map_err(|error| anyhow::anyhow!("{error}"))?;
-            if !warnings.is_empty() {
-                return Err(crate::error::migrate_v4_lossy(&warnings));
-            }
-            v4.metadata.generated_at = chrono::Utc::now().to_rfc3339();
-            v4.metadata.generator = format!("mgc/{}", env!("CARGO_PKG_VERSION"));
-            v4.metadata.lockfile_hash = mgc_lockfile::canonical::payload_digest(&v4.payload());
-            v4.metadata.signature = None;
-            let document = mgc_lockfile::canonical::write_v4_document(&v4)
-                .map_err(|error| anyhow::anyhow!("{error}"))?;
-            // Re-parse what will hit disk: the emitted text must round-trip
-            // into the identical document (no serializer drift).
-            // (Parse lại đúng text sẽ ghi đĩa: phải round-trip y hệt.)
-            let round_trip = mgc_lockfile::canonical::parse_v4_document(&document)
-                .map_err(|error| anyhow::anyhow!("{error}"))?;
-            if round_trip != v4 {
-                return Err(crate::error::migrate_v4_roundtrip_mismatch());
-            }
+            // Single shared lossless gate (same helper every adapter write
+            // path uses — the rule cannot drift between lanes/commands).
+            // (Một cổng lossless dùng chung (cùng helper mọi đường ghi
+            // adapter dùng — luật không lệch giữa lane/lệnh).)
+            let document = mgc_lockfile::migrate::finalize_migrated_v4(
+                legacy,
+                &format!("mgc/{}", env!("CARGO_PKG_VERSION")),
+                &chrono::Utc::now().to_rfc3339(),
+            )
+            .map_err(|lossy| crate::error::migrate_v4_lossy(&lossy.warnings))?;
             mgc_lockfile::atomic::atomic_write_locked(
                 &guard,
                 &lock_path,

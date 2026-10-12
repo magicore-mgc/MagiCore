@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LockfileV4 {
-    /// Schema version (`"4"`) — Phiên bản schema.
+    /// Supported v4 revision (`"4"` or `"4.1"`) — Revision v4 được hỗ trợ.
     pub version: String,
     /// Metadata (generator is in-payload; hash/signature/timestamp out).
     pub metadata: LockfileV4Metadata,
@@ -79,6 +79,10 @@ pub struct PackageV4 {
     /// Outgoing dependency edges — Cạnh phụ thuộc ra.
     #[serde(default)]
     pub edges: Vec<Edge>,
+    /// Protocol and platform markers needed to replay verified native metadata.
+    /// Marker protocol/nền tảng cần để phát lại metadata native đã xác minh.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub markers: Option<Vec<String>>,
     /// Physical artifact reference — Tham chiếu artifact vật lý.
     #[serde(
         default,
@@ -567,6 +571,11 @@ pub fn canonical_toml(payload: &LockfilePayload) -> String {
     packages.sort_by_cached_key(package_sort_key);
     for package in &packages {
         out.push_str("[[package]]\n");
+        if let Some(markers) = &package.markers {
+            let mut markers = markers.clone();
+            markers.sort();
+            push_string_array(&mut out, "markers", &markers);
+        }
         push_package_key(&mut out, &package.key);
         let mut edges = package.edges.clone();
         edges.sort_by_cached_key(edge_sort_key);
@@ -636,11 +645,28 @@ pub fn write_v4_document(lock: &LockfileV4) -> crate::LockfileResult<String> {
 /// (Parse toàn bộ tài liệu v4, từ chối version khác.)
 pub fn parse_v4_document(text: &str) -> crate::LockfileResult<LockfileV4> {
     let lock: LockfileV4 = toml::from_str(text)?;
-    if lock.version != crate::v4::LOCKFILE_SCHEMA_V4 {
+    validate_v4_revision(&lock)?;
+    Ok(lock)
+}
+
+/// Validate that additive fields are only used by a revision that signs them.
+/// Xác minh field mới chỉ xuất hiện ở revision có ký chúng vào payload.
+pub(crate) fn validate_v4_revision(lock: &LockfileV4) -> crate::LockfileResult<()> {
+    if !crate::v4::is_v4_schema_version(&lock.version) {
         return Err(crate::LockfileError::ParseError(format!(
-            "expected v4 lockfile, got version '{}'",
+            "expected a supported v4 lockfile revision, got version '{}'",
             lock.version
         )));
     }
-    Ok(lock)
+    if lock.version == crate::v4::LOCKFILE_SCHEMA_V4_LEGACY
+        && lock
+            .packages
+            .iter()
+            .any(|package| package.markers.is_some())
+    {
+        return Err(crate::LockfileError::ParseError(
+            "package markers require lockfile schema revision 4.1".to_string(),
+        ));
+    }
+    Ok(())
 }

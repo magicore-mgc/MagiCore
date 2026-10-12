@@ -570,7 +570,10 @@ export default defineConfig({ plugins: [sveltekit({ adapter: adapter() })] });
         },
         "serve": {
           "builder": "@angular-devkit/build-angular:dev-server",
-          "options": { "port": 4315 }
+          "options": {
+            "buildTarget": "{{PROJECT_NAME}}:build",
+            "port": 4315
+          }
         }
       }
     }
@@ -872,7 +875,7 @@ const project = "{{PROJECT_NAME}}";
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "remix dev --port 4315",
+    "dev": "remix vite:dev --port 4315",
     "build": "remix vite:build",
     "start": "remix-serve ./build/server/index.js"
   },

@@ -188,3 +188,18 @@ fn global_register_and_get() {
         .expect("web plugin");
     assert_eq!(plugin.ecosystem(), Ecosystem::Web);
 }
+
+#[tokio::test]
+async fn native_context_scope_preserves_explicit_plugin_registration() {
+    let adapter = spawn_adapter_plugin().await;
+    let explicit = Plugin::from_adapter(adapter.clone());
+    let native = Plugin::from_project_adapter(adapter.clone());
+    assert!(!explicit.is_context_scoped());
+    assert!(native.is_context_scoped());
+    assert!(native.clone().is_context_scoped());
+    assert!(Arc::ptr_eq(&explicit.as_adapter().unwrap(), &adapter));
+    assert!(Arc::ptr_eq(&native.as_adapter().unwrap(), &adapter));
+    let registry = mgc_plugin::PluginRegistry::new();
+    registry.register(native).unwrap();
+    assert!(registry.get(Ecosystem::Web).unwrap().is_context_scoped());
+}

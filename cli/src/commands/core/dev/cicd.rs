@@ -254,7 +254,7 @@ pub async fn verify() -> Result<()> {
             "test" => run_test_step(&root, &core).await?,
             "build" => {
                 ensure_build_step_supported(&core)?;
-                crate::commands::build::run(None, None, None).await?;
+                crate::commands::build::run(None, None, None, None).await?;
             }
             // Unreachable (chain validated above) — kept fail-closed anyway.
             // Không thể tới đây (chain đã validate) — vẫn giữ fail-closed.
@@ -300,7 +300,7 @@ fn verify_chain(root: &std::path::Path) -> Result<Vec<String>> {
 /// Dùng chung chính sách `mgc test` trên project root; không bao giờ báo thành công khi đã skip.
 async fn run_test_step(root: &std::path::Path, core: &str) -> Result<()> {
     let core_override = (!core.is_empty()).then_some(core);
-    crate::commands::test::test_at(root, Vec::new(), core_override, None)
+    crate::commands::test::test_at(root, Vec::new(), core_override, None, None)
         .await
         .map_err(|error| crate::error::cicd_test_step_failed(core, &error))
 }

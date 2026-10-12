@@ -153,11 +153,25 @@ ALLOWLIST = {
         {"lock-write", "manifest-file-write"},
         "engine lock writer + staging/scratch tree management under CLI gateway",
     ),
+    # Web monorepo targets now acquire the same per-project gateway before
+    # resolving; the engine writes/restores mgc.lock and mutates only its staged install tree.
+    # (Target Web monorepo vào gateway riêng trước khi resolve; engine ghi/khôi phục mgc.lock và chỉ sửa install tree đã stage.)
+    ("adapters/web/src/install/mod.rs", "run_install_with_registry"): (
+        {"lock-write", "manifest-file-write"},
+        "native web install engine; CLI callers hold the per-project mutation gateway and staging cleanup is scoped to its install tree",
+    ),
     ("adapters/web/src/install/mod.rs", "restore_prior_lock_result"): (
         {"manifest-file-write"}, "lock bytes restore helper (verified by callers)",
     ),
     ("adapters/web/src/lockfile.rs", "write_web_lockfile_with_state"): (
-        {"manifest-write", "manifest-file-write"}, "engine lock writer",
+        {"manifest-write", "manifest-file-write", "lock-write"},
+        "v3 signature gate or v4 integrity/signature gate in the engine lock writer; CLI writers use the project mutation gateway and journal",
+    ),
+    # V4 staging primitive — adapter callers verify integrity and reject signed rewrites.
+    # Primitive staging V4 — caller adapter kiểm integrity và từ chối ghi đè lock đã ký.
+    ("core/crates/mgc-lockfile/src/atomic.rs", "atomic_write_v4_bytes"): (
+        {"manifest-file-write"},
+        "atomic v4 publication primitive; app/lib/web callers verify the base and refuse signed rewrites, while CLI mutations use the project gateway and journal",
     ),
     ("adapters/web/src/cache_prune.rs", "prune_old_package_dirs_under"): (
         {"manifest-file-write"}, "stale package-dir pruning (age-gated)",

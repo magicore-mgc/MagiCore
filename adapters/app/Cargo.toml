@@ -25,6 +25,7 @@ mgc-config = { workspace = true }
 mgc-adapter-base = { workspace = true }
 mgc-exec = { workspace = true }
 mgc-store = { workspace = true }
+mgc-platform = { workspace = true }
 mgc-resolver = { workspace = true }
 libc = { workspace = true }
 chrono = { workspace = true }
@@ -44,8 +45,6 @@ serde_yaml = "0.9"
 sha2 = { workspace = true }
 hex = { workspace = true }
 
-# Utilities
-dirs = { workspace = true }
 url = { workspace = true }
 which = "6.0"
 reqwest = { version = "0.12", features = ["json"] }

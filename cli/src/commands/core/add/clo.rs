@@ -3,7 +3,6 @@
 use anyhow::Result;
 
 use super::super::shared;
-use mgc_types::Ecosystem;
 
 #[allow(clippy::too_many_arguments)]
 pub async fn add(
@@ -25,7 +24,7 @@ pub async fn add(
         crate::commands::dep_gate::DepOp::Add,
         compat_runtime.as_deref(),
     )?;
-    let adapter = shared::core_adapter(&Ecosystem::Cloud);
+    let adapter = shared::cloud_adapter(&root)?;
     shared::add(
         &*adapter, &root, packages, version, dev, exact, optional, peer, no_save, true, global,
     )

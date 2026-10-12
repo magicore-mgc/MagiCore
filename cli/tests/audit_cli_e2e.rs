@@ -725,6 +725,21 @@ fn audit_lib_rust_runs_without_cargo_or_cargo_audit_on_path() {
 /// CI environments (MGC_E2E_AUDIT_NETWORK=required) network is assumed.
 /// OSV có truy cập được không? Lane này gọi OSV sống; không có mạng thì
 /// skip trung thực. Môi trường CI bắt buộc coi network là có sẵn.
+fn skip_unreachable_osv(reason: impl std::fmt::Display) -> bool {
+    let required = std::env::var("MGC_E2E_AUDIT_NETWORK")
+        .map(|value| value == "required")
+        .unwrap_or(false);
+    if required {
+        panic!("MGC_E2E_AUDIT_NETWORK=required but api.osv.dev is unreachable: {reason}");
+    }
+    let test_name = std::thread::current()
+        .name()
+        .unwrap_or("unknown-test")
+        .to_string();
+    eprintln!("SKIP (environment-unverified) test={test_name}: api.osv.dev unreachable: {reason}");
+    false
+}
+
 fn osv_reachable() -> bool {
     // Bounded connect (5s): an UNBOUNDED connect blocks the thread when
     // DNS/network is slow — and under a busy test machine that made the
@@ -735,27 +750,15 @@ fn osv_reachable() -> bool {
     // ngắn giữ guard trung thực mà không treo suite.
     use std::net::ToSocketAddrs;
     let addr: std::net::SocketAddr = match "api.osv.dev:443".to_socket_addrs() {
-        Ok(mut addrs) => addrs.next().expect("api.osv.dev resolves"),
-        Err(err) => panic!("api.osv.dev DNS resolution failed: {err}"),
+        Ok(mut addrs) => match addrs.next() {
+            Some(addr) => addr,
+            None => return skip_unreachable_osv("DNS returned no addresses"),
+        },
+        Err(err) => return skip_unreachable_osv(format!("DNS resolution failed: {err}")),
     };
     match std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(5)) {
         Ok(_) => true,
-        Err(err) => {
-            let required = std::env::var("MGC_E2E_AUDIT_NETWORK")
-                .map(|v| v == "required")
-                .unwrap_or(false);
-            if required {
-                panic!("MGC_E2E_AUDIT_NETWORK=required but api.osv.dev is unreachable: {err}");
-            }
-            let test_name = std::thread::current()
-                .name()
-                .unwrap_or("unknown-test")
-                .to_string();
-            eprintln!(
-                "SKIP (environment-unverified) test={test_name}: api.osv.dev unreachable (offline?)"
-            );
-            false
-        }
+        Err(err) => skip_unreachable_osv(err),
     }
 }
 

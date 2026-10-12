@@ -86,8 +86,30 @@ impl NpmDependencyProvider {
         fallbacks: Vec<(String, Option<String>)>,
         shared_cache: Option<SharedWebCache>,
     ) -> Self {
+        Self::from_registry(
+            native::npm_registry::NpmRegistry::new_with_chain(url, token, fallbacks),
+            shared_cache,
+        )
+    }
+
+    /// Keep credential scopes in the provider-owned transport.
+    /// Provider nhận chain typed, không bóc token để dựng lại quyền theo origin.
+    pub fn new_with_scoped_chain(
+        entries: Vec<mgc_config::chain::ScopedRegistry>,
+        shared_cache: Option<SharedWebCache>,
+    ) -> anyhow::Result<Self> {
+        Ok(Self::from_registry(
+            native::npm_registry::NpmRegistry::new_with_scoped_chain(entries)?,
+            shared_cache,
+        ))
+    }
+
+    fn from_registry(
+        registry: native::npm_registry::NpmRegistry,
+        shared_cache: Option<SharedWebCache>,
+    ) -> Self {
         Self {
-            registry: native::npm_registry::NpmRegistry::new_with_chain(url, token, fallbacks),
+            registry,
             metadata_cache: MetadataCache::new(),
             metadata_locks: DashMap::new(),
             registry_cache: RegistryCache::new(),

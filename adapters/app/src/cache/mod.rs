@@ -1,5 +1,5 @@
 //! `cache/mod.rs` — Cache management for app adapter.
-//! Platform-specific cache directories for Flutter, Kotlin, Swift, CocoaPods.
+//! MGC-owned app cache paths; unsupported lanes cannot claim external caches.
 
 pub mod metadata;
 pub mod prune;
@@ -10,33 +10,32 @@ use std::path::PathBuf;
 
 /// Get app adapter cache directory for language.
 pub fn cache_dir(language: AppLanguage) -> MgResult<PathBuf> {
-    let home =
-        dirs::home_dir().ok_or_else(|| MgError::Other("cannot find home directory".to_string()))?;
-
     match language {
-        AppLanguage::Flutter => Ok(home.join(".pub-cache")),
-        AppLanguage::Kotlin => Ok(home.join(".gradle/caches")),
-        AppLanguage::Swift => {
-            if cfg!(target_os = "macos") {
-                Ok(home.join("Library/Caches/org.swift.swiftpm"))
-            } else {
-                dirs::cache_dir()
-                    .map(|d| d.join("org.swift.swiftpm"))
-                    .ok_or_else(|| MgError::Other("cannot find cache directory".to_string()))
-            }
-        }
-        AppLanguage::ReactNative => {
-            // React Native uses npm cache (delegate to web)
-            Ok(home.join(".npm"))
-        }
-        AppLanguage::ObjC => {
-            if cfg!(target_os = "macos") {
-                Ok(home.join("Library/Caches/CocoaPods"))
-            } else {
-                Ok(home.join(".cocoapods"))
-            }
-        }
-        AppLanguage::Multi => Ok(home.join(".mgc-cache/app")),
+        AppLanguage::Flutter => Ok(mgc_platform::paths::mgc_data_dir()
+            .join("store")
+            .join("pub")),
+        AppLanguage::Swift => Ok(mgc_platform::paths::mgc_data_dir()
+            .join("store")
+            .join("swift")),
+        AppLanguage::Multi => Ok(mgc_platform::paths::mgc_data_dir()
+            .join("cache")
+            .join("app")
+            .join("multi")),
+        // These ecosystems use shared external package-manager caches. Until
+        // MagiCore owns those stores, refusing is safer than offering a clear
+        // operation that could delete data used by unrelated projects.
+        AppLanguage::Kotlin
+        | AppLanguage::ReactNative
+        | AppLanguage::ObjC
+        | AppLanguage::Maui
+        | AppLanguage::Tauri => Err(MgError::Unsupported {
+            core: "app",
+            capability: "managed-cache",
+            guidance: format!(
+                "MagiCore does not manage the external {} package cache",
+                language.as_str()
+            ),
+        }),
     }
 }
 
@@ -60,20 +59,37 @@ pub fn cache_size(language: AppLanguage) -> MgResult<u64> {
 }
 
 fn dir_size(path: &std::path::Path) -> MgResult<u64> {
+    // Do not traverse linked roots or entries — không đi ra ngoài cây cache qua symlink.
+    let root = std::fs::symlink_metadata(path)
+        .map_err(|e| MgError::Other(format!("failed to inspect cache root: {e}")))?;
+    if root.file_type().is_symlink() || !root.is_dir() {
+        return Err(MgError::Other("cache root must be a real directory".into()));
+    }
     let mut total = 0u64;
     for entry in
         std::fs::read_dir(path).map_err(|e| MgError::Other(format!("failed to read dir: {}", e)))?
     {
         let entry = entry.map_err(|e| MgError::Other(format!("failed to read entry: {}", e)))?;
-        let metadata = entry
-            .metadata()
+        let metadata = std::fs::symlink_metadata(entry.path())
             .map_err(|e| MgError::Other(format!("failed to read metadata: {}", e)))?;
 
-        if metadata.is_dir() {
-            total += dir_size(&entry.path())?;
-        } else {
-            total += metadata.len();
+        if metadata.file_type().is_symlink() {
+            continue;
         }
+        let size = if metadata.is_dir() {
+            dir_size(&entry.path())?
+        } else if metadata.is_file() {
+            metadata.len()
+        } else {
+            0
+        };
+        total = total
+            .checked_add(size)
+            .ok_or_else(|| MgError::Other("cache size exceeds supported range".into()))?;
     }
     Ok(total)
 }
+
+#[cfg(test)]
+#[path = "test/cache_size.rs"]
+mod cache_size_tests;

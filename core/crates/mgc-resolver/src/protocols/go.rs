@@ -35,6 +35,7 @@ use std::path::{Path, PathBuf};
 
 const DEFAULT_PROXY_URL: &str = "https://proxy.golang.org";
 const DEFAULT_SUM_URL: &str = "https://sum.golang.org";
+const GO_MOD_SHA256_MARKER_PREFIX: &str = "go-mod-sha256:";
 
 /// Native Go module proxy engine.
 /// Engine native Go module proxy.
@@ -208,30 +209,52 @@ impl GoModProtocol {
     /// materializer cần cả ba cho cache GOPROXY=off.
     pub async fn download_module(&self, entry: &ResolvedEntry) -> MgResult<GoModuleFiles> {
         let version = format!("v{}", entry.version.trim_start_matches('v'));
-        let zip = self.get_bytes(&entry.artifact_url).await?;
         let gomod = self
             .get_bytes(&self.proxy_url_for(&entry.name, &format!("{version}.mod")))
             .await?;
+        let expected_mod_sha256 = entry
+            .extra_markers
+            .iter()
+            .find_map(|marker| marker.strip_prefix(GO_MOD_SHA256_MARKER_PREFIX))
+            .ok_or_else(|| {
+                MgError::Integrity(format!(
+                    "Go resolution did not pin the .mod metadata for {}@{}; run `mgc install` again",
+                    entry.name, entry.version
+                ))
+            })?;
+        let actual_mod_sha256 = super::sha256_hex(&gomod);
+        if !actual_mod_sha256.eq_ignore_ascii_case(expected_mod_sha256) {
+            return Err(MgError::Integrity(format!(
+                "Go .mod metadata changed after resolution for {}@{} (fail-closed)",
+                entry.name, entry.version
+            )));
+        }
         let info = self
             .get_bytes(&self.proxy_url_for(&entry.name, &format!("{version}.info")))
             .await?;
+        validate_go_info(&info, &version)?;
+        let zip = self.get_bytes(&entry.artifact_url).await?;
         Ok(GoModuleFiles { zip, gomod, info })
     }
 
     /// Materialize a module into the go download cache layout:
     /// `{gomodcache}/cache/download/{escaped-module}/@v/{version}.{zip,mod,info,ziphash}`
-    /// — readable with `GOPROXY=off`. The `.ziphash` is the REAL sha256 of
-    /// the stored zip bytes (computed, not copied).
+    /// — readable with `GOPROXY=off`. The cache `.ziphash` is Go's `h1:`
+    /// directory hash, independent of the archive-byte integrity digest.
     /// Materialize module vào layout go download cache:
     /// `{gomodcache}/cache/download/{module-escaped}/@v/{version}.{zip,mod,info,ziphash}`
-    /// — đọc được với `GOPROXY=off`. `.ziphash` là sha256 THẬT của byte zip
-    /// đã lưu (tính toán, không copy).
+    /// — đọc được với `GOPROXY=off`. `.ziphash` là hash nội dung `h1:` của Go,
+    /// tách riêng khỏi digest xác minh byte archive.
     pub fn materialize(
         &self,
         entry: &ResolvedEntry,
         files: &GoModuleFiles,
         gomodcache: &Path,
     ) -> MgResult<PathBuf> {
+        validate_go_cache_coordinates(&entry.name, &entry.version)?;
+        // Parse and hash before creating cache files; malformed archives must not partially materialize.
+        // Tính hash nội dung trước mọi ghi cache; zip lỗi không để lại cache dở dang.
+        let zip_hash = dirhash_zip(&zip_reader::read_zip_entries(&files.zip)?)?;
         let version = format!("v{}", entry.version.trim_start_matches('v'));
         let dir = gomodcache
             .join("cache")
@@ -242,10 +265,7 @@ impl GoModProtocol {
         std::fs::write(dir.join(format!("{version}.zip")), &files.zip)?;
         std::fs::write(dir.join(format!("{version}.mod")), &files.gomod)?;
         std::fs::write(dir.join(format!("{version}.info")), &files.info)?;
-        std::fs::write(
-            dir.join(format!("{version}.ziphash")),
-            super::sha256_hex(&files.zip),
-        )?;
+        std::fs::write(dir.join(format!("{version}.ziphash")), zip_hash)?;
         Ok(dir.join(format!("{version}.zip")))
     }
     /// Resolve one KNOWN version end to end (artifact URL → .info time →
@@ -262,59 +282,49 @@ impl GoModProtocol {
         // (`.info` → marker thời gian phát hành (provenance).)
         let info_url = self.proxy_url_for(module, &format!("v{version}.info"));
         let (info_status, info_body) = self.get_text(&info_url).await?;
-        if (200..300).contains(&info_status)
-            && let Ok(info) = serde_json::from_str::<GoInfo>(&info_body)
-            && !info.time.is_empty()
-        {
+        if !(200..300).contains(&info_status) {
+            return Err(MgError::Network(format!(
+                "GET {info_url} returned {info_status} — Go release identity is required (fail-closed)"
+            )));
+        }
+        let info = serde_json::from_str::<GoInfo>(&info_body).map_err(|error| {
+            MgError::Integrity(format!(
+                "Go release metadata is malformed for {module}@{version}: {error}"
+            ))
+        })?;
+        let expected_info_version = format!("v{version}");
+        if info.version != expected_info_version {
+            return Err(MgError::Integrity(format!(
+                "Go release metadata identifies '{}' for requested {module}@{version} (fail-closed)",
+                info.version
+            )));
+        }
+        if !info.time.is_empty() {
             markers.push(format!("time:{}", info.time));
         }
 
-        // `.mod` → the module's own requirements (with replace/exclude and
-        // `// indirect` notes applied honestly).
-        // (`.mod` → requirement của chính module (áp replace/exclude và ghi
-        // chú `// indirect` trung thực).)
+        // `.mod` provides the module requirements and indirect provenance.
+        // Đọc require/indirect; dependency directives do not control the main module.
         let mod_url = self.proxy_url_for(module, &format!("v{version}.mod"));
         let (mod_status, mod_body) = self.get_text(&mod_url).await?;
         let mut deps = Vec::new();
         if (200..300).contains(&mod_status) {
+            markers.push(format!(
+                "{GO_MOD_SHA256_MARKER_PREFIX}{}",
+                super::sha256_hex(mod_body.as_bytes())
+            ));
             let gomod = parse_go_mod(&mod_body)?;
             for req in &gomod.requires {
                 if req.indirect {
                     markers.push(format!("indirect:{}", req.path));
                 }
-                // `exclude` in the dependency's go.mod removes that exact
-                // (module, version) pair — record, never select it.
-                // (`exclude` trong go.mod của dependency loại cặp (module,
-                // version) đúng đó — ghi lại, không bao giờ chọn.)
-                if gomod
-                    .excludes
-                    .iter()
-                    .any(|(p, v)| p == &req.path && v.trim_start_matches('v') == req.version)
-                {
-                    markers.push(format!("excluded:{}@{}", req.path, req.version));
-                    continue;
-                }
-                // `replace` rewrites the requirement when the module path
-                // (and pinned version, when present) matches.
-                // (`replace` viết lại requirement khi path module (và version
-                // ghim, nếu có) khớp.)
-                let mut dep_path = req.path.clone();
-                let mut dep_version = req.version.clone();
-                for rep in &gomod.replaces {
-                    let version_ok = rep
-                        .old_version
-                        .as_ref()
-                        .is_none_or(|v| v.trim_start_matches('v') == dep_version);
-                    if rep.old_path == dep_path && version_ok {
-                        markers.push(format!("replace:{}=>{}", rep.old_path, rep.new_path));
-                        dep_path = rep.new_path.clone();
-                        if let Some(nv) = &rep.new_version {
-                            dep_version = nv.clone();
-                        }
-                        break;
-                    }
-                }
-                deps.push((dep_path, dep_version.trim_start_matches('v').to_string()));
+                // Go applies replace/exclude from the main module only; a dependency's
+                // go.mod cannot rewrite the consuming project's graph.
+                // Go chỉ áp dụng replace/exclude của main module, không của dependency.
+                deps.push((
+                    req.path.clone(),
+                    req.version.trim_start_matches('v').to_string(),
+                ));
             }
         } else {
             return Err(MgError::Network(format!(
@@ -361,7 +371,7 @@ impl GoModProtocol {
         // Must parse (validates shape, pseudo-version pres included) —
         // and re-serializing must not be needed since we keep it raw.
         // (Phải parse được — giữ chuỗi thô.)
-        Version::parse(raw).ok()?;
+        parse_go_version(raw).ok()?;
         Some(raw.to_string())
     }
 
@@ -415,7 +425,7 @@ impl RegistryProtocol for GoModProtocol {
                 if line.trim().starts_with("v0.0.0-") || v.is_empty() {
                     continue;
                 }
-                let Ok(version) = Version::parse(v) else {
+                let Ok(version) = parse_go_version(v) else {
                     continue;
                 };
                 if !go_matches(range, &version) {
@@ -433,7 +443,7 @@ impl RegistryProtocol for GoModProtocol {
                 let latest: GoLatest = serde_json::from_str(&latest_body)
                     .map_err(|e| MgError::Other(format!("parse go @latest failed: {e}")))?;
                 let v = latest.version.trim_start_matches('v').to_string();
-                if let Ok(version) = Version::parse(&v)
+                if let Ok(version) = parse_go_version(&v)
                     && go_matches(range, &version)
                 {
                     best = Some((version, v));
@@ -446,6 +456,46 @@ impl RegistryProtocol for GoModProtocol {
             ))
         })?;
         self.resolve_version(module, &version).await
+    }
+
+    /// Resolve all project roots together using Go's minimum version selection.
+    /// Chọn version tối thiểu đáp ứng mọi requirement trong graph Go nhiều root.
+    async fn resolve_graph_roots(
+        &self,
+        roots: &[(String, String)],
+    ) -> MgResult<Vec<ResolvedEntry>> {
+        let mut queue = std::collections::VecDeque::from(roots.to_vec());
+        let mut visited = std::collections::BTreeSet::new();
+        let mut selected = std::collections::BTreeMap::<String, ResolvedEntry>::new();
+
+        while let Some((name, requirement)) = queue.pop_front() {
+            if !visited.insert((name.clone(), requirement.clone())) {
+                continue;
+            }
+            let entry = self.resolve(&name, &requirement).await?;
+            let version = parse_go_version(&entry.version)?;
+            let replace = match selected.get(&entry.name) {
+                Some(previous) => {
+                    let previous_version = parse_go_version(&previous.version)?;
+                    version > previous_version
+                }
+                None => true,
+            };
+
+            // Every reachable requirement contributes its requirements to Go's module graph.
+            // Mọi version requirement chạm tới đều góp cạnh bắc cầu vào graph theo thuật toán Go.
+            queue.extend(entry.deps.iter().cloned());
+            if replace {
+                selected.insert(entry.name.clone(), entry);
+            }
+        }
+
+        Ok(selected.into_values().collect())
+    }
+
+    async fn resolve_graph(&self, name: &str, range: &str) -> MgResult<Vec<ResolvedEntry>> {
+        self.resolve_graph_roots(&[(name.to_string(), range.to_string())])
+            .await
     }
 
     async fn download(&self, entry: &ResolvedEntry) -> MgResult<Vec<u8>> {
@@ -514,16 +564,16 @@ fn go_part(part: &str, version: &Version) -> bool {
         return true;
     }
     if let Some(p) = part.strip_prefix(">=") {
-        return Version::parse(p).map(|t| version >= &t).unwrap_or(false);
+        return parse_go_version(p).map(|t| version >= &t).unwrap_or(false);
     }
     if let Some(p) = part.strip_prefix("<=") {
-        return Version::parse(p).map(|t| version <= &t).unwrap_or(false);
+        return parse_go_version(p).map(|t| version <= &t).unwrap_or(false);
     }
     if let Some(p) = part.strip_prefix('>') {
-        return Version::parse(p).map(|t| version > &t).unwrap_or(false);
+        return parse_go_version(p).map(|t| version > &t).unwrap_or(false);
     }
     if let Some(p) = part.strip_prefix('<') {
-        return Version::parse(p).map(|t| version < &t).unwrap_or(false);
+        return parse_go_version(p).map(|t| version < &t).unwrap_or(false);
     }
     if let Some(p) = part.strip_prefix('^') {
         return go_caret(p, version);
@@ -532,15 +582,26 @@ fn go_part(part: &str, version: &Version) -> bool {
         return go_tilde(p, version);
     }
     if let Some(p) = part.strip_prefix('=') {
-        return Version::parse(p).map(|t| version == &t).unwrap_or(false);
+        return parse_go_version(p).map(|t| version == &t).unwrap_or(false);
     }
     // Bare version = exact pin (go.mod semantics).
     // (Version trần = ghim chính xác (ngữ nghĩa go.mod).)
-    Version::parse(part).map(|t| version == &t).unwrap_or(false)
+    parse_go_version(part)
+        .map(|t| version == &t)
+        .unwrap_or(false)
+}
+
+fn parse_go_version(input: &str) -> MgResult<Version> {
+    let raw = input.trim().trim_start_matches('v');
+    let normalized = raw.strip_suffix("+incompatible").unwrap_or(raw);
+    if normalized == raw && raw.contains('+') {
+        return Err(MgError::InvalidVersion(input.to_string()));
+    }
+    Version::parse(normalized)
 }
 
 fn go_caret(raw: &str, version: &Version) -> bool {
-    let Ok(target) = Version::parse(raw.trim()) else {
+    let Ok(target) = parse_go_version(raw.trim()) else {
         return false;
     };
     if version < &target {
@@ -556,10 +617,32 @@ fn go_caret(raw: &str, version: &Version) -> bool {
 }
 
 fn go_tilde(raw: &str, version: &Version) -> bool {
-    let Ok(target) = Version::parse(raw.trim()) else {
+    let Ok(target) = parse_go_version(raw.trim()) else {
         return false;
     };
     version >= &target && version.major == target.major && version.minor == target.minor
+}
+
+/// Validate filesystem coordinates independently of callers and registry integrity.
+/// Kiểm coordinate trước ghép cache; digest đúng không cho phép thoát thư mục cache.
+fn validate_go_cache_coordinates(module: &str, version: &str) -> MgResult<()> {
+    let safe_module = !module.is_empty()
+        && !module
+            .chars()
+            .any(|c| c.is_control() || matches!(c, '\\' | ':' | '@'))
+        && module
+            .split('/')
+            .all(|part| !part.is_empty() && part != "." && part != "..");
+    let safe_version = !version.is_empty()
+        && version
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '+'));
+    if !safe_module || !safe_version {
+        return Err(MgError::Integrity(
+            "unsafe Go module cache coordinates".to_owned(),
+        ));
+    }
+    Ok(())
 }
 
 /// Proxy module-path escape: every uppercase ASCII letter becomes
@@ -590,6 +673,13 @@ pub fn dirhash_zip(entries: &[zip_reader::ZipEntry]) -> MgResult<String> {
     files.sort_by(|a, b| a.name.cmp(&b.name));
     let mut hasher = Sha256::new();
     for entry in files {
+        // Match Go Hash1: newline names cannot be represented unambiguously in its summary.
+        // Theo chuẩn Go, tên chứa newline bị từ chối thay vì tạo dòng hash nhập nhằng.
+        if entry.name.contains('\n') {
+            return Err(MgError::Integrity(
+                "Go dirhash does not support filenames containing newlines".to_owned(),
+            ));
+        }
         let file_hash = Sha256::digest(&entry.data);
         hasher.update(format!("{:x}  {}\n", file_hash, entry.name).as_bytes());
     }
@@ -776,7 +866,22 @@ fn push_exclude(file: &mut GoModFile, body: &str) -> MgResult<()> {
 #[serde(rename_all = "PascalCase")]
 struct GoInfo {
     #[serde(default)]
+    version: String,
+    #[serde(default)]
     time: String,
+}
+
+fn validate_go_info(bytes: &[u8], expected_version: &str) -> MgResult<()> {
+    let info = serde_json::from_slice::<GoInfo>(bytes).map_err(|error| {
+        MgError::Integrity(format!("Go release metadata is malformed: {error}"))
+    })?;
+    if info.version != expected_version {
+        return Err(MgError::Integrity(format!(
+            "Go release metadata identifies '{}' but the lock pins '{expected_version}' (fail-closed)",
+            info.version
+        )));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Deserialize)]

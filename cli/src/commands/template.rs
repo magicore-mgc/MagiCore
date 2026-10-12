@@ -19,13 +19,12 @@ pub fn registry_package_name(core: &str, name: &str) -> String {
     format!("mgc-create-{core}-{}", inner.replace('/', "-"))
 }
 
-/// Cache dir: ~/.mgc/templates (override qua MGC_TEMPLATES_DIR).
+/// Cache dir: MGC_DATA_DIR/templates (override qua MGC_TEMPLATES_DIR).
 pub fn templates_cache_dir() -> PathBuf {
     if let Ok(dir) = std::env::var("MGC_TEMPLATES_DIR") {
         return PathBuf::from(dir);
     }
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    home.join(".mgc").join("templates")
+    mgc_platform::paths::mgc_data_dir().join("templates")
 }
 
 /// Serialize embedded-layer refreshes across MagiCore processes. Without this

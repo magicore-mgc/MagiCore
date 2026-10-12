@@ -1,5 +1,7 @@
 # P1.4 Evidence: Cross-Platform Distribution Verification
 
+> **Historical evidence snapshot (2026-09-04).** This file records older local checks and contains superseded commands/version examples. It does not qualify the current release candidate. Use [`README.md`](README.md) and [`.github/workflows/release.yml`](../.github/workflows/release.yml) for current release evidence.
+
 **Date**: 2026-09-04
 **Session**: P0/P1 Fixes for v1.1.0-RC Public Beta
 
@@ -66,7 +68,7 @@ which mgc  # Should return: mgc not found
 **Clean Uninstall Checklist**:
 - [ ] Binary removed from `/opt/homebrew/bin/mgc`
 - [ ] `which mgc` fails
-- [ ] Cache remains in `~/.magicore` (user data, safe to keep)
+- [ ] MagiCore-managed data remains in `~/MagiCore-SystemData` (or `MGC_DATA_DIR`; user data, safe to keep)
 - [ ] No orphaned files in `/opt/homebrew`
 
 **Status**: ⏳ Deferred (would break current session)

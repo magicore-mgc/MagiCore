@@ -16,7 +16,7 @@ async fn native_app_offline_install_fails_before_project_mutation() {
     std::fs::write(project.path().join("pubspec.yaml"), "name: sample\n").unwrap();
 
     let error = run_install(
-        crate::language::AppLanguage::Flutter,
+        crate::language::AppLanguage::Swift,
         &ResolvedGraph::empty(),
         project.path(),
         InstallOptions {
@@ -866,4 +866,195 @@ fn flutter_package_config_refuses_symlinked_dart_tool_directory() {
             .unwrap_err();
     assert!(error.to_string().contains("linked"));
     assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+}
+
+fn v4_package(name: &str, version: &str) -> Package {
+    Package {
+        name: name.to_string(),
+        version: version.to_string(),
+        ecosystem: EcosystemTag::Dart,
+        resolved: format!("https://pub.dev/api/archives/{name}-{version}.tar.gz"),
+        integrity: "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+            .to_string(),
+        registry: Some("https://pub.dev".to_string()),
+        ..Default::default()
+    }
+}
+
+fn write_mgc_toml_schema(dir: &std::path::Path, schema: &str) {
+    std::fs::write(
+        dir.join("mgc.toml"),
+        format!("name = \"app\"\necosystem = \"app\"\n[lock]\nschema = \"{schema}\"\n"),
+    )
+    .unwrap();
+}
+
+#[test]
+fn v4_schema_writes_v4_lock() {
+    let dir = tempfile::tempdir().unwrap();
+    write_mgc_toml_schema(dir.path(), "v4");
+    write_canonical_lock(
+        dir.path(),
+        &[EcosystemTag::Dart],
+        vec![v4_package("http", "1.0.0")],
+    )
+    .unwrap();
+    let text = std::fs::read_to_string(dir.path().join("mgc.lock")).unwrap();
+    assert_eq!(
+        mgc_lockfile::migrate::detect_lockfile_version(&text).unwrap(),
+        4
+    );
+    let doc = mgc_lockfile::canonical::parse_v4_document(&text).unwrap();
+    assert!(
+        mgc_lockfile::policy::verify_v4_math(&doc)
+            .unwrap()
+            .digest_ok
+    );
+    assert!(doc.packages.iter().any(|p| p.key.name == "http"));
+}
+
+#[test]
+fn v4_schema_refuses_lossy_lane_rows() {
+    // Rows without registry/SRI cannot become v4: the v3 lock stays
+    // untouched and the refusal names the gap (never a partial v4).
+    // (Row thiếu registry/SRI không thành v4 được: giữ nguyên lock v3 và
+    // từ chối nêu rõ khoảng trống (không v4 nửa vời).)
+    let dir = tempfile::tempdir().unwrap();
+    write_mgc_toml_schema(dir.path(), "v4");
+    let err = write_canonical_lock(
+        dir.path(),
+        &[EcosystemTag::Dart],
+        vec![package("bare", "1.0.0", EcosystemTag::Dart)],
+    )
+    .unwrap_err();
+    assert!(
+        err.to_string().contains("lossy"),
+        "expected lossy refusal, got: {err}"
+    );
+    assert!(
+        !dir.path().join("mgc.lock").exists(),
+        "refused v4 write must not publish any lock"
+    );
+}
+
+#[test]
+fn v3_schema_keeps_v3_lock() {
+    let dir = tempfile::tempdir().unwrap();
+    write_mgc_toml_schema(dir.path(), "v3");
+    write_canonical_lock(
+        dir.path(),
+        &[EcosystemTag::Dart],
+        vec![v4_package("http", "1.0.0")],
+    )
+    .unwrap();
+    let text = std::fs::read_to_string(dir.path().join("mgc.lock")).unwrap();
+    assert_eq!(
+        mgc_lockfile::migrate::detect_lockfile_version(&text).unwrap(),
+        3
+    );
+}
+
+#[test]
+fn v4_replay_keeps_bytes_identical() {
+    let dir = tempfile::tempdir().unwrap();
+    write_mgc_toml_schema(dir.path(), "v4");
+    let packages = vec![v4_package("http", "1.0.0")];
+    write_canonical_lock(dir.path(), &[EcosystemTag::Dart], packages.clone()).unwrap();
+    let before = std::fs::read(dir.path().join("mgc.lock")).unwrap();
+    write_canonical_lock(dir.path(), &[EcosystemTag::Dart], packages).unwrap();
+    assert_eq!(std::fs::read(dir.path().join("mgc.lock")).unwrap(), before);
+}
+
+#[test]
+fn v3_schema_meets_v4_lock_with_actionable_error() {
+    // Schema v3 (default) facing a v4 lock fails with guidance, not a bare
+    // parse error: point at `[lock] schema = "v4"` or a v3 re-install.
+    // (Schema v3 (mặc định) gặp lock v4 thì fail kèm hướng dẫn, không phải
+    // lỗi parse trần.)
+    let dir = tempfile::tempdir().unwrap();
+    write_mgc_toml_schema(dir.path(), "v3");
+    std::fs::write(
+        dir.path().join("mgc.lock"),
+        "version = \"4\"\n[metadata]\ngenerated_at = \"x\"\ngenerator = \"mgc/test\"\nlockfile_hash = \"\"\n",
+    )
+    .unwrap();
+    let err = write_canonical_lock(dir.path(), &[EcosystemTag::Dart], vec![]).unwrap_err();
+    assert!(
+        err.to_string().contains("[lock] schema"),
+        "expected actionable schema error, got: {err}"
+    );
+}
+
+#[test]
+fn flutter_offline_preflight_checks_every_archive_without_materialization() {
+    use sha2::{Digest, Sha256};
+    let cache = tempfile::tempdir().unwrap();
+    let bytes = b"first verified archive";
+    let digest = hex::encode(Sha256::digest(bytes));
+    super::pub_archive_cache::save_verified(cache.path(), &digest, bytes).unwrap();
+    let entry = |name: &str, sha: &str| ResolvedPackage {
+        id: PackageId::new(
+            PackageName::new(name).unwrap(),
+            Version::parse("1.0.0").unwrap(),
+        ),
+        integrity: format!("sha256-{sha}"),
+        tarball_url: format!("https://pub.dev/{name}.tar.gz"),
+        deps: vec![],
+        peer_deps: vec![],
+        direct: true,
+        dev: false,
+    };
+    let graph = ResolvedGraph {
+        packages: vec![entry("first", &digest), entry("missing", &"0".repeat(64))],
+    };
+    let error = super::preflight_flutter_archives(&graph, cache.path()).unwrap_err();
+    assert!(error.to_string().contains("cache miss"));
+    assert!(!cache.path().join("hosted").exists());
+    let graph = ResolvedGraph {
+        packages: vec![entry("first", &digest)],
+    };
+    super::preflight_flutter_archives(&graph, cache.path()).unwrap();
+    assert!(!cache.path().join("hosted").exists());
+    std::fs::write(
+        cache
+            .path()
+            .join("archives")
+            .join(format!("{digest}.tar.gz")),
+        b"tampered",
+    )
+    .unwrap();
+    assert!(super::preflight_flutter_archives(&graph, cache.path()).is_err());
+}
+
+// Legacy and SRI encodings must reconstruct the same verified digest.
+// Lock V4 đổi encoding không được làm mất hash hoặc phá native frozen install.
+#[test]
+fn native_entry_preserves_digest_across_legacy_and_sri() {
+    let mut package = mgc_types::ResolvedPackage {
+        id: mgc_types::PackageId::new(
+            mgc_types::PackageName::new("fixture").unwrap(),
+            mgc_types::Version::parse("1.0.0").unwrap(),
+        ),
+        integrity: String::new(),
+        tarball_url: String::new(),
+        deps: vec![],
+        peer_deps: vec![],
+        direct: true,
+        dev: false,
+    };
+    for raw in [
+        "ab".repeat(32),
+        "AB".repeat(32),
+        "q6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6s=".to_string(),
+    ] {
+        package.integrity = format!("sha256-{raw}");
+        assert_eq!(super::entry_from_package(&package).sha256, "ab".repeat(32));
+    }
+    for bad in ["sha256-", "sha256-broken", "sha256-AAAA"] {
+        package.integrity = bad.to_string();
+        assert!(
+            !super::entry_from_package(&package).sha256.is_empty(),
+            "malformed SHA256 must not become missing digest"
+        );
+    }
 }

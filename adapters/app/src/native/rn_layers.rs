@@ -312,11 +312,7 @@ async fn install_maven_subset(
             version: pkg.id.version().to_string(),
             deps: Vec::new(),
             artifact_url: pkg.tarball_url.clone(),
-            sha256: pkg
-                .integrity
-                .strip_prefix("sha256-")
-                .unwrap_or("")
-                .to_string(),
+            sha256: mgc_lockfile::policy::native_sha256_hex(&pkg.integrity),
             extra_markers: Vec::new(),
         };
         let jar = protocol.download(&entry).await?;
@@ -342,9 +338,9 @@ async fn install_maven_subset(
     })
 }
 
-/// The mgc-managed Maven local repository (`~/.magicore/store/maven`;
+/// The mgc-managed Maven local repository (`MGC_DATA_DIR/store/maven`;
 /// `MGC_MAVEN_STORE_ROOT` overrides for tests/shared placement).
-/// Local repository Maven do mgc quản (`~/.magicore/store/maven`;
+/// Local repository Maven do mgc quản (`MGC_DATA_DIR/store/maven`;
 /// `MGC_MAVEN_STORE_ROOT` ghi đè cho test/vị trí dùng chung).
 fn maven_store_root() -> MgResult<std::path::PathBuf> {
     let root = match std::env::var("MGC_MAVEN_STORE_ROOT")
@@ -352,11 +348,9 @@ fn maven_store_root() -> MgResult<std::path::PathBuf> {
         .filter(|v| !v.trim().is_empty())
     {
         Some(over) => std::path::PathBuf::from(over),
-        None => {
-            let home =
-                dirs::home_dir().ok_or_else(|| MgError::Other("no home directory".to_string()))?;
-            home.join(".magicore").join("store").join("maven")
-        }
+        None => mgc_platform::paths::mgc_data_dir()
+            .join("store")
+            .join("maven"),
     };
     std::fs::create_dir_all(&root)
         .map_err(|e| MgError::Other(format!("create maven store root: {e}")))?;

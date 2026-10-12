@@ -25,6 +25,22 @@ fn python_age_policy_uses_the_adapter_core_override() {
 }
 
 #[test]
+fn web_backend_adapter_uses_web_security_policy() {
+    let project = tempfile::tempdir().unwrap();
+    fs::write(
+        project.path().join("mgc.toml"),
+        "[security]\nmin_release_age = 72\nlib = 8\nweb = 17\nallow_missing_time = true\n",
+    )
+    .unwrap();
+
+    let web = adapter_for_web_backend(LibLanguage::Python, project.path()).unwrap();
+    assert_eq!(
+        web.security_age_gate_policy_for(project.path()).unwrap(),
+        Some((17, true))
+    );
+}
+
+#[test]
 fn python_age_policy_uses_global_fallback_and_rejects_invalid_config() {
     let project = tempfile::tempdir().unwrap();
     fs::write(

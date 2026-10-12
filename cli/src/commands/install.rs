@@ -345,10 +345,18 @@ async fn install_into_root(
             "Use '{} <package>' to add dependencies.",
             style_cmd(&add_cmd)
         ));
-        if install_journaled {
-            crate::commands::core::shared::finish_mutation_journal(project_root, &write_lock)?;
+        // Native lock owners still need an empty lock: `mgc dev` freshness
+        // checks bind the manifest to a lock even when it currently has no
+        // dependency roots. Cores without an MGC lock writer remain a clean
+        // no-op here. Frozen mode continues into the replay gate below.
+        // (Core sở hữu lock vẫn cần lock rỗng để dev freshness ghim manifest;
+        // core không có writer vẫn no-op. Frozen đi tiếp qua cổng replay.)
+        if adapter.probe_lockfile_provider().is_err() {
+            if install_journaled {
+                crate::commands::core::shared::finish_mutation_journal(project_root, &write_lock)?;
+            }
+            return Ok(());
         }
-        return Ok(());
     }
 
     // Resolve + materialize + hooks under the result boundary (P0-1):
@@ -598,7 +606,10 @@ async fn install_resolve_and_materialize(
         std::thread::sleep(std::time::Duration::from_millis(ms));
     }
     let started_at = std::time::Instant::now();
-    let locked_graph = load_locked_graph(project_root, adapter.name(), manifest)?;
+    // SDK registry requirements must match the native resolver's effective manifest.
+    // So lock bằng dependency hiệu lực của SDK, không ghi chúng vào manifest project.
+    let replay_manifest = adapter.lock_replay_manifest(project_root, manifest)?;
+    let locked_graph = load_locked_graph(project_root, adapter.name(), &replay_manifest)?;
     let force_fresh_resolve = crate::commands::core::shared::refresh_locked_graph_for_age_gate(
         adapter,
         project_root,
@@ -663,6 +674,7 @@ async fn install_resolve_and_materialize(
         legacy_flat: crate::commands::core::shared::should_use_legacy_flat_layout(adapter.name()),
         frozen,
         offline,
+        replay_from_lock: used_lockfile,
         ..Default::default()
     };
     let mut summary = adapter.install(&graph, project_root, opts).await?;
@@ -811,9 +823,10 @@ fn load_locked_graph(
                 .map_err(|error| anyhow::anyhow!("{error}"))?;
             let text = String::from_utf8(bytes)
                 .map_err(|error| anyhow::anyhow!("mgc.lock is not valid UTF-8: {error}"))?;
-            // Only version "4" takes the v4 path; every other version —
-            // including unreadable ones — falls through to the legacy
-            // reader below, which owns their exact historical errors.
+            // Every supported v4 revision takes the v4 path; other versions,
+            // including unreadable ones, keep the legacy reader's errors.
+            // (Mọi revision v4 được hỗ trợ đi đường v4; version khác giữ
+            // nguyên lỗi của legacy reader.)
             if mgc_lockfile::detect_lockfile_version(&text).is_ok_and(|version| version == 4) {
                 let owner_core =
                     crate::commands::core::shared::lock_owner_core(project_root, adapter_name)?;
@@ -858,6 +871,11 @@ fn load_locked_graph(
     // let state_ok = matches!(lock.resolution.state.as_str(), "locked" | "installing");
     // if lock.core != adapter_name || !state_ok || lock.version != 1 || lock.packages.is_empty() {
     if lock.packages.is_empty() {
+        if manifest.all_dependencies().next().is_none()
+            && crate::commands::core::shared::lock_matches_manifest(&lock, manifest)
+        {
+            return Ok(Some(ResolvedGraph::empty()));
+        }
         return Ok(None);
     }
 

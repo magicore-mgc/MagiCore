@@ -193,6 +193,28 @@ pub async fn get_tarball_bytes(
     registry_token: Option<&str>,
     download_sem: &tokio::sync::Semaphore,
 ) -> MgResult<TarballFetchResult> {
+    let registry = registry_url.map(|url| {
+        native::npm_registry::NpmRegistry::new_with_token(url, registry_token.map(str::to_string))
+    });
+    get_tarball_bytes_with_registry(
+        pkg,
+        cache,
+        shared_package_cache,
+        registry.as_ref(),
+        download_sem,
+    )
+    .await
+}
+
+/// Keep credential policy attached to the instance on native artifact fetches.
+/// Cache hit vẫn dùng được khi không có registry; network không làm mất scope.
+pub async fn get_tarball_bytes_with_registry(
+    pkg: &ResolvedPackage,
+    cache: &PackageCache,
+    shared_package_cache: Option<&PackageCache>,
+    registry: Option<&native::npm_registry::NpmRegistry>,
+    download_sem: &tokio::sync::Semaphore,
+) -> MgResult<TarballFetchResult> {
     let prefer_shared_cache = shared_package_cache.is_some();
 
     // Try local cache first
@@ -242,7 +264,7 @@ pub async fn get_tarball_bytes(
 
     // Cache miss: download from registry
     // Cache miss: download từ registry
-    let url = registry_url.ok_or_else(|| {
+    let registry = registry.ok_or_else(|| {
         MgError::Network(format!(
             "no registry URL provided for '{}' and no cache hit",
             pkg.id.name_str()
@@ -256,7 +278,7 @@ pub async fn get_tarball_bytes(
         .map_err(|e| MgError::Other(format!("download semaphore closed: {e}")))?;
     let queue_wait_ms = queue_started_at.elapsed().as_millis() as u64;
 
-    let tarball_url = package_tarball_url(url, pkg);
+    let tarball_url = package_tarball_url(registry.registry_url(), pkg);
     let io_started_at = std::time::Instant::now();
     let mut pkg = pkg.clone();
 
@@ -268,17 +290,16 @@ pub async fn get_tarball_bytes(
 
     // Download via NpmRegistry (supports zero-buffer streaming)
     // Download qua NpmRegistry (hỗ trợ zero-buffer streaming)
-    let downloaded =
-        native::npm_registry::NpmRegistry::new_with_token(url, registry_token.map(str::to_string))
-            .download_tarball_auto(&tarball_url, &temp_path)
-            .await
-            .map_err(|e| {
-                MgError::Network(format!(
-                    "download failed for '{}': {}",
-                    pkg.id.name_str(),
-                    e
-                ))
-            })?;
+    let downloaded = registry
+        .download_tarball_auto(&tarball_url, &temp_path)
+        .await
+        .map_err(|e| {
+            MgError::Network(format!(
+                "download failed for '{}': {}",
+                pkg.id.name_str(),
+                e
+            ))
+        })?;
 
     let io_ms = io_started_at.elapsed().as_millis() as u64;
 
@@ -310,15 +331,7 @@ pub async fn get_tarball_bytes(
         } => {
             // Verify streamed tarball integrity
             // Verify integrity tarball đã stream
-            if !pkg.integrity.is_empty() && pkg.integrity != computed_integrity {
-                let _ = std::fs::remove_file(&temp_path);
-                return Err(MgError::Other(format!(
-                    "integrity mismatch for '{}': expected '{}', got '{}'",
-                    pkg.id.name_str(),
-                    pkg.integrity,
-                    computed_integrity
-                )));
-            }
+            crate::install::integrity::verify_tarball_file_integrity(&pkg, staging.path())?;
 
             if pkg.integrity.is_empty() {
                 pkg.integrity = computed_integrity.clone();
