@@ -28,6 +28,7 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   MGC_PYTHON_VERSION: "3.12"
+  MGC_STRESS_MIN_OPEN_FILES: "4096"
 
 jobs:
   stress-matrix:
@@ -421,12 +422,22 @@ jobs:
         run: python -c "from pathlib import Path; import os; Path(os.environ['RUNNER_TEMP'], 'mgc-framework-lifecycle.jsonl').unlink(missing_ok=True)"
 
       - name: Verify the consolidated 11 native web framework lifecycle E2Es
+        shell: bash
         env:
           MGC_TEST_CLI_BINARY: ${{ env.MGC_STRESS_CLI_SNAPSHOT }}
           MGC_STRESS_LIFECYCLE_EVIDENCE: ${{ runner.temp }}/mgc-framework-lifecycle.jsonl
-        run: >-
-          cargo test --locked -p mgc --test web_fw_native_matrix
-          -- --test-threads=1
+        run: |
+          set -euo pipefail
+          if [[ "${RUNNER_OS}" == "macOS" ]]; then
+            # Nuxt's cold module loading exceeds the hosted macOS soft file limit.
+            # Nuxt cold-start vượt soft limit file của runner macOS mặc định.
+            current_limit="$(ulimit -Sn)"
+            if [[ "${current_limit}" != "unlimited" ]] && (( current_limit < MGC_STRESS_MIN_OPEN_FILES )); then
+              ulimit -Sn "${MGC_STRESS_MIN_OPEN_FILES}"
+            fi
+            echo "Framework E2E open-file soft limit: $(ulimit -Sn)"
+          fi
+          cargo test --locked -p mgc --test web_fw_native_matrix -- --test-threads=1
         timeout-minutes: 35
 
       - name: Run FastAPI native backend install and dev lifecycle E2E
@@ -510,6 +521,16 @@ jobs:
           MGC_TEST_CLI_BINARY: ${{ env.MGC_STRESS_CLI_SNAPSHOT }}
           MGC_STRESS_LIFECYCLE_EVIDENCE: ${{ runner.temp }}/mgc-framework-lifecycle.jsonl
         run: |
+          set -euo pipefail
+          if [[ "${RUNNER_OS}" == "macOS" ]]; then
+            # Each shell step must establish its own inherited file descriptor budget.
+            # Mỗi shell step phải đặt budget file descriptor riêng cho các child.
+            current_limit="$(ulimit -Sn)"
+            if [[ "${current_limit}" != "unlimited" ]] && (( current_limit < MGC_STRESS_MIN_OPEN_FILES )); then
+              ulimit -Sn "${MGC_STRESS_MIN_OPEN_FILES}"
+            fi
+            echo "Framework E2E open-file soft limit: $(ulimit -Sn)"
+          fi
           set +e
           failed=0
           for target in \

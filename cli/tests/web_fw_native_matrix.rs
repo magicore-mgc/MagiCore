@@ -5,6 +5,19 @@ mod common;
 static WEB_FRAMEWORK_LIFECYCLE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[test]
+fn native_dev_budget_extends_only_windows_nuxt_and_remains_bounded() {
+    assert_eq!(common::native_web_dev_timeouts("nuxt", true), (90, 95));
+    for (framework, windows) in [("nuxt", false), ("node", true), ("vanilla", false)] {
+        assert_eq!(
+            common::native_web_dev_timeouts(framework, windows),
+            (25, 30)
+        );
+    }
+    let (startup, command) = common::native_web_dev_timeouts("nuxt", true);
+    assert!(startup < command && command <= 95);
+}
+
+#[test]
 fn lifecycle_evidence_destination_is_not_exposed_to_cli_children() {
     let mut options = mgc_exec::run::ExecOptions::default();
     common::configure_test_env(&mut options);

@@ -707,6 +707,22 @@ Options:
         for port in ports:
             self.assertEqual(sorted(port), sorted("4315"), port)
 
+    def test_macos_native_framework_probe_raises_file_limit_before_spawn(self) -> None:
+        workflow = (SOURCE.parents[2] / ".github/workflows/stress-matrix.yml").read_text(encoding="utf-8")
+        self.assertIn('MGC_STRESS_MIN_OPEN_FILES: "4096"', workflow)
+        for step in (
+            "Verify the consolidated 11 native web framework lifecycle E2Es",
+            "Run all dedicated frontend lifecycle E2Es, even after a lane fails",
+        ):
+            with self.subTest(step=step):
+                block = workflow.split("- name: " + step, 1)[1].split("\n      - name:", 1)[0]
+                self.assertIn("shell: bash", block)
+                self.assertIn('"${RUNNER_OS}" == "macOS"', block)
+                self.assertIn('current_limit < MGC_STRESS_MIN_OPEN_FILES', block)
+                self.assertIn('ulimit -Sn "${MGC_STRESS_MIN_OPEN_FILES}"', block)
+                self.assertLess(block.index("ulimit -Sn"), block.index("cargo test"))
+                self.assertIn("-- --test-threads=1", block)
+
     def test_ci_runs_sdk_qualified_unix_go_cold_cache_regression(self) -> None:
         workflow = (SOURCE.parents[2] / ".github/workflows/stress-matrix.yml").read_text()
         block = workflow.split("- name: Verify Go readonly execution with cold compiler caches", 1)[1].split("\n      - name:", 1)[0]

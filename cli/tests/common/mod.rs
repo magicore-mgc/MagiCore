@@ -10,6 +10,8 @@ const EVIDENCE_HASH_BUFFER_BYTES: usize = 64 * 1024;
 const COMMAND_TIMEOUT_SECS: u64 = 300;
 const DEV_STARTUP_TIMEOUT_SECS: u64 = 25;
 const DEV_COMMAND_TIMEOUT_SECS: u64 = 30;
+const WINDOWS_NUXT_DEV_STARTUP_TIMEOUT_SECS: u64 = 90;
+const WINDOWS_NUXT_DEV_COMMAND_TIMEOUT_SECS: u64 = 95;
 const DEV_PORT_CLOSE_TIMEOUT_SECS: u64 = 5;
 static WEB_LIFECYCLE_EVIDENCE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -429,9 +431,26 @@ pub fn native_web_dev_port(framework: &str) -> Option<u16> {
     })
 }
 
-/// Run a real `mgc dev` smoke test and require its listener to close after timeout.
-/// Chạy smoke test `mgc dev` thật và xác nhận listener đóng sau timeout.
+/// Select bounded startup and shutdown budgets for native dev smoke tests.
+/// Chọn budget startup và dừng process cho smoke test dev native.
+pub fn native_web_dev_timeouts(framework: &str, is_windows: bool) -> (u64, u64) {
+    // Cold Nuxt compilation on Windows needs time beyond the first loading response.
+    // Nuxt Windows cold-start cần vượt trang loading; chỉ HTTP thành công mới là pass.
+    if is_windows && framework == "nuxt" {
+        (
+            WINDOWS_NUXT_DEV_STARTUP_TIMEOUT_SECS,
+            WINDOWS_NUXT_DEV_COMMAND_TIMEOUT_SECS,
+        )
+    } else {
+        (DEV_STARTUP_TIMEOUT_SECS, DEV_COMMAND_TIMEOUT_SECS)
+    }
+}
+
+/// Require HTTP readiness and complete process-tree shutdown within the lane budget.
+/// Bắt HTTP ready và cây process dừng sạch trong budget của lane.
 pub fn assert_native_web_dev_server_lifecycle(framework: &str, project: &Path, suite: &str) {
+    let (startup_timeout_secs, command_timeout_secs) =
+        native_web_dev_timeouts(framework, cfg!(windows));
     let port = native_web_dev_port(framework)
         .unwrap_or_else(|| panic!("missing native dev smoke port for {framework}"));
     // Serialize cooperating test processes for this fixed RULE-approved port.
@@ -467,7 +486,7 @@ pub fn assert_native_web_dev_server_lifecycle(framework: &str, project: &Path, s
     let binary = mgc_binary();
     let mut options = mgc_exec::run::ExecOptions {
         cwd: Some(project.to_path_buf()),
-        timeout: Some(Duration::from_secs(DEV_COMMAND_TIMEOUT_SECS)),
+        timeout: Some(Duration::from_secs(command_timeout_secs)),
         capture_full_stdout: true,
         allowed_exit_codes: (1..=255).collect(),
         ..Default::default()
@@ -481,7 +500,7 @@ pub fn assert_native_web_dev_server_lifecycle(framework: &str, project: &Path, s
         let _ = sender.send(result);
     });
 
-    let startup_deadline = Instant::now() + Duration::from_secs(DEV_STARTUP_TIMEOUT_SECS);
+    let startup_deadline = Instant::now() + Duration::from_secs(startup_timeout_secs);
     let mut response_status = None;
     let mut last_http_status = None;
     while Instant::now() < startup_deadline {
@@ -506,8 +525,8 @@ pub fn assert_native_web_dev_server_lifecycle(framework: &str, project: &Path, s
     let status = match response_status {
         Some(status) => status,
         None => {
-            let cleanup_wait = DEV_COMMAND_TIMEOUT_SECS
-                .saturating_sub(DEV_STARTUP_TIMEOUT_SECS)
+            let cleanup_wait = command_timeout_secs
+                .saturating_sub(startup_timeout_secs)
                 .saturating_add(DEV_PORT_CLOSE_TIMEOUT_SECS);
             let (ok, output) = receiver
                 .recv_timeout(Duration::from_secs(cleanup_wait))
@@ -524,7 +543,7 @@ pub fn assert_native_web_dev_server_lifecycle(framework: &str, project: &Path, s
 
     let (ok, output) = receiver
         .recv_timeout(Duration::from_secs(
-            DEV_COMMAND_TIMEOUT_SECS + DEV_PORT_CLOSE_TIMEOUT_SECS,
+            command_timeout_secs + DEV_PORT_CLOSE_TIMEOUT_SECS,
         ))
         .unwrap_or_else(|error| panic!("{framework} mgc dev did not stop after timeout: {error}"));
     assert!(
