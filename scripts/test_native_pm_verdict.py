@@ -1060,6 +1060,8 @@ class LanePreparationFailure(unittest.TestCase):
             if args[:2] == ["pulumi", "login"]:
                 return subprocess.CompletedProcess(argv, 0, "local login", "")
             if args[:3] == ["pulumi", "stack", "init"]:
+                return subprocess.CompletedProcess(argv, 0, "stack initialized", "")
+            if args[:3] == ["pulumi", "stack", "select"]:
                 return subprocess.CompletedProcess(argv, 1, "", "stack setup failed")
             if args[0] == "install":
                 return subprocess.CompletedProcess(argv, 0, "installed", "")
@@ -1086,12 +1088,120 @@ class LanePreparationFailure(unittest.TestCase):
         self.assertEqual(result["dims"]["test"], STATUS_PLAIN, result)
         self.assertEqual(result["dims"]["build"], STATUS_UNVERIFIED)
         pulumi_calls = [call for call in calls if call[0][0] == "pulumi"]
-        self.assertEqual([call[0][1] for call in pulumi_calls], ["login", "stack"])
+        self.assertEqual(pulumi_calls[0][0][1], "login")
+        self.assertEqual(
+            [call[0][1:3] for call in pulumi_calls[1:]],
+            [["stack", "init"], ["stack", "select"]],
+        )
         pulumi_env = pulumi_calls[0][1]
         self.assertTrue(pulumi_env["PULUMI_BACKEND_URL"].startswith("file://"))
         self.assertNotIn("PULUMI_ACCESS_TOKEN", pulumi_env)
         self.assertFalse(any(name.startswith("AWS_") and name != "AWS_EC2_METADATA_DISABLED" for name in pulumi_env))
         self.assertNotIn((['build'], pulumi_env), calls)
+
+    def test_successful_local_pulumi_selects_stack_before_build(self):
+        calls = []
+
+        def fake_run(argv, **kwargs):
+            args = argv[1:] if argv[0] == "/tmp/fake-mgc" else argv
+            calls.append((args, kwargs.get("env", {})))
+            if args[0] == "create-test":
+                project = os.path.join(kwargs["cwd"], args[-1])
+                os.mkdir(project)
+                Path(project, "package.json").write_text(
+                    '{"name":"fixture"}\n', encoding="utf-8"
+                )
+                Path(project, "Pulumi.yaml").write_text(
+                    "name: fixture\nruntime: nodejs\n", encoding="utf-8"
+                )
+                return subprocess.CompletedProcess(argv, 0, "created", "")
+            if args[:2] == ["pulumi", "login"]:
+                return subprocess.CompletedProcess(argv, 0, "local login", "")
+            if args[:3] in (
+                ["pulumi", "stack", "init"],
+                ["pulumi", "stack", "select"],
+            ):
+                return subprocess.CompletedProcess(argv, 0, "local stack", "")
+            if args[0] in {"build", "optimizer"}:
+                return subprocess.CompletedProcess(argv, 0, "ok", "")
+            raise AssertionError(f"Unexpected Pulumi lifecycle command: {args}")
+
+        lane = {
+            "core": "clo",
+            "language": "pulumi",
+            "scaffold": ["create-test", "fixture"],
+            "pre_steps": ["initialize_local_pulumi_stack"],
+            "steps": [("build", ["build"])],
+            "delegated": [],
+            "lifecycle_owners": {"build": "plain-delegation"},
+            "install_owner": "native-engine",
+        }
+
+        with patch("lifecycle_capability_matrix.subprocess.run", side_effect=fake_run):
+            result = run_lane("/tmp/fake-mgc", lane)
+
+        self.assertEqual(result["dims"]["build"], STATUS_PLAIN, result)
+        pulumi_calls = [call[0] for call in calls if call[0][0] == "pulumi"]
+        self.assertEqual(
+            pulumi_calls[0][:2],
+            ["pulumi", "login"],
+        )
+        self.assertEqual(
+            [call[1:3] for call in pulumi_calls[1:]],
+            [["stack", "init"], ["stack", "select"]],
+        )
+        build_index = next(index for index, call in enumerate(calls) if call[0] == ["build"])
+        select_index = next(
+            index for index, call in enumerate(calls)
+            if call[0][:3] == ["pulumi", "stack", "select"]
+        )
+        self.assertLess(select_index, build_index)
+
+
+class CommandOutputExcerpt(unittest.TestCase):
+    def test_preserves_failure_context_and_tail_within_artifact_limit(self):
+        output = (
+            "Flutter diagnostic header\n"
+            + "verbose progress line\n" * 180
+            + "Exception: Missing generated plugin registration\n"
+            + "stack frame with useful source context\n"
+            + "verbose completion line\n" * 180
+            + "final tail marker\n"
+        )
+
+        excerpt = matrix_module.command_output_excerpt(output)
+
+        self.assertLessEqual(len(excerpt), matrix_module.COMMAND_OUTPUT_EXCERPT_LIMIT)
+        self.assertIn("Flutter diagnostic header", excerpt)
+        self.assertIn("Exception: Missing generated plugin registration", excerpt)
+        self.assertIn("final tail marker", excerpt)
+        self.assertIn("...[failure context]...", excerpt)
+        self.assertIn("...[tail]...", excerpt)
+        self.assertLessEqual(len(matrix_module.command_output_excerpt(output, 20)), 20)
+
+    def test_middle_diagnostics_are_expanded_only_for_failing_ci_lanes(self):
+        output = (
+            "head marker\n"
+            + "routine output\n" * 180
+            + "Exception: framework root cause\n"
+            + "routine output\n" * 180
+            + "tail marker\n"
+        )
+
+        flutter = matrix_module.lifecycle_failure_excerpt(
+            {"core": "app", "language": "flutter"}, output
+        )
+        pulumi = matrix_module.lifecycle_failure_excerpt(
+            {"core": "clo", "language": "pulumi"}, output
+        )
+        other = matrix_module.lifecycle_failure_excerpt(
+            {"core": "web", "language": "nextjs"}, output
+        )
+
+        self.assertIn("Exception: framework root cause", flutter)
+        self.assertIn("Exception: framework root cause", pulumi)
+        self.assertNotIn("Exception: framework root cause", other)
+        self.assertEqual(other, output[-matrix_module.COMMAND_OUTPUT_EXCERPT_LIMIT:])
 
 
 def evidence(dimensions=None, owners=None):
