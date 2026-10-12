@@ -45,3 +45,7 @@ reason = "unmaintained: transitive dependency"
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0258"
 reason = "unmaintained: transitive dependency"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0449"
+reason = "unmaintained only: unsafe-libyaml is transitive via serde_yaml; no patched release exists, so a safe-parser migration requires a separate MSRV and YAML-compatibility review"
