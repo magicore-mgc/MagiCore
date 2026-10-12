@@ -104,6 +104,7 @@ fn verify_package_file_with_hash() {
 }
 
 #[cfg(windows)]
+#[allow(unsafe_code)]
 fn windows_path_form(path: &std::path::Path, short: bool) -> std::path::PathBuf {
     use std::ffi::OsString;
     use std::os::windows::ffi::{OsStrExt, OsStringExt};
@@ -119,9 +120,13 @@ fn windows_path_form(path: &std::path::Path, short: bool) -> std::path::PathBuf 
     } else {
         GetLongPathNameW
     };
+    // The input is NUL-terminated; a null output and zero length request the required capacity.
+    // Đầu vào có NUL kết thúc; output null và độ dài 0 yêu cầu dung lượng cần thiết.
     let required = unsafe { convert(encoded.as_ptr(), std::ptr::null_mut(), 0) };
     assert_ne!(required, 0, "Windows path conversion query failed");
     let mut buffer = vec![0_u16; required as usize];
+    // The output slice provides exactly the capacity returned by the query above.
+    // Slice output có đúng dung lượng trả về từ truy vấn ở trên.
     let written = unsafe { convert(encoded.as_ptr(), buffer.as_mut_ptr(), required) };
     assert!(
         written > 0 && written < required,

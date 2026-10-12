@@ -257,6 +257,7 @@ fn flutter_project_root_uri(project_root: &Path, current_dir: Option<&Path>) -> 
 }
 
 #[cfg(windows)]
+#[allow(unsafe_code)]
 fn expand_windows_short_path(path: &Path) -> MgResult<PathBuf> {
     use std::ffi::OsString;
     use std::os::windows::ffi::{OsStrExt, OsStringExt};
@@ -269,6 +270,8 @@ fn expand_windows_short_path(path: &Path) -> MgResult<PathBuf> {
         .encode_wide()
         .chain(std::iter::once(0))
         .collect::<Vec<_>>();
+    // The input is NUL-terminated, and a null output with zero length is the documented size query.
+    // Đầu vào có NUL kết thúc; output null với độ dài 0 là truy vấn kích thước theo API.
     let required = unsafe { GetLongPathNameW(encoded.as_ptr(), std::ptr::null_mut(), 0) };
     if required == 0 {
         return Err(MgError::Other(format!(
@@ -277,6 +280,8 @@ fn expand_windows_short_path(path: &Path) -> MgResult<PathBuf> {
         )));
     }
     let mut buffer = vec![0_u16; required as usize];
+    // The buffer has `required` writable UTF-16 slots from the size query above.
+    // Buffer có `required` ô UTF-16 có thể ghi, lấy từ truy vấn kích thước ở trên.
     let written = unsafe { GetLongPathNameW(encoded.as_ptr(), buffer.as_mut_ptr(), required) };
     if written == 0 || written >= required {
         return Err(MgError::Other(format!(
