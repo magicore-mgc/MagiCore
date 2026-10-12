@@ -13,6 +13,33 @@ const DEV_COMMAND_TIMEOUT_SECS: u64 = 30;
 const WINDOWS_NUXT_DEV_STARTUP_TIMEOUT_SECS: u64 = 90;
 const WINDOWS_NUXT_DEV_COMMAND_TIMEOUT_SECS: u64 = 95;
 const DEV_PORT_CLOSE_TIMEOUT_SECS: u64 = 5;
+const NUXT_WATCH_IGNORE_PROBE: &str = r#"
+// Verify the installed Nuxt watcher's filter against MGC storage and application paths.
+// Kiểm matcher Nuxt đã cài: bỏ qua storage MGC, vẫn nhận source/build của app.
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
+const require = createRequire(import.meta.url);
+const nuxtRequire = createRequire(require.resolve('nuxt/package.json'));
+const { loadNuxt, createIsIgnored } = await import(pathToFileURL(nuxtRequire.resolve('@nuxt/kit')).href);
+process.env.NUXT_TELEMETRY_DISABLED = '1';
+const nuxt = await loadNuxt({ cwd: process.cwd(), dev: true, ready: false });
+try {
+  await nuxt.runWithContext(() => {
+    const ignored = createIsIgnored(nuxt);
+    const root = process.cwd().replaceAll('\\', '/');
+    for (const path of ['.magicore/cache', '.magicore/cache/web/cas/files/blake3/probe', '.magicore/store', '.magicore/store/probe', '.magicore/exec.log']) {
+      assert.equal(ignored(`${root}/${path}`), true, `MGC internal path must be ignored: ${path}`);
+    }
+    for (const path of ['app.vue', 'server/api/health.ts', '.magicore/build/wasm/application.wasm']) {
+      assert.equal(ignored(`${root}/${path}`), false, `application path must remain visible: ${path}`);
+    }
+  });
+} finally {
+  await nuxt.close();
+}
+console.log('MGC_NUXT_CACHE_WATCH_IGNORE_OK');
+"#;
 static WEB_LIFECYCLE_EVIDENCE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 thread_local! {
@@ -310,6 +337,20 @@ pub fn assert_native_web_framework_lifecycle(framework: &str, project: &Path, su
 
     let (ok, output) = mgc_in(project, &["install", "--frozen"]);
     assert!(ok, "{framework} frozen install failed:\n{output}");
+    if framework == "nuxt" {
+        let probe = project.join(".magicore").join("nuxt-ignore-probe.mjs");
+        std::fs::create_dir_all(probe.parent().unwrap()).unwrap();
+        std::fs::write(&probe, NUXT_WATCH_IGNORE_PROBE).unwrap();
+        let (ok, output) = mgc_in(
+            project,
+            &["exec", "node", "--", ".magicore/nuxt-ignore-probe.mjs"],
+        );
+        std::fs::remove_file(&probe).unwrap();
+        assert!(
+            ok && output.contains("MGC_NUXT_CACHE_WATCH_IGNORE_OK"),
+            "Nuxt watcher filter failed:\n{output}"
+        );
+    }
     record_web_lifecycle_evidence(
         framework,
         suite,

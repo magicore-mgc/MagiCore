@@ -109,7 +109,12 @@ ALLO_SOURCES = {
 """,
         "tsconfig.json": """{ "extends": "./.nuxt/tsconfig.json" }
 """,
-        "nuxt.config.ts": """export default defineNuxtConfig({ devtools: { enabled: true } });
+        "nuxt.config.ts": """export default defineNuxtConfig({
+  devtools: { enabled: true },
+  // Exclude MGC-owned caches and logs while retaining generated build assets.
+  // Không watch cache/log nội bộ MGC; build assets vẫn có thể được theo dõi.
+  ignore: ['**/.magicore/cache', '**/.magicore/cache/**', '**/.magicore/store', '**/.magicore/store/**', '**/.magicore/exec.log'],
+});
 """,
         "app.vue": """<template><main><h1>Welcome</h1></main></template>
 """,

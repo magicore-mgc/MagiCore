@@ -1,6 +1,27 @@
 use super::*;
 
 #[test]
+fn test_nuxt_config_excludes_mgc_caches_without_excluding_build_outputs() {
+    let files = get_embedded_template("web", "nuxt").unwrap();
+    let config = files
+        .iter()
+        .find(|file| file.path == "nuxt.config.ts")
+        .unwrap();
+    for pattern in [
+        "**/.magicore/cache",
+        "**/.magicore/store",
+        "**/.magicore/exec.log",
+    ] {
+        assert!(
+            config.content.contains(pattern),
+            "missing watcher exclusion: {pattern}"
+        );
+    }
+    assert!(!config.content.contains("'**/.magicore'"));
+    assert!(!config.content.contains("'**/.magicore/build'"));
+}
+
+#[test]
 fn test_get_embedded_template_returns_files_for_react_axum_fastapi() {
     let react = get_embedded_template("web", "react").unwrap();
     assert!(react.iter().any(|f| f.path == "package.json"));

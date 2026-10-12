@@ -424,6 +424,9 @@ export default nextConfig;
                 path: "nuxt.config.ts",
                 content: r#"export default defineNuxtConfig({
   devtools: { enabled: false },
+  // Exclude MGC-owned caches and logs while retaining generated build assets.
+  // Không watch cache/log nội bộ MGC; build assets vẫn có thể được theo dõi.
+  ignore: ['**/.magicore/cache', '**/.magicore/cache/**', '**/.magicore/store', '**/.magicore/store/**', '**/.magicore/exec.log'],
 });
 "#,
             },
