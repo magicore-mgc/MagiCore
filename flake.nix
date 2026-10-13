@@ -56,6 +56,28 @@
           buildAndTestSubdir = "cli";
           nativeBuildInputs = with pkgs; [ go pkg-config stdenv.cc ];
           buildInputs = with pkgs; [ openssl zlib ];
+          # Go's default build cache lives under HOME, which is not writable
+          # in a Nix sandbox. esbuild-rs compiles its vendored c-archive from
+          # a Cargo build script, so point that cache at the writable build
+          # temp directory before Cargo starts compiling dependencies.
+          preBuild = ''
+            export GOCACHE="$TMPDIR/go-build-cache"
+            mkdir -p "$GOCACHE"
+            test -w "$GOCACHE"
+            go env GOOS GOARCH CGO_ENABLED CC GOCACHE
+            cat > "$TMPDIR/mgc-go-carchive-smoke.go" <<'EOF'
+            package main
+
+            import "C"
+
+            //export MgcGoArchiveSmoke
+            func MgcGoArchiveSmoke() {}
+
+            func main() {}
+            EOF
+            go build -buildmode=c-archive -o "$TMPDIR/mgc-go-carchive-smoke.a" "$TMPDIR/mgc-go-carchive-smoke.go"
+            test -s "$TMPDIR/mgc-go-carchive-smoke.a"
+          '';
           # esbuild-rs builds its vendored Go bridge as a C archive. Pin Go's
           # target and cgo compiler explicitly inside the sandbox; serialize
           # that Go compile to avoid competing with Cargo for memory.
