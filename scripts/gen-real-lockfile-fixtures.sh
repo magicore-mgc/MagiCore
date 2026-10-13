@@ -22,16 +22,21 @@ DENO_VERSION="2.9.7"   # pinned — ghim
 OUT="${1:?usage: gen-real-lockfile-fixtures.sh <output-dir>}"
 
 check_version() {
-  local tool="$1" expected="$2" actual
+  local tool="$1" expected="$2" actual version_output
   command -v "$tool" >/dev/null 2>&1 || {
     echo "required tool not found: $tool $expected" >&2
     exit 1
   }
-  if [[ "$tool" == "deno" ]]; then
-    actual="$(deno --version | head -n 1 | awk '{print $2}')"
-  else
-    actual="$("$tool" --version | head -n 1 | awk '{print $1}')"
-  fi
+  case "$tool" in
+    bun) actual="$(bun --version)" ;;
+    pnpm) actual="$(pnpm --version)" ;;
+    deno)
+      version_output="$(deno --version)"
+      actual="${version_output#deno }"
+      actual="${actual%% *}"
+      ;;
+    *) echo "unsupported fixture tool: $tool" >&2; exit 1 ;;
+  esac
   [[ "$actual" == "$expected" ]] || {
     echo "$tool version mismatch: expected $expected, got $actual" >&2
     exit 1

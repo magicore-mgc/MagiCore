@@ -966,7 +966,12 @@ SHELL_DEPENDENCY_COMMAND_REVIEWS = {
         "629ce7020efb842bd715a9ab592f2203ee4755659dde73f8e26c1d9ca6e8a005",
     },
     'scripts/gen-real-lockfile-fixtures.sh': {
-        "87cfb57db5ce73b528ab6c8a73e94cc5d19e429e29f082a31dd2b3fc53d5af1d",
+        # Bounded fixture-only writers: pinned tools, temporary home/cache,
+        # and lockfile-only mode with dependency lifecycle scripts disabled.
+        # Lệnh writer chỉ sinh fixture: tool được ghim, home/cache tạm,
+        # chỉ ghi lockfile và tắt lifecycle script của dependency.
+        "04934b72569dfde146263a8666e9f309b0b38fc1deb41cd2c9d7502cdd881eca",
+        "e3713998bc60be1f7156a2196feeffa1199ed547f8e8a62c23b48c21e1519790",
     },
     'scripts/publish.sh': {
         "aed22d7245b1f5d808558dd46791d5cd374616a2a59dcba708491199619b98f5",

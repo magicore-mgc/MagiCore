@@ -1895,6 +1895,25 @@ class ShellProcessInventory(unittest.TestCase):
         self.assertNotEqual(first, moved, "moving an invocation must invalidate its review")
         self.assertNotEqual(first, changed_guard, "changing the enclosing guard must invalidate its review")
 
+    def test_real_lockfile_fixture_writers_are_exact_and_scriptless(self):
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        rel_path = "scripts/gen-real-lockfile-fixtures.sh"
+        with open(os.path.join(repo_root, rel_path), encoding="utf-8") as handle:
+            source = handle.read()
+        findings = gate.scan_shell_text(rel_path, source)
+        installs = [item for item in findings if item["dependency_action"] == "install"]
+
+        self.assertEqual({item["executable"] for item in installs}, {"bun", "pnpm"})
+        self.assertEqual(len(installs), 2)
+        self.assertTrue(all(item["review_status"] == "reviewed" for item in installs))
+        lines = source.splitlines()
+        for item in installs:
+            command = lines[item["line"] - 1]
+            self.assertIn("--lockfile-only", command)
+            self.assertIn("--ignore-scripts", command)
+            self.assertIn('HOME="$TMP_ROOT/home"', command)
+            self.assertIn("$TMP_ROOT/", command)
+
     def test_flutter_bootstrap_dynamic_commands_need_the_exact_source_review(self):
         repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         rel_path = "scripts/bootstrap_flutter_sdk.sh"
