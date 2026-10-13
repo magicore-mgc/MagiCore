@@ -162,9 +162,24 @@ fn auto_detect_cargo_toml_returns_lib() {
 }
 
 #[test]
-fn auto_detect_pyproject_toml_returns_ai() {
+fn auto_detect_generic_pyproject_toml_returns_lib() {
     let dir = temp_test_dir("auto-ai");
     std::fs::write(dir.join("pyproject.toml"), "").unwrap();
+    assert_eq!(
+        ProjectConfig::auto_detect(&dir).unwrap(),
+        Some("lib".to_string())
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn auto_detect_ai_python_project_from_declared_framework() {
+    let dir = temp_test_dir("auto-ai-framework");
+    std::fs::write(
+        dir.join("pyproject.toml"),
+        "[project]\nname = \"model-service\"\ndependencies = [\"torch>=2\"]\n",
+    )
+    .unwrap();
     assert_eq!(
         ProjectConfig::auto_detect(&dir).unwrap(),
         Some("ai".to_string())

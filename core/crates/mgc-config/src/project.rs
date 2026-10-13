@@ -924,8 +924,10 @@ impl ProjectConfig {
             let value: toml::Value = toml::from_str(&content)?;
             cores.insert(if python_declares_web_framework(&value) {
                 "web".to_string()
-            } else {
+            } else if python_declares_ai_framework(&value) {
                 "ai".to_string()
+            } else {
+                "lib".to_string()
             });
         }
         if signature_file_exists(&project_root.join("pubspec.yaml"))?
@@ -1331,17 +1333,61 @@ fn text_contains_any(content: &str, markers: &[&str]) -> bool {
 /// Inspect only dependency sections used by common Python project metadata.
 /// Chỉ xét dependency section chuẩn của metadata Python thường dùng.
 fn python_declares_web_framework(manifest: &toml::Value) -> bool {
-    const FRAMEWORKS: &[&str] = &[
-        "django",
-        "fastapi",
-        "flask",
-        "starlette",
-        "sanic",
-        "tornado",
-        "bottle",
-    ];
+    python_declares_named_dependency(
+        manifest,
+        &[
+            "django",
+            "fastapi",
+            "flask",
+            "starlette",
+            "sanic",
+            "tornado",
+            "bottle",
+        ],
+    )
+}
 
-    fn contains_framework(value: &toml::Value) -> bool {
+fn python_declares_ai_framework(manifest: &toml::Value) -> bool {
+    python_declares_named_dependency(
+        manifest,
+        &[
+            "accelerate",
+            "anthropic",
+            "autogen-agentchat",
+            "catboost",
+            "cohere",
+            "crewai",
+            "diffusers",
+            "dspy-ai",
+            "flax",
+            "google-genai",
+            "google-generativeai",
+            "haystack-ai",
+            "jax",
+            "keras",
+            "langchain",
+            "lightgbm",
+            "litellm",
+            "llama-index",
+            "ollama",
+            "openai",
+            "peft",
+            "pydantic-ai",
+            "pytorch",
+            "scikit-learn",
+            "semantic-kernel",
+            "sentence-transformers",
+            "tensorflow",
+            "torch",
+            "transformers",
+            "vllm",
+            "xgboost",
+        ],
+    )
+}
+
+fn python_declares_named_dependency(manifest: &toml::Value, packages: &[&str]) -> bool {
+    fn contains_framework(value: &toml::Value, packages: &[&str]) -> bool {
         match value {
             toml::Value::String(spec) => {
                 let name = spec
@@ -1351,12 +1397,14 @@ fn python_declares_web_framework(manifest: &toml::Value) -> bool {
                     .trim()
                     .to_ascii_lowercase()
                     .replace('_', "-");
-                FRAMEWORKS.contains(&name.as_str())
+                packages.contains(&name.as_str())
             }
-            toml::Value::Array(items) => items.iter().any(contains_framework),
+            toml::Value::Array(items) => {
+                items.iter().any(|item| contains_framework(item, packages))
+            }
             toml::Value::Table(table) => table.iter().any(|(name, value)| {
                 let normalized = name.to_ascii_lowercase().replace('_', "-");
-                FRAMEWORKS.contains(&normalized.as_str()) || contains_framework(value)
+                packages.contains(&normalized.as_str()) || contains_framework(value, packages)
             }),
             _ => false,
         }
@@ -1374,7 +1422,7 @@ fn python_declares_web_framework(manifest: &toml::Value) -> bool {
     ]
     .into_iter()
     .flatten()
-    .any(contains_framework)
+    .any(|value| contains_framework(value, packages))
 }
 
 /// Detect project anchors without following directory-entry symlinks.
