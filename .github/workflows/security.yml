@@ -5,9 +5,35 @@ name: Security
 on:
   schedule:
     - cron: "0 0 * * 1" # thứ 2 hằng tuần
+  pull_request:
+    branches: [main]
+    paths:
+      - "Cargo.lock"
+      - "core/Cargo.lock"
+      - "**/Cargo.toml"
+      - ".github/workflows/security.yml"
+      - "osv-scanner.toml"
+      - "adapters/web/src/audit.rs"
+      - "adapters/web/src/test/**"
+      - "adapters/lib/src/audit/**"
+      - "adapters/lib/tests/**"
+      - "adapters/app/src/audit/**"
+      - "adapters/app/tests/**"
+      - "cli/src/commands/audit/**"
+      - "cli/src/commands/compat.rs"
+      - "cli/src/error/**"
+      - "cli/tests/audit_cli_e2e.rs"
+      - "cli/tests/native_engine_spawn_audit.rs"
+      - "cli/tests/test_runner_security.rs"
+      - "core/crates/mgc-types/src/adapter.rs"
+      - "core/crates/mgc-types/tests/adapter_test.rs"
+      - "core/crates/mgc-audit/**"
+      - "core/crates/mgc-exec/src/run.rs"
+      - "core/crates/mgc-exec/src/allowlist.rs"
   push:
     paths:
       - "Cargo.lock"
+      - "core/Cargo.lock"
       - "**/Cargo.toml"
       - ".github/workflows/security.yml"
       - "osv-scanner.toml"

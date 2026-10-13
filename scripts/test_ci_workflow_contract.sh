@@ -46,6 +46,8 @@ grep -Fq 'TAG="$RELEASE_TAG"' "$VERIFY_DISTRIBUTION" \
   || fail "distribution verifier must use its safely transferred dispatch tag"
 
 grep -q '^  pull_request:' "$ALL_CORE" || fail "delegated-compatibility matrix must run on pull requests"
+grep -q '^  pull_request:' "$SECURITY" || fail "security workflow must run on pull requests touching audited inputs"
+[[ "$(grep -Fc '"core/Cargo.lock"' "$SECURITY")" -ge 2 ]] || fail "security push and pull-request filters must cover the standalone core lockfile"
 grep -q '"core/\*\*"' "$ALL_CORE" || fail "delegated-compatibility matrix path filter misses the core directory"
 grep -q '"fix/\*\*"' "$ALL_CORE" || fail "delegated-compatibility matrix must run on RC fix branches"
 grep -q '"fix/\*\*"' "$ROOT/.github/workflows/ci.yml" || fail "CI must run on RC fix branches"
