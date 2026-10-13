@@ -2,11 +2,11 @@
 name = "mgc-http"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "HTTP helpers for MagiCore"
-
 [dependencies]
 mgc-platform = { workspace = true }
 reqwest = { workspace = true }

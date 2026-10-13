@@ -2,10 +2,10 @@
 name = "mgc-crypto"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 description = "Cryptographic primitives for MagiCore supply chain security"
 license.workspace = true
-
 [lib]
 path = "src/lib.rs"
 

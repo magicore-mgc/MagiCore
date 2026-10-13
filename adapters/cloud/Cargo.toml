@@ -2,11 +2,11 @@
 name = "mgc-cloud-adapter"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Cloud ecosystem adapter for MagiCore (cdk/pulumi/terraform)"
-
 [dependencies]
 mgc-audit = { workspace = true }
 # Core crates (W1-W6 support)

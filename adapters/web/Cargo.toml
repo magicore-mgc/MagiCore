@@ -2,11 +2,11 @@
 name = "mgc-web-adapter"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Web ecosystem adapter for MagiCore"
-
 [dependencies]
 mgc-audit = { workspace = true }
 # Core crates

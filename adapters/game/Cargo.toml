@@ -2,11 +2,11 @@
 name = "mgc-game-adapter"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Game ecosystem adapter for MagiCore (bevy/godot/unity/unreal)"
-
 [dependencies]
 mgc-audit = { workspace = true }
 # Core crates (W1-W6 support)

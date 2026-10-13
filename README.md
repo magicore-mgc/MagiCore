@@ -11,7 +11,7 @@ MagiCore (<code>mgc</code>) is a Rust CLI and workspace for scaffolding projects
 
 ## Current status
 
-- Workspace version: **1.1.0-rc.10**; Rust edition 2024; minimum Rust version 1.86.
+- Workspace version: **1.1.0-rc.10**; Rust edition 2024; minimum Rust version 1.94.
 - This is a pre-release, not a production-stable or drop-in replacement claim.
 - CI evidence is commit-specific. Before merging or tagging, review the PR's Checks and workflow artifacts for the exact source SHA; runs on another SHA do not qualify this checkout.
 - Green CI applies to declared lanes; it does not qualify every framework or operation.
@@ -67,7 +67,7 @@ Native Python install can materialize compatible prebuilt wheels without invokin
 
 ## Build from source
 
-Requirements: Rust 1.86 or newer.
+Requirements: Rust 1.94 or newer.
 
 ~~~bash
 git clone https://github.com/mingd-153/MagiCore.git

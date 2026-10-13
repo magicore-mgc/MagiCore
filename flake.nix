@@ -1,6 +1,6 @@
-# Nix flake for hermetic development environment
+# Nix development environment and package for the current Cargo workspace.
 {
-  description = "MagiCore development environment";
+  description = "MagiCore development environment and CLI package";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -22,46 +22,47 @@
         rust-toolchain = pkgs.rust-bin.stable.latest.default.override {
           extensions = [ "rust-src" "rustfmt" "clippy" ];
         };
+
+        rust-platform = pkgs.makeRustPlatform {
+          cargo = rust-toolchain;
+          rustc = rust-toolchain;
+        };
+
+        workspace = builtins.fromTOML (builtins.readFile ./Cargo.toml);
       in {
         devShells.default = pkgs.mkShell {
           name = "magicore-dev";
-          buildInputs = with pkgs; [
+          packages = with pkgs; [
             rust-toolchain
-            cargo
-            bazel_7
+            go
+            nodejs_24
             protobuf
-            nodejs_20
             pkg-config
-            openssl
+            zlib
           ];
 
-          SHELL_HOOK = ''
-            export RUSTUP_TOOLCHAIN=stable
-            export BAZEL_VERSION=7.4.0
-            echo "MagiCore development environment ready!"
-            echo "Available commands:"
-            echo "  cargo check --workspace"
-            echo "  cargo test --workspace"
-            echo "  bazel build //..."
-            echo "  bazel test //..."
+          shellHook = ''
+            echo "MagiCore Rust workspace ready (minimum Rust 1.94)."
+            echo "Available commands: cargo check --workspace; cargo test --workspace"
           '';
         };
 
-        packages.default = pkgs.stdenv.mkDerivation {
-          name = "magicore";
+        packages.default = rust-platform.buildRustPackage {
+          pname = "mgc";
+          version = workspace.workspace.package.version;
           src = self;
-          nativeBuildInputs = with pkgs; [
-            cargo
-            bazel_7
-            rust-toolchain
-          ];
-          buildPhase = ''
-            bazel build //crates/magicore-cli:magicore
-          '';
-          installPhase = ''
-            mkdir -p $out/bin
-            cp bazel-bin/crates/magicore-cli/magicore $out/bin/
-          '';
+          cargoLock.lockFile = ./Cargo.lock;
+          buildAndTestSubdir = "cli";
+          nativeBuildInputs = with pkgs; [ go pkg-config ];
+          buildInputs = [ pkgs.zlib ];
+          # Workspace tests run in the regular CI matrix with their toolchains.
+          doCheck = false;
+
+          meta = {
+            description = "MagiCore package manager CLI";
+            mainProgram = "mgc";
+            platforms = pkgs.lib.platforms.unix;
+          };
         };
       });
 }

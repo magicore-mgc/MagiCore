@@ -2,10 +2,10 @@
 name = "mgc-lockfile"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 description = "Cryptographically signed lockfile for Zero-Trust Supply Chain"
 license.workspace = true
-
 [lib]
 path = "src/lib.rs"
 

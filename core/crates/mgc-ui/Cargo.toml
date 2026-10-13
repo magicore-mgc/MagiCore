@@ -2,11 +2,11 @@
 name = "mgc-ui"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Terminal UI components for MagiCore"
-
 [dependencies]
 # CLI
 indicatif = { workspace = true }

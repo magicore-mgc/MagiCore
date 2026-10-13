@@ -2,11 +2,11 @@
 name = "mgc-fetcher"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Download and extraction helpers for MagiCore"
-
 [dependencies]
 anyhow = { workspace = true }
 reqwest = { workspace = true }

@@ -2,11 +2,11 @@
 name = "mgc-config"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Config parsing and project metadata for MagiCore"
-
 [dependencies]
 anyhow = { workspace = true }
 dirs = { workspace = true }

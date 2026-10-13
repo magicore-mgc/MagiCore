@@ -2,11 +2,11 @@
 name = "mgc-adapter-base"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Base adapter with default add/remove/update/list implementations"
-
 [dependencies]
 mgc-types = { workspace = true }
 mgc-lockfile = { workspace = true }

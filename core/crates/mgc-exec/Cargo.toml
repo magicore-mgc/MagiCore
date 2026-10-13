@@ -2,11 +2,11 @@
 name = "mgc-exec"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Exec passthrough + allowlist + audit sanitizer (MagiCore)"
-
 [dependencies]
 anyhow = { workspace = true }
 serde = { workspace = true }

@@ -2,11 +2,11 @@
 name = "mgc-ai-adapter"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "AI ecosystem adapter for MagiCore"
-
 [dependencies]
 futures-util = { workspace = true }
 mgc-audit = { workspace = true }

@@ -2,11 +2,11 @@
 name = "mgc-store"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Package store and cache management for MagiCore"
-
 [dependencies]
 mgc-types = { workspace = true }
 mgc-crypto = { workspace = true }

@@ -2,11 +2,11 @@
 name = "mgc-registry-server"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Private registry server (MagiCore) — binary: mgc-registry"
-
 [[bin]]
 name = "mgc-registry"
 path = "src/main.rs"

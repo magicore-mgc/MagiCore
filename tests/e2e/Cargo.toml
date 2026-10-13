@@ -2,12 +2,12 @@
 name = "mgc-e2e"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Black-box end-to-end tests driving real mgc/mgc-registry binaries"
 publish = false
-
 [lib]
 path = "src/lib.rs"
 

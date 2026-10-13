@@ -2,11 +2,11 @@
 name = "mgc-pack"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Pack tarball stream P1 (MagiCore)"
-
 [dependencies]
 tar = { workspace = true }
 flate2 = { workspace = true }

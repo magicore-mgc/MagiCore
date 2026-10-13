@@ -10,11 +10,11 @@
 name = "mgc-audit"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Shared audit engine: plan execution, aggregation, policy, evidence"
-
 [dependencies]
 mgc-types = { workspace = true }
 mgc-lockfile = { workspace = true }

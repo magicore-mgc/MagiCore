@@ -2,11 +2,11 @@
 name = "mgc-cicd-adapter"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "CI/CD ecosystem adapter for MagiCore"
-
 [dependencies]
 mgc-audit = { workspace = true }
 mgc-exec = { workspace = true }

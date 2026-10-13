@@ -2,11 +2,11 @@
 name = "mgc-lib-adapter"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Library ecosystem adapter for MagiCore (ts/rust/python)"
-
 [dependencies]
 mgc-audit = { workspace = true }
 futures-util = { workspace = true }

@@ -2,11 +2,11 @@
 name = "mgc-dist"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Distribution builder for MagiCore packages"
-
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true }
