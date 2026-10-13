@@ -29,17 +29,18 @@ COPY tests/e2e/ tests/e2e/
 RUN cargo build --release --package mgc --locked && \
     install -Dm755 target/release/mgc /mgc
 
-# ---- Runtime stage ----
-FROM ${RUNTIME_IMAGE}
 # distroless/cc-debian12 does not guarantee zlib is present, while libz-sys
-# links the CLI against libz.so.1. Resolve the multi-arch path and copy the
-# real library so the final image never depends on a symlink target outside it.
+# links the CLI against libz.so.1. Resolve the multi-arch path in the builder
+# and copy the real library so the final image needs no shell or external link.
 RUN set -eu; \
     mkdir -p /runtime-libs; \
     for lib in /lib/*-linux-gnu/libz.so.1 /usr/lib/*-linux-gnu/libz.so.1; do \
       if [ -e "$lib" ]; then cp -L "$lib" /runtime-libs/libz.so.1; break; fi; \
     done; \
     test -s /runtime-libs/libz.so.1
+
+# ---- Runtime stage ----
+FROM ${RUNTIME_IMAGE}
 COPY --from=build /runtime-libs/libz.so.1 /usr/lib/libz.so.1
 COPY --from=build /mgc /usr/local/bin/mgc
 ENTRYPOINT ["/usr/local/bin/mgc"]
