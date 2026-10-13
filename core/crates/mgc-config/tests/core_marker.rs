@@ -282,6 +282,61 @@ fn detect_core_uses_manifest_hints_before_generic_signatures() {
 }
 
 #[test]
+fn detect_core_uses_node_framework_and_cli_signatures() {
+    let cases = [
+        (
+            "node-react-native-core",
+            r#"{"name":"mobile","dependencies":{"react":"*","react-native":"*","expo":"*"}}"#,
+            "app",
+        ),
+        (
+            "node-game-core",
+            r#"{"name":"game","devDependencies":{"phaser":"*"}}"#,
+            "game",
+        ),
+        (
+            "node-ai-core",
+            r#"{"name":"agent","dependencies":{"@langchain/core":"*"}}"#,
+            "ai",
+        ),
+        (
+            "node-web-core",
+            r#"{"name":"site","devDependencies":{"next":"*"}}"#,
+            "web",
+        ),
+        (
+            "node-cli-core",
+            r#"{"name":"tool","bin":{"tool":"./bin/tool.js"}}"#,
+            "lib",
+        ),
+    ];
+    for (name, package_json, expected) in cases {
+        let dir = tmp_dir(name);
+        fs::write(dir.join("package.json"), package_json).unwrap();
+        assert_eq!(
+            ProjectConfig::detect_core(&dir).unwrap().as_deref(),
+            Some(expected),
+            "wrong inferred core for {name}"
+        );
+    }
+}
+
+#[test]
+fn detect_core_fails_closed_for_conflicting_node_framework_signatures() {
+    let dir = tmp_dir("node-mixed-core");
+    fs::write(
+        dir.join("package.json"),
+        r#"{"name":"mixed","dependencies":{"next":"*","@langchain/core":"*"}}"#,
+    )
+    .unwrap();
+
+    let error = ProjectConfig::detect_core(&dir).unwrap_err();
+
+    assert!(error.to_string().contains("ambiguous package.json"));
+    assert!(error.to_string().contains("ai, web"));
+}
+
+#[test]
 fn detect_core_finds_common_language_and_framework_signatures() {
     let cases = [
         (

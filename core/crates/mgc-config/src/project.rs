@@ -891,7 +891,17 @@ impl ProjectConfig {
         }
 
         if signature_file_exists(&project_root.join("package.json"))? && !has_cloud_marker {
-            cores.insert("web".to_string());
+            let path = project_root.join("package.json");
+            let content =
+                read_regular_project_text(&path, "package manifest")?.ok_or_else(|| {
+                    anyhow::anyhow!("package manifest disappeared during core detection")
+                })?;
+            let manifest: serde_json::Value = serde_json::from_str(&content)?;
+            if let Some(core) = node_manifest_core_hint(&manifest)? {
+                cores.insert(core);
+            } else {
+                cores.insert("web".to_string());
+            }
         }
         if signature_file_exists(&project_root.join("Cargo.toml"))? {
             let manifest =
@@ -1328,6 +1338,101 @@ fn text_contains_any(content: &str, markers: &[&str]) -> bool {
     markers
         .iter()
         .any(|marker| lower.contains(&marker.to_ascii_lowercase()))
+}
+
+/// Infer a Node project's core from unambiguous framework dependencies and CLI metadata.
+/// Suy luận core Node từ dependency framework rõ ràng và metadata CLI.
+fn node_manifest_core_hint(manifest: &serde_json::Value) -> anyhow::Result<Option<String>> {
+    let dependencies = [
+        "dependencies",
+        "devDependencies",
+        "optionalDependencies",
+        "peerDependencies",
+    ]
+    .into_iter()
+    .filter_map(|section| manifest.get(section).and_then(serde_json::Value::as_object));
+    let names = dependencies
+        .flat_map(|section| section.keys().map(|name| name.to_ascii_lowercase()))
+        .collect::<std::collections::BTreeSet<_>>();
+    let groups: [(&str, &[&str]); 7] = [
+        (
+            "app",
+            &["react-native", "expo", "@capacitor/core", "electron"],
+        ),
+        (
+            "game",
+            &["phaser", "pixi.js", "@babylonjs/core", "playcanvas"],
+        ),
+        ("iot", &["johnny-five", "firmata", "espruino"]),
+        (
+            "ai",
+            &[
+                "@anthropic-ai/sdk",
+                "@google/generative-ai",
+                "@langchain/core",
+                "langchain",
+                "openai",
+                "@tensorflow/tfjs",
+            ],
+        ),
+        (
+            "web",
+            &[
+                "@angular/core",
+                "@remix-run/react",
+                "@sveltejs/kit",
+                "astro",
+                "express",
+                "fastify",
+                "hono",
+                "koa",
+                "next",
+                "nuxt",
+                "react",
+                "react-dom",
+                "svelte",
+                "vue",
+            ],
+        ),
+        (
+            "clo",
+            &["@pulumi/pulumi", "cdk", "serverless", "sst", "wrangler"],
+        ),
+        ("cicd", &["@actions/core", "@actions/github", "probot"]),
+    ];
+    let mut detected = groups
+        .iter()
+        .filter(|(core, _)| *core != "web")
+        .filter(|(_, markers)| markers.iter().any(|name| names.contains(*name)))
+        .map(|(core, _)| *core)
+        .collect::<std::collections::BTreeSet<_>>();
+    let explicit_web_marker =
+        groups
+            .iter()
+            .find(|(core, _)| *core == "web")
+            .is_some_and(|(_, markers)| {
+                markers
+                    .iter()
+                    .filter(|name| **name != "react" && **name != "react-dom")
+                    .any(|name| names.contains(*name))
+            });
+    if explicit_web_marker || (detected.is_empty() && names.contains("react")) {
+        detected.insert("web");
+    }
+    if detected.len() > 1 {
+        anyhow::bail!(
+            "ambiguous package.json framework dependencies identify multiple MagiCore cores ({}); declare one core in package.json under 'magicore.core' or in '{}'",
+            detected.into_iter().collect::<Vec<_>>().join(", "),
+            ProjectConfig::CORE_MARKER_FILE,
+        );
+    }
+    if let Some(core) = detected.into_iter().next() {
+        return Ok(Some(core.to_string()));
+    }
+    if manifest.get("bin").is_some_and(|value| !value.is_null()) {
+        return Ok(Some("lib".to_string()));
+    }
+    Ok(None)
 }
 
 /// Inspect only dependency sections used by common Python project metadata.
