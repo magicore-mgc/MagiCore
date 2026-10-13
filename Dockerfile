@@ -15,7 +15,7 @@ COPY --from=go-toolchain /usr/local/go /usr/local/go
 ENV PATH="/usr/local/go/bin:${PATH}"
 
 RUN apt-get update -qq && apt-get install -y -qq \
-    build-essential pkg-config zlib1g-dev \
+    build-essential pkg-config libssl-dev zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY Cargo.toml Cargo.lock ./

@@ -38,6 +38,7 @@
             nodejs_24
             protobuf
             pkg-config
+            openssl
             zlib
           ];
 
@@ -54,7 +55,7 @@
           cargoLock.lockFile = ./Cargo.lock;
           buildAndTestSubdir = "cli";
           nativeBuildInputs = with pkgs; [ go pkg-config ];
-          buildInputs = [ pkgs.zlib ];
+          buildInputs = with pkgs; [ openssl zlib ];
           # Workspace tests run in the regular CI matrix with their toolchains.
           doCheck = false;
 
