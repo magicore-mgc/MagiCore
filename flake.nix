@@ -56,11 +56,16 @@
           buildAndTestSubdir = "cli";
           nativeBuildInputs = with pkgs; [ go pkg-config stdenv.cc ];
           buildInputs = with pkgs; [ openssl zlib ];
-          # esbuild-rs builds its vendored Go bridge as a C archive. Make cgo
-          # and its compiler explicit in the sandbox, and serialize that Go
-          # compile to avoid competing with Cargo for memory.
-          CGO_ENABLED = "1";
-          GOFLAGS = "-p=1";
+          # esbuild-rs builds its vendored Go bridge as a C archive. Pin Go's
+          # target and cgo compiler explicitly inside the sandbox; serialize
+          # that Go compile to avoid competing with Cargo for memory.
+          env = {
+            CGO_ENABLED = "1";
+            GOOS = if pkgs.stdenv.hostPlatform.isDarwin then "darwin" else "linux";
+            GOARCH = if pkgs.stdenv.hostPlatform.isAarch64 then "arm64" else "amd64";
+            CC = "${pkgs.stdenv.cc}/bin/cc";
+            GOFLAGS = "-p=1";
+          };
           # Workspace tests run in the regular CI matrix with their toolchains.
           doCheck = false;
 
