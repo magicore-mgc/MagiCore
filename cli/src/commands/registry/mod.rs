@@ -3,6 +3,7 @@
 
 use anyhow::{Result, bail};
 use clap::{Args, Subcommand};
+use mgc_config::npmrc::NpmRc;
 use tracing_subscriber::EnvFilter;
 
 /// Default local registry URL for user management (RULE §13: port chứa 4·3·1·5)
@@ -90,8 +91,8 @@ pub enum UserCmd {
     /// Create a user, print the token
     Add {
         name: String,
-        #[arg(long, help = "password (prompt if omitted)")]
-        password: Option<String>,
+        #[arg(long, help = "read password from stdin; otherwise prompt without echo")]
+        password_stdin: bool,
         #[arg(long = "scope", help = "package scope patterns, vd: @magicore/*")]
         scopes: Vec<String>,
         #[arg(
@@ -169,11 +170,11 @@ pub async fn run(args: RegistryArgs, core: Option<&str>) -> Result<()> {
         RegistryCmd::User { cmd } => match cmd {
             UserCmd::Add {
                 name,
-                password,
+                password_stdin,
                 scopes,
                 role,
                 registry,
-            } => user_add(&name, password, &scopes, &role, &registry).await,
+            } => user_add(&name, password_stdin, &scopes, &role, &registry).await,
             UserCmd::Rm {
                 name,
                 registry,
@@ -244,49 +245,26 @@ async fn trust_publisher(
 
 async fn user_add(
     name: &str,
-    password: Option<String>,
+    password_stdin: bool,
     scopes: &[String],
     role: &str,
     registry: &str,
 ) -> Result<()> {
-    let password = match password {
-        Some(p) => p,
-        None => {
-            print!("Password for {}: ", name);
-            std::io::Write::flush(&mut std::io::stdout())?;
-            let mut line = String::new();
-            std::io::stdin().read_line(&mut line)?;
-            line.trim().to_string()
-        }
-    };
-
-    let url = format!(
-        "{}/-/user/org.couchdb.user:{}",
-        registry.trim_end_matches('/'),
-        name
-    );
-    let body = serde_json::json!({
-        "name": name,
-        "password": password,
-        "email": "",
-        "scopes": scopes,
-        "role": role
-    });
-    let client = reqwest::Client::new();
-    let resp = client.put(&url).json(&body).send().await?;
-    let status = resp.status();
-    let text = resp.text().await?;
-    if !status.is_success() {
-        bail!("Add user failed: {} - {}", status, text);
-    }
-    let json: serde_json::Value = serde_json::from_str(&text)?;
-    let token = json["token"]
-        .as_str()
-        .ok_or_else(|| crate::error::no_token_in_response(&text))?;
-    println!("User {} created. Token: {}", name, token);
+    let password = crate::commands::login::read_password(password_stdin, "Password")?;
+    let token = crate::commands::login::create_registry_user(
+        registry,
+        name,
+        &password,
+        &serde_json::json!({ "email": "", "scopes": scopes, "role": role }),
+    )
+    .await?;
+    let npmrc_path = dirs::home_dir()
+        .ok_or_else(crate::error::no_home_dir)?
+        .join(".npmrc");
+    NpmRc::save_auth_token_for_registry_url(&npmrc_path, registry, &token)?;
     println!(
-        "Set it in .npmrc via: mgc login --username {} --password <pw>",
-        name
+        "User created; registry token saved to {}",
+        npmrc_path.display()
     );
     Ok(())
 }

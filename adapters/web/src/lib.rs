@@ -987,7 +987,10 @@ impl WebAdapter {
                             let dep_name = PackageName::new(name.as_str()).ok()?;
                             let source = self.provider.source_package_name(&dep_name);
                             resolution_index
-                                .get(source.as_str())
+                                // Alias resolutions keep the requested name as their package ID.
+                                // Edge ánh xạ trước theo tên alias; chỉ fallback tên nguồn nếu cần.
+                                .get(dep_name.as_str())
+                                .or_else(|| resolution_index.get(source.as_str()))
                                 .and_then(|candidates| {
                                     candidates
                                         .iter()

@@ -15,8 +15,8 @@ use super::integrity::{IntegrityHash, TarballEntry, validate_blake3_hex};
 use super::lifecycle::{ensure_cas_dirs, set_cas_root_permissions, validate_cas_root};
 use super::security::check_symlink_ancestors;
 use super::write::{
-    STREAM_THRESHOLD, stream_write_verify_and_set_perms, stream_write_verify_and_set_perms_mode,
-    sync_parent_dir, unique_tmp_path, write_all_verify_and_set_perms_mode,
+    STREAM_THRESHOLD, stream_write_verify_and_set_perms_mode, sync_parent_dir, unique_tmp_path,
+    write_all_verify_and_set_perms_mode,
 };
 use crate::cas::integrity;
 
@@ -359,6 +359,80 @@ impl ContentStore {
     }
 
     pub fn import_file(&self, src: &Path) -> Result<IntegrityHash, StoreError> {
+        self.import_file_with_exec(src, is_executable(src))
+    }
+
+    /// Import a regular file with an explicit executable bit. Large inputs
+    /// are streamed into CAS so callers do not need to hold them in memory.
+    /// (Nạp file thường với bit executable tường minh. File lớn được stream
+    /// vào CAS để caller không phải giữ toàn bộ nội dung trong RAM.)
+    pub fn import_file_with_exec(
+        &self,
+        src: &Path,
+        executable: bool,
+    ) -> Result<IntegrityHash, StoreError> {
+        self.import_file_mode(src, executable, true, true)
+    }
+
+    /// Import independent files concurrently and sync each CAS shard once.
+    /// Large source files are streamed with a bounded buffer.
+    /// (Nạp file độc lập song song, sync mỗi shard CAS một lần; file lớn
+    /// được stream với buffer có giới hạn.)
+    pub fn import_files_with_exec_batch<'a, I>(
+        &self,
+        items: I,
+    ) -> Result<Vec<IntegrityHash>, StoreError>
+    where
+        I: IntoIterator<Item = (&'a Path, bool)>,
+    {
+        self.import_files_with_exec_batch_mode(items, true, true)
+    }
+
+    /// Import package files whose verified archive can recreate CAS content
+    /// after a crash. Writes remain isolated, hashed, and atomically published.
+    /// (Nạp file package có thể dựng lại từ archive đã xác minh sau crash.
+    /// File vẫn được cách ly, hash và publish nguyên tử.)
+    pub fn import_rebuildable_files_with_exec_batch<'a, I>(
+        &self,
+        items: I,
+    ) -> Result<Vec<IntegrityHash>, StoreError>
+    where
+        I: IntoIterator<Item = (&'a Path, bool)>,
+    {
+        self.import_files_with_exec_batch_mode(items, false, false)
+    }
+
+    fn import_files_with_exec_batch_mode<'a, I>(
+        &self,
+        items: I,
+        sync_file_data: bool,
+        sync_cas_directories: bool,
+    ) -> Result<Vec<IntegrityHash>, StoreError>
+    where
+        I: IntoIterator<Item = (&'a Path, bool)>,
+    {
+        let items: Vec<_> = items.into_iter().collect();
+        let imported: Result<Vec<_>, _> = items
+            .par_iter()
+            .map(|(src, executable)| self.import_file_mode(src, *executable, sync_file_data, false))
+            .collect();
+        if sync_cas_directories && let Ok(hashes) = &imported {
+            let sync_dirs = hashes
+                .iter()
+                .filter_map(|hash| hash.cas_path(&self.root).parent().map(Path::to_path_buf))
+                .collect();
+            sync_parent_directories(sync_dirs)?;
+        }
+        imported
+    }
+
+    fn import_file_mode(
+        &self,
+        src: &Path,
+        executable: bool,
+        sync_file_data: bool,
+        sync_parent_directory: bool,
+    ) -> Result<IntegrityHash, StoreError> {
         if src.is_symlink() {
             return Err(StoreError::Io {
                 path: src.to_path_buf(),
@@ -367,8 +441,13 @@ impl ContentStore {
         }
 
         let meta = fs::metadata(src)?;
-        let is_exec = is_executable(src);
-        let use_streaming = meta.len() as usize >= STREAM_THRESHOLD;
+        if !meta.is_file() {
+            return Err(StoreError::Io {
+                path: src.to_path_buf(),
+                msg: "source path is not a regular file".to_string(),
+            });
+        }
+        let use_streaming = meta.len() >= STREAM_THRESHOLD as u64;
 
         let hash = if use_streaming {
             let file = fs::File::open(src)?;
@@ -379,7 +458,13 @@ impl ContentStore {
                 msg: "staging temp path has no parent directory".to_string(),
             })?)?;
             let writer = fs::File::create_new(&tmp)?;
-            let hash = stream_write_verify_and_set_perms(writer, &tmp, reader, is_exec)?;
+            let hash = stream_write_verify_and_set_perms_mode(
+                writer,
+                &tmp,
+                reader,
+                executable,
+                sync_file_data,
+            )?;
             let dest = hash.cas_path(&self.root);
 
             // Rehash path: streamed bytes were hashed on write; existing dest
@@ -398,7 +483,7 @@ impl ContentStore {
                 Ok(()) => {
                     // Crash-durable publish (audit vòng-3 P1-7).
                     // (Publish bền vững khi crash (P1-7 audit vòng-3).)
-                    if let Some(parent) = dest.parent() {
+                    if sync_parent_directory && let Some(parent) = dest.parent() {
                         sync_parent_dir(parent)?;
                     }
                 }
@@ -424,12 +509,18 @@ impl ContentStore {
             hash
         } else {
             let data = fs::read(src)?;
-            let hash = IntegrityHash::from_bytes(&data, is_exec);
+            let hash = IntegrityHash::from_bytes(&data, executable);
             // Same atomic primitive as every CAS write (unique temp →
             // fsync → verify → atomic publish → winner-verify on race).
             // (Cùng nguyên thủy nguyên tử như mọi ghi CAS (temp duy nhất →
             // fsync → verify → publish nguyên tử → verify-winner khi đua).)
-            self.write_bytes_with_hash(&data, &hash, is_exec)?;
+            self.write_generated_bytes_with_hash_mode(
+                &data,
+                &hash,
+                executable,
+                sync_parent_directory,
+                sync_file_data,
+            )?;
             hash
         };
 

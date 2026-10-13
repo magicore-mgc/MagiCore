@@ -71,6 +71,55 @@ fn test_scan_weights_large() {
 }
 
 #[test]
+fn scan_weights_detects_pickle_payload_without_one_specific_header() {
+    let tmp = tmp();
+    let weights = tmp.path().join("checkpoint.pth");
+    std::fs::write(&weights, b"legacy checkpoint cos\nsystem\ncommand\n.").unwrap();
+
+    let findings = scan_weights(&weights).unwrap();
+
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.category == "pickle-exploit"),
+        "pickle signatures must be checked even when the file does not start with one exact protocol header"
+    );
+}
+
+#[test]
+fn scan_pickle_keeps_signatures_split_across_read_chunks() {
+    let tmp = tmp();
+    let weights = tmp.path().join("boundary.pth");
+    let mut payload = vec![b'a'; 64 * 1024 - 4];
+    payload.extend_from_slice(b"cos\nsystem\ncommand\n.");
+    std::fs::write(&weights, payload).unwrap();
+
+    let findings = scan_weights(&weights).unwrap();
+
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.category == "pickle-exploit")
+    );
+}
+
+#[test]
+fn scan_safetensors_rejects_maximum_header_length_without_overflow() {
+    let tmp = tmp();
+    let path = tmp.path().join("oversized.safetensors");
+    std::fs::write(&path, u64::MAX.to_le_bytes()).unwrap();
+
+    let findings = scan_safetensors(&path).unwrap();
+
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.category == "safetensors-header"),
+        "oversized metadata must be reported without arithmetic overflow"
+    );
+}
+
+#[test]
 fn test_contains_bytes() {
     assert!(contains_bytes(b"hello world", b"world"));
     assert!(!contains_bytes(b"hello world", b"foo"));

@@ -267,6 +267,162 @@ fn detect_core_signature_single() {
 }
 
 #[test]
+fn detect_core_uses_manifest_hints_before_generic_signatures() {
+    let dir = tmp_dir("manifest-core-hint");
+    fs::write(
+        dir.join("package.json"),
+        r#"{"name":"fixture","magicore":{"core":"lib"}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        ProjectConfig::detect_core(&dir).unwrap().as_deref(),
+        Some("lib"),
+        "an explicit manifest core hint must beat package.json's generic web signature"
+    );
+}
+
+#[test]
+fn detect_core_finds_common_language_and_framework_signatures() {
+    let cases = [
+        (
+            "go",
+            "go.mod",
+            "module example.com/demo\n\ngo 1.27\n",
+            "lib",
+        ),
+        ("maven", "pom.xml", "<project/>\n", "lib"),
+        (
+            "godot",
+            "project.godot",
+            "[application]\nconfig/name=\"demo\"\n",
+            "game",
+        ),
+        ("platformio", "platformio.ini", "[env:board]\n", "iot"),
+        (
+            "pulumi",
+            "Pulumi.yaml",
+            "name: demo\nruntime: nodejs\n",
+            "clo",
+        ),
+        ("terraform", "main.tf", "terraform {}\n", "clo"),
+    ];
+    for (name, manifest, content, expected) in cases {
+        let dir = tmp_dir(&format!("signature-{name}"));
+        fs::write(dir.join(manifest), content).unwrap();
+        assert_eq!(
+            ProjectConfig::detect_core(&dir).unwrap().as_deref(),
+            Some(expected),
+            "wrong inferred core for {manifest}"
+        );
+    }
+}
+
+#[test]
+fn detect_core_uses_cargo_framework_dependencies_to_split_game_and_iot() {
+    let bevy = tmp_dir("cargo-bevy-core");
+    fs::write(
+        bevy.join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n[dependencies]\nbevy = \"0.16\"\n",
+    )
+    .unwrap();
+    assert_eq!(
+        ProjectConfig::detect_core(&bevy).unwrap().as_deref(),
+        Some("game")
+    );
+
+    let esp = tmp_dir("cargo-esp-core");
+    fs::write(
+        esp.join("Cargo.toml"),
+        "[package]\nname = \"firmware\"\nversion = \"0.1.0\"\n[dependencies]\nesp-idf-hal = \"0.45\"\n",
+    )
+    .unwrap();
+    assert_eq!(
+        ProjectConfig::detect_core(&esp).unwrap().as_deref(),
+        Some("iot")
+    );
+}
+
+#[test]
+fn detect_core_uses_python_go_and_jvm_framework_dependencies() {
+    let python = tmp_dir("python-fastapi-core");
+    fs::write(
+        python.join("pyproject.toml"),
+        "[project]\nname = \"api\"\nversion = \"0.1.0\"\ndependencies = [\"fastapi>=0.1\"]\n",
+    )
+    .unwrap();
+    assert_eq!(
+        ProjectConfig::detect_core(&python).unwrap().as_deref(),
+        Some("web")
+    );
+
+    let go = tmp_dir("go-gin-core");
+    fs::write(
+        go.join("go.mod"),
+        "module example.com/api\n\nrequire github.com/gin-gonic/gin v1.10.0\n",
+    )
+    .unwrap();
+    assert_eq!(
+        ProjectConfig::detect_core(&go).unwrap().as_deref(),
+        Some("web")
+    );
+
+    let java = tmp_dir("java-spring-core");
+    fs::write(
+        java.join("pom.xml"),
+        "<project><dependency><artifactId>spring-boot-starter-web</artifactId></dependency></project>",
+    )
+    .unwrap();
+    assert_eq!(
+        ProjectConfig::detect_core(&java).unwrap().as_deref(),
+        Some("web")
+    );
+
+    let android = tmp_dir("gradle-android-core");
+    fs::write(
+        android.join("build.gradle.kts"),
+        "plugins { id(\"com.android.application\") }\n",
+    )
+    .unwrap();
+    assert_eq!(
+        ProjectConfig::detect_core(&android).unwrap().as_deref(),
+        Some("app")
+    );
+}
+
+#[test]
+fn detect_core_classifies_dotnet_project_sdk_and_maui_targets() {
+    for (name, sdk, expected) in [
+        ("dotnet-lib", "Microsoft.NET.Sdk", "lib"),
+        ("dotnet-web", "Microsoft.NET.Sdk.Web", "web"),
+        ("dotnet-app", "Microsoft.NET.Sdk.Maui", "app"),
+    ] {
+        let dir = tmp_dir(name);
+        fs::write(
+            dir.join("Demo.csproj"),
+            format!("<Project Sdk=\"{sdk}\"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>"),
+        )
+        .unwrap();
+        assert_eq!(
+            ProjectConfig::detect_core(&dir).unwrap().as_deref(),
+            Some(expected),
+            "wrong inferred core for {sdk}"
+        );
+    }
+}
+
+#[test]
+fn detect_core_fails_closed_for_shared_cloudflare_signature() {
+    let dir = tmp_dir("wrangler-ambiguous-core");
+    fs::write(dir.join("wrangler.toml"), "name = 'worker'\n").unwrap();
+
+    let error = ProjectConfig::detect_core(&dir).unwrap_err();
+
+    assert!(error.to_string().contains("Ambiguous"));
+    assert!(error.to_string().contains("cicd"));
+    assert!(error.to_string().contains("clo"));
+}
+
+#[test]
 fn detect_core_ambiguous_fails_closed() {
     let dir = tmp_dir("detect-ambiguous");
     fs::write(dir.join("package.json"), "{}").unwrap();
@@ -521,4 +677,23 @@ fn detect_core_rejects_symlinked_config_and_signature_files() {
             .contains("project signature")
     );
     assert_eq!(fs::read_to_string(signature_target).unwrap(), "{}\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn detect_core_rejects_symlinked_framework_marker_directory() {
+    use std::os::unix::fs::symlink;
+
+    let project = tmp_dir("detect-framework-parent-symlink");
+    let outside = tmp_dir("detect-framework-parent-outside");
+    fs::write(outside.join("ProjectVersion.txt"), "2026.1.0f1\n").unwrap();
+    symlink(&outside, project.join("ProjectSettings")).unwrap();
+
+    let error = ProjectConfig::detect_core(&project).unwrap_err();
+
+    assert!(error.to_string().contains("must not be a symlink"));
+    assert_eq!(
+        fs::read_to_string(outside.join("ProjectVersion.txt")).unwrap(),
+        "2026.1.0f1\n"
+    );
 }

@@ -243,6 +243,9 @@ pub async fn add(
     install: bool,
     global: bool,
 ) -> Result<()> {
+    if global {
+        return Err(crate::error::global_package_install_unsupported());
+    }
     const MAX_PACKAGES: usize = 50;
     if packages.len() > MAX_PACKAGES {
         return Err(crate::error::too_many_packages(packages.len(), "add"));

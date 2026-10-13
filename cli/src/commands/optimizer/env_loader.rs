@@ -100,7 +100,7 @@ pub(crate) fn parse_env_file(path: &Path) -> Result<HashMap<String, String>> {
 
     let mut vars = HashMap::new();
 
-    for line in content.lines() {
+    for (line_index, line) in content.lines().enumerate() {
         let line = line.trim();
 
         // Skip empty lines and comments
@@ -115,21 +115,28 @@ pub(crate) fn parse_env_file(path: &Path) -> Result<HashMap<String, String>> {
             let key = key.trim().to_string();
             let value = value.trim().to_string();
 
-            // Remove quotes if present
-            // Xóa dấu ngoặc kép nếu có
-            let value = if (value.starts_with('"') && value.ends_with('"'))
-                || (value.starts_with('\'') && value.ends_with('\''))
-            {
-                value[1..value.len() - 1].to_string()
-            } else {
-                value
-            };
+            let value = strip_env_quotes(&value, line_index + 1)?;
 
             vars.insert(key, value);
         }
     }
 
     Ok(vars)
+}
+
+/// Strip balanced outer quotes and reject malformed quoting without echoing values.
+/// Bỏ quote ngoài cân bằng; quote lỗi trả số dòng nhưng không in nội dung env.
+fn strip_env_quotes(value: &str, line_number: usize) -> Result<String> {
+    let bytes = value.as_bytes();
+    let first = bytes.first().copied();
+    let last = bytes.last().copied();
+
+    match (first, last) {
+        (Some(b'"'), Some(b'"')) if value.len() >= 2 => Ok(value[1..value.len() - 1].to_string()),
+        (Some(b'\''), Some(b'\'')) if value.len() >= 2 => Ok(value[1..value.len() - 1].to_string()),
+        (Some(b'"' | b'\''), _) => Err(crate::error::optimizer_env_unmatched_quote(line_number)),
+        _ => Ok(value.to_string()),
+    }
 }
 
 /// Parse Cargo profile TOML format to extract RUSTFLAGS

@@ -128,6 +128,9 @@ jobs:
         timeout-minutes: 20
       - name: single-core web CLI surface
         run: cargo test -p mgc --no-default-features --features web test_single_core_create_alias_parses --quiet
+      - name: Global CLI tool install, execute, recovery, and Windows PATH E2E
+        shell: bash
+        run: cargo test -p mgc --test global_tool_e2e --locked -- --ignored --exact platform::global_cli_install_update_list_and_remove_are_isolated_and_persistent --test-threads=1 --nocapture
       - name: cargo check
         run: cargo check --workspace --all-targets --locked
       - name: module hygiene
@@ -179,6 +182,10 @@ jobs:
           df -h
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable 2026-09-03
+      - name: Setup Node.js (global CLI tool E2E)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
       - name: Setup Go (esbuild-rs build script needs go on PATH)
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -289,6 +296,10 @@ jobs:
 
       - name: Setup Python + Node runtimes
         run: ${{ matrix.python-setup }}
+
+      - name: Global CLI tool lifecycle E2E (Unix)
+        if: runner.os != 'Windows'
+        run: cargo test -p mgc --test global_tool_e2e --locked -- --test-threads=1 --nocapture
 
       - name: Verify runtimes available
         run: |

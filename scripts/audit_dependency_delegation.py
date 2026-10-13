@@ -112,6 +112,16 @@ PYTHON_PROCESS_FUNCTIONS = {
 # Fingerprints bind the review to the argv construction and subprocess options,
 # while the reason records why that exact process boundary is expected.
 PYTHON_PROCESS_REVIEWS = {
+    "docs/specs/productReadinessAudit20261012/build-cache.py": {
+        ("subprocess.run", "8751fdaf374dc887f5b90b093179398b5e2e99cc5faf1581ba92450cbb033d3e"): (
+            1, "Local audit E2E helper; calls only the checkout's mgc binary with source-defined argv, isolated temporary cwd/HOME, captured output, and a timeout.",
+        ),
+    },
+    "docs/specs/productReadinessAudit20261012/probes.py": {
+        ("subprocess.run", "e69c692857603200253248ee1653689d02fa04698850b7e932a6b04f071b8422"): (
+            1, "Local audit E2E helper; calls only the checkout's mgc binary with source-defined argv, isolated temporary cwd/HOME, captured output, and a timeout.",
+        ),
+    },
     "benchmark/scripts/bench_v2.py": {
         ("subprocess.run", "eb078c219148886121d02e62b5582b723ac676d5b21cf0773def7b8b10f6e952"): (
             1, "Local benchmark helper; callers pass fixed benchmark/system-info argv lists.",
@@ -463,6 +473,11 @@ AUDITED_EXECUTOR_ROUTES = {
         "run_git_capture",
         "git",
     ): "mgc-exec; closed read-only Git query enum at the selected project root",
+    (
+        "cli/src/commands/tool.rs",
+        "install_with_project_credentials",
+        "run_native_install",
+    ): "MagiCore self-child only; fixed Web install argv, mgc-exec Install scope, and package lifecycle scripts remain opt-in",
     # Core-owned compiler and runtime routes use mgc-exec's immutable tool
     # allowlist; package managers remain denied and build resolvers are offline.
     # (Compiler/runtime do MGC sở hữu đi qua allowlist mgc-exec; PM bị cấm và build chạy offline.)
@@ -531,6 +546,11 @@ AUDITED_DIRECT_PROCESS_ROUTES = {
         "docker_command",
         "docker",
     ): "fixed Docker CLI; argv only, isolated config, secret via stdin, async timeout, and kill-on-drop",
+    (
+        "core/crates/mgc-platform/src/paths.rs",
+        "ensure_windows_user_path",
+        "powershell.exe",
+    ): "Windows user PATH registration only; fixed non-interactive script receives one path through an environment variable",
 }
 
 # Spawn-shaped contexts. Applied to the whole file text (so a tool literal
@@ -543,9 +563,9 @@ AUDITED_DIRECT_PROCESS_ROUTES = {
 # (pattern, khớp_trong_message): chỉ pattern bare-literal yếu bị tắt trong
 # span macro-message (xem MESSAGE_MACROS).)
 SPAWN_PATTERNS = [
-    # A known dynamic process wrapper is forbidden in dependency code even
-    # though the executable is passed indirectly and cannot match a literal.
-    # Wrapper process động đã biết bị cấm trong dependency code dù executable truyền gián tiếp.
+    # A known dynamic process wrapper stays blocked except at an exact,
+    # source-bound MagiCore self-install route in AUDITED_EXECUTOR_ROUTES.
+    # Wrapper process động vẫn bị chặn trừ route self-install MGC đã review chính xác.
     (re.compile(r"(?<!fn )\b(run_native_install)\s*\("), True),
     # Capture every literal executable, not only names in TOOLS. TOOLS is
     # an inventory for dispatch/string-table shapes, not a scanner boundary.
@@ -597,6 +617,7 @@ DYNAMIC_SPAWN_PATTERNS = [
 ]
 
 EXECUTOR_ROUTE_PATTERNS = {
+    SPAWN_PATTERNS[0][0],
     *(SPAWN_PATTERNS[index][0] for index in range(2, 6)),
     *DESCRIPTOR_PATTERNS,
     DYNAMIC_SPAWN_PATTERNS[1],

@@ -398,6 +398,39 @@ async fn audit_returns_clean_report_for_empty_project() {
 }
 
 #[tokio::test]
+async fn ai_audit_scans_each_model_root_and_checkpoint_weights() {
+    let dir = tmp("audit-all-model-roots");
+    std::fs::write(
+        dir.join("mgc.toml"),
+        "name = \"audit-roots\"\necosystem = \"ai\"\n\n[ai]\nframework = \"python-agent\"\n",
+    )
+    .unwrap();
+    let models = dir.join("models");
+    let checkpoints = dir.join("checkpoints");
+    std::fs::create_dir_all(&models).unwrap();
+    std::fs::create_dir_all(&checkpoints).unwrap();
+    let mut safe = 2u64.to_le_bytes().to_vec();
+    safe.extend_from_slice(b"{}");
+    std::fs::write(models.join("safe.safetensors"), safe).unwrap();
+    std::fs::write(
+        checkpoints.join("fixture.pth"),
+        b"legacy checkpoint cos\nsystem\ncommand\n.",
+    )
+    .unwrap();
+
+    let adapter = adapter_for(&dir).unwrap();
+    let report = adapter.audit(&dir).await.unwrap();
+
+    assert!(
+        report.vulnerabilities.iter().any(|finding| {
+            finding.package.to_string().contains("checkpoints")
+                && finding.package.to_string().contains("fixture.pth")
+        }),
+        "the audit report must include malicious weights from checkpoints even when models exists"
+    );
+}
+
+#[tokio::test]
 async fn list_refuses_to_claim_an_mgc_owned_set_for_foreign_lane() {
     let dir = tmp("list");
     std::fs::write(dir.join("mgc.toml"), "[ai]\nframework = \"mcp-server\"\n").unwrap();

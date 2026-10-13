@@ -127,7 +127,18 @@ pub fn command_to_dispatch(
             args,
             compat_runner,
         }),
-        Commands::Dlx { package, bin, args } => Some(CommonCommand::Dlx { package, bin, args }),
+        Commands::Dlx {
+            package,
+            bin,
+            allow_scripts,
+            args,
+        } => Some(CommonCommand::Dlx {
+            package,
+            bin,
+            allow_scripts,
+            args,
+        }),
+        Commands::Tool { cmd } => Some(CommonCommand::Tool { cmd }),
         Commands::Cache {
             action,
             target,
@@ -206,12 +217,12 @@ pub fn command_to_dispatch(
         Commands::Login {
             registry,
             username,
-            password,
+            password_stdin,
             local,
         } => Some(CommonCommand::Login {
             registry,
             username,
-            password,
+            password_stdin,
             local,
         }),
         Commands::Registry { cmd } => Some(CommonCommand::Registry { cmd }),

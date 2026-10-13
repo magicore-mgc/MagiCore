@@ -89,6 +89,26 @@ pub fn trusted_signatures_invalid() -> Error {
     anyhow!("trusted provenance signature or transparency chain verification failed")
 }
 
+/// Keep project dependency installs separate from persistent user CLI tools.
+/// Tách dependency của project khỏi CLI tool bền vững theo user.
+pub fn global_package_install_unsupported() -> Error {
+    anyhow!(
+        "`mgc add --global` is not supported: `mgc add` installs in the current project. Use `mgc tool install npm:<package>` for a persistent npm CLI or `mgc dlx <package>` for temporary execution; no project changes were made"
+    )
+}
+
+/// A core without a preview implementation must not execute an install as a dry run.
+/// Core chưa có preview phải từ chối trước khi chạy install với cờ dry-run.
+pub fn install_dry_run_unsupported(core: &str) -> Error {
+    anyhow!("dry-run is not supported for core '{core}'; no changes were made")
+}
+
+/// An optimizer environment value has an unmatched outer quote.
+/// Giá trị env của optimizer có quote ngoài không cân bằng.
+pub fn optimizer_env_unmatched_quote(line: usize) -> Error {
+    anyhow!("optimizer env file has unmatched quote at line {line}")
+}
+
 /// `mgc remove-ai <pkg> [pkg...]` — name packages to remove
 pub fn remove_ai_usage() -> Error {
     anyhow!("mgc remove-ai <pkg> [pkg...] — name the packages to remove")
@@ -1065,12 +1085,58 @@ pub fn registry_missing_field(field: &str) -> Error {
 
 // ===== registry/login =====
 
-pub fn no_token_in_response(text: &str) -> Error {
-    anyhow!("No token in response: {text}")
+pub fn no_token_in_response() -> Error {
+    anyhow!("registry response did not contain a usable token")
+}
+
+pub fn registry_auth_url_invalid() -> Error {
+    anyhow!(
+        "registry authentication requires a valid HTTP(S) URL without credentials, query, or fragment"
+    )
+}
+
+pub fn registry_auth_requires_https() -> Error {
+    anyhow!("registry authentication requires HTTPS except for loopback registry URLs")
+}
+
+pub fn registry_auth_request_failed() -> Error {
+    anyhow!("registry authentication request failed or exceeded its timeout")
+}
+
+pub fn registry_auth_status_failed(status: u16) -> Error {
+    anyhow!("registry authentication failed with HTTP {status}")
+}
+
+pub fn registry_auth_response_too_large() -> Error {
+    anyhow!("registry authentication response exceeds the size limit")
+}
+
+pub fn registry_auth_response_invalid() -> Error {
+    anyhow!("registry authentication response is not valid JSON")
+}
+
+pub fn registry_auth_password_required() -> Error {
+    anyhow!("password input was empty")
+}
+
+pub fn registry_auth_username_required() -> Error {
+    anyhow!("username is required")
+}
+
+pub fn registry_auth_password_too_large() -> Error {
+    anyhow!("password input exceeds the size limit")
 }
 
 pub fn no_home_dir() -> Error {
     anyhow!("No home directory")
+}
+
+/// Refuse benchmark mode that would mutate the lockfile outside the install writer lock.
+/// Từ chối benchmark có thể sửa lockfile ngoài writer lock của installer.
+pub fn bench_no_lock_unsafe() -> Error {
+    anyhow!(
+        "bench --no-lock is disabled because deleting mgc.lock outside the install writer lock can race with project mutations"
+    )
 }
 
 // ===== info.rs =====

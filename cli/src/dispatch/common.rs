@@ -166,7 +166,13 @@ pub async fn dispatch_common(
             .await
         }
         CommonCommand::Optimizer { force } => commands::optimizer::run(core, force).await,
-        CommonCommand::Dlx { package, bin, args } => commands::dlx::run(package, bin, args).await,
+        CommonCommand::Dlx {
+            package,
+            bin,
+            allow_scripts,
+            args,
+        } => commands::dlx::run(package, bin, allow_scripts, args).await,
+        CommonCommand::Tool { cmd } => commands::tool::run(cmd),
         CommonCommand::Cache {
             action,
             target,
@@ -188,13 +194,13 @@ pub async fn dispatch_common(
         CommonCommand::Login {
             registry,
             username,
-            password,
+            password_stdin,
             local,
         } => {
             commands::login::run(crate::commands::login::LoginArgs {
                 registry,
                 username,
-                password,
+                password_stdin,
                 local,
             })
             .await

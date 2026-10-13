@@ -2,16 +2,17 @@
 
 use super::Finding;
 use mgc_types::MgResult;
+use std::io::Read;
 use std::path::Path;
 
 /// Scan pickle file for dangerous imports
 /// P1: Byte pattern matching (simple but effective for common attacks)
 /// P2 (deferred): Deep bytecode AST parsing with pyo3 when real exploit case appears
-/// Rationale: byte patterns catch 90% of known exploits; deep parsing adds
-/// build complexity (Python dependency) + version fragility + scanner attack surface.
-/// Current approach is fail-closed (reject on suspicion) + loud warning.
+/// This is a heuristic, not a complete pickle verifier. Matching signatures
+/// fail closed for known patterns; absence of a match does not prove safety.
+/// Deep parsing would add a Python dependency and a larger scanner attack surface.
 pub fn scan_pickle(path: &Path) -> MgResult<Vec<Finding>> {
-    let content = std::fs::read(path)?;
+    const CHUNK_SIZE: usize = 64 * 1024;
     let mut findings = Vec::new();
 
     // Check for common malicious pickle patterns (opcodes + imports)
@@ -30,8 +31,39 @@ pub fn scan_pickle(path: &Path) -> MgResult<Vec<Finding>> {
         (b"\x81", "pickle BUILD opcode (class instantiation)"),
     ];
 
-    for (pattern, desc) in dangerous_patterns {
-        if contains_bytes(&content, pattern) {
+    let metadata = std::fs::metadata(path)?;
+    let mut reader = std::fs::File::open(path)?;
+    let max_pattern_len = dangerous_patterns
+        .iter()
+        .map(|(pattern, _)| pattern.len())
+        .max()
+        .unwrap_or(1);
+    let mut pending = Vec::with_capacity(CHUNK_SIZE + max_pattern_len);
+    let mut chunk = [0u8; CHUNK_SIZE];
+    let mut found = vec![false; dangerous_patterns.len()];
+
+    loop {
+        let bytes_read = reader.read(&mut chunk)?;
+        if bytes_read == 0 {
+            break;
+        }
+        pending.extend_from_slice(&chunk[..bytes_read]);
+        for (index, (pattern, _)) in dangerous_patterns.iter().enumerate() {
+            if !found[index] && contains_bytes(&pending, pattern) {
+                found[index] = true;
+            }
+        }
+        if found.iter().all(|found| *found) {
+            break;
+        }
+        let keep_from = pending
+            .len()
+            .saturating_sub(max_pattern_len.saturating_sub(1));
+        pending.drain(..keep_from);
+    }
+
+    for (found, (_, desc)) in found.into_iter().zip(dangerous_patterns) {
+        if found {
             findings.push(
                 Finding::critical(
                     "pickle-exploit",
@@ -42,8 +74,9 @@ pub fn scan_pickle(path: &Path) -> MgResult<Vec<Finding>> {
         }
     }
 
-    // Check file size (pickle > 10GB suspicious)
-    if content.len() > 10 * 1024 * 1024 * 1024 {
+    // Check file size (pickle > 10GB suspicious).
+    // Kiểm kích thước file (pickle > 10GB cần xem xét).
+    if metadata.len() > 10 * 1024 * 1024 * 1024 {
         findings.push(
             Finding::high("size", "Pickle file unusually large (>10GB)")
                 .with_file(&path.to_string_lossy()),
@@ -55,11 +88,12 @@ pub fn scan_pickle(path: &Path) -> MgResult<Vec<Finding>> {
 
 /// Scan safetensors for metadata issues
 pub fn scan_safetensors(path: &Path) -> MgResult<Vec<Finding>> {
-    let content = std::fs::read(path)?;
+    const MAX_HEADER_BYTES: u64 = 100 * 1024 * 1024;
     let mut findings = Vec::new();
+    let file_size = std::fs::metadata(path)?.len();
 
     // SafeTensors format: 8-byte header (JSON length) + JSON metadata + tensors
-    if content.len() < 8 {
+    if file_size < 8 {
         findings.push(
             Finding::critical("safetensors-format", "Invalid safetensors header")
                 .with_file(&path.to_string_lossy()),
@@ -67,24 +101,34 @@ pub fn scan_safetensors(path: &Path) -> MgResult<Vec<Finding>> {
         return Ok(findings);
     }
 
-    // Read header length (little-endian u64)
-    let header_len = u64::from_le_bytes([
-        content[0], content[1], content[2], content[3], content[4], content[5], content[6],
-        content[7],
-    ]) as usize;
+    // Read header length (little-endian u64) with checked arithmetic.
+    // Đọc độ dài header little-endian u64 bằng phép tính có kiểm tra.
+    let mut file = std::fs::File::open(path)?;
+    let mut length_bytes = [0u8; 8];
+    file.read_exact(&mut length_bytes)?;
+    let header_len = u64::from_le_bytes(length_bytes);
 
-    if header_len > 100 * 1024 * 1024 {
+    if header_len > MAX_HEADER_BYTES {
         findings.push(
             Finding::high("safetensors-header", "Suspiciously large metadata (>100MB)")
                 .with_file(&path.to_string_lossy()),
         );
+        return Ok(findings);
     }
 
-    if header_len + 8 > content.len() {
+    let Some(header_end) = header_len.checked_add(8) else {
         findings.push(
             Finding::critical("safetensors-truncated", "Truncated or corrupted file")
                 .with_file(&path.to_string_lossy()),
         );
+        return Ok(findings);
+    };
+    if header_end > file_size {
+        findings.push(
+            Finding::critical("safetensors-truncated", "Truncated or corrupted file")
+                .with_file(&path.to_string_lossy()),
+        );
+        return Ok(findings);
     }
 
     Ok(findings)
@@ -105,19 +149,18 @@ pub fn scan_weights(path: &Path) -> MgResult<Vec<Finding>> {
         );
     }
 
-    // For .pt/.pth files, check for pickle header
+    // For PyTorch .pt/.pth/.bin checkpoints, scan pickle signatures.
+    // (Với checkpoint PyTorch .pt/.pth/.bin, quét các pickle signature.)
     // let-chain edition 2024 — gộp điều kiện theo clippy 1.98.
-    if let Some(ext) = path.extension()
-        && (ext == "pt" || ext == "pth")
+    if let Some(ext) = path.extension().and_then(|ext| ext.to_str())
+        && ["pt", "pth", "bin"]
+            .iter()
+            .any(|candidate| ext.eq_ignore_ascii_case(candidate))
     {
-        let content = std::fs::read(path)?;
-
-        // PyTorch files use pickle internally
-        if content.len() > 6 && &content[0..6] == b"\x80\x02}q\x00" {
-            // Valid pickle header - check for dangerous patterns
-            let pickle_findings = scan_pickle(path)?;
-            findings.extend(pickle_findings);
-        }
+        // PyTorch checkpoints can use different pickle protocols and payloads.
+        // Scan the payload signatures instead of requiring one exact prefix.
+        // (Checkpoint có thể dùng nhiều pickle protocol; quét signature thay vì ép prefix.)
+        findings.extend(scan_pickle(path)?);
     }
 
     Ok(findings)

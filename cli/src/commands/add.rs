@@ -52,6 +52,9 @@ pub async fn run_many(
     core: Option<&str>,
     compat_runtime: Option<String>,
 ) -> Result<()> {
+    if global {
+        return Err(crate::error::global_package_install_unsupported());
+    }
     // Fail closed outside a project AND outside the firewall: the detected
     // core selects its own lane (each gates before any spawn).
     // `compat_runtime` is None for MCP today (Native mode), so delegated

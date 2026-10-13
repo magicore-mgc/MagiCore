@@ -229,13 +229,30 @@ fn find_project_root_no_match_returns_none() {
 }
 
 #[test]
-fn find_project_root_ignores_parent_package_json_without_mgc_toml() {
+fn find_project_root_uses_nearest_parent_language_manifest() {
     let root = temp_test_dir("parent-package-json");
     let child = root.join("apps").join("frontend");
     std::fs::create_dir_all(&child).unwrap();
     std::fs::write(root.join("package.json"), "{}").unwrap();
 
-    assert_eq!(ProjectConfig::find_project_root(&child), None);
+    assert_eq!(ProjectConfig::find_project_root(&child), Some(root.clone()));
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn find_project_root_prefers_nearest_manifest_over_monorepo_parent() {
+    let root = temp_test_dir("nearest-parent-manifest");
+    let nested = root.join("apps").join("service");
+    let child = nested.join("src");
+    std::fs::create_dir_all(&child).unwrap();
+    std::fs::write(root.join("package.json"), "{}").unwrap();
+    std::fs::write(nested.join("go.mod"), "module example.com/service\n").unwrap();
+
+    assert_eq!(
+        ProjectConfig::find_project_root(&child),
+        Some(nested.clone()),
+        "commands inside a nested project must not attach to the monorepo package root"
+    );
     let _ = std::fs::remove_dir_all(root);
 }
 

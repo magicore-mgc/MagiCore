@@ -120,3 +120,58 @@ fn mgc_data_dir_override_child() {
         std::path::PathBuf::from(expected)
     );
 }
+
+#[cfg(not(windows))]
+#[test]
+fn managed_shell_path_block_is_idempotent_and_tracks_data_root_changes() {
+    let home = tempfile::tempdir().unwrap();
+    let spaced = home.path().join("data root/bin");
+    std::fs::create_dir_all(&spaced).unwrap();
+    let first = mgc_platform::paths::ensure_bin_on_path(home.path(), "/bin/zsh", &spaced).unwrap();
+    let profile = home.path().join(".zprofile");
+    let initial = std::fs::read_to_string(&profile).unwrap();
+    assert!(initial.contains(&first.to_string_lossy().to_string()));
+    assert!(initial.contains("case \":$PATH:\""));
+
+    mgc_platform::paths::ensure_bin_on_path(home.path(), "/bin/zsh", &spaced).unwrap();
+    assert_eq!(std::fs::read_to_string(&profile).unwrap(), initial);
+
+    let second = home.path().join("alternate/bin");
+    std::fs::create_dir_all(&second).unwrap();
+    mgc_platform::paths::ensure_bin_on_path(home.path(), "/bin/zsh", &second).unwrap();
+    let updated = std::fs::read_to_string(profile).unwrap();
+    assert!(updated.contains(&second.canonicalize().unwrap().to_string_lossy().to_string()));
+    assert!(!updated.contains(&first.to_string_lossy().to_string()));
+    assert_eq!(updated.matches("magicore-managed-tool-bin >>>").count(), 1);
+}
+
+#[cfg(not(windows))]
+#[test]
+fn managed_fish_path_uses_conf_d_and_rejects_symlinked_profiles() {
+    let home = tempfile::tempdir().unwrap();
+    let bin = home.path().join("data/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    mgc_platform::paths::ensure_bin_on_path(home.path(), "/usr/bin/fish", &bin).unwrap();
+    let profile = home.path().join(".config/fish/conf.d/magicore.fish");
+    let contents = std::fs::read_to_string(profile).unwrap();
+    assert!(contents.contains("set -gx PATH"));
+
+    let zsh_profile = home.path().join(".zprofile");
+    let target = home.path().join("profile-target");
+    std::fs::write(&target, "# user profile\n").unwrap();
+    std::os::unix::fs::symlink(&target, &zsh_profile).unwrap();
+    assert!(mgc_platform::paths::ensure_bin_on_path(home.path(), "/bin/zsh", &bin).is_err());
+    assert_eq!(std::fs::read_to_string(target).unwrap(), "# user profile\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn managed_bin_rejects_a_symlink_before_updating_the_path() {
+    let home = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let link = home.path().join("bin");
+    std::os::unix::fs::symlink(outside.path(), &link).unwrap();
+
+    assert!(mgc_platform::paths::ensure_bin_on_path(home.path(), "/bin/zsh", &link).is_err());
+    assert!(!home.path().join(".zprofile").exists());
+}

@@ -15,6 +15,18 @@ pub fn bare_core_command(
         None => detect_ecosystem()?,
     };
 
+    if matches!(&command, Commands::Add { global: true, .. }) {
+        return Err(crate::error::global_package_install_unsupported());
+    }
+
+    if matches!(&command, Commands::Install { dry_run: true, .. })
+        && !matches!(ecosystem.as_deref(), Some("ai" | "app" | "clo"))
+    {
+        return Err(crate::error::install_dry_run_unsupported(
+            ecosystem.as_deref().unwrap_or("unknown"),
+        ));
+    }
+
     // The bare `install --offline` flag used to be threaded only to Web;
     // other core variants silently discarded it. Until a lane explicitly
     // implements cache-only replay, reject instead of pretending the

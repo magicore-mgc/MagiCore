@@ -860,26 +860,228 @@ impl ProjectConfig {
     }
 
     /// Collect distinct cores detected from project manifests.
+    /// Nhận diện core từ manifest chuẩn; chữ ký framework cụ thể thắng file ngôn ngữ chung.
     fn detect_signatures(project_root: &Path) -> Result<Vec<String>, anyhow::Error> {
-        let mut cores: Vec<String> = Vec::new();
-        if signature_file_exists(&project_root.join("package.json"))? {
-            cores.push("web".to_string());
+        let mut cores = std::collections::BTreeSet::new();
+        let has_cloud_marker = ["cdk.json", "Pulumi.yaml", "Pulumi.yml", "wrangler.toml"]
+            .iter()
+            .try_fold(false, |found, name| {
+                Ok::<_, anyhow::Error>(found || signature_file_exists(&project_root.join(name))?)
+            })?
+            || has_regular_extension_file(project_root, "tf")?;
+        let has_game_marker = signature_file_exists(&project_root.join("project.godot"))?
+            || signature_file_exists_in_project(
+                project_root,
+                Path::new("ProjectSettings/ProjectVersion.txt"),
+            )?
+            || has_regular_extension_file(project_root, "uproject")?;
+        let has_iot_marker = signature_file_exists(&project_root.join("platformio.ini"))?
+            || signature_file_exists(&project_root.join("west.yml"))?;
+
+        // Framework-specific project files disambiguate common package manifests.
+        // (Manifest framework cụ thể giúp phân biệt package manifest đa dụng.)
+        if has_cloud_marker {
+            cores.insert("clo".to_string());
+        }
+        if has_game_marker {
+            cores.insert("game".to_string());
+        }
+        if has_iot_marker {
+            cores.insert("iot".to_string());
+        }
+
+        if signature_file_exists(&project_root.join("package.json"))? && !has_cloud_marker {
+            cores.insert("web".to_string());
         }
         if signature_file_exists(&project_root.join("Cargo.toml"))? {
-            cores.push("lib".to_string());
+            let manifest =
+                read_regular_project_text(&project_root.join("Cargo.toml"), "Cargo manifest")?
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Cargo manifest disappeared during core detection")
+                    })?;
+            let value: toml::Value = toml::from_str(&manifest)?;
+            let has_bevy = has_named_dependency(&value, &["bevy"]);
+            let has_esp32 = has_named_dependency(
+                &value,
+                &["esp-idf-hal", "esp-idf-sys", "esp-hal", "esp32-hal"],
+            );
+            if has_bevy {
+                cores.insert("game".to_string());
+            }
+            if has_esp32 {
+                cores.insert("iot".to_string());
+            }
+            if !has_bevy && !has_esp32 && !has_game_marker && !has_iot_marker {
+                cores.insert("lib".to_string());
+            }
         }
         if signature_file_exists(&project_root.join("pyproject.toml"))? {
-            cores.push("ai".to_string());
+            let content =
+                read_regular_project_text(&project_root.join("pyproject.toml"), "Python manifest")?
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Python manifest disappeared during core detection")
+                    })?;
+            let value: toml::Value = toml::from_str(&content)?;
+            cores.insert(if python_declares_web_framework(&value) {
+                "web".to_string()
+            } else {
+                "ai".to_string()
+            });
         }
-        if signature_file_exists(&project_root.join("pubspec.yaml"))? {
-            cores.push("app".to_string());
+        if signature_file_exists(&project_root.join("pubspec.yaml"))?
+            || signature_file_exists(&project_root.join("Package.swift"))?
+        {
+            cores.insert("app".to_string());
         }
-        if signature_file_exists(&project_root.join("Package.swift"))? {
-            cores.push("app".to_string());
+        if signature_file_exists(&project_root.join("go.mod"))? {
+            let content = read_regular_project_text(&project_root.join("go.mod"), "Go manifest")?
+                .ok_or_else(|| {
+                anyhow::anyhow!("Go manifest disappeared during core detection")
+            })?;
+            cores.insert(
+                if text_contains_any(
+                    &content,
+                    &[
+                        "github.com/gin-gonic/gin",
+                        "github.com/labstack/echo",
+                        "github.com/gofiber/fiber",
+                        "github.com/go-chi/chi",
+                        "github.com/gorilla/mux",
+                    ],
+                ) {
+                    "web".to_string()
+                } else {
+                    "lib".to_string()
+                },
+            );
         }
-        cores.sort();
-        cores.dedup();
-        Ok(cores)
+        let mut java_manifests = Vec::new();
+        for name in ["pom.xml", "build.gradle", "build.gradle.kts"] {
+            if signature_file_exists(&project_root.join(name))? {
+                java_manifests.push(name);
+            }
+        }
+        if !java_manifests.is_empty() {
+            let mut java_cores = std::collections::BTreeSet::new();
+            for name in java_manifests {
+                let content = read_regular_project_text(&project_root.join(name), "JVM manifest")?
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("JVM manifest disappeared during core detection")
+                    })?;
+                if text_contains_any(
+                    &content,
+                    &[
+                        "spring-boot-starter-web",
+                        "spring-boot-starter-webflux",
+                        "io.quarkus",
+                        "quarkus-rest",
+                    ],
+                ) {
+                    java_cores.insert("web");
+                } else if text_contains_any(
+                    &content,
+                    &["com.android.application", "com.android.tools.build:gradle"],
+                ) {
+                    java_cores.insert("app");
+                } else {
+                    java_cores.insert("lib");
+                }
+            }
+            cores.extend(java_cores.into_iter().map(str::to_string));
+        }
+        if !has_game_marker {
+            for manifest in files_with_extension(project_root, "csproj")? {
+                let content = read_regular_project_text(&manifest, ".NET project manifest")?
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(".NET manifest disappeared during core detection")
+                    })?;
+                let lower = content.to_ascii_lowercase();
+                if lower.contains("microsoft.net.sdk.maui")
+                    || lower.contains("<usemaui>true</usemaui>")
+                {
+                    cores.insert("app".to_string());
+                } else if lower.contains("microsoft.net.sdk.web") {
+                    cores.insert("web".to_string());
+                } else {
+                    cores.insert("lib".to_string());
+                }
+            }
+        }
+
+        // Wrangler and common CI files are used by both Cloud and CI/CD projects.
+        // Require the persisted marker instead of guessing between those cores.
+        if signature_file_exists(&project_root.join("wrangler.toml"))? {
+            cores.insert("cicd".to_string());
+            cores.insert("clo".to_string());
+        }
+
+        Ok(cores.into_iter().collect())
+    }
+
+    /// Read explicit core declarations embedded in supported package manifests.
+    /// Đọc khai báo core tường minh trong manifest trước khi suy luận từ tên file.
+    fn detect_declared_manifest_core(project_root: &Path) -> Result<Option<String>, anyhow::Error> {
+        let mut cores = std::collections::BTreeSet::new();
+        let package_manifest = project_root.join("package.json");
+        if signature_file_exists(&package_manifest)?
+            && let Some(content) = read_regular_project_text(&package_manifest, "package manifest")?
+        {
+            let value: serde_json::Value = serde_json::from_str(&content)?;
+            if let Some(core) = value
+                .get("magicore")
+                .and_then(|value| value.get("core"))
+                .and_then(serde_json::Value::as_str)
+            {
+                cores.insert(Self::canonical_core(core));
+            }
+        }
+        let cargo_manifest = project_root.join("Cargo.toml");
+        if signature_file_exists(&cargo_manifest)?
+            && let Some(content) = read_regular_project_text(&cargo_manifest, "Cargo manifest")?
+        {
+            let value: toml::Value = toml::from_str(&content)?;
+            if let Some(core) = value
+                .get("package")
+                .and_then(|value| value.get("metadata"))
+                .and_then(|value| value.get("magicore"))
+                .and_then(|value| value.get("core"))
+                .and_then(toml::Value::as_str)
+            {
+                cores.insert(Self::canonical_core(core));
+            }
+        }
+        let python_manifest = project_root.join("pyproject.toml");
+        if signature_file_exists(&python_manifest)?
+            && let Some(content) = read_regular_project_text(&python_manifest, "Python manifest")?
+        {
+            let value: toml::Value = toml::from_str(&content)?;
+            if let Some(core) = value
+                .get("tool")
+                .and_then(|value| value.get("magicore"))
+                .and_then(|value| value.get("core"))
+                .and_then(toml::Value::as_str)
+            {
+                cores.insert(Self::canonical_core(core));
+            }
+        }
+        if cores.len() > 1 {
+            anyhow::bail!(
+                "conflicting MagiCore core declarations in project manifests: {}. Set one authoritative '{}' marker or mgc.toml ecosystem.",
+                cores.into_iter().collect::<Vec<_>>().join(", "),
+                Self::CORE_MARKER_FILE,
+            );
+        }
+        if let Some(core) = cores.into_iter().next() {
+            if !Self::is_known_core(&core) {
+                anyhow::bail!(
+                    "manifest declares unknown MagiCore core '{}'; use a supported core in '{}' or mgc.toml",
+                    core,
+                    Self::CORE_MARKER_FILE,
+                );
+            }
+            return Ok(Some(core));
+        }
+        Ok(None)
     }
 
     /// Detect ecosystem with T9a priority: marker → mgc.toml → signatures.
@@ -892,6 +1094,9 @@ impl ProjectConfig {
         }
         if ensure_regular_project_config(&project_root.join("mgc.toml"))?.is_some() {
             return Self::read_to_string_ecosystem(project_root);
+        }
+        if let Some(core) = Self::detect_declared_manifest_core(project_root)? {
+            return Ok(Some(core));
         }
         let signatures = Self::detect_signatures(project_root)?;
         match signatures.len() {
@@ -922,26 +1127,19 @@ impl ProjectConfig {
         ecosystem_from_config(Some(&content))
     }
 
-    /// Find project root by looking for mgc.toml / .mgc.core / package.json /
-    /// Cargo.toml.
+    /// Find the nearest project root from a marker/config or language manifest.
     ///
     /// - `mgc.toml` + `.mgc.core` checked in CWD and ALL parent directories
     ///   (monorepo support — T9a signature leo parent).
-    /// - `package.json` / `Cargo.toml` etc. checked in CWD ONLY.
+    /// - Known language/framework manifests are checked from CWD to the nearest parent.
     pub fn find_project_root(from: &Path) -> Option<PathBuf> {
-        if from.join(Self::CORE_MARKER_FILE).exists()
-            || from.join("mgc.toml").exists()
-            || from.join("package.json").exists()
-            || from.join("Cargo.toml").exists()
-            || from.join("Package.swift").exists()
-            || from.join("pyproject.toml").exists()
-        {
+        if has_project_anchor(from) {
             return Some(from.to_path_buf());
         }
 
         let mut current = from.parent();
         while let Some(dir) = current {
-            if dir.join(Self::CORE_MARKER_FILE).exists() || dir.join("mgc.toml").exists() {
+            if has_project_anchor(dir) {
                 return Some(dir.to_path_buf());
             }
             current = dir.parent();
@@ -1077,6 +1275,221 @@ fn signature_file_exists(path: &Path) -> anyhow::Result<bool> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error.into()),
     }
+}
+
+/// Check a nested signature while refusing symlinked parent directories.
+/// Kiểm tra signature lồng nhau và từ chối thư mục cha là symlink.
+fn signature_file_exists_in_project(root: &Path, relative: &Path) -> anyhow::Result<bool> {
+    use std::path::Component;
+
+    let components = relative.components().collect::<Vec<_>>();
+    if components.is_empty()
+        || components
+            .iter()
+            .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        anyhow::bail!("project signature path must be a normalized relative path");
+    }
+
+    let mut path = root.to_path_buf();
+    for component in components.iter().take(components.len() - 1) {
+        path.push(component.as_os_str());
+        let metadata = match std::fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error.into()),
+        };
+        if metadata.file_type().is_symlink() {
+            anyhow::bail!(
+                "project signature parent '{}' must not be a symlink",
+                path.display()
+            );
+        }
+        if !metadata.is_dir() {
+            anyhow::bail!(
+                "project signature parent '{}' must be a directory",
+                path.display()
+            );
+        }
+    }
+    let Some(last) = components.last() else {
+        return Ok(false);
+    };
+    path.push(last.as_os_str());
+    signature_file_exists(&path)
+}
+
+/// Match known framework coordinates without interpreting version syntax.
+/// Nhận diện tọa độ framework phổ biến, không phân tích constraint phiên bản.
+fn text_contains_any(content: &str, markers: &[&str]) -> bool {
+    let lower = content.to_ascii_lowercase();
+    markers
+        .iter()
+        .any(|marker| lower.contains(&marker.to_ascii_lowercase()))
+}
+
+/// Inspect only dependency sections used by common Python project metadata.
+/// Chỉ xét dependency section chuẩn của metadata Python thường dùng.
+fn python_declares_web_framework(manifest: &toml::Value) -> bool {
+    const FRAMEWORKS: &[&str] = &[
+        "django",
+        "fastapi",
+        "flask",
+        "starlette",
+        "sanic",
+        "tornado",
+        "bottle",
+    ];
+
+    fn contains_framework(value: &toml::Value) -> bool {
+        match value {
+            toml::Value::String(spec) => {
+                let name = spec
+                    .split(['[', ';', '=', '<', '>', '~', '!', ' '])
+                    .next()
+                    .unwrap_or_default()
+                    .trim()
+                    .to_ascii_lowercase()
+                    .replace('_', "-");
+                FRAMEWORKS.contains(&name.as_str())
+            }
+            toml::Value::Array(items) => items.iter().any(contains_framework),
+            toml::Value::Table(table) => table.iter().any(|(name, value)| {
+                let normalized = name.to_ascii_lowercase().replace('_', "-");
+                FRAMEWORKS.contains(&normalized.as_str()) || contains_framework(value)
+            }),
+            _ => false,
+        }
+    }
+
+    let project = manifest.get("project");
+    let tool = manifest.get("tool");
+    [
+        project.and_then(|value| value.get("dependencies")),
+        project.and_then(|value| value.get("optional-dependencies")),
+        tool.and_then(|value| value.get("poetry"))
+            .and_then(|value| value.get("dependencies")),
+        tool.and_then(|value| value.get("pdm"))
+            .and_then(|value| value.get("dependencies")),
+    ]
+    .into_iter()
+    .flatten()
+    .any(contains_framework)
+}
+
+/// Detect project anchors without following directory-entry symlinks.
+/// Tìm dấu mốc project ở thư mục gần nhất, không đi theo symlink thư mục.
+fn has_project_anchor(root: &Path) -> bool {
+    const DIRECT: &[&str] = &[
+        ProjectConfig::CORE_MARKER_FILE,
+        "mgc.toml",
+        "package.json",
+        "Cargo.toml",
+        "pyproject.toml",
+        "pubspec.yaml",
+        "Package.swift",
+        "go.mod",
+        "pom.xml",
+        "build.gradle",
+        "build.gradle.kts",
+        "project.godot",
+        "platformio.ini",
+        "west.yml",
+        "Pulumi.yaml",
+        "Pulumi.yml",
+        "cdk.json",
+        "wrangler.toml",
+        "ProjectSettings/ProjectVersion.txt",
+    ];
+    DIRECT.iter().any(|name| root.join(name).exists())
+        || directory_has_extension_anchor(root, "tf")
+        || directory_has_extension_anchor(root, "csproj")
+        || directory_has_extension_anchor(root, "uproject")
+}
+
+/// Check a filename extension at the project root for root discovery.
+/// Kiểm tra đuôi file ở root để tìm project mà không đọc nội dung.
+fn directory_has_extension_anchor(root: &Path, extension: &str) -> bool {
+    std::fs::read_dir(root).is_ok_and(|entries| {
+        entries.flatten().any(|entry| {
+            let path = entry.path();
+            path.extension()
+                .and_then(|value| value.to_str())
+                .is_some_and(|value| value.eq_ignore_ascii_case(extension))
+                && entry
+                    .file_type()
+                    .is_ok_and(|kind| kind.is_file() || kind.is_symlink())
+        })
+    })
+}
+
+/// Check dependency tables, including Cargo workspace and target-specific tables.
+/// Kiểm tra dependency table kể cả workspace và cấu hình theo target.
+fn has_named_dependency(manifest: &toml::Value, names: &[&str]) -> bool {
+    fn in_table(value: &toml::Value, names: &[&str]) -> bool {
+        let Some(table) = value.as_table() else {
+            return false;
+        };
+        let has_dependency = ["dependencies", "dev-dependencies", "build-dependencies"]
+            .iter()
+            .filter_map(|section| table.get(*section).and_then(toml::Value::as_table))
+            .any(|dependencies| {
+                dependencies.iter().any(|(name, spec)| {
+                    names.contains(&name.as_str())
+                        || spec
+                            .get("package")
+                            .and_then(toml::Value::as_str)
+                            .is_some_and(|package| names.contains(&package))
+                })
+            });
+        has_dependency
+            || ["workspace", "target"]
+                .iter()
+                .filter_map(|section| table.get(*section))
+                .any(|nested| in_table(nested, names))
+    }
+
+    in_table(manifest, names)
+}
+
+/// Find a regular root-level manifest by extension, rejecting a matching symlink.
+/// Tìm manifest thường theo extension và từ chối file khớp là symlink.
+fn has_regular_extension_file(root: &Path, extension: &str) -> anyhow::Result<bool> {
+    Ok(!files_with_extension(root, extension)?.is_empty())
+}
+
+/// Collect regular root-level manifests by extension, rejecting matching symlinks.
+/// Thu thập manifest thường theo extension và từ chối file khớp là symlink.
+fn files_with_extension(root: &Path, extension: &str) -> anyhow::Result<Vec<PathBuf>> {
+    let entries = match std::fs::read_dir(root) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error.into()),
+    };
+    let mut files = Vec::new();
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        if !path
+            .extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|value| value.eq_ignore_ascii_case(extension))
+        {
+            continue;
+        }
+        let file_type = entry.file_type()?;
+        if file_type.is_symlink() {
+            anyhow::bail!(
+                "project signature '{}' must not be a symlink",
+                path.display()
+            );
+        }
+        if file_type.is_file() {
+            files.push(path);
+        }
+    }
+    files.sort();
+    Ok(files)
 }
 
 /// Publish `mgc.toml` through a unique same-directory staging file. Replacing

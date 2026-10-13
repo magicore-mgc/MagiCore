@@ -252,8 +252,11 @@ pub enum Commands {
         registry: Option<String>,
         #[arg(long, help = "username (prompt if omitted)")]
         username: Option<String>,
-        #[arg(long, help = "password (prompt if omitted)")]
-        password: Option<String>,
+        #[arg(
+            long,
+            help = "Read the password from stdin; otherwise prompt without echo"
+        )]
+        password_stdin: bool,
         #[arg(long, help = "write token to project .npmrc instead of ~/.npmrc")]
         local: bool,
     },
@@ -432,8 +435,20 @@ pub enum Commands {
             help = "Select a declared executable when the package provides multiple binaries"
         )]
         bin: Option<String>,
+        /// Explicitly run lifecycle scripts while installing into the temporary dlx project.
+        /// Cho phép rõ ràng chạy lifecycle scripts trong project dlx tạm.
+        #[arg(
+            long,
+            help = "Allow package lifecycle scripts during temporary installation"
+        )]
+        allow_scripts: bool,
         #[arg(last = true)]
         args: Vec<String>,
+    },
+    #[command(about = "Install and manage persistent user-scoped CLI tools")]
+    Tool {
+        #[command(subcommand)]
+        cmd: ToolCmd,
     },
     #[command(about = "Inspect or clean MagiCore caches")]
     Cache {
@@ -464,7 +479,10 @@ pub enum Commands {
         prefer_dedupe: bool,
         #[arg(long, help = "Re-link dangling symlinks in node_modules")]
         repair: bool,
-        #[arg(long, help = "Print the commands that would run (cloud terraform)")]
+        #[arg(
+            long,
+            help = "Preview install for supported cores; unsupported cores fail without changes"
+        )]
         dry_run: bool,
         #[arg(
             long,
@@ -1611,6 +1629,39 @@ pub enum Commands {
         )]
         compat_runtime: Option<String>,
     },
+}
+
+#[derive(Subcommand, Clone)]
+pub enum ToolCmd {
+    #[command(about = "Install a CLI tool globally (currently npm:<package>)")]
+    Install {
+        /// Explicit package source and package name, for example npm:@openai/codex@latest.
+        package: String,
+        #[arg(long, value_name = "NAME", help = "Select one declared executable")]
+        bin: Option<String>,
+        #[arg(long, help = "Allow package lifecycle scripts during installation")]
+        allow_scripts: bool,
+    },
+    #[command(about = "Update an installed CLI tool")]
+    Update {
+        /// Installed executable name shown by `mgc tool list`.
+        binary: String,
+        #[arg(
+            long,
+            value_name = "VERSION",
+            help = "Version, range, or dist-tag (default: latest)"
+        )]
+        version: Option<String>,
+        #[arg(long, help = "Allow package lifecycle scripts during installation")]
+        allow_scripts: bool,
+    },
+    #[command(about = "Remove an installed CLI tool")]
+    Remove {
+        /// Installed executable name shown by `mgc tool list`.
+        binary: String,
+    },
+    #[command(about = "List persistent user-scoped CLI tools")]
+    List,
 }
 
 #[derive(clap::Subcommand, Clone)]

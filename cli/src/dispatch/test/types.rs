@@ -143,3 +143,25 @@ fn legacy_cloud_manifest_hint_uses_canonical_core_name() {
         Some("clo")
     );
 }
+
+#[test]
+fn bare_command_detects_a_framework_core_from_a_nested_directory() {
+    let project = tempfile::tempdir().unwrap();
+    let nested = project.path().join("src").join("handlers");
+    std::fs::create_dir_all(&nested).unwrap();
+    std::fs::write(
+        project.path().join("Cargo.toml"),
+        "[package]\nname = \"game\"\nversion = \"0.1.0\"\n[dependencies]\nbevy = \"0.16\"\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        detect_ecosystem_at(&nested).unwrap().as_deref(),
+        Some("game"),
+        "bare add/install dispatch must select the game lane from Bevy evidence"
+    );
+    assert!(
+        !project.path().join(".mgc.core").exists(),
+        "detection alone must not mutate project identity"
+    );
+}

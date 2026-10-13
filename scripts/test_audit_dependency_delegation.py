@@ -2413,6 +2413,108 @@ class ConstArrayExclusion(unittest.TestCase):
 class RepoLedgerContract(unittest.TestCase):
     """Production routes stay visible and green — route phải được rà và thông qua."""
 
+    def test_global_tool_self_install_route_is_fixed_and_scoped(self):
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        rel_path = "cli/src/commands/tool.rs"
+        abs_path = os.path.join(repo_root, rel_path)
+        with open(abs_path, "r", encoding="utf-8") as handle:
+            source = handle.read()
+
+        route = (rel_path, "install_with_project_credentials", "run_native_install")
+        findings = [
+            item for item in gate.scan_file(rel_path, abs_path)
+            if (item["file"], item["function"], item["tool"]) == route
+        ]
+        self.assertIn(route, gate.AUDITED_EXECUTOR_ROUTES)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["status"], "allowed")
+        self.assertEqual(findings[0]["op_class"], "audited-executor-route")
+
+        start = source.index("fn run_native_install(")
+        end = source.index("\n}\n", start) + 2
+        runner = source[start:end]
+        for token in (
+            "std::env::current_exe()",
+            "dlx_install_args(allow_scripts)",
+            "ExecutionScope::Install",
+            "run_project_binary_inherited(&executable, &args, &options)",
+        ):
+            self.assertIn(token, runner)
+        self.assertIn("let install = run_native_install(project_root, allow_scripts);", source)
+
+        dynamic = scan_snippet(
+            "cli/src/commands/core/web.rs",
+            'fn install_member(root: &Path) -> Result<()> {\n'
+            '    run_native_install(root, program, &args)\n'
+            '}\n',
+        )
+        self.assertEqual(dynamic[0]["status"], "violation")
+
+    def test_windows_user_path_process_is_fixed_and_narrow(self):
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        rel_path = "core/crates/mgc-platform/src/paths.rs"
+        abs_path = os.path.join(repo_root, rel_path)
+        with open(abs_path, "r", encoding="utf-8") as handle:
+            source = handle.read()
+
+        route = (rel_path, "ensure_windows_user_path", "powershell.exe")
+        findings = [
+            item for item in gate.scan_file(rel_path, abs_path)
+            if (item["function"], item["tool"]) == (route[1], route[2])
+        ]
+        self.assertIn(route, gate.AUDITED_DIRECT_PROCESS_ROUTES)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["status"], "allowed")
+        self.assertEqual(findings[0]["op_class"], "audited-executor-route")
+
+        start = source.index("fn ensure_windows_user_path(")
+        end = source.index("\nfn uuid_from_pid(", start)
+        function_body = source[start:end]
+        for token in (
+            'const SCRIPT: &str = r#"',
+            '"-NoProfile"',
+            '"-NonInteractive"',
+            '"-Command"',
+            '.env("MGC_TOOL_BIN_PATH", bin)',
+            "[Environment]::GetEnvironmentVariable('Path', 'User')",
+            "[Environment]::SetEnvironmentVariable('Path',",
+        ):
+            self.assertIn(token, function_body)
+        for forbidden in ("Invoke-Expression", "Start-Process", "-ExecutionPolicy Bypass"):
+            self.assertNotIn(forbidden, function_body)
+
+        unreviewed = scan_snippet(
+            rel_path,
+            'fn arbitrary_powershell(command: &str) {\n'
+            '    std::process::Command::new("powershell.exe")\n'
+            '        .arg("-Command")\n'
+            '        .arg(command)\n'
+            '        .status();\n'
+            '}\n',
+        )
+        self.assertEqual(unreviewed[0]["status"], "violation")
+
+    def test_local_readiness_helpers_have_exact_bounded_process_reviews(self):
+        expected = {
+            (
+                "docs/specs/productReadinessAudit20261012/build-cache.py",
+                "subprocess.run",
+                "8751fdaf374dc887f5b90b093179398b5e2e99cc5faf1581ba92450cbb033d3e",
+            ),
+            (
+                "docs/specs/productReadinessAudit20261012/probes.py",
+                "subprocess.run",
+                "e69c692857603200253248ee1653689d02fa04698850b7e932a6b04f071b8422",
+            ),
+        }
+        actual = {
+            (path, api, fingerprint)
+            for path, reviews in gate.PYTHON_PROCESS_REVIEWS.items()
+            for api, fingerprint in reviews
+            if path.startswith("docs/specs/productReadinessAudit20261012/")
+        }
+        self.assertEqual(actual, expected)
+
     def test_windows_batch_interpreter_has_an_exact_guarded_process_route(self):
         repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         rel_path = "core/crates/mgc-exec/src/run.rs"

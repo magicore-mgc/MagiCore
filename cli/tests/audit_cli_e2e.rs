@@ -1650,3 +1650,38 @@ fn audit_lib_java_pom_only_is_partial_never_available() {
         "partial reasons must name the coverage limit:\n{output}"
     );
 }
+
+#[test]
+fn audit_ai_cli_scans_checkpoint_weights_after_models_directory() {
+    let mgc = find_mgc_binary();
+    let sandbox = TempDir::new().unwrap();
+    std::fs::write(
+        sandbox.path().join("mgc.toml"),
+        "name = \"ai-model-audit\"\necosystem = \"ai\"\n\n[ai]\nframework = \"python-agent\"\n",
+    )
+    .unwrap();
+    let models = sandbox.path().join("models");
+    let checkpoints = sandbox.path().join("checkpoints");
+    std::fs::create_dir_all(&models).unwrap();
+    std::fs::create_dir_all(&checkpoints).unwrap();
+    let mut safe_header = 2u64.to_le_bytes().to_vec();
+    safe_header.extend_from_slice(b"{}");
+    std::fs::write(models.join("safe.safetensors"), safe_header).unwrap();
+    std::fs::write(
+        checkpoints.join("fixture.pth"),
+        b"legacy checkpoint cos\nsystem\ncommand\n.",
+    )
+    .unwrap();
+
+    let (code, output) = run_mgc_audit(&mgc, sandbox.path(), Some(false));
+
+    assert_eq!(
+        code,
+        Some(1),
+        "malicious model weights must fail audit:\n{output}"
+    );
+    assert!(
+        output.contains("fixture.pth") && output.contains("pickle-exploit"),
+        "CLI audit must report the malicious checkpoint after scanning models:\n{output}"
+    );
+}

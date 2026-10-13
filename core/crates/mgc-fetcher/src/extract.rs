@@ -6,6 +6,12 @@ use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use tar::Archive;
 
+// Bound archive expansion before allocating or materializing untrusted entries.
+// (Giới hạn bung archive trước khi cấp phát hoặc ghi các entry không tin cậy.)
+const MAX_ARCHIVE_ENTRIES: usize = 16_384;
+const MAX_ENTRY_BYTES: u64 = 256 * 1024 * 1024;
+const MAX_TOTAL_FILE_BYTES: u64 = 512 * 1024 * 1024;
+
 /// Extract a gzip-compressed tarball to a destination directory.
 ///
 /// Entries are validated before unpacking so a malicious archive cannot write
@@ -22,9 +28,27 @@ pub fn extract_tarball_from_reader<R: Read>(reader: R, dest: &Path) -> Result<()
 
     std::fs::create_dir_all(dest)?;
     let dest_root = dest.canonicalize()?;
+    let mut entry_count = 0usize;
+    let mut total_unpacked_bytes = 0u64;
 
     for entry in archive.entries()? {
         let mut entry = entry?;
+        entry_count = entry_count
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("tar archive entry count overflow"))?;
+        if entry_count > MAX_ARCHIVE_ENTRIES {
+            bail!("tar archive exceeds the {MAX_ARCHIVE_ENTRIES} entry limit");
+        }
+        let entry_size = entry.size();
+        if entry_size > MAX_ENTRY_BYTES {
+            bail!("tar entry exceeds the {MAX_ENTRY_BYTES} byte limit");
+        }
+        total_unpacked_bytes = total_unpacked_bytes
+            .checked_add(entry_size)
+            .ok_or_else(|| anyhow::anyhow!("tar archive uncompressed size overflow"))?;
+        if total_unpacked_bytes > MAX_TOTAL_FILE_BYTES {
+            bail!("tar archive exceeds the {MAX_TOTAL_FILE_BYTES} byte uncompressed size limit");
+        }
         let rel_path = sanitize_archive_path(entry.path()?.as_ref())?;
         let target = dest_root.join(rel_path);
 
@@ -179,18 +203,42 @@ fn extract_tarball_to_cas_and_link_inner<R: Read>(
 
     std::fs::create_dir_all(dest)?;
     let dest_root = dest.canonicalize()?;
+    let spool_root =
+        tempfile::Builder::new()
+            .prefix(".mgc-extract-")
+            .tempdir_in(dest_root.parent().ok_or_else(|| {
+                anyhow::anyhow!("extraction destination has no parent directory")
+            })?)?;
 
     struct FileEntry {
         path: PathBuf,
-        data: Vec<u8>,
+        source_path: PathBuf,
         executable: bool,
     }
     let mut files_map = std::collections::HashMap::new();
     let mut directories = Vec::new();
+    let mut entry_count = 0usize;
+    let mut total_unpacked_bytes = 0u64;
     let archive_read_started = std::time::Instant::now();
 
     for entry in archive.entries()? {
         let mut entry = entry?;
+        entry_count = entry_count
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("tar archive entry count overflow"))?;
+        if entry_count > MAX_ARCHIVE_ENTRIES {
+            bail!("tar archive exceeds the {MAX_ARCHIVE_ENTRIES} entry limit");
+        }
+        let entry_size = entry.size();
+        if entry_size > MAX_ENTRY_BYTES {
+            bail!("tar entry exceeds the {MAX_ENTRY_BYTES} byte limit");
+        }
+        total_unpacked_bytes = total_unpacked_bytes
+            .checked_add(entry_size)
+            .ok_or_else(|| anyhow::anyhow!("tar archive uncompressed size overflow"))?;
+        if total_unpacked_bytes > MAX_TOTAL_FILE_BYTES {
+            bail!("tar archive exceeds the {MAX_TOTAL_FILE_BYTES} byte uncompressed size limit");
+        }
         let rel_path = sanitize_archive_path(entry.path()?.as_ref())?;
         let entry_type = entry.header().entry_type();
         if matches!(entry_type.as_byte(), b'g' | b'x') {
@@ -209,7 +257,7 @@ fn extract_tarball_to_cas_and_link_inner<R: Read>(
         } else {
             rel_path
         };
-        let target = dest_root.join(mapped_rel_path);
+        let target = dest_root.join(&mapped_rel_path);
 
         if !target.starts_with(&dest_root) {
             bail!("tar entry escapes destination: {}", target.display());
@@ -231,17 +279,33 @@ fn extract_tarball_to_cas_and_link_inner<R: Read>(
         let mode = entry.header().mode().unwrap_or(0o644);
         let executable = mode & 0o111 != 0;
 
-        let mut data = Vec::with_capacity(entry.size() as usize);
-        entry.read_to_end(&mut data)?;
+        // Use a unique spool path even when an archive repeats a package
+        // path; the final entry for that package path wins, matching tar
+        // extraction semantics without overwriting an open staged source.
+        // (Dùng path spool riêng khi archive lặp path; entry cuối cùng sẽ
+        // thắng như cách extract tar, không ghi đè nguồn đang chờ import.)
+        let source_path = spool_root.path().join(format!("entry-{entry_count:05}"));
+        let mut output = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&source_path)?;
+        let copied = std::io::copy(&mut entry, &mut output)?;
+        if copied != entry_size {
+            bail!("tar entry '{}' is truncated", target.display());
+        }
+        use std::io::Write;
+        output.flush()?;
 
-        files_map.insert(
+        if let Some(previous) = files_map.insert(
             target.clone(),
             FileEntry {
                 path: target,
-                data,
+                source_path,
                 executable,
             },
-        );
+        ) {
+            std::fs::remove_file(previous.source_path)?;
+        }
     }
 
     let files: Vec<_> = files_map.into_values().collect();
@@ -271,15 +335,15 @@ fn extract_tarball_to_cas_and_link_inner<R: Read>(
     let has_claim = claim.is_some();
     let cas_import_started = std::time::Instant::now();
     let import_result = match durability {
-        ExtractionDurability::Durable => store.import_bytes_with_exec_batch(
+        ExtractionDurability::Durable => store.import_files_with_exec_batch(
             files
                 .iter()
-                .map(|file| (file.data.as_slice(), file.executable)),
+                .map(|file| (file.source_path.as_path(), file.executable)),
         ),
-        ExtractionDurability::Rebuildable => store.import_rebuildable_bytes_with_exec_batch(
+        ExtractionDurability::Rebuildable => store.import_rebuildable_files_with_exec_batch(
             files
                 .iter()
-                .map(|file| (file.data.as_slice(), file.executable)),
+                .map(|file| (file.source_path.as_path(), file.executable)),
         ),
     };
     let hashes = import_result.map_err(|e| anyhow::anyhow!("failed to import to CAS: {}", e))?;

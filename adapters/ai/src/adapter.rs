@@ -201,7 +201,6 @@ impl AuditProvider for AiAdapter {
                         Box::pin(async move { model_artifact_report(&dir) })
                     }),
                 });
-                break;
             }
         }
 

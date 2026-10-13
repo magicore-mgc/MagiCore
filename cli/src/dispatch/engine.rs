@@ -225,10 +225,11 @@ async fn run_recursive(command: Commands, core: Option<&str>, filter: Option<&st
     let name = command_name(&command);
     let mut failed = 0usize;
     let original_cwd = cwd;
-    let is_build_cmd = matches!(command, Commands::Build { .. });
-    let mut ws_composite_hashes: std::collections::BTreeMap<String, String> =
-        std::collections::BTreeMap::new();
-
+    // Computation hashes currently omit compiler-output manifests, so a
+    // matching hash cannot safely skip build execution. Keep the workspace
+    // order deterministic and execute every requested build.
+    // (Hash hiện chưa có manifest output compiler nên không thể bỏ build khi
+    // hash trùng. Giữ thứ tự workspace ổn định và chạy mọi build được yêu cầu.)
     for ws in &workspaces {
         if let Some(command_core) = explicit_dependency_core(&command) {
             validate_explicit_dependency_core(ws, command_core, core)?;
@@ -238,27 +239,6 @@ async fn run_recursive(command: Commands, core: Option<&str>, filter: Option<&st
         // (Cờ chỉ chọn workspace chưa claim, không được ghi đè owner đã lưu.)
         let ws_core = resolve_recursive_workspace_core(ws, core)?;
         let ws_core_str = ws_core.as_deref();
-
-        let ws_name = workspace_package_name(ws).unwrap_or_else(|| {
-            ws.file_name()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_default()
-        });
-
-        // let-chain edition 2024 — gộp điều kiện theo clippy 1.98.
-        if is_build_cmd
-            && let Ok((should_rebuild, _src_hash, comp_hash)) =
-                mgc_workspace::check_package_build_freshness(ws, &ws_composite_hashes)
-            && !should_rebuild
-        {
-            mgc_ui::info(&format!(
-                "⚡ [cached] {} (core: {}) — source & deps unchanged",
-                ws.display(),
-                ws_core_str.unwrap_or("auto")
-            ));
-            ws_composite_hashes.insert(ws_name.clone(), comp_hash);
-            continue;
-        }
 
         mgc_ui::info(&format!(
             "== {name} → {} (core: {})",
@@ -273,12 +253,6 @@ async fn run_recursive(command: Commands, core: Option<&str>, filter: Option<&st
         if let Err(e) = result {
             failed += 1;
             mgc_ui::error(&format!("{name} failed in '{}': {e:#}", ws.display()));
-        } else if is_build_cmd
-            && let Ok(src_hash) = mgc_workspace::compute_package_source_hash(ws)
-            && let Ok(cache) =
-                mgc_workspace::save_package_build_cache(ws, src_hash, ws_composite_hashes.clone())
-        {
-            ws_composite_hashes.insert(ws_name, cache.composite_hash);
         }
     }
     std::env::set_current_dir(&original_cwd)?;
@@ -463,6 +437,7 @@ fn command_name(command: &Commands) -> &'static str {
         Commands::Start => "start",
         Commands::Exec { .. } => "exec",
         Commands::Dlx { .. } => "dlx",
+        Commands::Tool { .. } => "tool",
         Commands::Cache { .. } => "cache",
         Commands::Install { .. } => "install",
         Commands::Add { .. } => "add",

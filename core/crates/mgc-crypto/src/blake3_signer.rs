@@ -140,14 +140,25 @@ mod hex {
             return Err("odd length".to_string());
         }
 
-        // O3: Preallocate vec
+        // Decode ASCII byte pairs so UTF-8 boundaries cannot panic.
+        // Đọc từng cặp byte ASCII để UTF-8 không thể gây panic khi cắt chuỗi.
+        let bytes = s.as_bytes();
         let mut result = Vec::with_capacity(s.len() / 2);
-        for i in (0..s.len()).step_by(2) {
-            let byte =
-                u8::from_str_radix(&s[i..i + 2], 16).map_err(|e| format!("invalid hex: {}", e))?;
-            result.push(byte);
+        for index in (0..bytes.len()).step_by(2) {
+            let high = decode_hex_nibble(bytes[index])?;
+            let low = decode_hex_nibble(bytes[index + 1])?;
+            result.push((high << 4) | low);
         }
         Ok(result)
+    }
+
+    fn decode_hex_nibble(byte: u8) -> Result<u8, String> {
+        match byte {
+            b'0'..=b'9' => Ok(byte - b'0'),
+            b'a'..=b'f' => Ok(byte - b'a' + 10),
+            b'A'..=b'F' => Ok(byte - b'A' + 10),
+            _ => Err("invalid hex: non-hexadecimal byte".to_string()),
+        }
     }
 }
 

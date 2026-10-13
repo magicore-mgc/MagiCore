@@ -131,6 +131,50 @@ fn save_auth_token_refuses_symlink_and_sets_strict_perms() {
 }
 
 #[test]
+fn saved_auth_token_is_scoped_to_registry_path_prefix() {
+    let dir = tempfile::tempdir().unwrap();
+    let npmrc = dir.path().join(".npmrc");
+    NpmRc::save_auth_token_for_registry_url(
+        &npmrc,
+        "https://registry.example/npm/team",
+        "scoped-token",
+    )
+    .unwrap();
+
+    let raw = std::fs::read_to_string(&npmrc).unwrap();
+    assert!(raw.contains("//registry.example/npm/team/:_authToken=scoped-token"));
+    let parsed = NpmRc::parse(&raw).unwrap();
+    assert_eq!(
+        parsed
+            .token_for_url_checked("https://registry.example/npm/team/package")
+            .unwrap()
+            .map(String::as_str),
+        Some("scoped-token")
+    );
+    assert_eq!(
+        parsed
+            .token_for_url_checked("https://registry.example/npm/other/package")
+            .unwrap(),
+        None
+    );
+}
+
+#[test]
+fn saved_auth_token_rejects_newline_injection() {
+    let dir = tempfile::tempdir().unwrap();
+    let npmrc = dir.path().join(".npmrc");
+    let error = NpmRc::save_auth_token_for_registry_url(
+        &npmrc,
+        "https://registry.example/npm",
+        "token\nregistry=https://attacker.invalid/",
+    )
+    .unwrap_err();
+
+    assert!(error.to_string().contains("invalid registry auth token"));
+    assert!(!npmrc.exists());
+}
+
+#[test]
 fn project_load_refuses_symlinked_npmrc() {
     let dir = tempfile::tempdir().unwrap();
     let external = tempfile::tempdir().unwrap();

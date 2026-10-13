@@ -428,6 +428,7 @@ impl NpmDependencyProvider {
             .or_else(|| name.strip_prefix("@typescript/typescript-"))
             .or_else(|| name.strip_prefix("@rollup/rollup-"))
             .or_else(|| name.strip_prefix("@tailwindcss/oxide-"))
+            .or_else(|| name.strip_prefix("@openai/codex-"))
             .or_else(|| name.strip_prefix("lightningcss-"))
             .or_else(|| name.strip_prefix("@parcel/watcher-"))?;
 

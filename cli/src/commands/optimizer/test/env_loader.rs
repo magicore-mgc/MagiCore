@@ -36,6 +36,28 @@ KEY4=value with spaces
 }
 
 #[test]
+fn malformed_quote_returns_line_error_without_exposing_value() {
+    let temp = TempDir::new().unwrap();
+    let env_file = temp.path().join("malformed.env");
+    fs::write(&env_file, "SAFE=value\nAUDIT_VALUE=\"\n").unwrap();
+
+    let error = parse_env_file(&env_file).unwrap_err().to_string();
+    assert!(error.contains("line 2"));
+    assert!(!error.contains("AUDIT_VALUE"));
+    assert!(!error.contains('"'));
+}
+
+#[test]
+fn trailing_quote_without_an_opening_quote_is_preserved() {
+    let temp = TempDir::new().unwrap();
+    let env_file = temp.path().join("literal-quote.env");
+    fs::write(&env_file, "LITERAL=value\"\n").unwrap();
+
+    let vars = parse_env_file(&env_file).unwrap();
+    assert_eq!(vars.get("LITERAL"), Some(&"value\"".to_string()));
+}
+
+#[test]
 fn test_load_optimizer_env_no_dir() {
     let temp = TempDir::new().unwrap();
     let vars = load_optimizer_env(temp.path(), &DetectedRuntime::Bun).unwrap();

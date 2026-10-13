@@ -4,6 +4,18 @@
 use super::*;
 
 #[test]
+fn lifecycle_scripts_are_opt_in_for_dlx_installs() {
+    assert_eq!(
+        dlx_install_args(false),
+        ["install", "--core", "web", "--ignore-scripts"]
+    );
+    assert_eq!(
+        dlx_install_args(true),
+        ["install", "--core", "web", "--allow-scripts"]
+    );
+}
+
+#[test]
 fn accepts_registry_names_versions_ranges_and_tags() {
     for (request, expected) in [
         ("pkg", ("pkg", "latest")),

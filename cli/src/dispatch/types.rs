@@ -103,7 +103,11 @@ pub enum CommonCommand {
     Dlx {
         package: String,
         bin: Option<String>,
+        allow_scripts: bool,
         args: Vec<String>,
+    },
+    Tool {
+        cmd: crate::commands::definitions::ToolCmd,
     },
     Cache {
         action: String,
@@ -190,7 +194,7 @@ pub enum CommonCommand {
     Login {
         registry: Option<String>,
         username: Option<String>,
-        password: Option<String>,
+        password_stdin: bool,
         local: bool,
     },
     Registry {

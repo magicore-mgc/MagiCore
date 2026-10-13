@@ -52,6 +52,7 @@ pub mod store;
 pub mod telemetry;
 pub mod template;
 pub mod test;
+pub mod tool;
 pub mod trust;
 pub mod web_registry_config;
 pub mod workspace;

@@ -26,6 +26,25 @@ MagiCore (<code>mgc</code>) is a Rust CLI and workspace for scaffolding projects
 
 Use <code>mgc capabilities</code> to inspect the capability manifest and <code>mgc &lt;command&gt; --help</code> for options in this build.
 
+### Project packages and persistent CLI tools
+
+In the current development tree, <code>mgc add &lt;package&gt;</code> adds a dependency to the detected project. <code>mgc add --global</code> is rejected; use an explicit command for each install scope:
+
+~~~bash
+# Temporary npm executable; the temporary project is cleaned after it exits.
+mgc dlx opencode-ai@1.18.35 -- --version
+
+# Persistent user-level npm CLI; use --bin when the package exposes several commands.
+mgc tool install npm:@openai/codex@0.162.0 --bin codex
+mgc tool list
+mgc tool update codex --version latest
+mgc tool remove codex
+~~~
+
+Persistent tools live in <code>$MGC_DATA_DIR/tools</code>, with command shims in <code>$MGC_DATA_DIR/bin</code>; the default data directory is <code>~/MagiCore-SystemData</code>. MagiCore adds the shim directory to the current user's shell PATH, and a new terminal is needed to pick up the change. The persistent installer currently supports explicit <code>npm:</code> sources through a build that includes the Web core. It does not claim global installation for Cargo, PyPI, Go, NuGet, or other ecosystems. Package lifecycle scripts stay disabled unless <code>--allow-scripts</code> is passed; enabled scripts run with the current user's permissions. JavaScript CLIs also need a Node runtime available on PATH.
+
+This development-tree feature has local macOS registry-fixture E2E coverage. It has not yet passed exact-candidate Linux and Windows CI or public release installation tests.
+
 ## Core support and CI evidence
 
 The available three-OS GitHub lifecycle checks passed for committed base SHA `fd94f35343b08535c32a6f72e5d48cc7a6a543bf`. They do not include the uncommitted RC10 working-tree changes in this checkout; those changes have no exact-SHA remote run yet. This is not a claim that every framework in a core family has a complete lifecycle.

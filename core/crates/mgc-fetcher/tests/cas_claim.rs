@@ -7,9 +7,11 @@
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use mgc_fetcher::extract::{
-    extract_tarball_to_cas_and_link, extract_tarball_to_rebuildable_cas_and_link,
+    extract_tarball_from_reader, extract_tarball_to_cas_and_link,
+    extract_tarball_to_rebuildable_cas_and_link,
 };
 use mgc_store::{ContentStore, Database};
+use std::io::{Read, Write};
 use tar::{Builder, Header};
 
 fn write_test_tarball(path: &std::path::Path, entries: &[(&str, &[u8])]) {
@@ -26,6 +28,26 @@ fn write_test_tarball(path: &std::path::Path, entries: &[(&str, &[u8])]) {
     builder.finish().unwrap();
     let encoder = builder.into_inner().unwrap();
     encoder.finish().unwrap();
+}
+
+fn write_large_test_tarball(path: &std::path::Path, entry_size: u64) {
+    let file = std::fs::File::create(path).unwrap();
+    let encoder = GzEncoder::new(file, Compression::default());
+    let mut builder = Builder::new(encoder);
+    let mut header = Header::new_gnu();
+    header.set_path("package/vendor/native.bin").unwrap();
+    header.set_size(entry_size);
+    header.set_mode(0o755);
+    header.set_cksum();
+    builder
+        .append_data(
+            &mut header,
+            "package/vendor/native.bin",
+            std::io::repeat(0).take(entry_size),
+        )
+        .unwrap();
+    builder.finish().unwrap();
+    builder.into_inner().unwrap().finish().unwrap();
 }
 
 // Canonicalize the temp dir (P0-A contract, same convention as the
@@ -167,6 +189,34 @@ fn rebuildable_extraction_imports_and_claims_package_files() {
 }
 
 #[test]
+fn cas_extraction_keeps_the_last_duplicate_archive_path() {
+    let temp = CanonicalTemp::new();
+    let tarball = temp.path().join("duplicate-path.tgz");
+    write_test_tarball(
+        &tarball,
+        &[
+            ("package/index.js", b"first entry"),
+            ("package/index.js", b"last entry"),
+        ],
+    );
+
+    let store = ContentStore::new(temp.path().join("store/cas")).unwrap();
+    let dest = temp.path().join("duplicate-out");
+    extract_tarball_to_rebuildable_cas_and_link(
+        std::fs::File::open(&tarball).unwrap(),
+        &dest,
+        &store,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(
+        std::fs::read(dest.join("package/index.js")).unwrap(),
+        b"last entry"
+    );
+}
+
+#[test]
 fn cas_claim_is_idempotent_per_project() {
     let temp = CanonicalTemp::new();
     let root = temp.path().join("store");
@@ -189,4 +239,57 @@ fn cas_claim_is_idempotent_per_project() {
 
     let claims = db.list_cas_live_refs().unwrap();
     assert_eq!(claims.len(), 1, "1 unique blob, 1 claim despite 2 extracts");
+}
+
+fn oversized_entry_archive() -> Vec<u8> {
+    let mut header = Header::new_gnu();
+    header.set_path("package/oversized.bin").unwrap();
+    header.set_mode(0o644);
+    header.set_size(256 * 1024 * 1024 + 1);
+    header.set_cksum();
+    let raw_tar = header.as_bytes().to_vec();
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(&raw_tar).unwrap();
+    encoder.finish().unwrap()
+}
+
+#[test]
+fn extraction_rejects_oversized_declared_entry_before_reading_or_materializing() {
+    let temp = CanonicalTemp::new();
+    let archive = oversized_entry_archive();
+    let plain_dest = temp.path().join("plain-out");
+    let plain_error = extract_tarball_from_reader(archive.as_slice(), &plain_dest).unwrap_err();
+    assert!(plain_error.to_string().contains("byte limit"));
+    assert!(!plain_dest.join("package/oversized.bin").exists());
+
+    let store = ContentStore::new(temp.path().join("store/cas")).unwrap();
+    let cas_dest = temp.path().join("cas-out");
+    let cas_error =
+        extract_tarball_to_cas_and_link(archive.as_slice(), &cas_dest, &store, None).unwrap_err();
+    assert!(cas_error.to_string().contains("byte limit"));
+    assert!(!cas_dest.join("package/oversized.bin").exists());
+}
+
+#[test]
+fn cas_extraction_streams_entries_larger_than_128_mib() {
+    let temp = CanonicalTemp::new();
+    let entry_size = 128 * 1024 * 1024 + 1;
+    let tarball = temp.path().join("large-package.tgz");
+    write_large_test_tarball(&tarball, entry_size);
+
+    let store = ContentStore::new(temp.path().join("store/cas")).unwrap();
+    let dest = temp.path().join("large-out");
+    let file = std::fs::File::open(&tarball).unwrap();
+    extract_tarball_to_rebuildable_cas_and_link(file, &dest, &store, None).unwrap();
+
+    let extracted = dest.join("package/vendor/native.bin");
+    assert_eq!(std::fs::metadata(&extracted).unwrap().len(), entry_size);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_ne!(
+            std::fs::metadata(extracted).unwrap().permissions().mode() & 0o111,
+            0
+        );
+    }
 }

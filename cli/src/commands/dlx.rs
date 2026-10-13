@@ -16,7 +16,12 @@ const DLX_PROJECT_VERSION: &str = "1.0.0";
 /// never grants permission to skip it.
 /// Cài qua engine native mỗi lượt; tái dùng artifact đã kiểm trong store chung,
 /// không dùng sự tồn tại của .bin làm chứng cứ nguồn gốc.
-pub async fn run(package: String, selected_bin: Option<String>, args: Vec<String>) -> Result<()> {
+pub async fn run(
+    package: String,
+    selected_bin: Option<String>,
+    allow_scripts: bool,
+    args: Vec<String>,
+) -> Result<()> {
     let (pkg_name, version_tag) = parse_request(&package)?;
     if selected_bin
         .as_deref()
@@ -60,8 +65,13 @@ pub async fn run(package: String, selected_bin: Option<String>, args: Vec<String
     }
 
     mgc_ui::info(&format!("dlx: installing {pkg_name}@{version_tag}"));
+    if allow_scripts {
+        mgc_ui::warning(
+            "dlx lifecycle scripts are enabled and run with the current user's permissions",
+        );
+    }
     let mgc_bin = std::env::current_exe()?;
-    let install_args = ["install", "--core", "web", "--ignore-scripts"].map(str::to_string);
+    let install_args = dlx_install_args(allow_scripts);
     let install_opts = mgc_exec::prelude::ExecOptions {
         cwd: Some(project_root.to_path_buf()),
         // The self-child needs the configured data/cache/registry environment.
@@ -132,9 +142,22 @@ pub async fn run(package: String, selected_bin: Option<String>, args: Vec<String
     Ok(())
 }
 
+pub(super) fn dlx_install_args(allow_scripts: bool) -> Vec<String> {
+    let mut args = ["install", "--core", "web"]
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    args.push(if allow_scripts {
+        "--allow-scripts".to_string()
+    } else {
+        "--ignore-scripts".to_string()
+    });
+    args
+}
+
 // Preserve caller install policy without importing framework or compat execution settings.
 // Giữ policy cài đặt của caller; project tạm vẫn thuộc web và không tự mở compat.
-fn dlx_project_config(cwd: &Path) -> Result<mgc_config::project::ProjectConfig> {
+pub(super) fn dlx_project_config(cwd: &Path) -> Result<mgc_config::project::ProjectConfig> {
     let mut config = mgc_config::project::ProjectConfig::new(DLX_PROJECT_NAME, "web");
     config.version = DLX_PROJECT_VERSION.to_string();
     if let Some(caller) = mgc_config::project::ProjectConfig::load(cwd)
@@ -150,7 +173,7 @@ fn dlx_project_config(cwd: &Path) -> Result<mgc_config::project::ProjectConfig> 
 
 // Read only the installed requested package's executable declarations.
 // Đọc bin của đúng package sau native install, không quét bin dependency.
-fn requested_package_bins(root: &Path, package: &str) -> Result<Vec<(String, PathBuf)>> {
+pub(super) fn requested_package_bins(root: &Path, package: &str) -> Result<Vec<(String, PathBuf)>> {
     let text = mgc_config::project::read_regular_project_text(
         &root.join("package.json"),
         "installed package manifest",
@@ -181,7 +204,7 @@ fn requested_package_bins(root: &Path, package: &str) -> Result<Vec<(String, Pat
 }
 // Choose a declared bin deterministically; ambiguous packages need explicit selection.
 // Chọn bin tường minh hoặc duy nhất, không đoán giữa các target khác nhau.
-fn valid_bin_name(name: &str) -> bool {
+pub(super) fn valid_bin_name(name: &str) -> bool {
     !name.is_empty()
         && name != "."
         && name != ".."
@@ -190,7 +213,7 @@ fn valid_bin_name(name: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
-fn select_bin_name(
+pub(super) fn select_bin_name(
     entries: &[(String, PathBuf)],
     package: &str,
     selected: Option<&str>,
@@ -223,7 +246,7 @@ fn select_bin_name(
     Err(crate::error::dlx_ambiguous_bin())
 }
 
-fn parse_request(request: &str) -> Result<(&str, &str)> {
+pub(super) fn parse_request(request: &str) -> Result<(&str, &str)> {
     if request.is_empty() || request.len() > MAX_DLX_REQUEST_BYTES {
         return Err(crate::error::dlx_invalid_request(
             "empty or oversized request",
