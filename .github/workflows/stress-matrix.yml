@@ -417,6 +417,10 @@ jobs:
               environment.write(f"MGC_STRESS_CLI_SNAPSHOT={destination}\n")
           PYTHON
 
+      - name: Verify native dependency firewall on every runner OS
+        run: cargo test --locked -p mgc --test dep_gate_canary -- --test-threads=1
+        timeout-minutes: 15
+
       - name: Clear native web lifecycle evidence sidecar
         run: python -c "from pathlib import Path; import os; Path(os.environ['RUNNER_TEMP'], 'mgc-framework-lifecycle.jsonl').unlink(missing_ok=True)"
 
