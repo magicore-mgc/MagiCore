@@ -188,6 +188,22 @@ fn detect_react_native_via_package_json_dep() {
 }
 
 #[test]
+fn react_native_manifest_identity_uses_canonical_gate_id() {
+    let dir = tmp("rn-manifest-identity");
+    std::fs::write(
+        dir.join("package.json"),
+        r#"{"name":"rn","dependencies":{"react-native":"0.74.0"}}"#,
+    )
+    .unwrap();
+
+    let identity = adapter_for(&dir).unwrap().manifest_identity().unwrap();
+    assert_eq!(identity.core, "app");
+    assert_eq!(identity.language, "rn");
+    assert_eq!(identity.format, "package.json");
+    assert_eq!(identity.relpath, "package.json");
+}
+
+#[test]
 fn detect_objc_via_bridge_header_and_impl_pair() {
     let dir = tmp("objc");
     std::fs::write(dir.join("ObjcBridge.h"), "@interface MGShared\n@end\n").unwrap();

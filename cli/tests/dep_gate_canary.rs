@@ -576,6 +576,14 @@ fn rn_install_hits_unsupported_rule_without_spawning() {
         "the failure must come from the app/rn rule (names the ecosystem):\n{output}"
     );
     assert!(
+        output.contains("unsupported for dependency lifecycle"),
+        "the native ownership rule must reject React Native explicitly:\n{output}"
+    );
+    assert!(
+        !output.contains("identity mismatch"),
+        "the adapter identity must reach the ownership rule:\n{output}"
+    );
+    assert!(
         marker.is_empty(),
         "NO toolchain canary may fire for React Native:\n{marker}"
     );
@@ -623,6 +631,14 @@ fn rn_add_hits_unsupported_rule_without_spawning() {
     assert!(
         output.contains("rn"),
         "the failure must come from the app/rn rule (names the ecosystem):\n{output}"
+    );
+    assert!(
+        output.contains("unsupported for dependency lifecycle"),
+        "the native ownership rule must reject React Native explicitly:\n{output}"
+    );
+    assert!(
+        !output.contains("identity mismatch"),
+        "the adapter identity must reach the ownership rule:\n{output}"
     );
     assert!(
         marker.is_empty(),

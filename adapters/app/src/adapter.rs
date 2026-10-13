@@ -255,7 +255,7 @@ impl PackageAdapter for AppAdapter {
             AppLanguage::Flutter => ("flutter", "pubspec.yaml", "pubspec.yaml"),
             AppLanguage::Swift => ("swift", "Package.swift", "Package.swift"),
             AppLanguage::Kotlin => ("kotlin", "build.gradle", "build.gradle"),
-            AppLanguage::ReactNative => ("react-native", "package.json", "package.json"),
+            AppLanguage::ReactNative => ("rn", "package.json", "package.json"),
             AppLanguage::ObjC => ("objc", "Podfile", "Podfile"),
             AppLanguage::Multi => ("multi", "multi", "multi"),
             AppLanguage::Maui => {
