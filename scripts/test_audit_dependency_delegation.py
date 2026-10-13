@@ -2411,6 +2411,16 @@ class ConstArrayExclusion(unittest.TestCase):
         )
         self.assertEqual(findings, [])
 
+    def test_static_core_marker_table_is_not_a_process_descriptor(self):
+        findings = scan_snippet(
+            "core/crates/mgc-config/src/project.rs",
+            "const NODE_CORE_MARKERS: &[(&[&str], &str)] = &[\n"
+            '    (&["react-native", "expo"], "app"),\n'
+            '    (&["next", "react"], "web"),\n'
+            "];\n",
+        )
+        self.assertEqual(findings, [])
+
     def test_spawn_next_to_deny_list_still_flagged(self):
         findings = scan_snippet(
             "adapters/lib/src/install/mod.rs",

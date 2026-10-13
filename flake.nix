@@ -54,8 +54,13 @@
           src = self;
           cargoLock.lockFile = ./Cargo.lock;
           buildAndTestSubdir = "cli";
-          nativeBuildInputs = with pkgs; [ go pkg-config ];
+          nativeBuildInputs = with pkgs; [ go pkg-config stdenv.cc ];
           buildInputs = with pkgs; [ openssl zlib ];
+          # esbuild-rs builds its vendored Go bridge as a C archive. Make cgo
+          # and its compiler explicit in the sandbox, and serialize that Go
+          # compile to avoid competing with Cargo for memory.
+          CGO_ENABLED = "1";
+          GOFLAGS = "-p=1";
           # Workspace tests run in the regular CI matrix with their toolchains.
           doCheck = false;
 

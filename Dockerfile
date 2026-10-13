@@ -21,6 +21,7 @@ RUN apt-get update -qq && apt-get install -y -qq \
 COPY Cargo.toml Cargo.lock ./
 COPY core/ core/
 COPY adapters/ adapters/
+COPY assets/ assets/
 COPY cli/ cli/
 COPY tools/ tools/
 COPY tests/e2e/ tests/e2e/
