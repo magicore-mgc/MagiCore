@@ -7,7 +7,7 @@ This crate provides the unified `mgc.lock` format, integrity metadata, and impor
 1. **Serialization and deserialization:** reads and writes TOML and JSON representations of `mgc.lock`.
 2. **Checksum integrity:** generates and verifies `mgc.lock.sha256`.
 3. **Keyed BLAKE3 signatures:** can authenticate a lockfile when `MAGICORE_LOCKFILE_KEY` is configured.
-4. **Cross-package-manager import:** supports `package-lock.json` (npm v2/v3), `pnpm-lock.yaml` (pnpm v6/v9), `yarn.lock` (Yarn Classic v1), and `bun.lock` (Bun v1 JSON).
+4. **Cross-package-manager import:** imports `package-lock.json` (npm v2/v3), pnpm lockfiles with the `packages` map (pnpm 12.12.0's v9.0 output tested), Yarn Classic v1, and Bun text lockfiles (lockfile versions 1 and 2 tested). Bun's binary `bun.lockb` and Yarn Berry remain unsupported. Imports preserve resolved pins and integrity where the source format provides them; Bun dependency edges retain names because its lockfile stores ranges there.
 
 ## Usage
 

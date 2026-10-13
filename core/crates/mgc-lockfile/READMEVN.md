@@ -7,7 +7,7 @@ Crate này cung cấp định dạng `mgc.lock` thống nhất, metadata kiểm 
 1. **Serialize và deserialize:** đọc, ghi biểu diễn TOML và JSON của `mgc.lock`.
 2. **Kiểm tra checksum:** tạo và xác minh `mgc.lock.sha256`.
 3. **Chữ ký BLAKE3 có khóa:** xác thực lockfile khi cấu hình `MAGICORE_LOCKFILE_KEY`.
-4. **Import giữa các package manager:** hỗ trợ `package-lock.json` (npm v2/v3), `pnpm-lock.yaml` (pnpm v6/v9), `yarn.lock` (Yarn Classic v1) và `bun.lock` (Bun v1 JSON).
+4. **Import giữa các package manager:** nhập `package-lock.json` (npm v2/v3), pnpm lockfile có map `packages` (đã kiểm thử đầu ra v9.0 của pnpm 12.12.0), Yarn Classic v1 và Bun lockfile dạng text (đã kiểm thử lockfile version 1 và 2). Chưa hỗ trợ Bun `bun.lockb` dạng nhị phân và Yarn Berry. Import giữ pin đã resolve cùng integrity khi định dạng nguồn có dữ liệu đó; cạnh dependency của Bun chỉ giữ tên vì lockfile lưu range tại vị trí này.
 
 ## Cách dùng
 

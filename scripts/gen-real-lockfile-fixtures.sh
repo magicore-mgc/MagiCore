@@ -13,33 +13,77 @@
 # test sẽ bắt được sự trôi của writer.
 #
 # Usage: scripts/gen-real-lockfile-fixtures.sh <output-dir>
-# Requires: bun 1.3.14, deno 2.9.3 (pinned below — do not bump silently)
+# Requires: bun 1.4.3, pnpm 12.12.0, deno 2.9.7 (pinned — do not bump silently)
 set -euo pipefail
 
-BUN_VERSION="1.3.14"   # pinned — ghim
-DENO_VERSION="2.9.3"   # pinned — ghim
+BUN_VERSION="1.4.3"    # pinned — ghim
+PNPM_VERSION="12.12.0" # pinned — ghim
+DENO_VERSION="2.9.7"   # pinned — ghim
 OUT="${1:?usage: gen-real-lockfile-fixtures.sh <output-dir>}"
 
-mkdir -p "$OUT"
+check_version() {
+  local tool="$1" expected="$2" actual
+  command -v "$tool" >/dev/null 2>&1 || {
+    echo "required tool not found: $tool $expected" >&2
+    exit 1
+  }
+  if [[ "$tool" == "deno" ]]; then
+    actual="$(deno --version | head -n 1 | awk '{print $2}')"
+  else
+    actual="$("$tool" --version | head -n 1 | awk '{print $1}')"
+  fi
+  [[ "$actual" == "$expected" ]] || {
+    echo "$tool version mismatch: expected $expected, got $actual" >&2
+    exit 1
+  }
+}
 
-# --- bun.lock: real `bun install` output (JSONC writer, v1 schema) ---
-WORK="$(mktemp -d)"
+check_version bun "$BUN_VERSION"
+check_version pnpm "$PNPM_VERSION"
+check_version deno "$DENO_VERSION"
+
+mkdir -p "$OUT"
+TMP_ROOT="$(mktemp -d)"
+trap 'rm -rf "$TMP_ROOT"' EXIT
+mkdir -p "$TMP_ROOT/home" "$TMP_ROOT/bun-cache" "$TMP_ROOT/pnpm-store" "$TMP_ROOT/deno-cache"
+
+# --- bun.lock: real `bun install` output (JSONC writer, v2 schema) ---
+WORK="$TMP_ROOT/bun"
+mkdir -p "$WORK"
 cat > "$WORK/package.json" <<'JSON'
 {
   "name": "mgc-fixture",
   "dependencies": {
-    "ms": "^2.1.3"
+    "debug": "4.4.3"
   },
   "devDependencies": {
-    "left-pad": "^1.3.0"
+    "left-pad": "1.3.0"
   }
 }
 JSON
-(cd "$WORK" && bun install --silent)
+(cd "$WORK" && HOME="$TMP_ROOT/home" BUN_INSTALL_CACHE_DIR="$TMP_ROOT/bun-cache" bun install --lockfile-only --ignore-scripts --silent)
 cp "$WORK/bun.lock" "$OUT/bun.lock"
 
+# --- pnpm-lock.yaml: real `pnpm install` output (lockfileVersion 9.0) ---
+WORK="$TMP_ROOT/pnpm"
+mkdir -p "$WORK"
+cat > "$WORK/package.json" <<'JSON'
+{
+  "name": "mgc-fixture",
+  "dependencies": {
+    "ms": "2.1.3"
+  },
+  "devDependencies": {
+    "left-pad": "1.3.0"
+  }
+}
+JSON
+(cd "$WORK" && HOME="$TMP_ROOT/home" PNPM_STORE_DIR="$TMP_ROOT/pnpm-store" pnpm install --lockfile-only --ignore-scripts --silent)
+cp "$WORK/pnpm-lock.yaml" "$OUT/pnpm-lock.yaml.fixture"
+
 # --- deno.lock: real `deno cache` output (v5 schema, jsr + npm pins) ---
-WORK="$(mktemp -d)"
+WORK="$TMP_ROOT/deno"
+mkdir -p "$WORK"
 cat > "$WORK/deno.json" <<'JSON'
 {
   "imports": {
@@ -53,7 +97,7 @@ import lodash from "lodash";
 import { concat } from "@std/bytes";
 console.log(lodash.VERSION, concat(new Uint8Array([1]), new Uint8Array([2])).length);
 TS
-(cd "$WORK" && deno cache main.ts)
+(cd "$WORK" && HOME="$TMP_ROOT/home" DENO_DIR="$TMP_ROOT/deno-cache" deno cache main.ts)
 cp "$WORK/deno.lock" "$OUT/deno.lock"
 
-echo "fixtures written to $OUT (bun $BUN_VERSION, deno $DENO_VERSION)"
+echo "fixtures written to $OUT (bun $BUN_VERSION, pnpm $PNPM_VERSION, deno $DENO_VERSION)"

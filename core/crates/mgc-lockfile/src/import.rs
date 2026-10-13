@@ -700,8 +700,13 @@ fn parse_bun(content: &str, skipped: &mut Vec<SkippedRecord>) -> Result<Vec<Pack
     let json: serde_json::Value = serde_json::from_str(&cleaned)
         .map_err(|e| anyhow::anyhow!("bun.lock is not valid JSONC: {e}"))?;
 
-    if json.get("__metadata").is_some() {
-        bail!("bun lockfileVersion 2+ is not supported yet — refusing to guess");
+    if let Some(version) = json.get("lockfileVersion") {
+        let version = version
+            .as_u64()
+            .ok_or_else(|| anyhow::anyhow!("bun.lock has a non-integer 'lockfileVersion'"))?;
+        if version > 2 {
+            bail!("bun lockfileVersion {version} is not supported yet — refusing to guess");
+        }
     }
 
     let entries = json
@@ -747,18 +752,22 @@ fn parse_bun(content: &str, skipped: &mut Vec<SkippedRecord>) -> Result<Vec<Pack
                 } else if text.contains("sha512-") || text.contains("sha256-") {
                     integrity = text.to_string();
                 }
-            } else if let Some(deps) = item.as_object() {
-                // Dependency map element: {"left-pad": "left-pad@^4.0.0"}.
-                // bun stores RANGES; mgc.lock pins — keep the dep NAME
-                // as the edge; the RANGE is a recorded loss (P0 finding
-                // #8: best-effort, the source lockfile keeps ranges).
-                // Phần tử map dependency: bun lưu RANGE; mgc.lock lưu
-                // pin — giữ TÊN dep làm cạnh; RANGE là mất mát được ghi
-                // nhận (best-effort, lockfile nguồn giữ range).
-                for dep_name in deps.keys() {
-                    dependencies.push(dep_name.clone());
-                }
             }
+        }
+        // Bun's third package-array element is INFO, whose top-level keys
+        // also include peerDependencies, optionalPeers, os, cpu and bin.
+        // Only the nested production `dependencies` map represents the
+        // dependency edges imported by the pnpm/npm paths. Bun records
+        // ranges here rather than resolved IDs, so preserve names only.
+        // Phần tử INFO có nhiều khóa metadata; chỉ map dependencies lồng
+        // bên trong mới là cạnh package thường. Bun chỉ ghi range nên giữ
+        // tên dependency, không tự suy diễn phiên bản.
+        if let Some(deps) = items
+            .get(2)
+            .and_then(|info| info.get("dependencies"))
+            .and_then(serde_json::Value::as_object)
+        {
+            dependencies.extend(deps.keys().cloned());
         }
         out.push(Package {
             name,
