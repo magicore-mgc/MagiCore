@@ -4658,7 +4658,14 @@ fn is_shadow_windows_npm_version_probe(
         // Windows có thể lộ image trước khi argv hiện đủ. Snapshot chỉ có argv0
         // chỉ an toàn khi path và byte bên dưới xác thực shim MagiCore riêng;
         // binary này tự từ chối mọi yêu cầu npm ngoài `--version`.
-        [program] => windows_probe_argv0_matches_image(program, executable_path),
+        [program] => {
+            program.eq_ignore_ascii_case(OsStr::new("npm"))
+                || program.eq_ignore_ascii_case(OsStr::new("npm.exe"))
+                || (Path::new(program).is_absolute()
+                    && Path::new(program)
+                        .file_name()
+                        .is_some_and(|name| name.eq_ignore_ascii_case(OsStr::new("npm.exe"))))
+        }
         [_, version] => version.as_os_str() == OsStr::new("--version"),
         _ => false,
     };
@@ -4669,29 +4676,60 @@ fn is_shadow_windows_npm_version_probe(
     let Some(program) = process.command.first() else {
         return false;
     };
+    let program_path = Path::new(program);
     let Ok(image_path) = std::fs::canonicalize(executable_path) else {
         return false;
     };
-    if !windows_probe_argv0_matches_image(program, &image_path)
-        || !image_path
-            .file_name()
-            .is_some_and(|name| name.eq_ignore_ascii_case(OsStr::new("npm.exe")))
-    {
+    let Ok(image_digest) = windows_sha256_file(&image_path) else {
         return false;
-    }
+    };
+    let image_is_npm_alias = image_path
+        .file_name()
+        .is_some_and(|name| name.eq_ignore_ascii_case(OsStr::new("npm.exe")));
 
-    let parent = image_path.parent();
-    let is_current_executor_shim = parent.is_some_and(|parent| {
-        std::fs::canonicalize(shadow_path.path()).is_ok_and(|expected_dir| {
-            parent == expected_dir
-                && windows_sha256_file(&image_path).is_ok_and(|digest| digest == expected_digest)
+    // Windows may report the target path of a hard-linked executable (mgc.exe)
+    // instead of the npm.exe alias used as argv[0]. Authenticate that alias too:
+    // it must be the exact private shim or a generated shim carrying a matching
+    // read-only marker, and its bytes must match the observed process image.
+    // (Windows có thể báo đường dẫn file đích của hard link thay vì alias npm.exe;
+    // xác thực thêm argv[0] qua thư mục shim và marker gắn với đúng image.)
+    let program_is_npm_alias = program_path.is_absolute()
+        && program_path
+            .file_name()
+            .is_some_and(|name| name.eq_ignore_ascii_case(OsStr::new("npm.exe")));
+    let alias_path_matches_image = program_is_npm_alias
+        && windows_sha256_file(program_path).is_ok_and(|digest| digest == image_digest);
+    let program_parent = program_path.parent();
+    let is_current_executor_alias = alias_path_matches_image
+        && program_parent.is_some_and(|parent| {
+            std::fs::canonicalize(shadow_path.path()).is_ok_and(|expected_dir| {
+                std::fs::canonicalize(parent).is_ok_and(|actual_dir| actual_dir == expected_dir)
+            })
         })
-    });
-    let is_nested_executor_shim = parent.is_some_and(|parent| {
-        is_generated_shadow_directory(parent)
-            && windows_npm_probe_marker_matches(parent, &image_path)
-    });
-    is_current_executor_shim || is_nested_executor_shim
+        && image_digest == expected_digest;
+    let is_nested_executor_alias = alias_path_matches_image
+        && program_parent.is_some_and(|parent| {
+            is_generated_shadow_directory(parent)
+                && windows_npm_probe_marker_matches(parent, program_path)
+        });
+
+    let image_parent = image_path.parent();
+    let is_current_executor_image = image_is_npm_alias
+        && windows_probe_argv0_matches_image(program, &image_path)
+        && image_parent.is_some_and(|parent| {
+            std::fs::canonicalize(shadow_path.path())
+                .is_ok_and(|expected_dir| parent == expected_dir && image_digest == expected_digest)
+        });
+    let is_nested_executor_image = image_is_npm_alias
+        && windows_probe_argv0_matches_image(program, &image_path)
+        && image_parent.is_some_and(|parent| {
+            is_generated_shadow_directory(parent)
+                && windows_npm_probe_marker_matches(parent, &image_path)
+        });
+    is_current_executor_alias
+        || is_nested_executor_alias
+        || is_current_executor_image
+        || is_nested_executor_image
 }
 
 #[cfg(all(test, not(windows)))]

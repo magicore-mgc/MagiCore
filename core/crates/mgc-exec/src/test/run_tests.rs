@@ -988,14 +988,11 @@ fn windows_npm_probe_exemption_requires_authenticated_native_shim_and_safe_comma
 fn windows_nested_npm_probe_requires_generated_path_marker_and_version_verb() {
     use std::ffi::OsString;
 
+    let original_executable = std::env::current_exe().expect("resolve test executable");
     let dir = super::unique_temp_dir("mgc-exec-shadow-path");
     std::fs::create_dir(&dir).expect("create generated nested shadow directory");
     let shim = dir.join("npm.exe");
-    std::fs::copy(
-        std::env::current_exe().expect("resolve test executable"),
-        &shim,
-    )
-    .expect("copy executor image as Windows npm shim");
+    std::fs::copy(&original_executable, &shim).expect("copy executor image as Windows npm shim");
     let digest = super::windows_sha256_file(&shim).expect("hash nested shim");
     super::write_windows_npm_probe_marker(&dir, &digest).expect("write probe marker");
     let shadow_path = super::ShadowPath {
@@ -1014,6 +1011,47 @@ fn windows_nested_npm_probe_requires_generated_path_marker_and_version_verb() {
         &shim,
         &shadow_path
     ));
+
+    // Windows may report the original path for a hard-linked image while argv[0]
+    // retains the private npm.exe alias used to launch it.
+    // (Windows có thể báo file gốc của hard link dù argv[0] giữ alias npm.exe.)
+    let hard_link_dir = super::unique_temp_dir("mgc-exec-shadow-path");
+    std::fs::create_dir(&hard_link_dir).expect("create generated hard-link shadow directory");
+    let hard_link_shim = hard_link_dir.join("npm.exe");
+    std::fs::hard_link(&original_executable, &hard_link_shim)
+        .expect("create hard-linked Windows npm shim");
+    let hard_link_digest =
+        super::windows_sha256_file(&original_executable).expect("hash original executable");
+    super::write_windows_npm_probe_marker(&hard_link_dir, &hard_link_digest)
+        .expect("write hard-link probe marker");
+    let hard_link_shadow_path = super::ShadowPath {
+        dir: hard_link_dir.join("outer-executor-shadow"),
+    };
+    let hard_link_probe = super::WindowsProcessSnapshot {
+        pid: 302,
+        parent_pid: Some(300),
+        creation_time: Some(302),
+        image_name: "npm.exe".to_owned(),
+        command: vec![
+            hard_link_shim.as_os_str().to_os_string(),
+            OsString::from("--version"),
+        ],
+    };
+    assert!(super::is_shadow_windows_npm_version_probe(
+        &hard_link_probe,
+        &original_executable,
+        &hard_link_shadow_path
+    ));
+    let hard_link_startup_probe = super::WindowsProcessSnapshot {
+        command: vec![hard_link_shim.as_os_str().to_os_string()],
+        ..hard_link_probe
+    };
+    assert!(super::is_shadow_windows_npm_version_probe(
+        &hard_link_startup_probe,
+        &original_executable,
+        &hard_link_shadow_path
+    ));
+
     let install = super::WindowsProcessSnapshot {
         pid: 301,
         parent_pid: Some(300),
@@ -1042,6 +1080,8 @@ fn windows_nested_npm_probe_requires_generated_path_marker_and_version_verb() {
 
     drop(shadow_path);
     std::fs::remove_dir_all(&dir).expect("remove nested Windows shim fixture");
+    drop(hard_link_shadow_path);
+    std::fs::remove_dir_all(&hard_link_dir).expect("remove hard-link Windows shim fixture");
 }
 
 #[test]
