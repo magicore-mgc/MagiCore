@@ -4019,7 +4019,7 @@ fn ui_preset_needs_implicit_tailwind(flags: &ScaffoldFlags) -> bool {
 async fn resolve_primary_version(
     request: &FrameworkRequest,
     package: &str,
-    age_policy: Option<mgc_web_adapter::provider::AgePolicy>,
+    age_policy: Option<versions::ScaffoldAgePolicy>,
 ) -> Result<String> {
     match request.version.as_deref() {
         Some("latest") | None => versions::fetch_npm_latest_version(package, age_policy).await,

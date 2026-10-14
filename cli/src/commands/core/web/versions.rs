@@ -10,9 +10,14 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use anyhow::{Context, Result};
+#[cfg(feature = "web")]
+use anyhow::Context;
+use anyhow::Result;
+#[cfg(feature = "web")]
 use mgc_types::{PackageName, Version, VersionRange};
+#[cfg(feature = "web")]
 use mgc_web_adapter::native::npm_registry::{NpmRegistry, PackageMetadata};
+#[cfg(feature = "web")]
 use mgc_web_adapter::provider::{AgePolicy, eligible_versions};
 
 /// Default registry — overridable via config elsewhere; this module
@@ -136,9 +141,28 @@ struct ScaffoldBaselineVersions {
     versions: HashMap<String, String>,
 }
 
+/// Web scaffold's normalized age gate, independent of optional adapter crates.
+/// Age gate scaffold Web đã chuẩn hóa, không phụ thuộc adapter optional.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ScaffoldAgePolicy {
+    pub cutoff_hours: u64,
+    pub allow_missing_time: bool,
+}
+
+#[cfg(feature = "web")]
+impl From<ScaffoldAgePolicy> for AgePolicy {
+    fn from(policy: ScaffoldAgePolicy) -> Self {
+        Self {
+            cutoff_hours: policy.cutoff_hours,
+            allow_missing_time: policy.allow_missing_time,
+        }
+    }
+}
+
 /// Resolve scaffold versions through the same active age policy as installation.
 /// Giải quyết version scaffold theo cùng age policy đang áp dụng lúc cài đặt.
-pub(crate) fn scaffold_age_policy(project_root: &Path) -> Result<Option<AgePolicy>> {
+#[cfg(feature = "web")]
+pub(crate) fn scaffold_age_policy(project_root: &Path) -> Result<Option<ScaffoldAgePolicy>> {
     let security = mgc_config::project::load_security_config(project_root).map_err(|error| {
         crate::error::web_scaffold_security_config_unreadable(project_root, &error)
     })?;
@@ -151,19 +175,19 @@ pub(crate) fn scaffold_age_policy(project_root: &Path) -> Result<Option<AgePolic
             .as_ref()
             .and_then(|config| config.min_age_for_ecosystem("web"))
         {
-            return Ok(Some(AgePolicy {
+            return Ok(Some(ScaffoldAgePolicy {
                 cutoff_hours,
                 allow_missing_time,
             }));
         }
         if let Some(min_age_secs) = store_release_policy(project_root)? {
-            return Ok(Some(AgePolicy {
+            return Ok(Some(ScaffoldAgePolicy {
                 cutoff_hours: min_age_secs.div_ceil(60 * 60),
                 allow_missing_time,
             }));
         }
         if env_truthy("MAGICORE_SECURITY_24H_BLOCK") || env_truthy("MGC_AUDIT_STRICT") {
-            return Ok(Some(AgePolicy {
+            return Ok(Some(ScaffoldAgePolicy {
                 cutoff_hours: mgc_config::DEFAULT_MIN_RELEASE_AGE_HOURS,
                 allow_missing_time,
             }));
@@ -172,6 +196,12 @@ pub(crate) fn scaffold_age_policy(project_root: &Path) -> Result<Option<AgePolic
     Ok(None)
 }
 
+#[cfg(not(feature = "web"))]
+pub(crate) fn scaffold_age_policy(_project_root: &Path) -> Result<Option<ScaffoldAgePolicy>> {
+    Ok(None)
+}
+
+#[cfg(feature = "web")]
 pub(super) fn store_release_policy(project_root: &Path) -> Result<Option<u64>> {
     let layout = mgc_store::Layout::new(mgc_web_adapter::lockfile::project_cache_dir(project_root));
     let database_path = layout.db_path();
@@ -198,6 +228,7 @@ pub(super) fn store_release_policy(project_root: &Path) -> Result<Option<u64>> {
         .map_err(|error| crate::error::web_scaffold_store_policy_unreadable(&database_path, &error))
 }
 
+#[cfg(feature = "web")]
 fn env_truthy(name: &str) -> bool {
     std::env::var(name)
         .ok()
@@ -207,10 +238,11 @@ fn env_truthy(name: &str) -> bool {
 
 /// Select the newest stable registry release that survives the project's age gate.
 /// Chọn bản stable mới nhất còn thỏa cổng tuổi phát hành của project.
+#[cfg(feature = "web")]
 pub(crate) fn select_latest_eligible_version(
     package: &str,
     metadata: &PackageMetadata,
-    age_policy: Option<AgePolicy>,
+    age_policy: Option<ScaffoldAgePolicy>,
 ) -> Result<String> {
     let latest_tag = metadata
         .dist_tags
@@ -219,8 +251,8 @@ pub(crate) fn select_latest_eligible_version(
     let latest = Version::parse(latest_tag)
         .with_context(|| crate::error::web_scaffold_latest_tag_invalid(package))?;
     let package_name = PackageName::new(package)?;
-    let versions =
-        eligible_versions(&package_name, metadata, age_policy).map_err(anyhow::Error::msg)?;
+    let versions = eligible_versions(&package_name, metadata, age_policy.map(Into::into))
+        .map_err(anyhow::Error::msg)?;
     versions
         .into_iter()
         .filter(|version| {
@@ -236,10 +268,11 @@ pub(crate) fn select_latest_eligible_version(
 
 /// Keep a curated scaffold range only when it contains an eligible stable release.
 /// Chỉ giữ range seed đã chọn khi nó còn chứa bản stable hợp lệ theo age gate.
+#[cfg(feature = "web")]
 pub(crate) fn validate_seed_range_age_eligible(
     package: &str,
     metadata: &PackageMetadata,
-    age_policy: AgePolicy,
+    age_policy: ScaffoldAgePolicy,
     requested_range: &str,
 ) -> Result<()> {
     let latest_tag = metadata
@@ -250,8 +283,8 @@ pub(crate) fn validate_seed_range_age_eligible(
         .with_context(|| crate::error::web_scaffold_latest_tag_invalid(package))?;
     let package_name = PackageName::new(package)?;
     let range = VersionRange::parse(requested_range)?;
-    let versions =
-        eligible_versions(&package_name, metadata, Some(age_policy)).map_err(anyhow::Error::msg)?;
+    let versions = eligible_versions(&package_name, metadata, Some(age_policy.into()))
+        .map_err(anyhow::Error::msg)?;
     if versions.into_iter().any(|version| {
         version.pre.is_none()
             && version.dev.is_none()
@@ -267,6 +300,7 @@ pub(crate) fn validate_seed_range_age_eligible(
     ))
 }
 
+#[cfg(feature = "web")]
 async fn fetch_age_gated_npm_metadata(package: &str) -> Result<PackageMetadata> {
     let registry = NpmRegistry::new(DEFAULT_NPM_REGISTRY);
     registry.set_age_gate_armed(true);
@@ -278,10 +312,11 @@ async fn fetch_age_gated_npm_metadata(package: &str) -> Result<PackageMetadata> 
 
 /// Resolve or validate a scaffold seed version, preserving curated compatible ranges.
 /// Resolve hoặc kiểm tra version seed, giữ nguyên range tương thích đã tuyển chọn.
+#[cfg(feature = "web")]
 pub(crate) async fn resolve_seed_dependency_version(
     package: &str,
     preferred_range: Option<&str>,
-    age_policy: Option<AgePolicy>,
+    age_policy: Option<ScaffoldAgePolicy>,
 ) -> Result<String> {
     if let Some(policy) = age_policy.filter(|policy| policy.cutoff_hours > 0) {
         let metadata = fetch_age_gated_npm_metadata(package).await?;
@@ -298,15 +333,40 @@ pub(crate) async fn resolve_seed_dependency_version(
     fetch_npm_latest_version(package, None).await
 }
 
+#[cfg(not(feature = "web"))]
+pub(crate) async fn resolve_seed_dependency_version(
+    package: &str,
+    preferred_range: Option<&str>,
+    _age_policy: Option<ScaffoldAgePolicy>,
+) -> Result<String> {
+    if let Some(range) = preferred_range {
+        return Ok(range.to_string());
+    }
+    fetch_npm_latest_version(package, None).await
+}
+
+#[cfg(feature = "web")]
 pub(crate) async fn fetch_npm_latest_version(
     package: &str,
-    age_policy: Option<AgePolicy>,
+    age_policy: Option<ScaffoldAgePolicy>,
 ) -> Result<String> {
     if let Some(policy) = age_policy.filter(|policy| policy.cutoff_hours > 0) {
         let metadata = fetch_age_gated_npm_metadata(package).await?;
         return select_latest_eligible_version(package, &metadata, Some(policy));
     }
 
+    fetch_un_gated_npm_latest_version(package).await
+}
+
+#[cfg(not(feature = "web"))]
+pub(crate) async fn fetch_npm_latest_version(
+    package: &str,
+    _age_policy: Option<ScaffoldAgePolicy>,
+) -> Result<String> {
+    fetch_un_gated_npm_latest_version(package).await
+}
+
+async fn fetch_un_gated_npm_latest_version(package: &str) -> Result<String> {
     if let Some(version) = scaffold_version_override(package) {
         return Ok(version);
     }
@@ -320,7 +380,7 @@ pub(crate) async fn fetch_npm_latest_version(
 pub(super) fn fallback_scaffold_version(
     package: &str,
     error: anyhow::Error,
-    age_policy: Option<AgePolicy>,
+    age_policy: Option<ScaffoldAgePolicy>,
 ) -> Result<String> {
     if age_policy.is_some_and(|policy| policy.cutoff_hours > 0) {
         return Err(crate::error::web_scaffold_age_metadata_unavailable(

@@ -330,9 +330,9 @@ fn web_preset_only_seeds_implicit_tailwind_without_the_feature_flag() {
 }
 
 #[test]
+#[cfg(feature = "web")]
 fn scaffold_selects_latest_release_that_passes_the_project_age_gate() {
     use mgc_web_adapter::native::npm_registry::{PackageMetadata, VersionInfo};
-    use mgc_web_adapter::provider::AgePolicy;
     use std::collections::HashMap;
 
     let now = chrono::Utc::now();
@@ -365,7 +365,7 @@ fn scaffold_selects_latest_release_that_passes_the_project_age_gate() {
         ]),
     };
 
-    let age_policy = AgePolicy {
+    let age_policy = super::versions::ScaffoldAgePolicy {
         cutoff_hours: 24,
         allow_missing_time: false,
     };
@@ -391,7 +391,7 @@ fn scaffold_selects_latest_release_that_passes_the_project_age_gate() {
     let selected = super::versions::select_latest_eligible_version(
         "react-dom",
         &metadata,
-        Some(AgePolicy {
+        Some(super::versions::ScaffoldAgePolicy {
             cutoff_hours: 24,
             allow_missing_time: false,
         }),
@@ -410,7 +410,7 @@ fn scaffold_selects_latest_release_that_passes_the_project_age_gate() {
     let selected_react = super::versions::select_latest_eligible_version(
         "react",
         &react_metadata,
-        Some(AgePolicy {
+        Some(super::versions::ScaffoldAgePolicy {
             cutoff_hours: 24,
             allow_missing_time: false,
         }),
@@ -421,9 +421,9 @@ fn scaffold_selects_latest_release_that_passes_the_project_age_gate() {
 }
 
 #[test]
+#[cfg(feature = "web")]
 fn scaffold_age_gate_fails_closed_when_every_release_is_too_new() {
     use mgc_web_adapter::native::npm_registry::{PackageMetadata, VersionInfo};
-    use mgc_web_adapter::provider::AgePolicy;
     use std::collections::HashMap;
 
     let fresh_release = (chrono::Utc::now() - chrono::Duration::hours(1))
@@ -453,7 +453,7 @@ fn scaffold_age_gate_fails_closed_when_every_release_is_too_new() {
         super::versions::select_latest_eligible_version(
             "react-dom",
             &metadata,
-            Some(AgePolicy {
+            Some(super::versions::ScaffoldAgePolicy {
                 cutoff_hours: 24,
                 allow_missing_time: false,
             }),
@@ -463,13 +463,12 @@ fn scaffold_age_gate_fails_closed_when_every_release_is_too_new() {
 }
 
 #[test]
+#[cfg(feature = "web")]
 fn scaffold_age_gate_does_not_fallback_to_an_unverified_baseline() {
-    use mgc_web_adapter::provider::AgePolicy;
-
     let error = super::versions::fallback_scaffold_version(
         "react",
         anyhow::anyhow!("registry is offline"),
-        Some(AgePolicy {
+        Some(super::versions::ScaffoldAgePolicy {
             cutoff_hours: 24,
             allow_missing_time: false,
         }),
@@ -482,6 +481,7 @@ fn scaffold_age_gate_does_not_fallback_to_an_unverified_baseline() {
 }
 
 #[test]
+#[cfg(feature = "web")]
 fn scaffold_store_policy_read_failure_is_not_treated_as_no_policy() {
     let root = tempfile::tempdir().unwrap();
     let store_dir = mgc_web_adapter::lockfile::project_cache_dir(root.path());
@@ -498,9 +498,8 @@ fn scaffold_store_policy_read_failure_is_not_treated_as_no_policy() {
 }
 
 #[test]
+#[cfg(feature = "web")]
 fn scaffold_age_policy_uses_project_web_override_and_missing_time_escape() {
-    use mgc_web_adapter::provider::AgePolicy;
-
     let root = tempfile::tempdir().unwrap();
     std::fs::write(
         root.path().join("mgc.toml"),
@@ -510,10 +509,21 @@ fn scaffold_age_policy_uses_project_web_override_and_missing_time_escape() {
 
     assert_eq!(
         super::versions::scaffold_age_policy(root.path()).unwrap(),
-        Some(AgePolicy {
+        Some(super::versions::ScaffoldAgePolicy {
             cutoff_hours: 48,
             allow_missing_time: true,
         })
+    );
+}
+
+#[cfg(not(feature = "web"))]
+#[test]
+fn non_web_core_build_does_not_require_the_optional_web_adapter() {
+    let root = tempfile::tempdir().unwrap();
+    assert!(
+        super::versions::scaffold_age_policy(root.path())
+            .unwrap()
+            .is_none()
     );
 }
 
