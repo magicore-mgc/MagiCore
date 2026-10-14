@@ -154,6 +154,18 @@ fn install_iot_matches_cargo_lock_and_builds_esp32c3() {
     let data = TempDir::new().unwrap();
     copy_fixture(project.path());
 
+    // The checked-in fixture contains only source input. Generated state must
+    // come from the product commands exercised below, never a committed lock
+    // or cache that could make this E2E pass without installing.
+    // Fixture trong repo chỉ chứa source đầu vào. State phải do lệnh sản phẩm
+    // bên dưới sinh ra, không được dựa vào lock/cache cũ để test pass giả.
+    for generated_path in ["mgc.lock", "Cargo.lock", ".magicore", ".mgc-optimizer"] {
+        assert!(
+            !project.path().join(generated_path).exists(),
+            "copied ESP32 fixture must start without generated {generated_path}"
+        );
+    }
+
     let install = run_mgc(&["install-iot"], project.path(), home.path(), data.path());
     assert!(
         install.status.success(),
