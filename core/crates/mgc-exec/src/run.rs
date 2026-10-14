@@ -3838,7 +3838,35 @@ fn find_forbidden_descendant_tracking(
             false,
             ProcessRefreshKind::nothing().with_environ(UpdateKind::Always),
         );
+        // Reading /proc/<pid>/environ can race with a short-lived Go command
+        // exiting. Refresh identity/status after the environment read so an
+        // exited process with an empty environment is not treated as a live
+        // Go invocation missing its required offline proof.
+        system.refresh_processes_specifics(
+            ProcessesToUpdate::Some(&go_pids),
+            false,
+            ProcessRefreshKind::nothing(),
+        );
     }
+
+    let go_pid_set = go_pids
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    let go_pids_live_after_env = descendant_identities
+        .iter()
+        .filter_map(|(pid, initial)| {
+            if !go_pid_set.contains(pid) {
+                return None;
+            }
+            let current = current_process_scan_snapshot(pid.as_u32(), system)?;
+            process_identity_is_live(*initial, current).then_some(*pid)
+        })
+        .collect::<std::collections::HashSet<_>>();
+    let live_descendant_pids = live_descendant_pids
+        .into_iter()
+        .filter(|pid| !go_pids.contains(pid) || go_pids_live_after_env.contains(pid))
+        .collect::<Vec<_>>();
 
     let mut first_forbidden = None;
     for pid in &live_descendant_pids {
