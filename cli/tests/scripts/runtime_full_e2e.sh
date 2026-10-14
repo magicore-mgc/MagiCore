@@ -201,14 +201,30 @@ if [ -e "$PWD/.mgc/exec.log" ]; then
 fi
 node - "$AUDIT_LOG" "$PWD" <<'NODE'
 const fs = require("node:fs");
+const path = require("node:path");
 const [auditPath, expectedCwd] = process.argv.slice(2);
 const rows = fs.readFileSync(auditPath, "utf8").trim().split(/\r?\n/).map((line) => JSON.parse(line));
-const found = rows.some((row) => row.cmd === "node"
+const normalizeCommand = (command) => path.basename(String(command).replaceAll("\\", "/"))
+  .toLowerCase().replace(/\.(exe|cmd|bat)$/, "");
+const samePath = (actual, expected) => {
+  try {
+    const actualPath = fs.realpathSync(actual);
+    const expectedPath = fs.realpathSync(expected);
+    return process.platform === "win32"
+      ? actualPath.toLowerCase() === expectedPath.toLowerCase()
+      : actualPath === expectedPath;
+  } catch {
+    return false;
+  }
+};
+const found = rows.some((row) => normalizeCommand(row.cmd) === "node"
   && Array.isArray(row.args) && row.args.includes("server.js")
-  && fs.realpathSync(row.cwd) === fs.realpathSync(expectedCwd)
+  && samePath(row.cwd, expectedCwd)
   && row.exit_code === 0);
 if (!found) {
   console.error("Audit log did not record the successful native Node dev execution");
+  const observed = rows.map(({ cmd, args, cwd, exit_code }) => ({ cmd, args, cwd, exit_code }));
+  console.error(JSON.stringify(observed, null, 2));
   process.exit(1);
 }
 NODE
