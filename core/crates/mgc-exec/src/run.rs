@@ -5116,19 +5116,20 @@ fn forbidden_process_match_argv_with_env(
 ) -> Option<(String, &'static str, Option<String>, Option<usize>)> {
     let exempt = |name: &str| exempt.contains(&name);
     let image_name = process_basename(image);
-    if FORBIDDEN_TOOLS.contains(&image_name.as_str()) && !exempt(&image_name) {
-        return Some((image_name, "executable image", None, None));
+
+    // Process snapshots may lose the parent PID while preserving Cargo's
+    // rustc compiler argv. Accept a direct compiler signature or a wrapper with
+    // an absolute rustc path, full crate identity, and output flags; ordinary
+    // Cargo subcommands such as `install` remain policy-checked.
+    // (Snapshot process có thể thiếu parent PID nhưng vẫn giữ argv rustc-wrapper
+    // do Cargo gọi. Chỉ nhận wrapper có rustc path tuyệt đối, đủ crate identity
+    // và output flags; subcommand Cargo thông thường vẫn chịu policy.)
+    if image_name == "cargo" && (is_rustc_compilation_argv(argv) || is_rustc_wrapper_argv(argv)) {
+        return None;
     }
 
-    // Some process snapshots report a Cargo-spawned compiler with image `cargo`.
-    // Accept a direct rustc argv, a wrapper with an absolute rustc path, or an
-    // argv snapshot that omits the executable but has a complete compiler shape.
-    // Wrapper/omitted-executable forms also require a direct Cargo parent.
-    // (Một số snapshot ghi image compiler là `cargo`. Nhận argv rustc trực
-    // tiếp, wrapper có path rustc tuyệt đối, hoặc snapshot bỏ executable nhưng
-    // đủ dấu hiệu biên dịch; hai dạng sau bắt buộc có parent trực tiếp là Cargo.)
-    if image_name == "cargo" && is_rustc_compilation_argv(argv) {
-        return None;
+    if FORBIDDEN_TOOLS.contains(&image_name.as_str()) && !exempt(&image_name) {
+        return Some((image_name, "executable image", None, None));
     }
 
     if let Some(program) = argv
@@ -5211,6 +5212,30 @@ fn is_rustc_compilation_argv(argv: &[OsString]) -> bool {
         && argv.iter().skip(1).any(|arg| arg == "--crate-type")
 }
 
+fn is_rustc_wrapper_argv(argv: &[OsString]) -> bool {
+    let Some(compiler) = argv.get(1) else {
+        return false;
+    };
+    let compiler = Path::new(compiler);
+    argv.first()
+        .is_some_and(|wrapper| process_basename(&wrapper.to_string_lossy()) == "cargo")
+        && compiler.is_absolute()
+        && process_basename(&compiler.to_string_lossy()) == "rustc"
+        && is_rustc_compilation_flags(&argv[2..])
+        && has_rustc_option(&argv[2..], "--emit")
+        && has_rustc_option(&argv[2..], "--out-dir")
+}
+
+fn has_rustc_option(argv: &[OsString], option: &str) -> bool {
+    argv.iter().any(|argument| {
+        let argument = argument.to_string_lossy();
+        argument == option
+            || argument
+                .strip_prefix(option)
+                .is_some_and(|value| value.starts_with('='))
+    })
+}
+
 fn is_rustc_toolchain_child(image: &str, argv: &[OsString], parent_image: Option<&str>) -> bool {
     if process_basename(image) != "cargo" {
         return false;
@@ -5240,19 +5265,11 @@ fn is_rustc_toolchain_child(image: &str, argv: &[OsString], parent_image: Option
     }
 
     // Rustdoc test mode also runs doctests through Cargo's configured rustc wrapper.
-    // The absolute rustc path and full compilation argv keep this narrow;
-    // arbitrary Cargo children remain blocked by the normal matcher.
-    // (Rustdoc ở chế độ test cũng chạy doctest qua rustc wrapper đã cấu hình.
-    // Đường dẫn rustc tuyệt đối và argv biên dịch đầy đủ giữ ngoại lệ hẹp; Cargo child
-    // thông thường vẫn bị matcher chặn.)
-    let wrapper_shape = argv.get(1).is_some_and(|compiler| {
-        argv.first()
-            .is_some_and(|wrapper| process_basename(&wrapper.to_string_lossy()) == "cargo")
-            && Path::new(compiler).is_absolute()
-            && process_basename(&compiler.to_string_lossy()) == "rustc"
-            && is_rustc_compilation_flags(&argv[2..])
-    });
-    wrapper_shape
+    // The complete wrapper signature remains sufficient even when the OS snapshot
+    // omits the parent process; arbitrary Cargo children remain blocked above.
+    // (Rustdoc cũng gọi rustc-wrapper khi biên dịch doctest. Chữ ký wrapper đầy đủ
+    // vẫn đủ nhận diện nếu snapshot thiếu parent; Cargo child thông thường bị chặn.)
+    is_rustc_wrapper_argv(argv)
 }
 
 fn is_rustc_compilation_flags(argv: &[OsString]) -> bool {

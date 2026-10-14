@@ -543,6 +543,14 @@ for (const subcommand of ["build", "test"]) {
     && row.exit_code === 0);
   if (!found) {
     console.error(`Audit log did not record a successful native Cargo ${subcommand}`);
+    const cargoRows = rows.filter((row) => typeof row.cmd === "string"
+      && row.cmd.toLowerCase().split(/[\\/]/).pop().replace(/\.exe$/, "") === "cargo")
+      .map((row) => {
+        let cwdMatches = false;
+        try { cwdMatches = fs.realpathSync(row.cwd) === fs.realpathSync(expectedCwd); } catch {}
+        return { args: row.args, cwdMatches, exit_code: row.exit_code };
+      });
+    console.error(`Observed Cargo audit rows: ${JSON.stringify(cargoRows)}`);
     process.exit(1);
   }
 }

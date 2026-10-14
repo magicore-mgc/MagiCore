@@ -1104,8 +1104,12 @@ fn cargo_image_with_rustc_compilation_argv_is_allowed_but_cargo_install_is_denie
         OsString::from("--crate-name"),
         OsString::from("probe"),
         OsString::from("--test"),
+        OsString::from("--emit=link"),
+        OsString::from("--out-dir"),
+        std::env::temp_dir().into_os_string(),
     ];
-    assert!(super::forbidden_process_match_argv("cargo", &cargo_wrapped_rustc, &[]).is_some());
+    assert!(super::forbidden_process_match_argv("cargo", &cargo_wrapped_rustc, &[]).is_none());
+    assert!(super::is_rustc_wrapper_argv(&cargo_wrapped_rustc));
     assert!(super::is_rustc_toolchain_child(
         "cargo",
         &cargo_wrapped_rustc,
@@ -1196,10 +1200,13 @@ fn cargo_image_with_rustc_compilation_argv_is_allowed_but_cargo_install_is_denie
     let incomplete_wrapped_shape = [
         OsString::from("cargo"),
         std::env::temp_dir().join("rustc").into_os_string(),
+        OsString::from("--crate-type"),
+        OsString::from("lib"),
         OsString::from("--crate-name"),
         OsString::from("probe"),
     ];
     assert!(super::forbidden_process_match_argv("cargo", &incomplete_wrapped_shape, &[]).is_some());
+    assert!(!super::is_rustc_wrapper_argv(&incomplete_wrapped_shape));
 
     let cargo_rustc_subcommand = [
         "cargo",
