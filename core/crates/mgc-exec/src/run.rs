@@ -3944,11 +3944,19 @@ fn forbidden_process_entry(
     exempt: &[&str],
 ) -> Option<ForbiddenProcess> {
     let image_name = process.name().to_string_lossy().into_owned();
-    let parent_image = process
+    let parent_process = process
         .parent()
-        .and_then(|parent_pid| system.process(parent_pid))
-        .map(|parent| parent.name().to_string_lossy().into_owned());
-    if is_rustc_toolchain_child(&image_name, process.cmd(), parent_image.as_deref()) {
+        .and_then(|parent_pid| system.process(parent_pid));
+    let parent_image = parent_process.map(|parent| parent.name().to_string_lossy().into_owned());
+    let rustdoc_test_parent = parent_process.is_some_and(|parent| {
+        is_rustdoc_test_process(&parent.name().to_string_lossy(), parent.cmd())
+    });
+    if is_rustc_toolchain_child(
+        &image_name,
+        process.cmd(),
+        parent_image.as_deref(),
+        rustdoc_test_parent,
+    ) {
         return None;
     }
     let policy_env = if process_basename(&image_name) == "go" {
@@ -5211,7 +5219,16 @@ fn is_rustc_compilation_argv(argv: &[OsString]) -> bool {
         && argv.iter().skip(1).any(|arg| arg == "--crate-type")
 }
 
-fn is_rustc_toolchain_child(image: &str, argv: &[OsString], parent_image: Option<&str>) -> bool {
+fn is_rustdoc_test_process(image: &str, argv: &[OsString]) -> bool {
+    process_basename(image) == "rustdoc" && argv.iter().any(|argument| argument == "--test")
+}
+
+fn is_rustc_toolchain_child(
+    image: &str,
+    argv: &[OsString],
+    parent_image: Option<&str>,
+    rustdoc_test_parent: bool,
+) -> bool {
     if process_basename(image) != "cargo" {
         return false;
     }
@@ -5219,7 +5236,7 @@ fn is_rustc_toolchain_child(image: &str, argv: &[OsString], parent_image: Option
         return false;
     };
     let cargo_parent = parent_image == "cargo";
-    let rustdoc_parent = parent_image == "rustdoc";
+    let rustdoc_parent = parent_image == "rustdoc" && rustdoc_test_parent;
     if !cargo_parent && !rustdoc_parent {
         return false;
     }
@@ -5239,10 +5256,12 @@ fn is_rustc_toolchain_child(image: &str, argv: &[OsString], parent_image: Option
         return true;
     }
 
-    if !cargo_parent {
-        return false;
-    }
-
+    // Rustdoc test mode also runs doctests through Cargo's configured rustc wrapper.
+    // The absolute rustc path and full compilation argv keep this narrow;
+    // arbitrary Cargo children remain blocked by the normal matcher.
+    // (Rustdoc ở chế độ test cũng chạy doctest qua rustc wrapper đã cấu hình.
+    // Đường dẫn rustc tuyệt đối và argv biên dịch đầy đủ giữ ngoại lệ hẹp; Cargo child
+    // thông thường vẫn bị matcher chặn.)
     let wrapper_shape = argv.get(1).is_some_and(|compiler| {
         argv.first()
             .is_some_and(|wrapper| process_basename(&wrapper.to_string_lossy()) == "cargo")

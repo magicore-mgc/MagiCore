@@ -1072,25 +1072,56 @@ fn cargo_image_with_rustc_compilation_argv_is_allowed_but_cargo_install_is_denie
     .into_iter()
     .map(OsString::from)
     .collect::<Vec<_>>();
+    let rustdoc_test_command = ["rustdoc", "--test", "src/lib.rs"]
+        .into_iter()
+        .map(OsString::from)
+        .collect::<Vec<_>>();
+    let rustdoc_normal_command = ["rustdoc", "src/lib.rs"]
+        .into_iter()
+        .map(OsString::from)
+        .collect::<Vec<_>>();
+    assert!(super::is_rustdoc_test_process(
+        "rustdoc",
+        &rustdoc_test_command
+    ));
+    assert!(!super::is_rustdoc_test_process(
+        "rustdoc",
+        &rustdoc_normal_command
+    ));
+    assert!(!super::is_rustdoc_test_process(
+        "cargo",
+        &rustdoc_test_command
+    ));
     assert!(super::forbidden_process_match_argv("cargo", &rustc_child, &[]).is_none());
     assert!(super::is_rustc_toolchain_child(
         "cargo",
         &rustc_child,
-        Some("cargo")
+        Some("cargo"),
+        false
     ));
     assert!(super::is_rustc_toolchain_child(
         "cargo",
         &rustc_child,
-        Some("rustdoc")
+        Some("rustdoc"),
+        true
     ));
     assert!(!super::is_rustc_toolchain_child(
         "cargo",
         &rustc_child,
-        Some("node")
+        Some("rustdoc"),
+        false
+    ));
+    assert!(!super::is_rustc_toolchain_child(
+        "cargo",
+        &rustc_child,
+        Some("node"),
+        false
     ));
 
-    // The wrapper-shaped snapshot is allowed only below its Cargo parent.
-    // (Shape wrapper chỉ được nhận khi parent trực tiếp cũng là Cargo.)
+    // Cargo and rustdoc can both launch the configured rustc wrapper; other
+    // parent processes and incomplete compiler argv stay denied.
+    // (Cargo và rustdoc đều có thể gọi rustc wrapper; parent khác và argv
+    // compiler thiếu dấu hiệu vẫn bị từ chối.)
     let compiler_path = std::env::temp_dir().join("rustc");
     let cargo_wrapped_rustc = vec![
         OsString::from("cargo"),
@@ -1107,22 +1138,32 @@ fn cargo_image_with_rustc_compilation_argv_is_allowed_but_cargo_install_is_denie
     assert!(super::is_rustc_toolchain_child(
         "cargo",
         &cargo_wrapped_rustc,
-        Some("cargo")
+        Some("cargo"),
+        false
     ));
     assert!(!super::is_rustc_toolchain_child(
         "cargo",
         &cargo_wrapped_rustc,
-        Some("node")
+        Some("node"),
+        false
+    ));
+    assert!(super::is_rustc_toolchain_child(
+        "cargo",
+        &cargo_wrapped_rustc,
+        Some("rustdoc"),
+        true
     ));
     assert!(!super::is_rustc_toolchain_child(
         "cargo",
         &cargo_wrapped_rustc,
-        Some("rustdoc")
+        Some("rustdoc"),
+        false
     ));
     assert!(!super::is_rustc_toolchain_child(
         "cargo",
         &cargo_wrapped_rustc,
-        None
+        None,
+        false
     ));
 
     // OS snapshots may omit argv[0] for Cargo/rustdoc compiler children;
@@ -1147,22 +1188,26 @@ fn cargo_image_with_rustc_compilation_argv_is_allowed_but_cargo_install_is_denie
     assert!(super::is_rustc_toolchain_child(
         "cargo",
         &rustc_args_without_program,
-        Some("cargo")
+        Some("cargo"),
+        false
     ));
     assert!(super::is_rustc_toolchain_child(
         "cargo",
         &rustc_args_without_program,
-        Some("rustdoc")
+        Some("rustdoc"),
+        true
     ));
     assert!(!super::is_rustc_toolchain_child(
         "cargo",
         &rustc_args_without_program,
-        Some("node")
+        Some("node"),
+        false
     ));
     assert!(!super::is_rustc_toolchain_child(
         "cargo",
         &rustc_args_without_program,
-        None
+        None,
+        false
     ));
     let incomplete_args_without_program = ["--crate-name", "probe", "--crate-type", "lib"]
         .into_iter()
@@ -1171,7 +1216,8 @@ fn cargo_image_with_rustc_compilation_argv_is_allowed_but_cargo_install_is_denie
     assert!(!super::is_rustc_toolchain_child(
         "cargo",
         &incomplete_args_without_program,
-        Some("cargo")
+        Some("cargo"),
+        false
     ));
 
     let cargo_install = ["cargo", "install", "some-tool"]
@@ -1179,6 +1225,12 @@ fn cargo_image_with_rustc_compilation_argv_is_allowed_but_cargo_install_is_denie
         .map(OsString::from)
         .collect::<Vec<_>>();
     assert!(super::forbidden_process_match_argv("cargo", &cargo_install, &[]).is_some());
+    assert!(!super::is_rustc_toolchain_child(
+        "cargo",
+        &cargo_install,
+        Some("rustdoc"),
+        true
+    ));
 
     let incomplete_rustc_shape = ["rustc", "--crate-name", "probe"]
         .into_iter()
