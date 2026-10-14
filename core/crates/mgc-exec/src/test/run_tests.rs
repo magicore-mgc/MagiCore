@@ -1072,50 +1072,21 @@ fn cargo_image_with_rustc_compilation_argv_is_allowed_but_cargo_install_is_denie
     .into_iter()
     .map(OsString::from)
     .collect::<Vec<_>>();
-    let rustdoc_test_command = ["rustdoc", "--test", "src/lib.rs"]
-        .into_iter()
-        .map(OsString::from)
-        .collect::<Vec<_>>();
-    let rustdoc_normal_command = ["rustdoc", "src/lib.rs"]
-        .into_iter()
-        .map(OsString::from)
-        .collect::<Vec<_>>();
-    assert!(super::is_rustdoc_test_process(
-        "rustdoc",
-        &rustdoc_test_command
-    ));
-    assert!(!super::is_rustdoc_test_process(
-        "rustdoc",
-        &rustdoc_normal_command
-    ));
-    assert!(!super::is_rustdoc_test_process(
-        "cargo",
-        &rustdoc_test_command
-    ));
     assert!(super::forbidden_process_match_argv("cargo", &rustc_child, &[]).is_none());
     assert!(super::is_rustc_toolchain_child(
         "cargo",
         &rustc_child,
-        Some("cargo"),
-        false
+        Some("cargo")
     ));
     assert!(super::is_rustc_toolchain_child(
         "cargo",
         &rustc_child,
-        Some("rustdoc"),
-        true
+        Some("rustdoc")
     ));
     assert!(!super::is_rustc_toolchain_child(
         "cargo",
         &rustc_child,
-        Some("rustdoc"),
-        false
-    ));
-    assert!(!super::is_rustc_toolchain_child(
-        "cargo",
-        &rustc_child,
-        Some("node"),
-        false
+        Some("node")
     ));
 
     // Cargo and rustdoc can both launch the configured rustc wrapper; other
@@ -1138,32 +1109,22 @@ fn cargo_image_with_rustc_compilation_argv_is_allowed_but_cargo_install_is_denie
     assert!(super::is_rustc_toolchain_child(
         "cargo",
         &cargo_wrapped_rustc,
-        Some("cargo"),
-        false
+        Some("cargo")
     ));
     assert!(!super::is_rustc_toolchain_child(
         "cargo",
         &cargo_wrapped_rustc,
-        Some("node"),
-        false
+        Some("node")
     ));
     assert!(super::is_rustc_toolchain_child(
         "cargo",
         &cargo_wrapped_rustc,
-        Some("rustdoc"),
-        true
+        Some("rustdoc")
     ));
     assert!(!super::is_rustc_toolchain_child(
         "cargo",
         &cargo_wrapped_rustc,
-        Some("rustdoc"),
-        false
-    ));
-    assert!(!super::is_rustc_toolchain_child(
-        "cargo",
-        &cargo_wrapped_rustc,
-        None,
-        false
+        None
     ));
 
     // OS snapshots may omit argv[0] for Cargo/rustdoc compiler children;
@@ -1188,26 +1149,22 @@ fn cargo_image_with_rustc_compilation_argv_is_allowed_but_cargo_install_is_denie
     assert!(super::is_rustc_toolchain_child(
         "cargo",
         &rustc_args_without_program,
-        Some("cargo"),
-        false
+        Some("cargo")
     ));
     assert!(super::is_rustc_toolchain_child(
         "cargo",
         &rustc_args_without_program,
-        Some("rustdoc"),
-        true
+        Some("rustdoc")
     ));
     assert!(!super::is_rustc_toolchain_child(
         "cargo",
         &rustc_args_without_program,
-        Some("node"),
-        false
+        Some("node")
     ));
     assert!(!super::is_rustc_toolchain_child(
         "cargo",
         &rustc_args_without_program,
-        None,
-        false
+        None
     ));
     let incomplete_args_without_program = ["--crate-name", "probe", "--crate-type", "lib"]
         .into_iter()
@@ -1216,8 +1173,7 @@ fn cargo_image_with_rustc_compilation_argv_is_allowed_but_cargo_install_is_denie
     assert!(!super::is_rustc_toolchain_child(
         "cargo",
         &incomplete_args_without_program,
-        Some("cargo"),
-        false
+        Some("cargo")
     ));
 
     let cargo_install = ["cargo", "install", "some-tool"]
@@ -1228,8 +1184,7 @@ fn cargo_image_with_rustc_compilation_argv_is_allowed_but_cargo_install_is_denie
     assert!(!super::is_rustc_toolchain_child(
         "cargo",
         &cargo_install,
-        Some("rustdoc"),
-        true
+        Some("rustdoc")
     ));
 
     let incomplete_rustc_shape = ["rustc", "--crate-name", "probe"]

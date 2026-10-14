@@ -3948,15 +3948,7 @@ fn forbidden_process_entry(
         .parent()
         .and_then(|parent_pid| system.process(parent_pid));
     let parent_image = parent_process.map(|parent| parent.name().to_string_lossy().into_owned());
-    let rustdoc_test_parent = parent_process.is_some_and(|parent| {
-        is_rustdoc_test_process(&parent.name().to_string_lossy(), parent.cmd())
-    });
-    if is_rustc_toolchain_child(
-        &image_name,
-        process.cmd(),
-        parent_image.as_deref(),
-        rustdoc_test_parent,
-    ) {
+    if is_rustc_toolchain_child(&image_name, process.cmd(), parent_image.as_deref()) {
         return None;
     }
     let policy_env = if process_basename(&image_name) == "go" {
@@ -5219,16 +5211,7 @@ fn is_rustc_compilation_argv(argv: &[OsString]) -> bool {
         && argv.iter().skip(1).any(|arg| arg == "--crate-type")
 }
 
-fn is_rustdoc_test_process(image: &str, argv: &[OsString]) -> bool {
-    process_basename(image) == "rustdoc" && argv.iter().any(|argument| argument == "--test")
-}
-
-fn is_rustc_toolchain_child(
-    image: &str,
-    argv: &[OsString],
-    parent_image: Option<&str>,
-    rustdoc_test_parent: bool,
-) -> bool {
+fn is_rustc_toolchain_child(image: &str, argv: &[OsString], parent_image: Option<&str>) -> bool {
     if process_basename(image) != "cargo" {
         return false;
     }
@@ -5236,7 +5219,7 @@ fn is_rustc_toolchain_child(
         return false;
     };
     let cargo_parent = parent_image == "cargo";
-    let rustdoc_parent = parent_image == "rustdoc" && rustdoc_test_parent;
+    let rustdoc_parent = parent_image == "rustdoc";
     if !cargo_parent && !rustdoc_parent {
         return false;
     }
