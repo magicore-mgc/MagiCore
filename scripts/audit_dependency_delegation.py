@@ -874,49 +874,49 @@ SHELL_EXPLICIT_DYNAMIC_REVIEWS = {
 # và lệnh bootstrap SDK Flutter.
 SHELL_EXACT_DYNAMIC_COMMAND_REVIEWS = {
     "cli/tests/scripts/runtime_full_e2e.sh": {
-        "f62b973e017ea61ba5fe3ca545193d8029dfde2ec09deed123d725c608f946fd": (
+        "dd7d1bc7b59170f6bce50ed79a813895943fc6753f8c2ce9d2614cef29c51662": (
             "Invokes the prevalidated MGC binary with fixed dev args in an isolated directory to verify the no-project diagnostic.",
         ),
-        "401926ceff39063a64d42696a9f1a0d0e88b98a1e91ffe29a51d0d3ba8cb0d13": (
+        "b445d2159c17768dfc6973764b74d2b8e6d0edca1815802d911dc51d46a9da7f": (
             "Invokes the prevalidated MGC binary with fixed install args in an isolated project fixture; no shell re-evaluation occurs.",
         ),
-        "fda1ba342eabd78fdb67ede34468e04e930a50f8911493cea32c6c8a460575ab": (
+        "eff75270eed1a922111ab1e589dfcbea1da64449bfe48373e38eacfa0799ca22": (
             "Invokes the prevalidated MGC binary with fixed native dev args to verify the Bun/Deno policy gate in an isolated fixture.",
         ),
-        "df9256108a836d0c6ce6beb0cb03cf646e32f27ce7bfdcc2d0a880aa94600949": (
+        "97ea66de931fe8ae2f2662725b9e26bb6952592b52b9269323f13ec2acb2fd9e": (
             "Invokes the prevalidated MGC binary with fixed native dev args in the isolated Node audit-log fixture.",
         ),
-        "66b0c7f8a9e9a470909d1b702c9f614b310b4b545b483d446432f080d8c29122": (
+        "1d2cb1d5c105c581fe0399ba2d9b75a0348d2ca3941f6644cda1b114c336c562": (
             "Invokes the prevalidated MGC binary with only the fixed Bun or Deno compatibility flag values from the two literal test calls.",
         ),
-        "b4b62d9943fd58e22d1dec8757ef6332301cdf1b9496f53369c308a8abced5d6": (
+        "484620c8ba94b26828840cf4da5cff33f82ff0101912e646f519edeaa763a9f5": (
             "Invokes the prevalidated MGC binary with fixed install args in the isolated native Node fixture.",
         ),
-        "48f05547cc59e18531d27134ef593388a677cc10d8fcf05178390678a2455a45": (
-            "Invokes the prevalidated MGC binary with fixed optimizer args in the isolated Rust optimizer fixture.",
-        ),
-        "c911f1125ecf43f995727fb4703b7a2bf04efa5b2dacfe701335bad90acfe9dc": (
+        "f42c42bfb82d81d64d317628a5dd648773b320ae4c236256c53a3f8a6dd22a98": (
             "Invokes the prevalidated MGC binary with fixed install args in the isolated short-lived-descendant churn fixture.",
         ),
-        "878974df83dbfe5920048c472864c643ea8fa04ab66524dc1feac4af37bdbd87": (
+        "906828a88532224afa27a49b4fc6a3c99675767383c99333c175a5fcfacd6386": (
             "Invokes the prevalidated MGC binary with fixed dev args to exercise the real process scanner under short-lived Node child churn.",
         ),
-        "7aace6c88a113a3acc5a087916c58d964163de25acd0e4402ee619e2dbefbb1a": (
+        "2938f502fc76bffe1a0731664908f89eb5232427bf9f94222c53c27e85d13dbf": (
             "Invokes the prevalidated MGC binary with fixed install args in the isolated process-guard fixture.",
         ),
-        "affce155d60b61e09742df2485d603ef5a420c3b806b50a0e2f55c240dd7ec7e": (
+        "ddd245ee033d1fa11322793eed0314a8253966e28ded6f9e800c8c20fa4dff2a": (
             "Runs the test-created fake npm executable with only a fixed probe argument to validate the inert local fixture before mgc executes it.",
         ),
-        "80712d728ca7bad97b7c5705979f2484c37cbee3e29cdb383d3871c71dea1bdb": (
+        "e5872e6a82b6cf638419e4a177c3ad4fa92a5f2f64faeca21e454a555bb9a453": (
             "Invokes the prevalidated MGC binary with fixed dev args for the detached-child process-guard E2E; child executable is a test-created inert fixture.",
         ),
-        "436f50eccf4d5478c82a5e44803d418c15ea524da9a1f48359bdd62219cb6f53": (
+        "bef85473d90baf06f265f23a1b20ed6fe48f28c17df12d65ac38831b45fc062a": (
+            "Invokes the prevalidated MGC binary with fixed optimizer args in the isolated Rust optimizer fixture.",
+        ),
+        "ea86696d1fc16c04eb23dc5cb54f13251c9461cd4fb83d8173e8a3d36ba248b8": (
             "Invokes the prevalidated MGC binary with fixed install args in the isolated Rust optimizer fixture.",
         ),
-        "f30797a4cfe9bea41b95fccc7550e52b4d499e5b8b7b102a7f233018344298a6": (
+        "f327423e7649cd90bfee632b58efbf1051fa1158b6d363a9e7bfbdd3bddc092b": (
             "Invokes the prevalidated MGC binary with fixed build args to prove optimizer profile settings reach Cargo.",
         ),
-        "327d022a1330852dc1d477c382aa1f69059fff6337226682720750edf416514e": (
+        "11586a21b071d31f74384c740f73f3cb1af707cc0771959ebf93fa8cd8418172": (
             "Invokes the prevalidated MGC binary with fixed test args to prove optimizer profile settings reach the real test runner.",
         ),
     },
