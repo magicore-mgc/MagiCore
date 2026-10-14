@@ -1436,6 +1436,7 @@ fn unique_temp_dir(prefix: &str) -> PathBuf {
 
 /// Match only a direct child directory produced by `unique_temp_dir`.
 /// Chỉ nhận thư mục con trực tiếp có tên đúng mẫu `unique_temp_dir` tạo ra.
+#[cfg(unix)]
 fn is_generated_shadow_directory(dir: &Path) -> bool {
     let Some(parent) = dir.parent() else {
         return false;

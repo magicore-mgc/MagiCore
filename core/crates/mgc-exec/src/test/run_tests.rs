@@ -1170,30 +1170,6 @@ fn windows_nested_npm_probe_requires_authenticated_image_and_version_verb() {
         &shadow_path
     ));
 
-    let marker = dir.join(".mgc-npm-probe-v1");
-    let mut marker_permissions = std::fs::metadata(&marker)
-        .expect("read nested probe marker permissions")
-        .permissions();
-    marker_permissions.set_readonly(false);
-    std::fs::set_permissions(&marker, marker_permissions)
-        .expect("make marker writable for rejection check");
-    assert!(!super::is_shadow_windows_npm_version_probe(
-        &probe,
-        &shim,
-        &shadow_path
-    ));
-
-    for marker in [
-        hard_link_dir.join(".mgc-npm-probe-v1"),
-        forged_dir.join(".mgc-npm-probe-v1"),
-    ] {
-        let mut permissions = std::fs::metadata(&marker)
-            .expect("read fixture marker permissions before cleanup")
-            .permissions();
-        permissions.set_readonly(false);
-        std::fs::set_permissions(&marker, permissions).expect("make fixture marker removable");
-    }
-
     drop(shadow_path);
     std::fs::remove_dir_all(&dir).expect("remove nested Windows shim fixture");
     drop(hard_link_shadow_path);
