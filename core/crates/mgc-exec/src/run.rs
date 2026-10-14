@@ -5429,6 +5429,18 @@ fn is_rustdoc_test_compilation_argv(argv: &[OsString]) -> bool {
         })
     {
         &argv[2..]
+    } else if argv
+        .get(1)
+        .is_some_and(|argument| argument.to_string_lossy().starts_with('-'))
+    {
+        // Rustdoc may invoke a compiler through a wrapper whose argv[0] is not
+        // `rustc`; recognize it only when compiler options begin immediately and
+        // the caller below confirms the parent is rustdoc. Cargo subcommands stay
+        // rejected because they begin with a subcommand such as `install`.
+        // (Rustdoc có thể gọi compiler qua wrapper có argv[0] không phải `rustc`;
+        // chỉ nhận nếu argv kế tiếp là flag compiler và caller xác nhận cha rustdoc.
+        // Lệnh Cargo vẫn bị chặn vì argv bắt đầu bằng subcommand như `install`.)
+        &argv[1..]
     } else if program.to_string_lossy().starts_with('-') {
         argv
     } else {

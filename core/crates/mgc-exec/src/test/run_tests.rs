@@ -1402,6 +1402,38 @@ fn rustc_child_requires_a_trusted_cargo_parent_but_cargo_install_is_denied() {
         Some("cargo")
     ));
 
+    // A runner may expose a rustdoc compiler wrapper under a name other than rustc;
+    // compiler flags directly after argv[0] are trusted only under a rustdoc parent.
+    // (Runner có thể hiện wrapper compiler do rustdoc gọi dưới tên khác rustc;
+    // chỉ tin flags compiler ngay sau argv[0] khi parent là rustdoc.)
+    let rustdoc_wrapped_compiler = [
+        "compiler-wrapper",
+        "--crate-type",
+        "bin",
+        "--color",
+        "always",
+        "--crate-name",
+        "rust_out",
+        "--test",
+        "/tmp/rustdoc-doctest.rs",
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect::<Vec<_>>();
+    assert!(super::is_rustdoc_test_compilation_argv(
+        &rustdoc_wrapped_compiler
+    ));
+    assert!(super::is_rustc_toolchain_child(
+        "cargo",
+        &rustdoc_wrapped_compiler,
+        Some("rustdoc")
+    ));
+    assert!(!super::is_rustc_toolchain_child(
+        "cargo",
+        &rustdoc_wrapped_compiler,
+        Some("cargo")
+    ));
+
     let cargo_manager_with_compiler_flags = [
         "cargo",
         "install",
