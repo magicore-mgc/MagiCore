@@ -318,7 +318,9 @@ fn command_timeout_kills_hung_tool() {
     // (Tool giả: chạy sleeper 30s (grandchild), ghi PID ra file, rồi giữ
     // shell sống bằng `wait`. Sleeper thừa hưởng stdout dạng pipe và giữ nó
     // suốt 30s.)
-    let fake_tool = dir.join("cargo"); // allowlisted name — normalize_script_token takes the basename ("cargo")
+    // Keep the fixture name neutral so this test measures timeout handling, not Cargo policy.
+    // Dùng tên trung tính để test đo timeout, không vô tình đo policy Cargo.
+    let fake_tool = dir.join("timeout-tool");
     fs::write(
         &fake_tool,
         format!(
