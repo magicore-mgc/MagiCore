@@ -61,7 +61,7 @@ fn windows_bare_npm_probe_authenticates_image_and_rejects_mutations() {
 }
 
 #[test]
-fn windows_probe_argv0_accepts_bare_alias_but_rejects_different_path() {
+fn windows_probe_argv0_resolves_only_npm_aliases() {
     use std::ffi::OsStr;
     let root = tempfile::tempdir().expect("probe alias directory");
     let shadow = root.path().join("shadow");
@@ -72,34 +72,12 @@ fn windows_probe_argv0_accepts_bare_alias_but_rejects_different_path() {
             Some(shadow.join("npm.exe"))
         );
     }
-    let image = root.path().join("npm.exe");
-    std::fs::write(&image, b"image identity is authenticated separately")
-        .expect("create image fixture");
-    let canonical = image.canonicalize().expect("canonical image fixture");
-    for alias in ["npm", "npm.exe", "NPM.EXE"] {
-        assert!(super::windows_probe_argv0_matches_image(
-            OsStr::new(alias),
-            &canonical
-        ));
-    }
-    assert!(super::windows_probe_argv0_matches_image(
-        image.as_os_str(),
-        &canonical
-    ));
-    assert!(super::windows_probe_argv0_matches_image(
-        image.as_os_str(),
-        &image
-    ));
-    assert!(!super::windows_probe_argv0_matches_image(
-        OsStr::new("evil"),
-        &canonical
-    ));
-    let other = root.path().join("different-npm.exe");
-    std::fs::write(&other, b"different image").expect("create different image fixture");
-    assert!(!super::windows_probe_argv0_matches_image(
-        other.as_os_str(),
-        &canonical
-    ));
+    let absolute_alias = root.path().join("npm.exe");
+    assert_eq!(
+        super::windows_npm_probe_argv0_path(absolute_alias.as_os_str(), &shadow),
+        Some(absolute_alias)
+    );
+    assert!(super::windows_npm_probe_argv0_path(OsStr::new("other.exe"), &shadow).is_none());
 }
 
 #[test]
@@ -937,6 +915,23 @@ fn windows_npm_probe_exemption_requires_authenticated_native_shim_and_safe_comma
         &shim,
         &shadow_path
     ));
+    let hard_link_target_argv0 = super::WindowsProcessSnapshot {
+        pid: 204,
+        parent_pid: Some(200),
+        creation_time: Some(204),
+        image_name: "npm.exe".to_owned(),
+        command: vec![
+            std::env::current_exe()
+                .expect("resolve hard-link target argv0 fixture")
+                .into_os_string(),
+            OsString::from("--version"),
+        ],
+    };
+    assert!(super::is_shadow_windows_npm_version_probe(
+        &hard_link_target_argv0,
+        &shim,
+        &shadow_path
+    ));
 
     let starting_probe = super::WindowsProcessSnapshot {
         pid: 201,
@@ -1063,7 +1058,7 @@ fn windows_npm_probe_exemption_requires_authenticated_native_shim_and_safe_comma
 
 #[cfg(windows)]
 #[test]
-fn windows_nested_npm_probe_requires_generated_path_marker_and_version_verb() {
+fn windows_nested_npm_probe_requires_authenticated_image_and_version_verb() {
     use std::ffi::OsString;
 
     let original_executable = std::env::current_exe().expect("resolve test executable");
@@ -1071,8 +1066,6 @@ fn windows_nested_npm_probe_requires_generated_path_marker_and_version_verb() {
     std::fs::create_dir(&dir).expect("create generated nested shadow directory");
     let shim = dir.join("npm.exe");
     std::fs::copy(&original_executable, &shim).expect("copy executor image as Windows npm shim");
-    let digest = super::windows_sha256_file(&shim).expect("hash nested shim");
-    super::write_windows_npm_probe_marker(&dir, &digest).expect("write probe marker");
     let shadow_path = super::ShadowPath {
         dir: dir.join("outer-executor-shadow"),
     };
@@ -1089,18 +1082,10 @@ fn windows_nested_npm_probe_requires_generated_path_marker_and_version_verb() {
         &shim,
         &shadow_path
     ));
-    let case_variant_shadow_path = super::ShadowPath {
-        dir: std::path::PathBuf::from(shadow_path.path().to_string_lossy().to_uppercase()),
-    };
-    assert!(super::is_shadow_windows_npm_version_probe(
-        &probe,
-        &shim,
-        &case_variant_shadow_path
-    ));
 
     // Windows may report the original path for a hard-linked image while argv[0]
     // retains the private npm.exe alias used to launch it.
-    // (Windows có thể báo file gốc của hard link dù argv[0] giữ alias npm.exe.)
+    // (Windows có thể báo path file gốc của hard link dù argv[0] giữ alias npm.exe.)
     let hard_link_dir = super::unique_temp_dir("mgc-exec-shadow-path");
     std::fs::create_dir(&hard_link_dir).expect("create generated hard-link shadow directory");
     let hard_link_image = hard_link_dir.join("mgc.exe");
@@ -1109,10 +1094,6 @@ fn windows_nested_npm_probe_requires_generated_path_marker_and_version_verb() {
     let hard_link_shim = hard_link_dir.join("npm.exe");
     std::fs::hard_link(&hard_link_image, &hard_link_shim)
         .expect("create hard-linked Windows npm shim");
-    let hard_link_digest =
-        super::windows_sha256_file(&hard_link_image).expect("hash hard-link target image");
-    super::write_windows_npm_probe_marker(&hard_link_dir, &hard_link_digest)
-        .expect("write hard-link probe marker");
     let hard_link_shadow_path = super::ShadowPath {
         dir: hard_link_dir.join("outer-executor-shadow"),
     };
@@ -1141,17 +1122,13 @@ fn windows_nested_npm_probe_requires_generated_path_marker_and_version_verb() {
         &hard_link_shadow_path
     ));
 
-    // A generated-looking directory and a self-authored matching marker do not
-    // authenticate a different executable as the MagiCore version-probe shim.
-    // (Tên thư mục và marker tự tạo không xác thực được executable khác binary MagiCore.)
+    // A forged npm path cannot authenticate executable bytes that differ from MGC.
+    // (Tên file npm giả không thể xác thực binary có byte khác MagiCore.)
     let forged_dir = super::unique_temp_dir("mgc-exec-shadow-path");
     std::fs::create_dir(&forged_dir).expect("create forged generated-looking directory");
     let forged_shim = forged_dir.join("npm.exe");
     std::fs::write(&forged_shim, b"untrusted executable bytes")
         .expect("write untrusted probe image");
-    let forged_digest = super::windows_sha256_file(&forged_shim).expect("hash forged shim");
-    super::write_windows_npm_probe_marker(&forged_dir, &forged_digest)
-        .expect("write forged matching marker");
     let forged_shadow_path = super::ShadowPath {
         dir: forged_dir.join("outer-executor-shadow"),
     };

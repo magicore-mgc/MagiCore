@@ -1517,8 +1517,6 @@ fn write_blocker(dir: &Path, tool: &str) -> Result<()> {
                     )
                 })?;
             }
-            let digest = windows_sha256_file(&executable)?;
-            write_windows_npm_probe_marker(dir, &digest)?;
             return Ok(());
         }
     }
@@ -1535,53 +1533,6 @@ fn write_blocker(dir: &Path, tool: &str) -> Result<()> {
         .open(path)?;
     file.write_all(content.as_bytes())?;
     Ok(())
-}
-
-#[cfg(windows)]
-fn windows_sha256_hex(digest: &[u8; 32]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut encoded = String::with_capacity(64);
-    for byte in digest {
-        encoded.push(HEX[(byte >> 4) as usize] as char);
-        encoded.push(HEX[(byte & 0x0f) as usize] as char);
-    }
-    encoded
-}
-
-#[cfg(windows)]
-fn write_windows_npm_probe_marker(dir: &Path, digest: &[u8; 32]) -> Result<()> {
-    use std::io::Write;
-
-    let marker = dir.join(".mgc-npm-probe-v1");
-    let content = format!("mgc-npm-probe-v1\n{}\n", windows_sha256_hex(digest));
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&marker)?;
-    file.write_all(content.as_bytes())?;
-    drop(file);
-    let mut permissions = std::fs::metadata(&marker)?.permissions();
-    permissions.set_readonly(true);
-    std::fs::set_permissions(&marker, permissions)?;
-    Ok(())
-}
-
-#[cfg(windows)]
-fn windows_npm_probe_marker_matches(dir: &Path, executable_path: &Path) -> bool {
-    let marker = dir.join(".mgc-npm-probe-v1");
-    let Ok(metadata) = std::fs::symlink_metadata(&marker) else {
-        return false;
-    };
-    if !metadata.file_type().is_file() || !metadata.permissions().readonly() {
-        return false;
-    }
-    let (Ok(content), Ok(digest)) = (
-        std::fs::read_to_string(&marker),
-        windows_sha256_file(executable_path),
-    ) else {
-        return false;
-    };
-    content == format!("mgc-npm-probe-v1\n{}\n", windows_sha256_hex(&digest))
 }
 
 #[cfg(windows)]
@@ -4763,34 +4714,6 @@ fn find_forbidden_descendant(
     Ok(None)
 }
 
-/// Compare argv[0] with a separately authenticated image; this is not authorization.
-/// Đối chiếu argv[0] với image đã xác thực riêng; helper này không cấp quyền chạy.
-#[cfg(any(windows, test))]
-fn windows_probe_argv0_matches_image(program: &std::ffi::OsStr, image: &Path) -> bool {
-    if program.eq_ignore_ascii_case(std::ffi::OsStr::new("npm"))
-        || program.eq_ignore_ascii_case(std::ffi::OsStr::new("npm.exe"))
-    {
-        return true;
-    }
-    windows_canonical_paths_equal(Path::new(program), image)
-}
-
-#[cfg(any(windows, test))]
-fn windows_canonical_paths_equal(left: &Path, right: &Path) -> bool {
-    fn normalize(path: &Path) -> Option<String> {
-        let canonical = std::fs::canonicalize(path).ok()?;
-        let mut value = canonical.to_string_lossy().replace('/', "\\");
-        if let Some(unc_path) = value.strip_prefix("\\\\?\\UNC\\") {
-            value = format!("\\\\{unc_path}");
-        } else if let Some(local_path) = value.strip_prefix("\\\\?\\") {
-            value = local_path.to_owned();
-        }
-        Some(value.trim_end_matches('\\').to_lowercase())
-    }
-
-    matches!((normalize(left), normalize(right)), (Some(left), Some(right)) if left == right)
-}
-
 #[cfg(windows)]
 fn is_shadow_windows_npm_version_probe(
     process: &WindowsProcessSnapshot,
@@ -4803,21 +4726,11 @@ fn is_shadow_windows_npm_version_probe(
         return false;
     };
     let command_shape_is_safe = match process.command.as_slice() {
-        // Windows can expose the process image before its argument list is fully
-        // observable. This one-argv snapshot is safe only after the executable
-        // path and bytes below authenticate the private MagiCore shim; that
-        // binary itself refuses every npm request except `--version`.
-        // Windows có thể lộ image trước khi argv hiện đủ. Snapshot chỉ có argv0
-        // chỉ an toàn khi path và byte bên dưới xác thực shim MagiCore riêng;
-        // binary này tự từ chối mọi yêu cầu npm ngoài `--version`.
-        [program] => {
-            program.eq_ignore_ascii_case(OsStr::new("npm"))
-                || program.eq_ignore_ascii_case(OsStr::new("npm.exe"))
-                || (Path::new(program).is_absolute()
-                    && Path::new(program)
-                        .file_name()
-                        .is_some_and(|name| name.eq_ignore_ascii_case(OsStr::new("npm.exe"))))
-        }
+        // Windows can expose the process image before arguments become visible.
+        // A one-argument snapshot is accepted only while argv[0] still names npm.
+        // (Windows có thể lộ image trước args. Snapshot một argv chỉ an toàn
+        // nếu argv[0] vẫn nhận diện alias npm.)
+        [program] => windows_npm_probe_argv0_path(program, shadow_path.path()).is_some(),
         [_, version] => version.as_os_str() == OsStr::new("--version"),
         _ => false,
     };
@@ -4825,60 +4738,15 @@ fn is_shadow_windows_npm_version_probe(
         return false;
     }
 
-    let Some(program) = process.command.first() else {
+    // Windows can report the hard-linked target path instead of the npm alias.
+    // Authenticate the actual process image bytes and safe command shape rather
+    // than depending on which hard-link path the OS reports.
+    // (Windows có thể báo path đích hard-link thay vì alias npm. Xác thực byte
+    // image thực tế và args an toàn, không phụ thuộc OS trả path nào.)
+    let Ok(image_digest) = windows_sha256_file(executable_path) else {
         return false;
     };
-    let Some(program_path) = windows_npm_probe_argv0_path(program, shadow_path.path()) else {
-        return false;
-    };
-    let Ok(image_path) = std::fs::canonicalize(executable_path) else {
-        return false;
-    };
-    let Ok(image_digest) = windows_sha256_file(&image_path) else {
-        return false;
-    };
-    let image_is_npm_alias = image_path
-        .file_name()
-        .is_some_and(|name| name.eq_ignore_ascii_case(OsStr::new("npm.exe")));
-
-    // Windows may report the target path of a hard-linked executable (mgc.exe)
-    // instead of the npm.exe alias used as argv[0]. Authenticate that alias too:
-    // it must be the exact private shim or a generated shim carrying a matching
-    // read-only marker, and its bytes must match the observed process image.
-    // (Windows có thể báo đường dẫn file đích của hard link thay vì alias npm.exe;
-    // xác thực thêm argv[0] qua thư mục shim và marker gắn với đúng image.)
-    let alias_path_matches_image =
-        windows_sha256_file(&program_path).is_ok_and(|digest| digest == image_digest);
-    let program_parent = program_path.parent();
-    let is_current_executor_alias = alias_path_matches_image
-        && program_parent
-            .is_some_and(|parent| windows_canonical_paths_equal(parent, shadow_path.path()))
-        && image_digest == expected_digest;
-    let is_nested_executor_alias = alias_path_matches_image
-        && image_digest == expected_digest
-        && program_parent.is_some_and(|parent| {
-            is_generated_shadow_directory(parent)
-                && windows_npm_probe_marker_matches(parent, &program_path)
-        });
-
-    let image_parent = image_path.parent();
-    let is_current_executor_image = image_is_npm_alias
-        && windows_probe_argv0_matches_image(program, &image_path)
-        && image_parent.is_some_and(|parent| {
-            windows_canonical_paths_equal(parent, shadow_path.path())
-                && image_digest == expected_digest
-        });
-    let is_nested_executor_image = image_is_npm_alias
-        && windows_probe_argv0_matches_image(program, &image_path)
-        && image_digest == expected_digest
-        && image_parent.is_some_and(|parent| {
-            is_generated_shadow_directory(parent)
-                && windows_npm_probe_marker_matches(parent, &image_path)
-        });
-    is_current_executor_alias
-        || is_nested_executor_alias
-        || is_current_executor_image
-        || is_nested_executor_image
+    image_digest == expected_digest
 }
 
 #[cfg(any(windows, test))]
