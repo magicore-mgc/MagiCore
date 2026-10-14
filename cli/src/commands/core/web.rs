@@ -4010,6 +4010,12 @@ fn resolve_seed_name(framework: &str) -> &str {
     }
 }
 
+/// Add Tailwind from a UI preset only when its dedicated feature flag is absent.
+/// Preset UI chỉ tự thêm Tailwind khi cờ feature riêng chưa bật.
+fn ui_preset_needs_implicit_tailwind(flags: &ScaffoldFlags) -> bool {
+    !flags.tailwindcss && (flags.shadcn || flags.daisyui)
+}
+
 async fn resolve_primary_version(
     request: &FrameworkRequest,
     package: &str,
@@ -4107,7 +4113,7 @@ async fn apply_web_manifest_seed(
         }
     }
 
-    if flags.tailwindcss || flags.shadcn || flags.daisyui {
+    if ui_preset_needs_implicit_tailwind(flags) {
         let version =
             versions::resolve_seed_dependency_version("tailwindcss", None, age_policy).await?;
         ensure_package(object, "devDependencies", "tailwindcss", &version);

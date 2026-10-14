@@ -313,6 +313,23 @@ fn primary_package_seed_defaults_to_dependencies_when_not_declared() {
 }
 
 #[test]
+fn web_preset_only_seeds_implicit_tailwind_without_the_feature_flag() {
+    let mut flags = crate::commands::core::scaffold_flags::ScaffoldFlags::default();
+    assert!(!super::ui_preset_needs_implicit_tailwind(&flags));
+
+    flags.tailwindcss = true;
+    flags.shadcn = true;
+    assert!(!super::ui_preset_needs_implicit_tailwind(&flags));
+
+    flags.tailwindcss = false;
+    assert!(super::ui_preset_needs_implicit_tailwind(&flags));
+
+    flags.shadcn = false;
+    flags.daisyui = true;
+    assert!(super::ui_preset_needs_implicit_tailwind(&flags));
+}
+
+#[test]
 fn scaffold_selects_latest_release_that_passes_the_project_age_gate() {
     use mgc_web_adapter::native::npm_registry::{PackageMetadata, VersionInfo};
     use mgc_web_adapter::provider::AgePolicy;
