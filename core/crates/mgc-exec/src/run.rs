@@ -3946,7 +3946,7 @@ fn forbidden_process_entry(
         .parent()
         .and_then(|parent_pid| system.process(parent_pid))
         .map(|parent| parent.name().to_string_lossy().into_owned());
-    if is_cargo_rustc_wrapper_child(&image_name, process.cmd(), parent_image.as_deref()) {
+    if is_rustc_toolchain_child(&image_name, process.cmd(), parent_image.as_deref()) {
         return None;
     }
     let policy_env = if process_basename(&image_name) == "go" {
@@ -5196,14 +5196,35 @@ fn is_rustc_compilation_argv(argv: &[OsString]) -> bool {
         && argv.iter().skip(1).any(|arg| arg == "--crate-type")
 }
 
-fn is_cargo_rustc_wrapper_child(
-    image: &str,
-    argv: &[OsString],
-    parent_image: Option<&str>,
-) -> bool {
-    if process_basename(image) != "cargo"
-        || !parent_image.is_some_and(|parent| process_basename(parent) == "cargo")
-    {
+fn is_rustc_toolchain_child(image: &str, argv: &[OsString], parent_image: Option<&str>) -> bool {
+    if process_basename(image) != "cargo" {
+        return false;
+    }
+    let Some(parent_image) = parent_image.map(process_basename) else {
+        return false;
+    };
+    let cargo_parent = parent_image == "cargo";
+    let rustdoc_parent = parent_image == "rustdoc";
+    if !cargo_parent && !rustdoc_parent {
+        return false;
+    }
+
+    // Rustdoc compiles doctests through rustc; process snapshots can omit argv[0]
+    // and report the compiler image as Cargo. Accept only the full rustc shape.
+    // (Rustdoc biên dịch doctest qua rustc; snapshot có thể thiếu argv[0] và
+    // ghi image compiler thành Cargo. Chỉ nhận diện khi đủ chữ ký rustc.)
+    let direct_rustc_shape = is_rustc_compilation_argv(argv);
+    let executable_omitted_shape = argv.first().is_some_and(|first| {
+        first.to_string_lossy().starts_with('-')
+            && is_rustc_compilation_flags(argv)
+            && argv.iter().any(|arg| arg == "--emit")
+            && argv.iter().any(|arg| arg == "--out-dir")
+    });
+    if direct_rustc_shape || executable_omitted_shape {
+        return true;
+    }
+
+    if !cargo_parent {
         return false;
     }
 
@@ -5214,13 +5235,7 @@ fn is_cargo_rustc_wrapper_child(
             && process_basename(&compiler.to_string_lossy()) == "rustc"
             && is_rustc_compilation_flags(&argv[2..])
     });
-    let executable_omitted_shape = argv.first().is_some_and(|first| {
-        first.to_string_lossy().starts_with('-')
-            && is_rustc_compilation_flags(argv)
-            && argv.iter().any(|arg| arg == "--emit")
-            && argv.iter().any(|arg| arg == "--out-dir")
-    });
-    wrapper_shape || executable_omitted_shape
+    wrapper_shape
 }
 
 fn is_rustc_compilation_flags(argv: &[OsString]) -> bool {

@@ -1073,6 +1073,21 @@ fn cargo_image_with_rustc_compilation_argv_is_allowed_but_cargo_install_is_denie
     .map(OsString::from)
     .collect::<Vec<_>>();
     assert!(super::forbidden_process_match_argv("cargo", &rustc_child, &[]).is_none());
+    assert!(super::is_rustc_toolchain_child(
+        "cargo",
+        &rustc_child,
+        Some("cargo")
+    ));
+    assert!(super::is_rustc_toolchain_child(
+        "cargo",
+        &rustc_child,
+        Some("rustdoc")
+    ));
+    assert!(!super::is_rustc_toolchain_child(
+        "cargo",
+        &rustc_child,
+        Some("node")
+    ));
 
     // The wrapper-shaped snapshot is allowed only below its Cargo parent.
     // (Shape wrapper chỉ được nhận khi parent trực tiếp cũng là Cargo.)
@@ -1089,25 +1104,30 @@ fn cargo_image_with_rustc_compilation_argv_is_allowed_but_cargo_install_is_denie
         OsString::from("--test"),
     ];
     assert!(super::forbidden_process_match_argv("cargo", &cargo_wrapped_rustc, &[]).is_some());
-    assert!(super::is_cargo_rustc_wrapper_child(
+    assert!(super::is_rustc_toolchain_child(
         "cargo",
         &cargo_wrapped_rustc,
         Some("cargo")
     ));
-    assert!(!super::is_cargo_rustc_wrapper_child(
+    assert!(!super::is_rustc_toolchain_child(
         "cargo",
         &cargo_wrapped_rustc,
         Some("node")
     ));
-    assert!(!super::is_cargo_rustc_wrapper_child(
+    assert!(!super::is_rustc_toolchain_child(
+        "cargo",
+        &cargo_wrapped_rustc,
+        Some("rustdoc")
+    ));
+    assert!(!super::is_rustc_toolchain_child(
         "cargo",
         &cargo_wrapped_rustc,
         None
     ));
 
-    // macOS may omit argv[0] entirely for a Cargo-spawned rustc snapshot;
-    // require Cargo parent plus the full compiler-only signature.
-    // (macOS có thể bỏ argv[0]; bắt buộc có parent Cargo và đủ chữ ký compiler.)
+    // OS snapshots may omit argv[0] for Cargo/rustdoc compiler children;
+    // require a trusted toolchain parent plus the full compiler-only signature.
+    // (Snapshot có thể bỏ argv[0]; bắt buộc parent thuộc toolchain và đủ chữ ký compiler.)
     let rustc_args_without_program = [
         "--crate-name",
         "probe",
@@ -1124,17 +1144,22 @@ fn cargo_image_with_rustc_compilation_argv_is_allowed_but_cargo_install_is_denie
     assert!(
         super::forbidden_process_match_argv("cargo", &rustc_args_without_program, &[]).is_some()
     );
-    assert!(super::is_cargo_rustc_wrapper_child(
+    assert!(super::is_rustc_toolchain_child(
         "cargo",
         &rustc_args_without_program,
         Some("cargo")
     ));
-    assert!(!super::is_cargo_rustc_wrapper_child(
+    assert!(super::is_rustc_toolchain_child(
+        "cargo",
+        &rustc_args_without_program,
+        Some("rustdoc")
+    ));
+    assert!(!super::is_rustc_toolchain_child(
         "cargo",
         &rustc_args_without_program,
         Some("node")
     ));
-    assert!(!super::is_cargo_rustc_wrapper_child(
+    assert!(!super::is_rustc_toolchain_child(
         "cargo",
         &rustc_args_without_program,
         None
@@ -1143,7 +1168,7 @@ fn cargo_image_with_rustc_compilation_argv_is_allowed_but_cargo_install_is_denie
         .into_iter()
         .map(OsString::from)
         .collect::<Vec<_>>();
-    assert!(!super::is_cargo_rustc_wrapper_child(
+    assert!(!super::is_rustc_toolchain_child(
         "cargo",
         &incomplete_args_without_program,
         Some("cargo")
