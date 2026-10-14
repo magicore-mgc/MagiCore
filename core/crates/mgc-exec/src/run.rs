@@ -4840,15 +4840,6 @@ fn windows_npm_probe_argv0_path(program: &std::ffi::OsStr, shadow_dir: &Path) ->
     .then(|| path.to_path_buf())
 }
 
-#[cfg(all(test, not(windows)))]
-fn is_shadow_windows_npm_version_probe(
-    _process: &WindowsProcessSnapshot,
-    _executable_path: &Path,
-    _shadow_path: &ShadowPath,
-) -> bool {
-    false
-}
-
 #[cfg(unix)]
 fn is_shadow_npm_version_probe(command: &[u8], command_line: &[u8], shadow_dir: &Path) -> bool {
     use std::os::unix::ffi::OsStrExt;
