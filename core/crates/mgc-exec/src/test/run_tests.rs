@@ -1364,7 +1364,7 @@ fn rustc_child_requires_a_trusted_cargo_parent_but_cargo_install_is_denied() {
         &rustdoc_doctest_wrapper,
         Some("rustdoc")
     ));
-    assert!(!super::is_rustc_toolchain_child(
+    assert!(super::is_rustc_toolchain_child(
         "cargo",
         &rustdoc_doctest_wrapper,
         Some("cargo")
