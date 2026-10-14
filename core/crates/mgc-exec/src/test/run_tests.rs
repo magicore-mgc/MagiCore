@@ -1375,8 +1375,8 @@ fn rustc_child_requires_a_trusted_cargo_parent_but_cargo_install_is_denied() {
         Some("node")
     ));
 
-    // Some OS process snapshots omit argv[0] entirely for rustdoc children.
-    // (Một số OS snapshot bỏ hẳn argv[0] của tiến trình con rustdoc.)
+    // Some OS process snapshots omit argv[0] entirely for Cargo/rustdoc children.
+    // (Một số OS snapshot bỏ hẳn argv[0] của tiến trình con Cargo/rustdoc.)
     let rustdoc_doctest_without_program = [
         "--crate-type",
         "bin",
@@ -1396,7 +1396,7 @@ fn rustc_child_requires_a_trusted_cargo_parent_but_cargo_install_is_denied() {
         &rustdoc_doctest_without_program,
         Some("rustdoc")
     ));
-    assert!(!super::is_rustc_toolchain_child(
+    assert!(super::is_rustc_toolchain_child(
         "cargo",
         &rustdoc_doctest_without_program,
         Some("cargo")
