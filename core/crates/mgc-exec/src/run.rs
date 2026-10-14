@@ -111,6 +111,10 @@ const WINDOWS_JOB_MEMBER_SNAPSHOT_RETRIES: usize = 20;
 const WINDOWS_JOB_INITIAL_PROCESS_CAPACITY: usize = 128;
 #[cfg(windows)]
 const WINDOWS_JOB_MAX_PROCESS_CAPACITY: usize = 8192;
+/// Maximum UTF-16 path buffer accepted by the Windows process-image query API.
+/// Dung lượng UTF-16 tối đa của API truy vấn đường dẫn image trên Windows.
+#[cfg(windows)]
+const WINDOWS_IMAGE_PATH_BUFFER_UNITS: usize = 32_768;
 #[cfg(any(windows, test))]
 const WINDOWS_COMMAND_LINE_RETRY_DELAY_MS: u64 = 25;
 #[cfg(any(windows, test))]
@@ -2358,6 +2362,33 @@ impl Drop for WindowsOwnedHandle {
 #[cfg(windows)]
 impl WindowsOwnedHandle {
     #[allow(unsafe_code)]
+    fn full_image_path(&self) -> Result<PathBuf> {
+        use std::os::windows::ffi::OsStringExt;
+        use windows_sys::Win32::System::Threading::QueryFullProcessImageNameW;
+
+        let mut buffer = vec![0u16; WINDOWS_IMAGE_PATH_BUFFER_UNITS];
+        let mut length = buffer.len() as u32;
+        // SAFETY: the handle is open for limited process queries and the buffer is writable
+        // for the full capacity reported in `length`.
+        // AN TOÀN: handle có quyền truy vấn giới hạn; buffer có thể ghi đủ dung lượng trong `length`.
+        let queried =
+            unsafe { QueryFullProcessImageNameW(self.0, 0, buffer.as_mut_ptr(), &mut length) };
+        if queried == 0 {
+            bail!(
+                "failed to resolve Windows job child image path (error {})",
+                windows_last_error()
+            );
+        }
+        let length = usize::try_from(length)
+            .context("Windows returned an invalid process image path length")?;
+        if length == 0 || length > buffer.len() {
+            bail!("Windows returned an invalid process image path length");
+        }
+        buffer.truncate(length);
+        Ok(PathBuf::from(std::ffi::OsString::from_wide(&buffer)))
+    }
+
+    #[allow(unsafe_code)]
     fn has_terminated(&self) -> Result<bool> {
         use windows_sys::Win32::Foundation::STILL_ACTIVE;
         use windows_sys::Win32::System::Threading::GetExitCodeProcess;
@@ -2775,7 +2806,8 @@ fn inspect_windows_job(
                     );
                 }
                 if let Some(process) = system.process(process_id) {
-                    if is_go && process_basename(&process.name().to_string_lossy()) == "go" {
+                    let image_name = process.name().to_string_lossy().into_owned();
+                    if is_go && process_basename(&image_name) == "go" {
                         let observed = process
                             .environ()
                             .iter()
@@ -2787,8 +2819,18 @@ fn inspect_windows_job(
                             .collect::<Vec<_>>();
                         go_policy_env.insert(process_id.as_u32(), observed);
                     }
-                    if let Some(executable) = process.exe() {
-                        executable_paths.insert(process_id.as_u32(), executable.to_path_buf());
+                    let executable_path = if image_name.eq_ignore_ascii_case("npm.exe") {
+                        // Resolve the image through the validated Job handle, not only a process-table snapshot.
+                        // Lấy image từ handle Job đã xác thực, không chỉ dựa vào snapshot process-table.
+                        identity_guard
+                            .full_image_path()
+                            .ok()
+                            .or_else(|| process.exe().map(Path::to_path_buf))
+                    } else {
+                        process.exe().map(Path::to_path_buf)
+                    };
+                    if let Some(executable) = executable_path {
+                        executable_paths.insert(process_id.as_u32(), executable);
                     }
                     return Ok(WindowsJobMemberMetadata::Available(
                         WindowsProcessSnapshot {
@@ -2797,7 +2839,7 @@ fn inspect_windows_job(
                             parent_pid: None,
                             #[cfg(test)]
                             creation_time: None,
-                            image_name: process.name().to_string_lossy().into_owned(),
+                            image_name,
                             command: process.cmd().to_vec(),
                         },
                     ));
