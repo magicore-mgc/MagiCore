@@ -3050,20 +3050,21 @@ fn inspect_windows_job_processes_with_policy_metadata(
         if command_line.is_empty() && inspected.missing_command_line.is_none() {
             inspected.missing_command_line = Some((process_id, image_name.clone()));
         }
+        let npm_probe_authentication = shadow_path.map(|shadow_path| {
+            windows_npm_probe_authentication(
+                process,
+                policy_metadata
+                    .executable_paths
+                    .get(&process_id)
+                    .map(PathBuf::as_path),
+                shadow_path,
+            )
+        });
         let npm_probe_allowed =
             is_npm_version_shell_probe(process.image_name.as_bytes(), command_line.as_bytes())
-                || shadow_path.is_some_and(|shadow_path| {
-                    policy_metadata
-                        .executable_paths
-                        .get(&process_id)
-                        .is_some_and(|executable_path| {
-                            is_shadow_windows_npm_version_probe(
-                                process,
-                                executable_path,
-                                shadow_path,
-                            )
-                        })
-                });
+                || npm_probe_authentication
+                    .as_ref()
+                    .is_some_and(|authentication| authentication.is_ok());
         let observed_env = if process_basename(&image_name) == "go" {
             policy_metadata
                 .go_policy_env
@@ -3086,6 +3087,14 @@ fn inspect_windows_job_processes_with_policy_metadata(
         {
             let matched_operation =
                 matched_invocation_shape_argv(&name, &process.command, matched_token_index);
+            let matched_operation = if name == "npm"
+                && matched_operation == "exact read-only probe"
+                && let Some(Err(reason)) = npm_probe_authentication
+            {
+                format!("{matched_operation}; MGC shim authentication rejected: {reason}")
+            } else {
+                matched_operation
+            };
             inspected.first_forbidden = Some(ForbiddenProcess {
                 pid: process_id,
                 name,
@@ -4757,17 +4766,23 @@ fn find_forbidden_descendant(
     Ok(None)
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, test))]
 fn is_shadow_windows_npm_version_probe(
     process: &WindowsProcessSnapshot,
     executable_path: &Path,
     shadow_path: &ShadowPath,
 ) -> bool {
+    windows_npm_probe_authentication(process, Some(executable_path), shadow_path).is_ok()
+}
+
+#[cfg(windows)]
+fn windows_npm_probe_authentication(
+    process: &WindowsProcessSnapshot,
+    executable_path: Option<&Path>,
+    shadow_path: &ShadowPath,
+) -> std::result::Result<(), &'static str> {
     use std::ffi::OsStr;
 
-    let Ok(expected_digest) = windows_current_executable_sha256() else {
-        return false;
-    };
     let command_shape_is_safe = match process.command.as_slice() {
         // Windows can expose the process image before arguments become visible.
         // A one-argument snapshot is accepted only while argv[0] still names npm.
@@ -4777,19 +4792,35 @@ fn is_shadow_windows_npm_version_probe(
         [_, version] => version.as_os_str() == OsStr::new("--version"),
         _ => false,
     };
-    if !process.image_name.eq_ignore_ascii_case("npm.exe") || !command_shape_is_safe {
-        return false;
+    if !process.image_name.eq_ignore_ascii_case("npm.exe") {
+        return Err("process image name is not npm.exe");
     }
-
+    if !command_shape_is_safe {
+        return Err("argv is not the exact npm version probe");
+    }
+    let expected_digest = windows_current_executable_sha256()
+        .map_err(|_| "running MGC executable hash is unavailable")?;
     // Windows can report the hard-linked target path instead of the npm alias.
     // Authenticate the actual process image bytes and safe command shape rather
     // than depending on which hard-link path the OS reports.
     // (Windows có thể báo path đích hard-link thay vì alias npm. Xác thực byte
     // image thực tế và args an toàn, không phụ thuộc OS trả path nào.)
-    let Ok(image_digest) = windows_sha256_file(executable_path) else {
-        return false;
-    };
-    image_digest == expected_digest
+    let executable_path = executable_path.ok_or("process image path is unavailable")?;
+    let image_digest =
+        windows_sha256_file(executable_path).map_err(|_| "process image hash is unavailable")?;
+    if image_digest != expected_digest {
+        return Err("process image hash does not match the running MGC executable");
+    }
+    Ok(())
+}
+
+#[cfg(all(test, not(windows)))]
+fn windows_npm_probe_authentication(
+    _process: &WindowsProcessSnapshot,
+    _executable_path: Option<&Path>,
+    _shadow_path: &ShadowPath,
+) -> std::result::Result<(), &'static str> {
+    Err("Windows image authentication is unavailable on this platform")
 }
 
 #[cfg(any(windows, test))]

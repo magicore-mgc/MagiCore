@@ -976,6 +976,14 @@ fn windows_npm_probe_exemption_requires_authenticated_native_shim_and_safe_comma
         &actual_image,
         &shadow_path
     ));
+    assert_eq!(
+        super::windows_npm_probe_authentication(&probe, None, &shadow_path),
+        Err("process image path is unavailable")
+    );
+    assert_eq!(
+        super::windows_npm_probe_authentication(&probe, Some(&actual_image), &shadow_path),
+        Err("process image hash does not match the running MGC executable")
+    );
 
     let snapshots = [
         super::WindowsProcessSnapshot {
