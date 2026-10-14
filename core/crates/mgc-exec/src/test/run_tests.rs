@@ -395,6 +395,52 @@ fn process_group_scan_detects_forbidden_child_after_root_exits()
 
 #[cfg(unix)]
 #[test]
+fn process_tree_skips_zombies_but_still_reaches_live_grandchildren() {
+    let snapshot = |parent_pid, start_time_seconds, is_zombie| super::ProcessScanSnapshot {
+        parent_pid,
+        process_group: None,
+        start_time_seconds,
+        start_time_subseconds: 0,
+        is_zombie,
+    };
+    let process_snapshots = std::collections::HashMap::from([
+        (100, snapshot(Some(1), 10, false)),
+        (101, snapshot(Some(100), 11, true)),
+        (102, snapshot(Some(101), 12, false)),
+        (103, snapshot(Some(100), 13, false)),
+    ]);
+
+    let descendants = super::live_descendant_identities(100, &process_snapshots);
+    let mut pids = descendants
+        .iter()
+        .map(|(pid, _)| pid.as_u32())
+        .collect::<Vec<_>>();
+    pids.sort_unstable();
+    assert_eq!(pids, [102, 103]);
+
+    let completed = snapshot(Some(100), 11, true);
+    let same_live_process = snapshot(Some(100), 11, false);
+    let reused_pid = snapshot(Some(100), 14, false);
+    assert!(!super::process_identity_is_live(
+        completed,
+        same_live_process
+    ));
+    assert!(!super::process_identity_is_live(
+        same_live_process,
+        completed
+    ));
+    assert!(super::process_identity_is_live(
+        same_live_process,
+        same_live_process
+    ));
+    assert!(!super::process_identity_is_live(
+        same_live_process,
+        reused_pid
+    ));
+}
+
+#[cfg(unix)]
+#[test]
 fn unix_session_prevents_descendants_from_joining_callers_process_group()
 -> Result<(), Box<dyn std::error::Error>> {
     const TARGET_GROUP_ENV: &str = "MGC_EXEC_TEST_TARGET_GROUP";

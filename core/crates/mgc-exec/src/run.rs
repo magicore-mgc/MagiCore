@@ -3566,6 +3566,50 @@ fn current_process_scan_snapshot(
 }
 
 #[cfg(unix)]
+fn live_descendant_identities(
+    root_pid: u32,
+    process_snapshots: &std::collections::HashMap<u32, ProcessScanSnapshot>,
+) -> Vec<(sysinfo::Pid, ProcessScanSnapshot)> {
+    let mut children_by_parent = std::collections::HashMap::<u32, Vec<u32>>::new();
+    for (pid, snapshot) in process_snapshots {
+        if let Some(parent) = snapshot.parent_pid {
+            children_by_parent.entry(parent).or_default().push(*pid);
+        }
+    }
+
+    let mut frontier = vec![root_pid];
+    let mut seen = std::collections::HashSet::from([root_pid]);
+    let mut descendants = Vec::new();
+    while let Some(parent_pid) = frontier.pop() {
+        if let Some(children) = children_by_parent.get(&parent_pid) {
+            for child_pid in children {
+                if !seen.insert(*child_pid) {
+                    continue;
+                }
+                let Some(snapshot) = process_snapshots.get(child_pid).copied() else {
+                    continue;
+                };
+                // A zombie can no longer spawn or resolve anything, but its
+                // still-live children must remain reachable in the tree walk.
+                frontier.push(*child_pid);
+                if !snapshot.is_zombie {
+                    descendants.push((sysinfo::Pid::from_u32(*child_pid), snapshot));
+                }
+            }
+        }
+    }
+    descendants
+}
+
+#[cfg(unix)]
+fn process_identity_is_live(initial: ProcessScanSnapshot, current: ProcessScanSnapshot) -> bool {
+    !initial.is_zombie
+        && !current.is_zombie
+        && initial.start_time_seconds == current.start_time_seconds
+        && initial.start_time_subseconds == current.start_time_subseconds
+}
+
+#[cfg(unix)]
 impl std::fmt::Display for MonitoredRootNotVisible {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -3670,7 +3714,7 @@ fn find_forbidden_descendant_tracking(
         let mut live_descendant_found = false;
         let known_groups = observed_process_groups.clone();
         for (pid, process) in exit_system.processes() {
-            if pid.as_u32() == root_pid {
+            if pid.as_u32() == root_pid || process.status() == sysinfo::ProcessStatus::Zombie {
                 continue;
             }
             let Some(process_group) = process_group_id(pid.as_u32()) else {
@@ -3724,29 +3768,7 @@ fn find_forbidden_descendant_tracking(
     }
     // Build descendants from lightweight process metadata, then read command lines only there.
     // Dựng cây con từ metadata nhẹ, rồi chỉ đọc command line của các hậu duệ này.
-    let mut children_by_parent = std::collections::HashMap::<u32, Vec<u32>>::new();
-    for (pid, snapshot) in &process_snapshots {
-        if let Some(parent) = snapshot.parent_pid {
-            children_by_parent.entry(parent).or_default().push(*pid);
-        }
-    }
-    let mut frontier = vec![root_pid];
-    let mut seen = std::collections::HashSet::from([root_pid]);
-    let mut descendant_identities = Vec::<(Pid, ProcessScanSnapshot)>::new();
-    while let Some(parent_pid) = frontier.pop() {
-        if let Some(children) = children_by_parent.get(&parent_pid) {
-            for child_pid in children {
-                if !seen.insert(*child_pid) {
-                    continue;
-                }
-                let Some(snapshot) = process_snapshots.get(child_pid).copied() else {
-                    continue;
-                };
-                descendant_identities.push((Pid::from_u32(*child_pid), snapshot));
-                frontier.push(*child_pid);
-            }
-        }
-    }
+    let descendant_identities = live_descendant_identities(root_pid, &process_snapshots);
     if descendant_identities.is_empty() {
         let stale_process_pids = monitored_process_pids.drain().collect::<Vec<_>>();
         if !stale_process_pids.is_empty() {
@@ -3787,9 +3809,7 @@ fn find_forbidden_descendant_tracking(
         .iter()
         .filter_map(|(pid, snapshot)| {
             let current = current_process_scan_snapshot(pid.as_u32(), system)?;
-            if current.start_time_seconds != snapshot.start_time_seconds
-                || current.start_time_subseconds != snapshot.start_time_subseconds
-            {
+            if !process_identity_is_live(*snapshot, current) {
                 return None;
             }
             let process_group = current
