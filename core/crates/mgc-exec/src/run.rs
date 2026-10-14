@@ -4061,7 +4061,20 @@ fn forbidden_process_entry(
         |(name, match_source, matched_token, matched_token_index)| {
             let matched_operation =
                 matched_invocation_shape_argv(&name, process.cmd(), matched_token_index);
-            let matched_operation = if name == "go" {
+            let matched_operation = if name == "cargo"
+                && (is_rustc_compilation_argv(process.cmd())
+                    || is_rustc_wrapper_argv(process.cmd())
+                    || is_rustc_toolchain_wrapper_argv(process.cmd()))
+            {
+                let parent_pid = process
+                    .parent()
+                    .map(|parent| parent.as_u32().to_string())
+                    .unwrap_or_else(|| "unavailable".to_string());
+                format!(
+                    "{matched_operation} [compiler-shaped child, parent={}({parent_pid})]",
+                    parent_image.as_deref().unwrap_or("unavailable"),
+                )
+            } else if name == "go" {
                 let proxy_observation = go_proxy_observation(&policy_env);
                 let parent_pid = process
                     .parent()
@@ -4778,7 +4791,9 @@ fn is_shadow_windows_npm_version_probe(
     let Some(program) = process.command.first() else {
         return false;
     };
-    let program_path = Path::new(program);
+    let Some(program_path) = windows_npm_probe_argv0_path(program, shadow_path.path()) else {
+        return false;
+    };
     let Ok(image_path) = std::fs::canonicalize(executable_path) else {
         return false;
     };
@@ -4795,12 +4810,8 @@ fn is_shadow_windows_npm_version_probe(
     // read-only marker, and its bytes must match the observed process image.
     // (Windows có thể báo đường dẫn file đích của hard link thay vì alias npm.exe;
     // xác thực thêm argv[0] qua thư mục shim và marker gắn với đúng image.)
-    let program_is_npm_alias = program_path.is_absolute()
-        && program_path
-            .file_name()
-            .is_some_and(|name| name.eq_ignore_ascii_case(OsStr::new("npm.exe")));
-    let alias_path_matches_image = program_is_npm_alias
-        && windows_sha256_file(program_path).is_ok_and(|digest| digest == image_digest);
+    let alias_path_matches_image =
+        windows_sha256_file(&program_path).is_ok_and(|digest| digest == image_digest);
     let program_parent = program_path.parent();
     let is_current_executor_alias = alias_path_matches_image
         && program_parent
@@ -4810,7 +4821,7 @@ fn is_shadow_windows_npm_version_probe(
         && image_digest == expected_digest
         && program_parent.is_some_and(|parent| {
             is_generated_shadow_directory(parent)
-                && windows_npm_probe_marker_matches(parent, program_path)
+                && windows_npm_probe_marker_matches(parent, &program_path)
         });
 
     let image_parent = image_path.parent();
@@ -4831,6 +4842,23 @@ fn is_shadow_windows_npm_version_probe(
         || is_nested_executor_alias
         || is_current_executor_image
         || is_nested_executor_image
+}
+
+#[cfg(any(windows, test))]
+fn windows_npm_probe_argv0_path(program: &std::ffi::OsStr, shadow_dir: &Path) -> Option<PathBuf> {
+    use std::ffi::OsStr;
+
+    if program.eq_ignore_ascii_case(OsStr::new("npm"))
+        || program.eq_ignore_ascii_case(OsStr::new("npm.exe"))
+    {
+        return Some(shadow_dir.join("npm.exe"));
+    }
+    let path = Path::new(program);
+    (path.is_absolute()
+        && path
+            .file_name()
+            .is_some_and(|name| name.eq_ignore_ascii_case(OsStr::new("npm.exe"))))
+    .then(|| path.to_path_buf())
 }
 
 #[cfg(all(test, not(windows)))]

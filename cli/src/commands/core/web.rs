@@ -15,7 +15,7 @@ use mgc_ui::info;
 
 // P1 split (2026-09-11): npm version resolution lives in web/versions.rs.
 mod versions;
-use versions::{fetch_npm_latest_version, scaffold_baseline_version};
+use versions::scaffold_baseline_version;
 
 fn web_command_profile_enabled() -> bool {
     std::env::var_os("MAGICORE_WEB_PROFILE_COMMAND").is_some()
@@ -3954,16 +3954,6 @@ const FEATURE_PACKAGES: &[WebFeaturePackage] = &[
     },
 ];
 
-fn framework_primary_package(framework: &str) -> Option<String> {
-    let seed_name = resolve_seed_name(framework);
-    FRAMEWORK_SEEDS
-        .iter()
-        .find(|s| s.name == seed_name)
-        .and_then(|s| s.primary.first())
-        .copied()
-        .map(str::to_string)
-}
-
 fn fullstack_backend_framework(framework: &str) -> Option<&'static str> {
     // Explicit combos (legacy + Rust/Go/Python/Java/PHP backends).
     // Backend name is the template folder under templates/web/backend/<lang>/.
@@ -4020,14 +4010,16 @@ fn resolve_seed_name(framework: &str) -> &str {
     }
 }
 
-async fn resolve_primary_version(request: &FrameworkRequest) -> Result<String> {
+async fn resolve_primary_version(
+    request: &FrameworkRequest,
+    package: &str,
+    age_policy: Option<mgc_web_adapter::provider::AgePolicy>,
+) -> Result<String> {
     match request.version.as_deref() {
-        Some("latest") | None => {
-            let pkg = framework_primary_package(&request.normalized)
-                .ok_or_else(|| crate::error::no_primary_package(&request.normalized))?;
-            fetch_npm_latest_version(&pkg).await
+        Some("latest") | None => versions::fetch_npm_latest_version(package, age_policy).await,
+        Some(version) => {
+            versions::resolve_seed_dependency_version(package, Some(version), age_policy).await
         }
-        Some(version) => Ok(version.to_string()),
     }
 }
 
@@ -4078,37 +4070,46 @@ async fn apply_web_manifest_seed(
     let object = value
         .as_object_mut()
         .ok_or_else(crate::error::package_json_root_object)?;
+    let project_root = package_json_path.parent().unwrap_or_else(|| Path::new("."));
+    let age_policy = versions::scaffold_age_policy(project_root)?;
 
     let seed_name = resolve_seed_name(&request.normalized);
     if let Some(seed) = FRAMEWORK_SEEDS.iter().find(|s| s.name == seed_name) {
-        if !seed.primary.is_empty() {
-            let primary = resolve_primary_version(request).await?;
-            for &package in seed.primary {
-                ensure_primary_package(object, package, &primary);
-            }
+        // Resolve paired primaries independently; registry publications can be staggered.
+        // Giải quyết từng package primary riêng vì registry có thể phát hành lệch thời điểm.
+        for &package in seed.primary {
+            let primary = resolve_primary_version(request, package, age_policy).await?;
+            ensure_primary_package(object, package, &primary);
         }
         for &package in seed.supplemental {
-            let version = scaffold_baseline_version(package)
-                .map(str::to_string)
-                .unwrap_or(fetch_npm_latest_version(package).await?);
+            let version = versions::resolve_seed_dependency_version(
+                package,
+                scaffold_baseline_version(package),
+                age_policy,
+            )
+            .await?;
             ensure_package(object, "dependencies", package, &version);
         }
         for tool in seed.toolchain {
             if tool.typescript_only && !flags.ts {
                 continue;
             }
-            let version = match tool.version {
-                Some(v) => v.to_string(),
-                None => scaffold_baseline_version(tool.package)
-                    .map(str::to_string)
-                    .unwrap_or(fetch_npm_latest_version(tool.package).await?),
-            };
+            let preferred_range = tool
+                .version
+                .or_else(|| scaffold_baseline_version(tool.package));
+            let version = versions::resolve_seed_dependency_version(
+                tool.package,
+                preferred_range,
+                age_policy,
+            )
+            .await?;
             ensure_package(object, tool.section, tool.package, &version);
         }
     }
 
     if flags.tailwindcss || flags.shadcn || flags.daisyui {
-        let version = fetch_npm_latest_version("tailwindcss").await?;
+        let version =
+            versions::resolve_seed_dependency_version("tailwindcss", None, age_policy).await?;
         ensure_package(object, "devDependencies", "tailwindcss", &version);
     }
 
@@ -4157,9 +4158,12 @@ async fn apply_web_manifest_seed(
             _ => false,
         };
         if is_active {
-            let version = scaffold_baseline_version(feat_pkg.package)
-                .map(str::to_string)
-                .unwrap_or(fetch_npm_latest_version(feat_pkg.package).await?);
+            let version = versions::resolve_seed_dependency_version(
+                feat_pkg.package,
+                scaffold_baseline_version(feat_pkg.package),
+                age_policy,
+            )
+            .await?;
             ensure_package(object, feat_pkg.section, feat_pkg.package, &version);
         }
     }

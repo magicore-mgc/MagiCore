@@ -1,24 +1,27 @@
 //! `web/versions.rs` — Web scaffold npm version resolution (P1 split
 //! from web.rs, Tech Lead 2026-09-11). One responsibility: resolve the
-//! pinned version for a scaffold package — env override first, then the
-//! live npm registry, then the embedded baseline table. Never a silent
-//! "latest" without a warning.
+//! pinned version for a scaffold package — active age policy first, then
+//! hermetic env override, live npm registry, and embedded baseline fallback.
+//! Age-gated resolution never falls back to an unverified version.
 //! `web/versions.rs` — Giải quyết phiên bản npm cho web scaffold (tách
-//! từ web.rs theo P1). Một trách nhiệm: resolve version ghim cho package
-//! scaffold — env override trước, rồi npm registry sống, rồi bảng
-//! baseline nhúng; không bao giờ rơi "latest" âm thầm không cảnh báo.
+//! từ web.rs theo P1). Policy tuổi phát hành được áp dụng trước; đường
+//! age-gated không fallback sang phiên bản chưa xác minh.
 
 use std::collections::HashMap;
+use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use mgc_types::{PackageName, Version, VersionRange};
+use mgc_web_adapter::native::npm_registry::{NpmRegistry, PackageMetadata};
+use mgc_web_adapter::provider::{AgePolicy, eligible_versions};
 
 /// Default registry — overridable via config elsewhere; this module
 /// only READS from it (RULE §12: named constant, not inline literal).
 /// Registry mặc định — module chỉ ĐỌC (RULE §12: hằng số có tên).
 pub(crate) const DEFAULT_NPM_REGISTRY: &str = "https://registry.npmjs.org";
 
-/// Env override list ("pkg@^1,pkg2@^2") for hermetic CI scaffolds.
-/// Danh sách env ghi đè version cho scaffold CI hermetic.
+/// Env override list ("pkg@^1,pkg2@^2") for hermetic CI scaffolds without an age gate.
+/// Danh sách env ghi đè version cho CI hermetic khi age gate không bật.
 const SCAFFOLD_VERSION_OVERRIDES_ENV: &str = "MAGICORE_WEB_SCAFFOLD_VERSION_OVERRIDES";
 
 /// Version baseline — trước đây ở templates/web/versions/scaffold-baseline.toml;
@@ -133,27 +136,205 @@ struct ScaffoldBaselineVersions {
     versions: HashMap<String, String>,
 }
 
-/// Resolve the scaffold version for a package: env override → live
-/// npm registry → embedded baseline → warn + "latest".
-/// Resolve version scaffold cho package: env ghi đè → npm registry
-/// sống → baseline nhúng → cảnh báo + "latest".
-pub(crate) async fn fetch_npm_latest_version(package: &str) -> Result<String> {
+/// Resolve scaffold versions through the same active age policy as installation.
+/// Giải quyết version scaffold theo cùng age policy đang áp dụng lúc cài đặt.
+pub(crate) fn scaffold_age_policy(project_root: &Path) -> Result<Option<AgePolicy>> {
+    let security = mgc_config::project::load_security_config(project_root).map_err(|error| {
+        crate::error::web_scaffold_security_config_unreadable(project_root, &error)
+    })?;
+    let allow_missing_time = security
+        .as_ref()
+        .and_then(|config| config.allow_missing_time)
+        .unwrap_or(false);
+    if !env_truthy("MAGICORE_ALLOW_UNTRUSTED") {
+        if let Some(cutoff_hours) = security
+            .as_ref()
+            .and_then(|config| config.min_age_for_ecosystem("web"))
+        {
+            return Ok(Some(AgePolicy {
+                cutoff_hours,
+                allow_missing_time,
+            }));
+        }
+        if let Some(min_age_secs) = store_release_policy(project_root)? {
+            return Ok(Some(AgePolicy {
+                cutoff_hours: min_age_secs.div_ceil(60 * 60),
+                allow_missing_time,
+            }));
+        }
+        if env_truthy("MAGICORE_SECURITY_24H_BLOCK") || env_truthy("MGC_AUDIT_STRICT") {
+            return Ok(Some(AgePolicy {
+                cutoff_hours: mgc_config::DEFAULT_MIN_RELEASE_AGE_HOURS,
+                allow_missing_time,
+            }));
+        }
+    }
+    Ok(None)
+}
+
+pub(super) fn store_release_policy(project_root: &Path) -> Result<Option<u64>> {
+    let layout = mgc_store::Layout::new(mgc_web_adapter::lockfile::project_cache_dir(project_root));
+    let database_path = layout.db_path();
+    match std::fs::symlink_metadata(&database_path) {
+        Ok(metadata) if metadata.file_type().is_file() => {}
+        Ok(_) => {
+            return Err(crate::error::web_scaffold_store_policy_path_invalid(
+                &database_path,
+            ));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(crate::error::web_scaffold_store_policy_unreadable(
+                &database_path,
+                &error,
+            ));
+        }
+    }
+    let database = mgc_store::Database::open(&database_path).map_err(|error| {
+        crate::error::web_scaffold_store_policy_unreadable(&database_path, &error)
+    })?;
+    database
+        .release_policy("web")
+        .map_err(|error| crate::error::web_scaffold_store_policy_unreadable(&database_path, &error))
+}
+
+fn env_truthy(name: &str) -> bool {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "yes" | "on"))
+}
+
+/// Select the newest stable registry release that survives the project's age gate.
+/// Chọn bản stable mới nhất còn thỏa cổng tuổi phát hành của project.
+pub(crate) fn select_latest_eligible_version(
+    package: &str,
+    metadata: &PackageMetadata,
+    age_policy: Option<AgePolicy>,
+) -> Result<String> {
+    let latest_tag = metadata
+        .dist_tags
+        .get("latest")
+        .ok_or_else(|| crate::error::web_scaffold_latest_tag_missing(package))?;
+    let latest = Version::parse(latest_tag)
+        .with_context(|| crate::error::web_scaffold_latest_tag_invalid(package))?;
+    let package_name = PackageName::new(package)?;
+    let versions =
+        eligible_versions(&package_name, metadata, age_policy).map_err(anyhow::Error::msg)?;
+    versions
+        .into_iter()
+        .filter(|version| {
+            version.pre.is_none()
+                && version.dev.is_none()
+                && version.post.is_none()
+                && version <= &latest
+        })
+        .max()
+        .map(|version| format!("^{version}"))
+        .ok_or_else(|| crate::error::web_scaffold_no_eligible_release(package))
+}
+
+/// Keep a curated scaffold range only when it contains an eligible stable release.
+/// Chỉ giữ range seed đã chọn khi nó còn chứa bản stable hợp lệ theo age gate.
+pub(crate) fn validate_seed_range_age_eligible(
+    package: &str,
+    metadata: &PackageMetadata,
+    age_policy: AgePolicy,
+    requested_range: &str,
+) -> Result<()> {
+    let latest_tag = metadata
+        .dist_tags
+        .get("latest")
+        .ok_or_else(|| crate::error::web_scaffold_latest_tag_missing(package))?;
+    let latest = Version::parse(latest_tag)
+        .with_context(|| crate::error::web_scaffold_latest_tag_invalid(package))?;
+    let package_name = PackageName::new(package)?;
+    let range = VersionRange::parse(requested_range)?;
+    let versions =
+        eligible_versions(&package_name, metadata, Some(age_policy)).map_err(anyhow::Error::msg)?;
+    if versions.into_iter().any(|version| {
+        version.pre.is_none()
+            && version.dev.is_none()
+            && version.post.is_none()
+            && version <= latest
+            && range.matches(&version)
+    }) {
+        return Ok(());
+    }
+    Err(crate::error::web_scaffold_no_eligible_release_in_range(
+        package,
+        requested_range,
+    ))
+}
+
+async fn fetch_age_gated_npm_metadata(package: &str) -> Result<PackageMetadata> {
+    let registry = NpmRegistry::new(DEFAULT_NPM_REGISTRY);
+    registry.set_age_gate_armed(true);
+    registry
+        .fetch_metadata(package)
+        .await
+        .map_err(|error| crate::error::web_scaffold_age_metadata_unavailable(package, &error))
+}
+
+/// Resolve or validate a scaffold seed version, preserving curated compatible ranges.
+/// Resolve hoặc kiểm tra version seed, giữ nguyên range tương thích đã tuyển chọn.
+pub(crate) async fn resolve_seed_dependency_version(
+    package: &str,
+    preferred_range: Option<&str>,
+    age_policy: Option<AgePolicy>,
+) -> Result<String> {
+    if let Some(policy) = age_policy.filter(|policy| policy.cutoff_hours > 0) {
+        let metadata = fetch_age_gated_npm_metadata(package).await?;
+        if let Some(range) = preferred_range {
+            validate_seed_range_age_eligible(package, &metadata, policy, range)?;
+            return Ok(range.to_string());
+        }
+        return select_latest_eligible_version(package, &metadata, Some(policy));
+    }
+
+    if let Some(range) = preferred_range {
+        return Ok(range.to_string());
+    }
+    fetch_npm_latest_version(package, None).await
+}
+
+pub(crate) async fn fetch_npm_latest_version(
+    package: &str,
+    age_policy: Option<AgePolicy>,
+) -> Result<String> {
+    if let Some(policy) = age_policy.filter(|policy| policy.cutoff_hours > 0) {
+        let metadata = fetch_age_gated_npm_metadata(package).await?;
+        return select_latest_eligible_version(package, &metadata, Some(policy));
+    }
+
     if let Some(version) = scaffold_version_override(package) {
         return Ok(version);
     }
+
     match fetch_npm_latest_version_from_registry(DEFAULT_NPM_REGISTRY, package).await {
         Ok(version) => Ok(version),
-        Err(error) => {
-            if let Some(version) = scaffold_baseline_version(package) {
-                return Ok(version.to_string());
-            }
-            eprintln!(
-                "warning: could not resolve version for '{package}' ({}); using 'latest'",
-                error
-            );
-            Ok("latest".to_string())
-        }
+        Err(error) => fallback_scaffold_version(package, error, None),
     }
+}
+
+pub(super) fn fallback_scaffold_version(
+    package: &str,
+    error: anyhow::Error,
+    age_policy: Option<AgePolicy>,
+) -> Result<String> {
+    if age_policy.is_some_and(|policy| policy.cutoff_hours > 0) {
+        return Err(crate::error::web_scaffold_age_metadata_unavailable(
+            package, &error,
+        ));
+    }
+    if let Some(version) = scaffold_baseline_version(package) {
+        return Ok(version.to_string());
+    }
+    eprintln!(
+        "warning: could not resolve version for '{package}' ({}); using 'latest'",
+        error
+    );
+    Ok("latest".to_string())
 }
 
 /// Shared HTTP client (pooled — one client for every version lookup).

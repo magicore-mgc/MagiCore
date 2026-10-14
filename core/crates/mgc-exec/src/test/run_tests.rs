@@ -5,9 +5,16 @@
 fn windows_bare_npm_probe_authenticates_image_and_rejects_mutations() {
     use std::ffi::OsString;
     let root = tempfile::tempdir().expect("create authenticated alias fixture");
+    let executable_target = root.path().join("mgc.exe");
     let image = root.path().join("npm.exe");
-    std::fs::copy(std::env::current_exe().expect("current executable"), &image)
-        .expect("copy trusted executable fixture");
+    std::fs::copy(
+        std::env::current_exe().expect("current executable"),
+        &executable_target,
+    )
+    .expect("copy trusted executable fixture");
+    if std::fs::hard_link(&executable_target, &image).is_err() {
+        std::fs::copy(&executable_target, &image).expect("copy npm alias fixture");
+    }
     let shadow = super::ShadowPath {
         dir: root.path().to_path_buf(),
     };
@@ -19,24 +26,37 @@ fn windows_bare_npm_probe_authenticates_image_and_rejects_mutations() {
         command: vec![OsString::from("npm"), OsString::from("--version")],
     };
     assert!(super::is_shadow_windows_npm_version_probe(
+        &process,
+        &executable_target,
+        &shadow
+    ));
+    assert!(super::is_shadow_windows_npm_version_probe(
         &process, &image, &shadow
     ));
     process.command[1] = OsString::from("install");
     assert!(!super::is_shadow_windows_npm_version_probe(
-        &process, &image, &shadow
+        &process,
+        &executable_target,
+        &shadow
     ));
     process.command[1] = OsString::from("--version");
     process.command.pop();
     assert!(super::is_shadow_windows_npm_version_probe(
-        &process, &image, &shadow
+        &process,
+        &executable_target,
+        &shadow
     ));
     process.command.clear();
     assert!(!super::is_shadow_windows_npm_version_probe(
-        &process, &image, &shadow
+        &process,
+        &executable_target,
+        &shadow
     ));
-    std::fs::write(&image, b"spoofed binary").expect("replace image fixture");
+    std::fs::write(&executable_target, b"spoofed binary").expect("replace image fixture");
     assert!(!super::is_shadow_windows_npm_version_probe(
-        &process, &image, &shadow
+        &process,
+        &executable_target,
+        &shadow
     ));
 }
 
@@ -44,6 +64,14 @@ fn windows_bare_npm_probe_authenticates_image_and_rejects_mutations() {
 fn windows_probe_argv0_accepts_bare_alias_but_rejects_different_path() {
     use std::ffi::OsStr;
     let root = tempfile::tempdir().expect("probe alias directory");
+    let shadow = root.path().join("shadow");
+    std::fs::create_dir(&shadow).expect("create private shadow directory");
+    for alias in [OsStr::new("npm"), OsStr::new("NPM.EXE")] {
+        assert_eq!(
+            super::windows_npm_probe_argv0_path(alias, &shadow),
+            Some(shadow.join("npm.exe"))
+        );
+    }
     let image = root.path().join("npm.exe");
     std::fs::write(&image, b"image identity is authenticated separately")
         .expect("create image fixture");
@@ -447,7 +475,9 @@ fn process_tree_skips_zombies_but_still_reaches_live_grandchildren() {
 #[test]
 fn linux_process_stat_keeps_exact_identity_when_pid_is_reused_within_one_second() {
     let stat = |ticks| {
-        format!("42 (go (worker) with spaces) S 1 7 7 0 -1 4194304 0 0 0 0 0 0 0 20 0 1 0 {ticks}")
+        format!(
+            "42 (go (worker) with spaces) S 1 7 7 0 -1 4194304 0 0 0 0 0 0 0 0 20 0 1 0 {ticks}"
+        )
     };
     let original = super::parse_linux_process_stat(42, &stat(12345))
         .expect("parse Linux proc stat with parenthesized comm");
@@ -461,7 +491,7 @@ fn linux_process_stat_keeps_exact_identity_when_pid_is_reused_within_one_second(
 
     let zombie = super::parse_linux_process_stat(
         42,
-        "42 (go worker) Z 1 7 7 0 -1 4194304 0 0 0 0 0 0 0 20 0 1 0 12347",
+        "42 (go worker) Z 1 7 7 0 -1 4194304 0 0 0 0 0 0 0 0 20 0 1 0 12347",
     )
     .expect("parse Linux zombie process state");
     assert!(zombie.is_zombie);
@@ -1207,7 +1237,9 @@ fn rustc_child_requires_a_trusted_cargo_parent_but_cargo_install_is_denied() {
     .into_iter()
     .map(OsString::from)
     .collect::<Vec<_>>();
-    assert!(super::forbidden_process_match_argv("cargo", &rustc_child, &[]).is_none());
+    // Raw classification has no parent evidence, so a compiler-shaped argv remains denied.
+    // (Phân loại raw không có bằng chứng parent nên argv giống compiler vẫn bị chặn.)
+    assert!(super::forbidden_process_match_argv("cargo", &rustc_child, &[]).is_some());
     assert!(super::is_rustc_toolchain_child(
         "cargo",
         &rustc_child,

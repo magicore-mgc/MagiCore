@@ -1269,6 +1269,73 @@ pub fn no_version_field(package: &str) -> Error {
     anyhow!("no version field for '{package}'")
 }
 
+/// Registry metadata cannot be used to enforce a scaffold age policy.
+/// Không thể dùng metadata registry để áp dụng age policy khi scaffold.
+pub fn web_scaffold_age_metadata_unavailable(
+    package: &str,
+    cause: &dyn std::fmt::Display,
+) -> Error {
+    anyhow!(
+        "cannot enforce minimum-release-age for scaffold package '{package}': registry metadata is unavailable: {cause}"
+    )
+}
+
+/// The project security configuration could not be loaded for web scaffolding.
+/// Không đọc được security config của project khi scaffold web.
+pub fn web_scaffold_security_config_unreadable(
+    project_root: &Path,
+    cause: &dyn std::fmt::Display,
+) -> Error {
+    anyhow!(
+        "cannot load web scaffold security policy from '{}': {cause}",
+        project_root.display()
+    )
+}
+
+/// The project store could not provide its persisted web release policy.
+/// Store của project không đọc được release policy web đã lưu.
+pub fn web_scaffold_store_policy_unreadable(path: &Path, cause: &dyn std::fmt::Display) -> Error {
+    anyhow!(
+        "cannot read web scaffold release policy from '{}': {cause}",
+        path.display()
+    )
+}
+
+/// The project store policy database must be a regular file, not a link or special file.
+/// Database policy của project phải là file thường, không phải link hay special file.
+pub fn web_scaffold_store_policy_path_invalid(path: &Path) -> Error {
+    anyhow!(
+        "web scaffold release policy database '{}' must be a regular file",
+        path.display()
+    )
+}
+
+/// npm metadata omitted its latest tag for a scaffold package.
+/// npm metadata thiếu latest tag cho package scaffold.
+pub fn web_scaffold_latest_tag_missing(package: &str) -> Error {
+    anyhow!("npm metadata for '{package}' has no latest dist-tag")
+}
+
+/// npm metadata's latest tag is not a valid semantic version.
+/// latest tag trong npm metadata không phải semantic version hợp lệ.
+pub fn web_scaffold_latest_tag_invalid(package: &str) -> Error {
+    anyhow!("npm latest dist-tag for '{package}' is invalid")
+}
+
+/// No stable npm release satisfies the active minimum-release-age policy.
+/// Không có bản stable nào thỏa policy tuổi phát hành tối thiểu.
+pub fn web_scaffold_no_eligible_release(package: &str) -> Error {
+    anyhow!("no stable release of '{package}' satisfies the configured minimum-release-age policy")
+}
+
+/// A curated scaffold range contains no stable version allowed by the age policy.
+/// Range seed không chứa bản stable nào được age policy cho phép.
+pub fn web_scaffold_no_eligible_release_in_range(package: &str, range: &str) -> Error {
+    anyhow!(
+        "no stable release of '{package}' in scaffold range '{range}' satisfies the configured minimum-release-age policy"
+    )
+}
+
 pub fn package_json_root_object() -> Error {
     anyhow!("package.json root must be an object")
 }

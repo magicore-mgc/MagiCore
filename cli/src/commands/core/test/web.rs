@@ -312,6 +312,194 @@ fn primary_package_seed_defaults_to_dependencies_when_not_declared() {
     assert_eq!(manifest["dependencies"][package], "^2.69.2");
 }
 
+#[test]
+fn scaffold_selects_latest_release_that_passes_the_project_age_gate() {
+    use mgc_web_adapter::native::npm_registry::{PackageMetadata, VersionInfo};
+    use mgc_web_adapter::provider::AgePolicy;
+    use std::collections::HashMap;
+
+    let now = chrono::Utc::now();
+    let old_release =
+        (now - chrono::Duration::hours(48)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let fresh_release =
+        (now - chrono::Duration::hours(1)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let version_info = |version: &str| VersionInfo {
+        version: version.to_string(),
+        dependencies: None,
+        dev_dependencies: None,
+        peer_dependencies: None,
+        peer_dependencies_meta: HashMap::new(),
+        optional_dependencies: None,
+        os: None,
+        cpu: None,
+        dist: None,
+    };
+    let metadata = PackageMetadata {
+        name: "react-dom".to_string(),
+        description: None,
+        versions: HashMap::from([
+            ("19.3.0".to_string(), version_info("19.3.0")),
+            ("19.3.1".to_string(), version_info("19.3.1")),
+        ]),
+        dist_tags: HashMap::from([("latest".to_string(), "19.3.1".to_string())]),
+        time: HashMap::from([
+            ("19.3.0".to_string(), old_release.clone()),
+            ("19.3.1".to_string(), fresh_release),
+        ]),
+    };
+
+    let age_policy = AgePolicy {
+        cutoff_hours: 24,
+        allow_missing_time: false,
+    };
+    assert!(
+        super::versions::validate_seed_range_age_eligible(
+            "react-dom",
+            &metadata,
+            age_policy,
+            "^19.3.0",
+        )
+        .is_ok()
+    );
+    assert!(
+        super::versions::validate_seed_range_age_eligible(
+            "react-dom",
+            &metadata,
+            age_policy,
+            "^19.3.1",
+        )
+        .is_err()
+    );
+
+    let selected = super::versions::select_latest_eligible_version(
+        "react-dom",
+        &metadata,
+        Some(AgePolicy {
+            cutoff_hours: 24,
+            allow_missing_time: false,
+        }),
+    )
+    .unwrap();
+
+    assert_eq!(selected, "^19.3.0");
+
+    let react_metadata = PackageMetadata {
+        name: "react".to_string(),
+        description: None,
+        versions: HashMap::from([("19.3.1".to_string(), version_info("19.3.1"))]),
+        dist_tags: HashMap::from([("latest".to_string(), "19.3.1".to_string())]),
+        time: HashMap::from([("19.3.1".to_string(), old_release)]),
+    };
+    let selected_react = super::versions::select_latest_eligible_version(
+        "react",
+        &react_metadata,
+        Some(AgePolicy {
+            cutoff_hours: 24,
+            allow_missing_time: false,
+        }),
+    )
+    .unwrap();
+
+    assert_eq!(selected_react, "^19.3.1");
+}
+
+#[test]
+fn scaffold_age_gate_fails_closed_when_every_release_is_too_new() {
+    use mgc_web_adapter::native::npm_registry::{PackageMetadata, VersionInfo};
+    use mgc_web_adapter::provider::AgePolicy;
+    use std::collections::HashMap;
+
+    let fresh_release = (chrono::Utc::now() - chrono::Duration::hours(1))
+        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let metadata = PackageMetadata {
+        name: "react-dom".to_string(),
+        description: None,
+        versions: HashMap::from([(
+            "19.3.1".to_string(),
+            VersionInfo {
+                version: "19.3.1".to_string(),
+                dependencies: None,
+                dev_dependencies: None,
+                peer_dependencies: None,
+                peer_dependencies_meta: HashMap::new(),
+                optional_dependencies: None,
+                os: None,
+                cpu: None,
+                dist: None,
+            },
+        )]),
+        dist_tags: HashMap::from([("latest".to_string(), "19.3.1".to_string())]),
+        time: HashMap::from([("19.3.1".to_string(), fresh_release)]),
+    };
+
+    assert!(
+        super::versions::select_latest_eligible_version(
+            "react-dom",
+            &metadata,
+            Some(AgePolicy {
+                cutoff_hours: 24,
+                allow_missing_time: false,
+            }),
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn scaffold_age_gate_does_not_fallback_to_an_unverified_baseline() {
+    use mgc_web_adapter::provider::AgePolicy;
+
+    let error = super::versions::fallback_scaffold_version(
+        "react",
+        anyhow::anyhow!("registry is offline"),
+        Some(AgePolicy {
+            cutoff_hours: 24,
+            allow_missing_time: false,
+        }),
+    )
+    .unwrap_err();
+
+    let message = error.to_string();
+    assert!(message.contains("minimum-release-age"));
+    assert!(message.contains("react"));
+}
+
+#[test]
+fn scaffold_store_policy_read_failure_is_not_treated_as_no_policy() {
+    let root = tempfile::tempdir().unwrap();
+    let store_dir = mgc_web_adapter::lockfile::project_cache_dir(root.path());
+    std::fs::create_dir_all(&store_dir).unwrap();
+    let database_path = store_dir.join("store.db");
+    std::fs::write(&database_path, b"not a sqlite database").unwrap();
+
+    assert!(super::versions::store_release_policy(root.path()).is_err());
+
+    std::fs::remove_file(&database_path).unwrap();
+    std::fs::create_dir(&database_path).unwrap();
+    let error = super::versions::store_release_policy(root.path()).unwrap_err();
+    assert!(error.to_string().contains("must be a regular file"));
+}
+
+#[test]
+fn scaffold_age_policy_uses_project_web_override_and_missing_time_escape() {
+    use mgc_web_adapter::provider::AgePolicy;
+
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("mgc.toml"),
+        "[security]\nweb = 48\nallow_missing_time = true\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        super::versions::scaffold_age_policy(root.path()).unwrap(),
+        Some(AgePolicy {
+            cutoff_hours: 48,
+            allow_missing_time: true,
+        })
+    );
+}
+
 #[cfg(all(unix, feature = "lib"))]
 #[test]
 fn backend_language_ignores_external_mgc_toml_symlink() {
