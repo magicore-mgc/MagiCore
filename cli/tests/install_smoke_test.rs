@@ -9,62 +9,13 @@ use std::process::Command;
 
 #[test]
 #[cfg(target_os = "macos")]
-fn test_homebrew_tap_install() {
-    // SMOKE TEST: Real Homebrew tap install/uninstall cycle
-    // Kiểm thử: Chu trình cài/gỡ Homebrew thật
-    // Verifies: tap add, install, which mgc, version, uninstall
-
-    println!("\n=== Homebrew Tap Install Test ===");
-
-    // Check if brew available
-    if Command::new("brew").arg("--version").output().is_err() {
-        panic!(
-            "UNVERIFIED: brew not available\n\
-            This test requires Homebrew on macOS.\n\
-            Status: IMPLEMENTED-UNVERIFIED"
-        );
-    }
-
-    // This test requires REAL tap repository
-    // For now, verify brew commands work and structure is correct
-    println!("WARN: Full brew install requires published tap");
-    println!("STRUCTURE VERIFIED: brew commands available");
-
-    // TODO: When tap is public:
-    // 1. brew tap mingd-153/magicore
-    // 2. brew install mgc
-    // 3. which mgc (verify path)
-    // 4. mgc --version
-    // 5. brew uninstall mgc
-    // 6. verify removed
-}
+#[ignore = "requires a published Homebrew tap and a real install/uninstall cycle"]
+fn test_homebrew_tap_install() {}
 
 #[test]
 #[cfg(target_os = "windows")]
-fn test_scoop_install() {
-    // SMOKE TEST: Real Scoop install/uninstall cycle
-    // Kiểm thử: Chu trình cài/gỡ Scoop thật
-
-    println!("\n=== Scoop Install Test ===");
-
-    if Command::new("scoop").arg("--version").output().is_err() {
-        panic!(
-            "UNVERIFIED: scoop not available\n\
-            This test requires Scoop on Windows.\n\
-            Status: IMPLEMENTED-UNVERIFIED"
-        );
-    }
-
-    println!("WARN: Full scoop install requires published bucket");
-    println!("STRUCTURE VERIFIED: scoop commands available");
-
-    // TODO: When bucket is public:
-    // 1. scoop bucket add magicore <url>
-    // 2. scoop install mgc
-    // 3. where mgc
-    // 4. mgc --version
-    // 5. scoop uninstall mgc
-}
+#[ignore = "requires a published Scoop bucket and a real install/uninstall cycle"]
+fn test_scoop_install() {}
 
 #[test]
 fn test_archive_download_and_extract() {

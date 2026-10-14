@@ -46,10 +46,11 @@ fn find_mgc_binary() -> PathBuf {
 }
 
 #[test]
+#[ignore = "requires Node.js; executed by CI after setup-node"]
 fn test_web_full_lifecycle() {
     // REAL E2E: web core - MUST call mgc create-web
     // NO manual package.json creation allowed
-    // REQUIRES: node, npm, templates provisioned
+    // REQUIRES: Node.js and templates provisioned; install itself is native.
 
     if Command::new("node").arg("--version").output().is_err() {
         panic!(
@@ -111,11 +112,6 @@ fn test_web_full_lifecycle() {
 
     // === STEP 2: INSTALL ===
     println!("\n=== STEP 2: mgc install ===");
-
-    // Check npm available - REQUIRED
-    if Command::new("npm").arg("--version").output().is_err() {
-        panic!("TEST FAILED: npm not available (required for web full lifecycle test)");
-    }
 
     // Create package.json with real dependencies
     // Native-engine contract (2026-09-10): project scripts run through the

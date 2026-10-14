@@ -547,11 +547,22 @@ jobs:
           MGC_TEST_CLI_BINARY: ${{ env.MGC_STRESS_CLI_SNAPSHOT }}
         run: cargo test --locked -p mgc --test test_runner_security --test optimizer_lifecycle_e2e --test audit_cli_e2e -- --test-threads=1
 
+      - name: Run the Node-backed optimizer E2E
+        env:
+          MGC_TEST_CLI_BINARY: ${{ env.MGC_STRESS_CLI_SNAPSHOT }}
+        run: cargo test --locked -p mgc --test optimizer_lifecycle_e2e test_web_node_mgc_test_with_optimizer -- --ignored --exact --nocapture
+
       - name: Run native ownership E2E across supported language lanes
         env:
           MGC_TEST_CLI_BINARY: ${{ env.MGC_STRESS_CLI_SNAPSHOT }}
         run: cargo test --locked -p mgc --test native_ownership_matrix_e2e --test web_mixed_monorepo_preflight --test ai_native_install_e2e --test web_backend_native_lifecycle_e2e -- --test-threads=4
         timeout-minutes: 20
+
+      - name: Run authenticated npm version probe with Node installed
+        env:
+          MGC_TEST_CLI_BINARY: ${{ env.MGC_STRESS_CLI_SNAPSHOT }}
+        run: cargo test --locked -p mgc --test native_ownership_matrix_e2e framework_npm_version_probe_uses_mgc_shim_with_canonical_windows_cwd -- --ignored --exact --test-threads=1 --nocapture
+        timeout-minutes: 5
 
       - name: Run cache and shared-store stress suites
         run: cargo test --locked -p mgc --test cache_stress_test --test stress_shared_store_matrix

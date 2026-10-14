@@ -177,6 +177,10 @@ jobs:
         shell: bash
         run: cargo test -p mgc --test native_ownership_matrix_e2e --locked -- --test-threads=1
         timeout-minutes: 20
+      - name: Verify authenticated npm version probe through the Node shim
+        shell: bash
+        run: cargo test -p mgc --test native_ownership_matrix_e2e framework_npm_version_probe_uses_mgc_shim_with_canonical_windows_cwd --locked -- --ignored --exact --test-threads=1 --nocapture
+        timeout-minutes: 5
       - name: single-core web CLI surface
         run: cargo test -p mgc --no-default-features --features web test_single_core_create_alias_parses --quiet
       - name: Global CLI tool install, execute, recovery, and Windows PATH E2E
@@ -357,7 +361,7 @@ jobs:
 
       - name: Global CLI tool lifecycle E2E (Unix)
         if: runner.os != 'Windows'
-        run: cargo test -p mgc --test global_tool_e2e --locked -- --test-threads=1 --nocapture
+        run: cargo test -p mgc --test global_tool_e2e --locked -- --include-ignored --test-threads=1 --nocapture
         env:
           MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
 
@@ -377,12 +381,17 @@ jobs:
           MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
 
       - name: Run optimizer E2E on release binary (MUST PASS - no || true)
-        run: cargo test -p mgc --test optimizer_lifecycle_e2e --locked -- --nocapture
+        run: cargo test -p mgc --test optimizer_lifecycle_e2e --locked -- --include-ignored --nocapture
         env:
           MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
 
       - name: Run Web, App scaffold, and Lib lifecycle tests on release binary
         run: cargo test --locked -p mgc --test full_lifecycle_e2e -- --nocapture --test-threads=1
+        env:
+          MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
+
+      - name: Run Node-backed Web lifecycle test on release binary
+        run: cargo test --locked -p mgc --test full_lifecycle_e2e test_web_full_lifecycle -- --ignored --exact --nocapture --test-threads=1
         env:
           MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
 

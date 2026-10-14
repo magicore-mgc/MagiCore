@@ -14,6 +14,7 @@ use tempfile::TempDir;
 mod common;
 
 #[test]
+#[ignore = "requires Node.js; executed by the ownership CI matrices after setup-node"]
 fn framework_npm_version_probe_uses_mgc_shim_with_canonical_windows_cwd() {
     let root = tempfile::tempdir().expect("create framework probe project");
     std::fs::write(

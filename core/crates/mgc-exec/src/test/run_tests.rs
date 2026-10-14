@@ -58,6 +58,10 @@ fn windows_probe_argv0_accepts_bare_alias_but_rejects_different_path() {
         image.as_os_str(),
         &canonical
     ));
+    assert!(super::windows_probe_argv0_matches_image(
+        image.as_os_str(),
+        &image
+    ));
     assert!(!super::windows_probe_argv0_matches_image(
         OsStr::new("evil"),
         &canonical
@@ -376,7 +380,7 @@ fn process_group_scan_detects_forbidden_child_after_root_exits()
     );
     let group_has_forbidden_process = system.processes().iter().any(|(pid, process)| {
         super::process_group_matches(pid, root_pid)
-            && super::forbidden_process_entry(pid, process, &[]).is_some()
+            && super::forbidden_process_entry(&system, pid, process, &[]).is_some()
     });
     let scan = super::find_forbidden_descendant(root_pid, &[], root.path());
     super::terminate_process_tree(root_pid, &std::collections::HashSet::from([root_pid]));
@@ -1024,6 +1028,81 @@ fn cargo_image_with_rustc_compilation_argv_is_allowed_but_cargo_install_is_denie
     .collect::<Vec<_>>();
     assert!(super::forbidden_process_match_argv("cargo", &rustc_child, &[]).is_none());
 
+    // The wrapper-shaped snapshot is allowed only below its Cargo parent.
+    // (Shape wrapper chỉ được nhận khi parent trực tiếp cũng là Cargo.)
+    let compiler_path = std::env::temp_dir().join("rustc");
+    let cargo_wrapped_rustc = vec![
+        OsString::from("cargo"),
+        compiler_path.into_os_string(),
+        OsString::from("--crate-type"),
+        OsString::from("lib"),
+        OsString::from("--color"),
+        OsString::from("always"),
+        OsString::from("--crate-name"),
+        OsString::from("probe"),
+        OsString::from("--test"),
+    ];
+    assert!(super::forbidden_process_match_argv("cargo", &cargo_wrapped_rustc, &[]).is_some());
+    assert!(super::is_cargo_rustc_wrapper_child(
+        "cargo",
+        &cargo_wrapped_rustc,
+        Some("cargo")
+    ));
+    assert!(!super::is_cargo_rustc_wrapper_child(
+        "cargo",
+        &cargo_wrapped_rustc,
+        Some("node")
+    ));
+    assert!(!super::is_cargo_rustc_wrapper_child(
+        "cargo",
+        &cargo_wrapped_rustc,
+        None
+    ));
+
+    // macOS may omit argv[0] entirely for a Cargo-spawned rustc snapshot;
+    // require Cargo parent plus the full compiler-only signature.
+    // (macOS có thể bỏ argv[0]; bắt buộc có parent Cargo và đủ chữ ký compiler.)
+    let rustc_args_without_program = [
+        "--crate-name",
+        "probe",
+        "--crate-type",
+        "lib",
+        "--emit",
+        "metadata",
+        "--out-dir",
+        "/tmp/mgc-rustc-probe",
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect::<Vec<_>>();
+    assert!(
+        super::forbidden_process_match_argv("cargo", &rustc_args_without_program, &[]).is_some()
+    );
+    assert!(super::is_cargo_rustc_wrapper_child(
+        "cargo",
+        &rustc_args_without_program,
+        Some("cargo")
+    ));
+    assert!(!super::is_cargo_rustc_wrapper_child(
+        "cargo",
+        &rustc_args_without_program,
+        Some("node")
+    ));
+    assert!(!super::is_cargo_rustc_wrapper_child(
+        "cargo",
+        &rustc_args_without_program,
+        None
+    ));
+    let incomplete_args_without_program = ["--crate-name", "probe", "--crate-type", "lib"]
+        .into_iter()
+        .map(OsString::from)
+        .collect::<Vec<_>>();
+    assert!(!super::is_cargo_rustc_wrapper_child(
+        "cargo",
+        &incomplete_args_without_program,
+        Some("cargo")
+    ));
+
     let cargo_install = ["cargo", "install", "some-tool"]
         .into_iter()
         .map(OsString::from)
@@ -1035,6 +1114,31 @@ fn cargo_image_with_rustc_compilation_argv_is_allowed_but_cargo_install_is_denie
         .map(OsString::from)
         .collect::<Vec<_>>();
     assert!(super::forbidden_process_match_argv("cargo", &incomplete_rustc_shape, &[]).is_some());
+
+    let incomplete_wrapped_shape = [
+        OsString::from("cargo"),
+        std::env::temp_dir().join("rustc").into_os_string(),
+        OsString::from("--crate-name"),
+        OsString::from("probe"),
+    ];
+    assert!(super::forbidden_process_match_argv("cargo", &incomplete_wrapped_shape, &[]).is_some());
+
+    let cargo_rustc_subcommand = [
+        "cargo",
+        "rustc",
+        "--",
+        "--crate-type",
+        "lib",
+        "--crate-name",
+        "probe",
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect::<Vec<_>>();
+    assert!(
+        super::forbidden_process_match_argv("cargo", &cargo_rustc_subcommand, &[]).is_some(),
+        "Cargo's rustc subcommand must remain subject to dependency policy"
+    );
 }
 
 #[test]

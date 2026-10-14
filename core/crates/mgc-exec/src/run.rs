@@ -3691,21 +3691,22 @@ fn find_forbidden_descendant_tracking(
                     &process.name().to_string_lossy(),
                     process.cmd(),
                 )?;
-                first_forbidden = forbidden_process_entry(pid, process, exempt).filter(|found| {
-                    let allowed = is_allowed_shadow_npm_version_probe(
-                        process.name().to_string_lossy().as_bytes(),
-                        process
-                            .cmd()
-                            .iter()
-                            .map(|arg| arg.to_string_lossy())
-                            .collect::<Vec<_>>()
-                            .join(" ")
-                            .as_bytes(),
-                        shadow_dir,
-                        &found.name,
-                    );
-                    !allowed
-                });
+                first_forbidden = forbidden_process_entry(&exit_system, pid, process, exempt)
+                    .filter(|found| {
+                        let allowed = is_allowed_shadow_npm_version_probe(
+                            process.name().to_string_lossy().as_bytes(),
+                            process
+                                .cmd()
+                                .iter()
+                                .map(|arg| arg.to_string_lossy())
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                                .as_bytes(),
+                            shadow_dir,
+                            &found.name,
+                        );
+                        !allowed
+                    });
             }
         }
         if let Some(found) = first_forbidden {
@@ -3831,21 +3832,22 @@ fn find_forbidden_descendant_tracking(
                 &process.name().to_string_lossy(),
                 process.cmd(),
             )?;
-            first_forbidden = forbidden_process_entry(pid, process, exempt).filter(|found| {
-                let command_line = process
-                    .cmd()
-                    .iter()
-                    .map(|arg| arg.to_string_lossy())
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                let allowed = is_allowed_shadow_npm_version_probe(
-                    process.name().to_string_lossy().as_bytes(),
-                    command_line.as_bytes(),
-                    shadow_dir,
-                    &found.name,
-                );
-                !allowed
-            });
+            first_forbidden =
+                forbidden_process_entry(system, pid, process, exempt).filter(|found| {
+                    let command_line = process
+                        .cmd()
+                        .iter()
+                        .map(|arg| arg.to_string_lossy())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    let allowed = is_allowed_shadow_npm_version_probe(
+                        process.name().to_string_lossy().as_bytes(),
+                        command_line.as_bytes(),
+                        shadow_dir,
+                        &found.name,
+                    );
+                    !allowed
+                });
         }
     }
     Ok(first_forbidden)
@@ -3886,11 +3888,19 @@ fn process_groups_have_descendants(
 
 #[cfg(unix)]
 fn forbidden_process_entry(
+    system: &sysinfo::System,
     pid: &sysinfo::Pid,
     process: &sysinfo::Process,
     exempt: &[&str],
 ) -> Option<ForbiddenProcess> {
     let image_name = process.name().to_string_lossy().into_owned();
+    let parent_image = process
+        .parent()
+        .and_then(|parent_pid| system.process(parent_pid))
+        .map(|parent| parent.name().to_string_lossy().into_owned());
+    if is_cargo_rustc_wrapper_child(&image_name, process.cmd(), parent_image.as_deref()) {
+        return None;
+    }
     let policy_env = if process_basename(&image_name) == "go" {
         process
             .environ()
@@ -4543,7 +4553,14 @@ fn windows_probe_argv0_matches_image(program: &std::ffi::OsStr, image: &Path) ->
     {
         return true;
     }
-    std::fs::canonicalize(program).is_ok_and(|path| path == image)
+    let (Ok(program_path), Ok(image_path)) =
+        (std::fs::canonicalize(program), std::fs::canonicalize(image))
+    else {
+        return false;
+    };
+    let program_path = program_path.to_string_lossy().replace('/', "\\");
+    let image_path = image_path.to_string_lossy().replace('/', "\\");
+    program_path.eq_ignore_ascii_case(&image_path)
 }
 
 #[cfg(windows)]
@@ -5027,13 +5044,13 @@ fn forbidden_process_match_argv_with_env(
         return Some((image_name, "executable image", None, None));
     }
 
-    // macOS may report a Cargo-spawned compiler with image `cargo` while its
-    // argv identifies the actual Rust compiler command. Permit only that
-    // compiler-shaped child; package-mutating Cargo invocations remain under
-    // dependency-resolution policy.
-    // (macOS đôi khi báo image `cargo` cho compiler do Cargo tạo, dù argv là
-    // lệnh Rust compiler. Chỉ cho qua đúng mẫu compiler; lệnh Cargo sửa gói
-    // vẫn chịu policy dependency-resolution.)
+    // Some process snapshots report a Cargo-spawned compiler with image `cargo`.
+    // Accept a direct rustc argv, a wrapper with an absolute rustc path, or an
+    // argv snapshot that omits the executable but has a complete compiler shape.
+    // Wrapper/omitted-executable forms also require a direct Cargo parent.
+    // (Một số snapshot ghi image compiler là `cargo`. Nhận argv rustc trực
+    // tiếp, wrapper có path rustc tuyệt đối, hoặc snapshot bỏ executable nhưng
+    // đủ dấu hiệu biên dịch; hai dạng sau bắt buộc có parent trực tiếp là Cargo.)
     if image_name == "cargo" && is_rustc_compilation_argv(argv) {
         return None;
     }
@@ -5111,10 +5128,42 @@ fn forbidden_process_match_argv_with_env(
 }
 
 fn is_rustc_compilation_argv(argv: &[OsString]) -> bool {
-    argv.first()
-        .is_some_and(|program| process_basename(&program.to_string_lossy()) == "rustc")
-        && argv.iter().any(|arg| arg == "--crate-name")
-        && argv.iter().any(|arg| arg == "--crate-type")
+    argv.iter().skip(1).any(|arg| arg == "--crate-name")
+        && argv
+            .first()
+            .is_some_and(|program| process_basename(&program.to_string_lossy()) == "rustc")
+        && argv.iter().skip(1).any(|arg| arg == "--crate-type")
+}
+
+fn is_cargo_rustc_wrapper_child(
+    image: &str,
+    argv: &[OsString],
+    parent_image: Option<&str>,
+) -> bool {
+    if process_basename(image) != "cargo"
+        || !parent_image.is_some_and(|parent| process_basename(parent) == "cargo")
+    {
+        return false;
+    }
+
+    let wrapper_shape = argv.get(1).is_some_and(|compiler| {
+        argv.first()
+            .is_some_and(|wrapper| process_basename(&wrapper.to_string_lossy()) == "cargo")
+            && Path::new(compiler).is_absolute()
+            && process_basename(&compiler.to_string_lossy()) == "rustc"
+            && is_rustc_compilation_flags(&argv[2..])
+    });
+    let executable_omitted_shape = argv.first().is_some_and(|first| {
+        first.to_string_lossy().starts_with('-')
+            && is_rustc_compilation_flags(argv)
+            && argv.iter().any(|arg| arg == "--emit")
+            && argv.iter().any(|arg| arg == "--out-dir")
+    });
+    wrapper_shape || executable_omitted_shape
+}
+
+fn is_rustc_compilation_flags(argv: &[OsString]) -> bool {
+    argv.iter().any(|arg| arg == "--crate-name") && argv.iter().any(|arg| arg == "--crate-type")
 }
 
 fn process_invocation_program(candidate: &str) -> String {

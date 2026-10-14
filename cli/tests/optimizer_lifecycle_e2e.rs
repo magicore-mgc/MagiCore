@@ -75,6 +75,7 @@ fn write_fake_tool(root: &std::path::Path, name: &str, body: &str) {
 }
 
 #[test]
+#[ignore = "requires Node.js; executed by CI after setup-node"]
 fn test_web_node_mgc_test_with_optimizer() {
     // REAL E2E: mgc test runs the declared Node script and passes optimizer env.
     // E2E THẬT: mgc test chạy script Node của project và truyền biến optimizer.

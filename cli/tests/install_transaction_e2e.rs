@@ -40,9 +40,11 @@ fn fixture(dir: &std::path::Path) {
         "name = \"txn-fixture\"\nversion = \"0.1.0\"\necosystem = \"web\"\nmode = \"frontend\"\nframeworks = []\ntemplate = \"\"\nfeatures = []\nregistries = []\npatches = []\n",
     )
     .unwrap();
-    // esbuild ships a real postinstall (succeeds normally); the injected
-    // failure forces the transaction path deterministically.
-    // (esbuild có postinstall thật; failure tiêm ép đường transaction.)
+    // esbuild ships a real postinstall; baseline skips it because these
+    // cases measure transaction state, while the failure injector stops
+    // the opted-in script before any runtime or side effect.
+    // (esbuild có postinstall thật; baseline bỏ qua vì bài đo transaction,
+    // injector chặn script trước runtime và side effect.)
     std::fs::write(
         dir.join("package.json"),
         r#"{"name":"txn-fixture","version":"1.0.0","dependencies":{"esbuild":"0.28.2"}}"#,
@@ -56,7 +58,12 @@ fn run_install(
     fail_packages: Option<&str>,
 ) -> (Option<i32>, String) {
     let mut cmd = Command::new(mgc);
-    cmd.args(["install", "--allow-scripts"]).current_dir(dir);
+    let script_policy = if fail_packages.is_some() {
+        "--allow-scripts"
+    } else {
+        "--ignore-scripts"
+    };
+    cmd.args(["install", script_policy]).current_dir(dir);
     if let Some(filter) = fail_packages {
         cmd.env("MGC_LIFECYCLE_FAIL_PACKAGES", filter);
     }

@@ -191,6 +191,11 @@ if ! grep -q "MGC_NATIVE_DEV_E2E_OK" "$NATIVE_LOG"; then
 fi
 
 AUDIT_LOG="$PWD/.magicore/exec.log"
+if command -v cygpath >/dev/null 2>&1; then
+    AUDIT_CWD="$(cygpath -w "$PWD")"
+else
+    AUDIT_CWD="$PWD"
+fi
 if [ ! -f "$AUDIT_LOG" ]; then
     echo "✗ FAIL: real mgc dev execution did not create .magicore/exec.log"
     exit 1
@@ -199,7 +204,7 @@ if [ -e "$PWD/.mgc/exec.log" ]; then
     echo "✗ FAIL: real mgc dev execution wrote the legacy .mgc/exec.log path"
     exit 1
 fi
-node - "$AUDIT_LOG" "$PWD" <<'NODE'
+node - "$AUDIT_LOG" "$AUDIT_CWD" <<'NODE'
 const fs = require("node:fs");
 const path = require("node:path");
 const [auditPath, expectedCwd] = process.argv.slice(2);
@@ -223,6 +228,7 @@ const found = rows.some((row) => normalizeCommand(row.cmd) === "node"
   && row.exit_code === 0);
 if (!found) {
   console.error("Audit log did not record the successful native Node dev execution");
+  console.error(`Expected project cwd: ${expectedCwd}`);
   const observed = rows.map(({ cmd, args, cwd, exit_code }) => ({ cmd, args, cwd, exit_code }));
   console.error(JSON.stringify(observed, null, 2));
   process.exit(1);

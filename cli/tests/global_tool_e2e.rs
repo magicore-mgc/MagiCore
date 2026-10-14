@@ -288,10 +288,7 @@ mod platform {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "temporarily changes the Windows user PATH; run explicitly in isolated CI"
-    )]
+    #[ignore = "requires Node.js; run in the isolated CLI lifecycle CI jobs"]
     fn global_cli_install_update_list_and_remove_are_isolated_and_persistent() {
         #[cfg(windows)]
         let mut path_guard = RestoreWindowsUserPath::capture();
@@ -587,6 +584,7 @@ mod platform {
     }
 
     #[test]
+    #[ignore = "requires Node.js; run in the product lifecycle matrix"]
     fn different_projects_share_one_user_tool_root_without_removing_each_other() {
         let first_project = TempDir::new().unwrap();
         let second_project = TempDir::new().unwrap();

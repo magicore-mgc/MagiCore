@@ -323,16 +323,20 @@ fn verify_flutter_sdk_manifest_replay_and_freshness(schema: &str) {
     )
     .unwrap();
 
+    #[cfg(windows)]
+    let (probe_path, probe_command) = (
+        project.path().join("mgc-probe.exe"),
+        "./mgc-probe.exe --version",
+    );
+    #[cfg(not(windows))]
+    let (probe_path, probe_command) = (project.path().join("mgc-probe"), "./mgc-probe --version");
+    std::fs::copy(mgc_binary(), &probe_path).expect("copy the built CLI as a local test probe");
+
     let mut config = std::fs::read_to_string(project.path().join("mgc.toml")).unwrap();
     config.push_str(&format!(
-        "\n[lock]\nschema = \"{schema}\"\n[scripts]\ntest = \"node freshness-probe.js\"\n"
+        "\n[lock]\nschema = \"{schema}\"\n[scripts]\ntest = \"{probe_command}\"\n"
     ));
     std::fs::write(project.path().join("mgc.toml"), config).unwrap();
-    std::fs::write(
-        project.path().join("freshness-probe.js"),
-        "console.log('MGC_FLUTTER_FRESHNESS_OK');\n",
-    )
-    .unwrap();
 
     let sdk_root = TempDir::new().unwrap();
     let flutter_package = sdk_root.path().join("packages/flutter");
@@ -395,7 +399,7 @@ fn verify_flutter_sdk_manifest_replay_and_freshness(schema: &str) {
         "SDK-expanded freshness must allow the configured test: {stdout}{stderr}"
     );
     assert!(
-        stdout.contains("MGC_FLUTTER_FRESHNESS_OK"),
+        stdout.contains("mgc "),
         "test script must execute after freshness: {stdout}{stderr}"
     );
 
@@ -411,7 +415,7 @@ fn verify_flutter_sdk_manifest_replay_and_freshness(schema: &str) {
         Some(0),
         "changed SDK requirements must fail: {stdout}{stderr}"
     );
-    assert!(!stdout.contains("MGC_FLUTTER_FRESHNESS_OK"));
+    assert!(!stdout.contains("mgc "));
     assert!(
         stderr.contains("characters") && stderr.contains("locked version"),
         "range error must identify the stale dependency: {stderr}"
@@ -444,7 +448,7 @@ fn verify_flutter_sdk_manifest_replay_and_freshness(schema: &str) {
             Some(0),
             "stale or invalid pubspec must fail: {stdout}{stderr}"
         );
-        assert!(!stdout.contains("MGC_FLUTTER_FRESHNESS_OK"));
+        assert!(!stdout.contains("mgc "));
         assert_eq!(
             std::fs::read(project.path().join("mgc.lock")).unwrap(),
             before_replay

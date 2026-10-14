@@ -160,6 +160,7 @@ fn run_dlx(
 }
 
 #[test]
+#[ignore = "requires Node.js; exercised with setup-node in the lifecycle matrix"]
 fn dlx_runs_lifecycle_scripts_only_after_explicit_opt_in() {
     let registry = RegistryFixture::new();
     let sandbox = TempDir::new().unwrap();

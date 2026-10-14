@@ -39,8 +39,9 @@ fn web_fixture(dir: &Path, name: &str) {
         ),
     )
     .unwrap();
-    // esbuild ships a real postinstall (succeeds normally).
-    // (esbuild có postinstall thật.)
+    // Keep the real esbuild manifest so the test covers a package with a
+    // lifecycle hook, but storage-only runs explicitly skip that hook.
+    // (Giữ manifest esbuild có lifecycle hook thật; bài kiểm storage bỏ hook.)
     std::fs::write(
         dir.join("package.json"),
         r#"{"name":"hardening","version":"1.0.0","dependencies":{"esbuild":"0.28.2"}}"#,
@@ -50,7 +51,7 @@ fn web_fixture(dir: &Path, name: &str) {
 
 fn run_install(mgc: &str, dir: &Path, extra_env: &[(&str, &str)]) -> (Option<i32>, String) {
     let mut cmd = Command::new(mgc);
-    cmd.args(["install", "--allow-scripts"]).current_dir(dir);
+    cmd.args(["install", "--ignore-scripts"]).current_dir(dir);
     for (k, v) in extra_env {
         cmd.env(k, v);
     }
@@ -88,7 +89,7 @@ fn install_succeeds_with_locked_home() {
     web_fixture(&project, "locked-home-proj");
 
     let mut cmd = Command::new(&mgc);
-    cmd.args(["install", "--allow-scripts"])
+    cmd.args(["install", "--ignore-scripts"])
         .current_dir(&project)
         .env("HOME", &locked_home);
     #[cfg(unix)]

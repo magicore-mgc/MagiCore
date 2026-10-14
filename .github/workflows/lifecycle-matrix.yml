@@ -251,6 +251,11 @@ jobs:
         env:
           MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
 
+      - name: Verify global CLI tools are shared across project roots
+        run: cargo test --locked -p mgc --test global_tool_e2e platform::different_projects_share_one_user_tool_root_without_removing_each_other -- --ignored --exact --test-threads=1 --nocapture
+        env:
+          MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
+
       - name: Verify AI model audit with the release binary
         run: cargo test --locked -p mgc --test audit_cli_e2e audit_ai_cli_scans_checkpoint_weights_after_models_directory -- --exact --nocapture
         env:
@@ -262,7 +267,7 @@ jobs:
           MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
 
       - name: Verify dlx lifecycle-script policy with the release binary
-        run: cargo test --locked -p mgc --test dlx_e2e -- --test-threads=1 --nocapture
+        run: cargo test --locked -p mgc --test dlx_e2e -- --include-ignored --test-threads=1 --nocapture
         env:
           MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
 

@@ -174,15 +174,6 @@ fn test_cache_cold_vs_warm() {
     // STRESS TEST: Cold cache vs warm cache install performance
     // Measures REAL times, reports raw numbers (no multipliers)
 
-    // Check Node available (for web test)
-    if Command::new("node").arg("--version").output().is_err() {
-        panic!(
-            "UNVERIFIED: node not available\n\
-            This test requires Node.js for cache testing.\n\
-            Status: IMPLEMENTED-UNVERIFIED"
-        );
-    }
-
     let temp = TempDir::new().unwrap();
     let mgc = find_mgc_binary();
     let registry = RegistryFixture::new();
@@ -252,14 +243,6 @@ fn test_cache_cold_vs_warm() {
 fn test_corrupted_cache_recovery() {
     // STRESS TEST: Cache corruption recovery
     // Corrupt cache entry → verify mgc recovers gracefully
-
-    if Command::new("node").arg("--version").output().is_err() {
-        panic!(
-            "UNVERIFIED: node not available\n\
-            This test requires Node.js for cache testing.\n\
-            Status: IMPLEMENTED-UNVERIFIED"
-        );
-    }
 
     let temp = TempDir::new().unwrap();
     let mgc = find_mgc_binary();
@@ -346,13 +329,6 @@ fn test_corrupted_cache_recovery() {
 fn test_concurrent_install_safety() {
     // STRESS TEST: Concurrent installs shouldn't corrupt cache
     // Run 2 installs simultaneously → verify both succeed
-
-    if Command::new("node").arg("--version").output().is_err() {
-        panic!(
-            "UNVERIFIED: node not available\n\
-            Status: IMPLEMENTED-UNVERIFIED"
-        );
-    }
 
     let temp = TempDir::new().unwrap();
     let mgc = find_mgc_binary();
@@ -459,13 +435,6 @@ fn test_cache_version_invalidation() {
     // STRESS TEST: Version change should invalidate cache
     // Install lodash@4.17.20 → change to 4.17.21 → verify cache updates
 
-    if Command::new("node").arg("--version").output().is_err() {
-        panic!(
-            "UNVERIFIED: node not available\n\
-            Status: IMPLEMENTED-UNVERIFIED"
-        );
-    }
-
     let temp = TempDir::new().unwrap();
     let mgc = find_mgc_binary();
     let registry = RegistryFixture::new();
@@ -556,13 +525,6 @@ fn test_cache_version_invalidation() {
 fn test_cross_core_cache_isolation() {
     // STRESS TEST: Different cores should not share cache inappropriately
     // Web lodash should not be used for Lib projects
-
-    if Command::new("node").arg("--version").output().is_err() {
-        panic!(
-            "UNVERIFIED: node not available\n\
-            Status: IMPLEMENTED-UNVERIFIED"
-        );
-    }
 
     let temp = TempDir::new().unwrap();
     let mgc = find_mgc_binary();

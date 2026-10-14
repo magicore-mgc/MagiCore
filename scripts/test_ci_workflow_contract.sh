@@ -72,6 +72,10 @@ grep -Fq 'MGC_BIN: ./target/release/mgc' "$ROOT/.github/workflows/lifecycle-matr
   || fail "real-binary E2E must execute the optimized release binary"
 grep -Fq 'cargo test --locked -p mgc --test global_tool_e2e -- --test-threads=1 --nocapture' "$ROOT/.github/workflows/lifecycle-matrix.yml" \
   || fail "lifecycle CI must exercise persistent CLI tools on every runner OS"
+grep -Fq 'cargo test --locked -p mgc --test global_tool_e2e platform::different_projects_share_one_user_tool_root_without_removing_each_other -- --ignored --exact --test-threads=1 --nocapture' "$ROOT/.github/workflows/lifecycle-matrix.yml" \
+  || fail "lifecycle CI must execute the Node-backed shared global-tool-root E2E on every runner OS"
+grep -Fq 'cargo test -p mgc --test global_tool_e2e --locked -- --include-ignored --test-threads=1 --nocapture' "$ROOT/.github/workflows/ci.yml" \
+  || fail "Unix CLI lifecycle CI must run the ignored persistent tool tests with Node installed"
 grep -Fq 'MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc' "$ROOT/.github/workflows/lifecycle-matrix.yml" \
   || fail "persistent CLI tool E2E must invoke the release product binary"
 grep -A4 -F 'Global CLI tool lifecycle E2E (Unix)' "$ROOT/.github/workflows/ci.yml" \
@@ -83,6 +87,14 @@ grep -A4 -F 'Run native test-runner security E2E on release binary' "$ROOT/.gith
 grep -A4 -F 'Run optimizer E2E on release binary' "$ROOT/.github/workflows/ci.yml" \
   | grep -Fq 'MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc' \
   || fail "optimizer E2E must invoke the release product binary"
+grep -Fq 'cargo test -p mgc --test optimizer_lifecycle_e2e --locked -- --include-ignored --nocapture' "$ROOT/.github/workflows/ci.yml" \
+  || fail "CI must run the Node-backed optimizer E2E after setup-node"
+grep -Fq 'cargo test --locked -p mgc --test optimizer_lifecycle_e2e test_web_node_mgc_test_with_optimizer -- --ignored --exact --nocapture' "$ROOT/.github/workflows/stress-matrix.yml" \
+  || fail "stress CI must run the exact Node-backed optimizer E2E"
+grep -Fq 'cargo test -p mgc --test native_ownership_matrix_e2e framework_npm_version_probe_uses_mgc_shim_with_canonical_windows_cwd --locked -- --ignored --exact --test-threads=1 --nocapture' "$ROOT/.github/workflows/ci.yml" \
+  || fail "Windows CI must run the exact Node-backed authenticated npm shim probe"
+grep -Fq 'cargo test --locked -p mgc --test native_ownership_matrix_e2e framework_npm_version_probe_uses_mgc_shim_with_canonical_windows_cwd -- --ignored --exact --test-threads=1 --nocapture' "$ROOT/.github/workflows/stress-matrix.yml" \
+  || fail "cross-OS stress CI must run the exact Node-backed authenticated npm shim probe"
 grep -A5 -F 'Run Web, App scaffold, and Lib lifecycle tests on release binary' "$ROOT/.github/workflows/ci.yml" \
   | grep -Fq 'MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc' \
   || fail "Web/App scaffold/Lib lifecycle E2E must invoke the release product binary"
@@ -107,8 +119,8 @@ grep -Fq '.magicore/exec.log' "$ROOT/cli/tests/iot_native_install_e2e.rs" \
   || fail "IoT product E2E must prove the project-local execution audit is written"
 grep -Fq 'store/cargo/registry' "$ROOT/cli/tests/iot_native_install_e2e.rs" \
   || fail "IoT product E2E must prove where shared Rust archives and sources are stored"
-grep -Fq 'cargo test --locked -p mgc --test dlx_e2e -- --test-threads=1 --nocapture' "$ROOT/.github/workflows/lifecycle-matrix.yml" \
-  || fail "lifecycle CI must execute dlx script-policy E2E on every runner OS"
+grep -Fq 'cargo test --locked -p mgc --test dlx_e2e -- --include-ignored --test-threads=1 --nocapture' "$ROOT/.github/workflows/lifecycle-matrix.yml" \
+  || fail "lifecycle CI must explicitly execute the Node-backed dlx script-policy E2E on every runner OS"
 grep -Fq 'MGC_LIFECYCLE_BIN: ./target/release/mgc' "$ROOT/.github/workflows/lifecycle-matrix.yml" \
   || fail "capability lifecycle matrix must probe the optimized release binary"
 grep -Fq 'process-churn fixture did not spawn at least 100 short-lived children' "$ROOT/cli/tests/scripts/runtime_full_e2e.sh" \
@@ -309,6 +321,8 @@ grep -q 'python-version: "3.14"' "$ALL_CORE" || fail "Python lifecycle pin is st
 grep -q 'flutter-version: "3.47.4"' "$ALL_CORE" || fail "Flutter lifecycle pin is stale"
 grep -Eq 'cargo test --locked -p mgc --test full_lifecycle_e2e test_ai_full_lifecycle -- .*--ignored --exact' "$ROOT/.github/workflows/ci.yml" \
   || fail "CI provisions pytest but does not execute the ignored AI release-binary lifecycle test"
+grep -Eq 'cargo test --locked -p mgc --test full_lifecycle_e2e test_web_full_lifecycle -- .*--ignored --exact' "$ROOT/.github/workflows/ci.yml" \
+  || fail "CI provisions Node.js but does not execute the ignored Web release-binary lifecycle test"
 if grep -vE '^[[:space:]]*#' "$ALL_CORE" | grep -Eq 'setup-uv|(^|[[:space:]])uv([[:space:]]|$)'; then
   fail "native AI lifecycle matrix must not provision or invoke uv"
 fi
