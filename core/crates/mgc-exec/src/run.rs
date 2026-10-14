@@ -5433,12 +5433,12 @@ fn is_rustdoc_test_compilation_argv(argv: &[OsString]) -> bool {
         .get(1)
         .is_some_and(|argument| argument.to_string_lossy().starts_with('-'))
     {
-        // Rustdoc may invoke a compiler through a wrapper whose argv[0] is not
+        // Cargo/rustdoc may invoke a compiler through a wrapper whose argv[0] is not
         // `rustc`; recognize it only when compiler options begin immediately and
-        // the caller below confirms the parent is rustdoc. Cargo subcommands stay
+        // the caller confirms a trusted toolchain parent. Cargo subcommands stay
         // rejected because they begin with a subcommand such as `install`.
-        // (Rustdoc có thể gọi compiler qua wrapper có argv[0] không phải `rustc`;
-        // chỉ nhận nếu argv kế tiếp là flag compiler và caller xác nhận cha rustdoc.
+        // (Cargo/rustdoc có thể gọi compiler qua wrapper có argv[0] không phải `rustc`;
+        // chỉ nhận nếu argv kế tiếp là flag compiler và cha thuộc toolchain đáng tin.
         // Lệnh Cargo vẫn bị chặn vì argv bắt đầu bằng subcommand như `install`.)
         &argv[1..]
     } else if program.to_string_lossy().starts_with('-') {
@@ -5509,7 +5509,8 @@ fn is_rustc_toolchain_child(image: &str, argv: &[OsString], parent_image: Option
             && argv.iter().any(|arg| arg == "--emit")
             && argv.iter().any(|arg| arg == "--out-dir")
     });
-    let rustdoc_doctest_shape = rustdoc_parent && is_rustdoc_test_compilation_argv(argv);
+    let rustdoc_doctest_shape =
+        (cargo_parent || rustdoc_parent) && is_rustdoc_test_compilation_argv(argv);
     if direct_rustc_shape || executable_omitted_shape || rustdoc_doctest_shape {
         return true;
     }
