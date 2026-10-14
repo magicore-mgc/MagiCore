@@ -42,12 +42,7 @@ pub async fn run(
         // Tải env optimizer cho Rust project độc lập
         let runtime = crate::commands::optimizer::runtime_detect::DetectedRuntime::RustLib;
         let optimizer_envs =
-            crate::commands::optimizer::env_loader::load_optimizer_env(&root, &runtime)
-                .map_err(|e| {
-                    mgc_ui::warning(&format!("Failed to load optimizer config: {}", e));
-                    e
-                })
-                .unwrap_or_default();
+            crate::commands::optimizer::env_loader::load_optimizer_env(&root, &runtime)?;
         return build_rust_with_env(&root, optimizer_envs);
     }
 
@@ -285,12 +280,8 @@ async fn build_ai(root: &Path) -> Result<()> {
     } else {
         return Err(crate::error::no_framework_detected("ai build", root));
     };
-    let optimizer_envs = crate::commands::optimizer::env_loader::load_optimizer_env(root, &runtime)
-        .map_err(|error| {
-            mgc_ui::warning(&format!("Failed to load optimizer config: {error}"));
-            error
-        })
-        .unwrap_or_default();
+    let optimizer_envs =
+        crate::commands::optimizer::env_loader::load_optimizer_env(root, &runtime)?;
 
     match runtime {
         DetectedRuntime::PythonPyTorch => {
@@ -340,12 +331,7 @@ async fn build_game(root: &Path) -> Result<()> {
             // Load optimizer env for Bevy (Rust) builds
             let runtime = crate::commands::optimizer::runtime_detect::DetectedRuntime::RustLib;
             let optimizer_envs =
-                crate::commands::optimizer::env_loader::load_optimizer_env(root, &runtime)
-                    .map_err(|e| {
-                        mgc_ui::warning(&format!("Failed to load optimizer config: {}", e));
-                        e
-                    })
-                    .unwrap_or_default();
+                crate::commands::optimizer::env_loader::load_optimizer_env(root, &runtime)?;
             build_rust_with_env(root, optimizer_envs)
         }
         Some(mgc_game_adapter::GameEngine::Godot) => Err(crate::error::build_not_supported(
@@ -392,13 +378,13 @@ async fn build_iot(root: &Path) -> Result<()> {
         // Load optimizer env for IoT Rust builds
         let runtime = crate::commands::optimizer::runtime_detect::DetectedRuntime::RustLib;
         let optimizer_envs =
-            crate::commands::optimizer::env_loader::load_optimizer_env(root, &runtime)
-                .map_err(|e| {
-                    mgc_ui::warning(&format!("Failed to load optimizer config: {}", e));
-                    e
-                })
-                .unwrap_or_default();
-        return build_rust_with_env(root, optimizer_envs);
+            crate::commands::optimizer::env_loader::load_optimizer_env(root, &runtime)?;
+        let store_source =
+            mgc_lib_adapter::install::cargo_compat::validate_build_for_core(root, "iot")?;
+        return match store_source {
+            Some(source) => build_rust_with_managed_source(root, optimizer_envs, &source),
+            None => build_rust_with_env(root, optimizer_envs),
+        };
     }
     Err(crate::error::no_framework_detected("iot", root))
 }
@@ -429,12 +415,8 @@ async fn build_lib(root: &Path) -> Result<()> {
     // Load optimizer env for lib runtime
     // Tải env optimizer cho runtime thư viện
     let runtime = detect_lib_runtime(root);
-    let optimizer_envs = crate::commands::optimizer::env_loader::load_optimizer_env(root, &runtime)
-        .map_err(|e| {
-            mgc_ui::warning(&format!("Failed to load optimizer config: {}", e));
-            e
-        })
-        .unwrap_or_default();
+    let optimizer_envs =
+        crate::commands::optimizer::env_loader::load_optimizer_env(root, &runtime)?;
     if project_manifest_present(root, "Cargo.toml")? {
         crate::commands::freshness::check_lib_cargo_freshness(root)?;
         let store_source = mgc_lib_adapter::install::cargo_compat::validate_build(root)?;
@@ -585,12 +567,8 @@ async fn build_app(root: &Path) -> Result<()> {
 
     // Load optimizer env for app runtime
     let runtime = detect_app_runtime(root);
-    let optimizer_envs = crate::commands::optimizer::env_loader::load_optimizer_env(root, &runtime)
-        .map_err(|e| {
-            mgc_ui::warning(&format!("Failed to load optimizer config: {}", e));
-            e
-        })
-        .unwrap_or_default();
+    let optimizer_envs =
+        crate::commands::optimizer::env_loader::load_optimizer_env(root, &runtime)?;
     let env: Vec<(String, String)> = optimizer_envs.into_iter().collect();
     let env_opt = if env.is_empty() { None } else { Some(env) };
 

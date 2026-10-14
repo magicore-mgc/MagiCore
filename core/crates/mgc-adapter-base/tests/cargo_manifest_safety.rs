@@ -74,8 +74,8 @@ fn native_resolver_rejects_manifest_semantics_it_cannot_represent() {
             "[target.'cfg(unix)'.dependencies]\nlibc = \"0.2\"\n",
         ),
         (
-            "feature dependency",
-            "[dependencies]\nserde = { version = \"1\", features = [\"derive\"] }\n",
+            "optional dependency without root feature activation",
+            "[dependencies]\nserde = { version = \"1\", optional = true }\n",
         ),
     ];
 
@@ -89,4 +89,20 @@ fn native_resolver_rejects_manifest_semantics_it_cannot_represent() {
             "{label} must not be silently omitted from the native graph"
         );
     }
+}
+
+#[test]
+fn native_resolver_preserves_cargo_dependency_feature_options() {
+    let project = tempfile::tempdir().unwrap();
+    std::fs::write(
+        project.path().join("Cargo.toml"),
+        "[package]\nname = \"esp_demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n[dependencies]\nesp-hal = { version = \"1.2.2\", features = [\"esp32c3\"], default-features = false }\n",
+    )
+    .unwrap();
+
+    let manifest = parse_manifest(project.path(), Ecosystem::Lib).unwrap();
+    let dependency = manifest.find_dep("esp-hal").unwrap();
+    assert_eq!(dependency.range.as_str(), "1.2.2");
+    assert_eq!(dependency.features, ["esp32c3"]);
+    assert!(!dependency.default_features);
 }

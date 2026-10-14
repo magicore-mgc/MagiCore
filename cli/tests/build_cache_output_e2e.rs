@@ -1,7 +1,39 @@
 #![allow(clippy::unwrap_used)]
 
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
+
+fn cargo_target_dir(project: &Path, configured: Option<&Path>) -> PathBuf {
+    match configured {
+        Some(path) if path.is_absolute() => path.to_path_buf(),
+        Some(path) => project.join(path),
+        None => project.join("target"),
+    }
+}
+
+#[test]
+fn cargo_target_dir_resolves_absolute_relative_and_default_paths() {
+    let fixture = TempDir::new().unwrap();
+    let project = fixture.path().join("package");
+    let shared = fixture.path().join("shared-target");
+
+    assert_eq!(
+        cargo_target_dir(&project, Some(&shared)),
+        shared,
+        "absolute Cargo target directories stay absolute"
+    );
+    assert_eq!(
+        cargo_target_dir(&project, Some(Path::new("target-cache"))),
+        project.join("target-cache"),
+        "relative Cargo target directories resolve from the package workspace"
+    );
+    assert_eq!(
+        cargo_target_dir(&project, None),
+        project.join("target"),
+        "without an override, Cargo artifacts remain project-local"
+    );
+}
 
 fn run_mgc(binary: &str, args: &[&str], cwd: &std::path::Path, home: &std::path::Path) -> String {
     let output = Command::new(binary)
@@ -68,7 +100,8 @@ fn recursive_build_recreates_outputs_removed_after_successful_build() {
     run_mgc(binary, &["install", "--core", "lib"], &package, home.path());
     run_mgc(binary, &["--recursive", "build"], root.path(), home.path());
 
-    let output = package.join("target/debug/deps");
+    let configured_target = std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from);
+    let output = cargo_target_dir(&package, configured_target.as_deref()).join("debug/deps");
     let artifacts: Vec<_> = std::fs::read_dir(&output)
         .unwrap()
         .filter_map(Result::ok)

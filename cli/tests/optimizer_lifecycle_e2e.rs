@@ -6,8 +6,26 @@
 use std::process::Command;
 use tempfile::TempDir;
 
+fn cargo_target_dir(project: &std::path::Path) -> std::path::PathBuf {
+    match std::env::var_os("CARGO_TARGET_DIR").map(std::path::PathBuf::from) {
+        Some(path) if path.is_absolute() => path,
+        Some(path) => project.join(path),
+        None => project.join("target"),
+    }
+}
+
 /// Helper: Find mgc binary
 fn find_mgc_binary() -> std::path::PathBuf {
+    if let Some(value) = std::env::var_os("MGC_TEST_CLI_BINARY") {
+        let binary = std::path::PathBuf::from(value);
+        assert!(
+            binary.is_file(),
+            "MGC_TEST_CLI_BINARY does not identify an executable: {}",
+            binary.display()
+        );
+        eprintln!("MagiCore optimizer product binary: {}", binary.display());
+        return binary;
+    }
     std::env::var("CARGO_BIN_EXE_mgc")
         .ok()
         .map(std::path::PathBuf::from)
@@ -58,15 +76,11 @@ fn write_fake_tool(root: &std::path::Path, name: &str, body: &str) {
 
 #[test]
 fn test_web_node_mgc_test_with_optimizer() {
-    // REAL E2E: mgc test (web/node) → verify child npm/node receives optimizer env
+    // REAL E2E: mgc test runs the declared Node script and passes optimizer env.
+    // E2E THẬT: mgc test chạy script Node của project và truyền biến optimizer.
 
     let temp = TempDir::new().unwrap();
     let project = temp.path();
-
-    // Check npm available
-    if Command::new("npm").arg("--version").output().is_err() {
-        panic!("TEST FAILED: npm not available (required for web optimizer test)");
-    }
 
     // Create Node.js test project
     std::fs::write(
@@ -104,7 +118,8 @@ process.exit(marker === 'NODE_OPTIMIZED' ? 0 : 1);
     )
     .unwrap();
 
-    // Run mgc test (should load optimizer env and pass to npm test → node)
+    // Run mgc test; the native task runner executes the declared node command directly.
+    // Chạy mgc test; task runner native gọi trực tiếp lệnh node đã khai báo.
     let mgc = find_mgc_binary();
     let output = Command::new(&mgc)
         .arg("test")
@@ -121,14 +136,14 @@ process.exit(marker === 'NODE_OPTIMIZED' ? 0 : 1);
     // VERIFY: Child node process received optimizer env var
     assert!(
         combined.contains("NODE_OPTIMIZED"),
-        "INTEGRATION FAILED: mgc test did not pass optimizer env to child node process.\n\
+        "INTEGRATION FAILED: mgc test did not pass optimizer env to the project Node process.\n\
         Expected: OPTIMIZER_STATUS: NODE_OPTIMIZED\n\
         Got: {}\n\
-        This proves mgc → npm → node chain is BROKEN for optimizer env passing.",
+        This proves the native mgc test → node script path is BROKEN for optimizer env passing.",
         combined
     );
 
-    println!("Web (Node) mgc test → npm → node optimizer env verified");
+    println!("Web (Node) mgc test → project script optimizer env verified");
 }
 
 #[test]
@@ -229,9 +244,9 @@ rustflags = ["-C", "opt-level=2", "--cfg", "mgc_lib_optimized"]
     );
 
     // Run compiled binary
-    let bin_path = project.join("target/debug/test_optimizer_lib");
+    let bin_path = cargo_target_dir(project).join("debug/test_optimizer_lib");
     #[cfg(target_os = "windows")]
-    let bin_path = project.join("target/debug/test_optimizer_lib.exe");
+    let bin_path = cargo_target_dir(project).join("debug/test_optimizer_lib.exe");
 
     assert!(bin_path.exists(), "Binary not found after mgc build");
 

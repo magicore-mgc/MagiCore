@@ -423,10 +423,11 @@ async fn ai_audit_scans_each_model_root_and_checkpoint_weights() {
 
     assert!(
         report.vulnerabilities.iter().any(|finding| {
-            finding.package.to_string().contains("checkpoints")
-                && finding.package.to_string().contains("fixture.pth")
+            finding.package.to_string().starts_with("model-artifact-")
+                && finding.title.contains("fixture.pth")
+                && !finding.title.contains(dir.to_string_lossy().as_ref())
         }),
-        "the audit report must include malicious weights from checkpoints even when models exists"
+        "the audit report must identify malicious checkpoint weights without exposing the host path"
     );
 }
 

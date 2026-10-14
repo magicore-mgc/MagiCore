@@ -97,6 +97,25 @@ const ALL_TOOLS: &[&str] = &[
 ];
 
 fn mgc_binary() -> String {
+    if let Some(value) = std::env::var_os("MGC_TEST_CLI_BINARY") {
+        let binary = std::path::PathBuf::from(value);
+        assert!(
+            binary.is_file() || cfg!(windows) && binary.with_extension("exe").is_file(),
+            "MGC_TEST_CLI_BINARY does not identify an executable: {}",
+            binary.display()
+        );
+        #[cfg(windows)]
+        let binary = if binary.is_file() {
+            binary
+        } else {
+            binary.with_extension("exe")
+        };
+        eprintln!(
+            "MagiCore native-ownership product binary: {}",
+            binary.display()
+        );
+        return binary.to_string_lossy().into_owned();
+    }
     std::env::var_os("CARGO_BIN_EXE_mgc")
         .map(std::path::PathBuf::from)
         .map(|p| p.to_string_lossy().to_string())
@@ -736,6 +755,80 @@ fn run_lib_rust_build_e2e(schema: &str) {
         "Cargo build must not rewrite canonical mgc.lock"
     );
     sandbox.assert_no_spawn("Rust add/install/offline reinstall");
+}
+
+#[test]
+fn rust_lib_reuses_verified_shared_artifacts_across_project_roots() {
+    let registry = HermeticCrates::with_download_expectation(Some(1));
+    let env = [
+        ("MGC_CRATES_INDEX_URL", registry.index_url.as_str()),
+        ("MGC_CRATES_DOWNLOAD_URL", registry.download_url.as_str()),
+    ];
+    let sandbox = MatrixSandbox::new();
+
+    for project_name in ["first-project", "second-project"] {
+        let project = TempDir::new().unwrap();
+        let (_, manifest) = rust_manifest();
+        lib_project(project.path(), "rust", "Cargo.toml", &manifest);
+        write(project.path(), ".mgc.core", "lib\n");
+
+        let (code, output) = sandbox.run_with_env(&["add-lib", "mgcfixture"], project.path(), &env);
+        assert_eq!(
+            code,
+            Some(0),
+            "{project_name}: native add-lib must resolve the fixture crate:\n{output}"
+        );
+        let (code, output) = sandbox.run_with_env(&["install-lib"], project.path(), &env);
+        assert_eq!(
+            code,
+            Some(0),
+            "{project_name}: native install-lib must succeed:\n{output}"
+        );
+        assert!(project.path().join("mgc.lock").is_file());
+        assert!(project.path().join("Cargo.lock").is_file());
+        sandbox.assert_no_spawn("native Rust cross-project install");
+    }
+
+    let crate_cache = sandbox
+        .store_root()
+        .join("cargo/registry/cache/mgcfixture-1.0.0.crate");
+    let crate_source = sandbox
+        .store_root()
+        .join("cargo/registry/src/mgcfixture-1.0.0/.cargo-checksum.json");
+    assert!(
+        crate_cache.is_file(),
+        "archive must persist in shared Cargo cache"
+    );
+    assert!(
+        crate_source.is_file(),
+        "source must persist in shared Cargo store"
+    );
+
+    // Prepare a third project while the verified shared archive is intact;
+    // `add-lib` itself includes an install pass for newly added packages.
+    // (Tạo project thứ ba khi archive còn nguyên; `add-lib` cũng cài package.)
+    let project = TempDir::new().unwrap();
+    let (_, manifest) = rust_manifest();
+    lib_project(project.path(), "rust", "Cargo.toml", &manifest);
+    write(project.path(), ".mgc.core", "lib\n");
+    let (code, output) = sandbox.run_with_env(&["add-lib", "mgcfixture"], project.path(), &env);
+    assert_eq!(code, Some(0), "setup third project failed:\n{output}");
+
+    // A tampered shared archive is an integrity error, never a cache miss
+    // that silently falls back to downloading from the registry.
+    // (Archive shared bị sửa phải báo integrity, không lén tải thay thế.)
+    std::fs::write(&crate_cache, b"tampered archive").unwrap();
+    let (code, output) = sandbox.run_with_env(&["install-lib"], project.path(), &env);
+    assert_ne!(
+        code,
+        Some(0),
+        "tampered shared archive must be refused:\n{output}"
+    );
+    assert!(
+        output.contains("integrity mismatch"),
+        "install must identify the corrupted shared artifact:\n{output}"
+    );
+    registry._mocks[1].assert();
 }
 
 #[test]
@@ -2298,6 +2391,10 @@ fn build_test_crate_archive() -> Vec<u8> {
 
 impl HermeticCrates {
     fn new() -> Self {
+        Self::with_download_expectation(None)
+    }
+
+    fn with_download_expectation(download_count: Option<usize>) -> Self {
         use sha2::{Digest, Sha256};
 
         let mut server = mockito::Server::new();
@@ -2315,22 +2412,23 @@ impl HermeticCrates {
             "links": null,
         })
         .to_string();
-        let mocks = vec![
-            server
-                .mock("GET", "/mg/cf/mgcfixture")
-                .expect_at_least(1)
-                .with_status(200)
-                .with_header("content-type", "application/octet-stream")
-                .with_body(index_entry)
-                .create(),
-            server
-                .mock("GET", "/api/v1/crates/mgcfixture/1.0.0/download")
-                .expect_at_least(1)
-                .with_status(200)
-                .with_header("content-type", "application/octet-stream")
-                .with_body(archive)
-                .create(),
-        ];
+        let index_mock = server
+            .mock("GET", "/mg/cf/mgcfixture")
+            .expect_at_least(1)
+            .with_status(200)
+            .with_header("content-type", "application/octet-stream")
+            .with_body(index_entry)
+            .create();
+        let download_builder = server
+            .mock("GET", "/api/v1/crates/mgcfixture/1.0.0/download")
+            .with_status(200)
+            .with_header("content-type", "application/octet-stream")
+            .with_body(archive);
+        let download_mock = match download_count {
+            Some(count) => download_builder.expect(count).create(),
+            None => download_builder.expect_at_least(1).create(),
+        };
+        let mocks = vec![index_mock, download_mock];
         Self {
             _server: server,
             _mocks: mocks,

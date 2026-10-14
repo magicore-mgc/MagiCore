@@ -174,6 +174,106 @@ async fn resolve_with_protocol_builds_graph_and_v3_lock_entries() {
 }
 
 #[tokio::test]
+async fn native_engine_preserves_multiple_versions_and_exact_dependency_edges() {
+    let Some(mut server) = mock_server().await else {
+        return;
+    };
+    let dep = |name: &str, range: &str| {
+        format!(
+            r#"{{"name":"{name}","req":"{range}","features":[],"optional":false,"default_features":true,"target":null,"kind":"normal","package":null}}"#
+        )
+    };
+    server
+        .mock("GET", "/ro/ot/root")
+        .with_status(200)
+        .with_body(crate_line(
+            "root",
+            "1.0.0",
+            &sha256_hex(b"root"),
+            &format!("{},{}", dep("left", "^1"), dep("right", "^1")),
+        ))
+        .create_async()
+        .await;
+    server
+        .mock("GET", "/le/ft/left")
+        .with_status(200)
+        .with_body(crate_line(
+            "left",
+            "1.0.0",
+            &sha256_hex(b"left"),
+            &dep("embassy-sync", "^0.6"),
+        ))
+        .create_async()
+        .await;
+    server
+        .mock("GET", "/ri/gh/right")
+        .with_status(200)
+        .with_body(crate_line(
+            "right",
+            "1.0.0",
+            &sha256_hex(b"right"),
+            &dep("embassy-sync", "^0.8"),
+        ))
+        .create_async()
+        .await;
+    server
+        .mock("GET", "/em/ba/embassy-sync")
+        .with_status(200)
+        .with_body(
+            [
+                crate_line("embassy-sync", "0.6.2", &sha256_hex(b"sync-0.6"), ""),
+                crate_line("embassy-sync", "0.8.0", &sha256_hex(b"sync-0.8"), ""),
+            ]
+            .join("\n"),
+        )
+        .create_async()
+        .await;
+
+    let mut manifest = Manifest::new("demo-lib", Ecosystem::Lib);
+    manifest.add_dep(
+        DependencySpec::new(
+            PackageName::new("root").unwrap(),
+            VersionRange::parse("^1").unwrap(),
+        ),
+        false,
+        false,
+        false,
+    );
+    let resolution = resolve_with_protocol(
+        &CratesProtocol::with_download_base(&server.url(), &server.url()),
+        EcosystemTag::Rust,
+        "crates://sparse+https://index.crates.io",
+        &manifest,
+    )
+    .await
+    .unwrap();
+
+    let left = resolution
+        .graph
+        .packages
+        .iter()
+        .find(|package| package.id.name_str() == "left")
+        .unwrap();
+    let right = resolution
+        .graph
+        .packages
+        .iter()
+        .find(|package| package.id.name_str() == "right")
+        .unwrap();
+    assert_eq!(left.deps[0].to_string(), "embassy-sync@0.6.2");
+    assert_eq!(right.deps[0].to_string(), "embassy-sync@0.8.0");
+    assert_eq!(
+        resolution
+            .lock_packages
+            .iter()
+            .find(|package| package.name == "left")
+            .unwrap()
+            .dependencies,
+        ["embassy-sync@0.6.2"]
+    );
+}
+
+#[tokio::test]
 async fn resolve_with_protocol_rejects_cross_root_version_conflicts() {
     let mut manifest = Manifest::new("demo-lib", Ecosystem::Lib);
     for name in ["root-a", "root-b"] {

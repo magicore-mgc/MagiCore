@@ -222,6 +222,7 @@ pub fn mgc_binary() -> PathBuf {
             binary.is_file(),
             "explicit lifecycle CLI snapshot does not exist"
         );
+        eprintln!("MagiCore lifecycle product binary: {}", binary.display());
         return binary;
     }
     let runtime_bin = std::env::var("CARGO_BIN_EXE_mgc")

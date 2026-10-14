@@ -357,6 +357,20 @@ fn exact_equals_range_matches_same_version() {
 }
 
 #[test]
+fn semver_ranges_match_build_metadata_by_release_precedence() {
+    assert!(
+        VersionRange::parse("=0.25.17")
+            .unwrap()
+            .matches(&v("0.25.17+spec-1.1.0"))
+    );
+    assert!(
+        VersionRange::parse("^0.25.0")
+            .unwrap()
+            .matches(&v("0.25.17+spec-1.1.0"))
+    );
+}
+
+#[test]
 fn exact_equals_range_produces_satisfying_version() {
     let range = VersionRange::parse("=18.3.1").unwrap();
     assert_eq!(range.satisfying_version(), Some(v("18.3.1")));

@@ -48,6 +48,7 @@ on:
       - "core/**"
       - "adapters/**"
       - "scripts/**"
+      - "esp32-feature-e2e/**"
       - ".github/workflows/lifecycle-matrix.yml"
   push:
     branches: [main, "fix/**"]
@@ -56,6 +57,7 @@ on:
       - "core/**"
       - "adapters/**"
       - "scripts/**"
+      - "esp32-feature-e2e/**"
       - ".github/workflows/lifecycle-matrix.yml"
   workflow_dispatch:
 
@@ -241,8 +243,49 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
 
-      - name: Build mgc binary
-        run: cargo build --bin mgc --locked
+      - name: Build release mgc binary for product E2E
+        run: cargo build --release --bin mgc --locked
+
+      - name: Verify persistent CLI tool lifecycle with the release binary
+        run: cargo test --locked -p mgc --test global_tool_e2e -- --test-threads=1 --nocapture
+        env:
+          MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
+
+      - name: Verify AI model audit with the release binary
+        run: cargo test --locked -p mgc --test audit_cli_e2e audit_ai_cli_scans_checkpoint_weights_after_models_directory -- --exact --nocapture
+        env:
+          MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
+
+      - name: Verify core-marker attestation with the release binary
+        run: cargo test --locked -p mgc --test core_identity_cli_e2e -- --test-threads=1 --nocapture
+        env:
+          MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
+
+      - name: Verify dlx lifecycle-script policy with the release binary
+        run: cargo test --locked -p mgc --test dlx_e2e -- --test-threads=1 --nocapture
+        env:
+          MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
+
+      - name: Verify default-lane dev execution and project audit log
+        shell: bash
+        run: bash cli/tests/scripts/runtime_full_e2e.sh
+        env:
+          MGC_BIN: ./target/release/mgc
+
+      - name: Verify Rust packages are reused across projects from the release binary
+        run: cargo test --release --locked -p mgc --test native_ownership_matrix_e2e rust_lib_reuses_verified_shared_artifacts_across_project_roots -- --exact --test-threads=1 --nocapture
+        env:
+          MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
+        timeout-minutes: 10
+
+      - name: Install ESP32-C3 RISC-V Rust target
+        run: rustup target add riscv32imc-unknown-none-elf
+
+      - name: Run live IoT install and product build E2E
+        run: cargo test --locked -p mgc --test iot_native_install_e2e -- --ignored --exact install_iot_matches_cargo_lock_and_builds_esp32c3 --nocapture
+        env:
+          MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
+        timeout-minutes: 20
 
       - name: Generate lifecycle matrix (real binary, real steps)
         # The script resolves the Windows binary (mgc.exe) itself, so the
@@ -251,7 +294,7 @@ jobs:
         # viết kiểu POSIX chạy trên mọi OS.)
         run: ${{ matrix.python_cmd }} scripts/lifecycle_capability_matrix.py
         env:
-          MGC_LIFECYCLE_BIN: ./target/debug/mgc
+          MGC_LIFECYCLE_BIN: ./target/release/mgc
           MGC_LIFECYCLE_MATRIX_OUT: docs/specs/lifecycleCapabilityMatrix.json
           FLUTTER_SDK_HOME: ${{ runner.temp }}/flutter-sdk-home
           PUB_CACHE: ${{ runner.temp }}/flutter-pub-cache

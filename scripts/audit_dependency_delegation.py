@@ -868,9 +868,58 @@ SHELL_EXPLICIT_DYNAMIC_REVIEWS = {
         'if version_cmd=$("$MGC_PATH" version 2>&1); then',
     },
 }
-# These full-source fingerprints narrowly review Flutter SDK bootstrap calls.
-# Các fingerprint toàn source chỉ duyệt hẹp lệnh bootstrap SDK Flutter.
+# Exact-source fingerprints narrowly review fixed dynamic command sites in CI
+# fixtures and Flutter SDK bootstrap calls.
+# Fingerprint source chính xác chỉ duyệt hẹp command động cố định trong fixture CI
+# và lệnh bootstrap SDK Flutter.
 SHELL_EXACT_DYNAMIC_COMMAND_REVIEWS = {
+    "cli/tests/scripts/runtime_full_e2e.sh": {
+        "f62b973e017ea61ba5fe3ca545193d8029dfde2ec09deed123d725c608f946fd": (
+            "Invokes the prevalidated MGC binary with fixed dev args in an isolated directory to verify the no-project diagnostic.",
+        ),
+        "401926ceff39063a64d42696a9f1a0d0e88b98a1e91ffe29a51d0d3ba8cb0d13": (
+            "Invokes the prevalidated MGC binary with fixed install args in an isolated project fixture; no shell re-evaluation occurs.",
+        ),
+        "fda1ba342eabd78fdb67ede34468e04e930a50f8911493cea32c6c8a460575ab": (
+            "Invokes the prevalidated MGC binary with fixed native dev args to verify the Bun/Deno policy gate in an isolated fixture.",
+        ),
+        "df9256108a836d0c6ce6beb0cb03cf646e32f27ce7bfdcc2d0a880aa94600949": (
+            "Invokes the prevalidated MGC binary with fixed native dev args in the isolated Node audit-log fixture.",
+        ),
+        "66b0c7f8a9e9a470909d1b702c9f614b310b4b545b483d446432f080d8c29122": (
+            "Invokes the prevalidated MGC binary with only the fixed Bun or Deno compatibility flag values from the two literal test calls.",
+        ),
+        "b4b62d9943fd58e22d1dec8757ef6332301cdf1b9496f53369c308a8abced5d6": (
+            "Invokes the prevalidated MGC binary with fixed install args in the isolated native Node fixture.",
+        ),
+        "48f05547cc59e18531d27134ef593388a677cc10d8fcf05178390678a2455a45": (
+            "Invokes the prevalidated MGC binary with fixed optimizer args in the isolated Rust optimizer fixture.",
+        ),
+        "c911f1125ecf43f995727fb4703b7a2bf04efa5b2dacfe701335bad90acfe9dc": (
+            "Invokes the prevalidated MGC binary with fixed install args in the isolated short-lived-descendant churn fixture.",
+        ),
+        "878974df83dbfe5920048c472864c643ea8fa04ab66524dc1feac4af37bdbd87": (
+            "Invokes the prevalidated MGC binary with fixed dev args to exercise the real process scanner under short-lived Node child churn.",
+        ),
+        "7aace6c88a113a3acc5a087916c58d964163de25acd0e4402ee619e2dbefbb1a": (
+            "Invokes the prevalidated MGC binary with fixed install args in the isolated process-guard fixture.",
+        ),
+        "affce155d60b61e09742df2485d603ef5a420c3b806b50a0e2f55c240dd7ec7e": (
+            "Runs the test-created fake npm executable with only a fixed probe argument to validate the inert local fixture before mgc executes it.",
+        ),
+        "80712d728ca7bad97b7c5705979f2484c37cbee3e29cdb383d3871c71dea1bdb": (
+            "Invokes the prevalidated MGC binary with fixed dev args for the detached-child process-guard E2E; child executable is a test-created inert fixture.",
+        ),
+        "436f50eccf4d5478c82a5e44803d418c15ea524da9a1f48359bdd62219cb6f53": (
+            "Invokes the prevalidated MGC binary with fixed install args in the isolated Rust optimizer fixture.",
+        ),
+        "f30797a4cfe9bea41b95fccc7550e52b4d499e5b8b7b102a7f233018344298a6": (
+            "Invokes the prevalidated MGC binary with fixed build args to prove optimizer profile settings reach Cargo.",
+        ),
+        "327d022a1330852dc1d477c382aa1f69059fff6337226682720750edf416514e": (
+            "Invokes the prevalidated MGC binary with fixed test args to prove optimizer profile settings reach the real test runner.",
+        ),
+    },
     "scripts/bootstrap_flutter_sdk.sh": {
         "5ff619429bcee3f0f09a19b24a46e57f87894e694794ba93041936169ad6b1ab": (
             "Resolves Pub dependencies only under Flutter SDK flutter_tools via its SDK-derived Dart executable.",

@@ -791,6 +791,10 @@ fn collect_regular_files(
 
 #[async_trait]
 impl RegistryProtocol for PypiProtocol {
+    fn matches_requirement(&self, range: &str, version: &Version) -> bool {
+        pep440_matches(range, version)
+    }
+
     async fn resolve(&self, name: &str, range: &str) -> MgResult<ResolvedEntry> {
         let url = format!("{}/pypi/{name}/json", self.index_url);
         let body = self.get_text(&url).await?;

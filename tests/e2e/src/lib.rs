@@ -22,6 +22,14 @@ pub fn workspace_root() -> PathBuf {
         .expect("workspace root must exist")
 }
 
+fn cargo_target_dir(root: &Path, invocation_dir: &Path, configured: Option<PathBuf>) -> PathBuf {
+    match configured {
+        Some(path) if path.is_absolute() => path,
+        Some(path) => invocation_dir.join(path),
+        None => root.join("target"),
+    }
+}
+
 /// Cổng loopback trống; sandbox cấm socket → trả None để test skip êm.
 // (Free loopback port; PermissionDenied → None so the test skips quietly.)
 pub fn free_port() -> Option<u16> {
@@ -35,17 +43,23 @@ pub fn free_port() -> Option<u16> {
     }
 }
 
-/// Tìm binary đã build: env `MGC_E2E_BIN_DIR` → target/debug → target/release.
+/// Tìm binary đã build: env `MGC_E2E_BIN_DIR` → `CARGO_TARGET_DIR` → target mặc định.
 /// Không tìm thấy → panic kèm lệnh build (fail-fast, không đệ quy cargo).
-// (Locate a prebuilt binary: MGC_E2E_BIN_DIR → debug → release; else panic with build hint.)
+// (Locate a prebuilt binary in the configured Cargo target directory; fail fast with build hint.)
 pub fn resolve_bin(name: &str) -> PathBuf {
     let root = workspace_root();
     let mut candidates = Vec::new();
     if let Ok(dir) = std::env::var("MGC_E2E_BIN_DIR") {
         candidates.push(PathBuf::from(dir).join(name));
     }
-    candidates.push(root.join("target").join("debug").join(name));
-    candidates.push(root.join("target").join("release").join(name));
+    let invocation_dir = std::env::current_dir().expect("Cargo E2E current directory must exist");
+    let target_dir = cargo_target_dir(
+        &root,
+        &invocation_dir,
+        std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from),
+    );
+    candidates.push(target_dir.join("debug").join(name));
+    candidates.push(target_dir.join("release").join(name));
 
     candidates
         .into_iter()
@@ -132,4 +146,34 @@ pub fn mgc(cwd: &Path, args: &[&str], envs: &[(&str, &str)]) -> String {
         String::from_utf8_lossy(&output.stderr)
     );
     String::from_utf8_lossy(&output.stdout).to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn target_directory_uses_configured_relative_or_absolute_path() {
+        let fixture = tempfile::tempdir().expect("create portable target path fixture");
+        let root = fixture.path().join("workspace");
+        let invocation_dir = fixture.path().join("invocation");
+        let absolute_target = fixture.path().join("absolute-target");
+
+        assert_eq!(
+            cargo_target_dir(&root, &invocation_dir, Some(absolute_target.clone())),
+            absolute_target
+        );
+        assert_eq!(
+            cargo_target_dir(
+                &root,
+                &invocation_dir,
+                Some(PathBuf::from("build/target-cache"))
+            ),
+            invocation_dir.join("build/target-cache")
+        );
+        assert_eq!(
+            cargo_target_dir(&root, &invocation_dir, None),
+            root.join("target")
+        );
+    }
 }

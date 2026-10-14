@@ -81,8 +81,8 @@ pub fn parse_manifest(root: &Path, ecosystem: Ecosystem) -> MgResult<Manifest> {
             if dep_name == "magicore" {
                 continue;
             }
-            let range = match spec {
-                toml::Value::String(s) => s.clone(),
+            let (range, features, default_features) = match spec {
+                toml::Value::String(s) => (s.clone(), Vec::new(), true),
                 toml::Value::Table(t) => {
                     if ["path", "git", "workspace", "package", "registry"]
                         .iter()
@@ -92,34 +92,70 @@ pub fn parse_manifest(root: &Path, ecosystem: Ecosystem) -> MgResult<Manifest> {
                             "Cargo dependency '{dep_name}' uses a path/git/workspace/alias/registry source that the native resolver does not support"
                         )));
                     }
-                    if t.get("optional").and_then(toml::Value::as_bool) == Some(true)
-                        || t.get("default-features").and_then(toml::Value::as_bool) == Some(false)
-                        || t.get("features")
-                            .and_then(toml::Value::as_array)
-                            .is_some_and(|features| !features.is_empty())
-                    {
+                    if t.get("optional").and_then(toml::Value::as_bool) == Some(true) {
                         return Err(unsupported_manifest(&format!(
-                            "Cargo dependency '{dep_name}' uses feature/optional semantics that the native resolver does not yet model"
+                            "optional Cargo dependency '{dep_name}' is not activated by the root feature resolver yet"
                         )));
                     }
-                    t.get("version")
+                    let range = t
+                        .get("version")
                         .and_then(toml::Value::as_str)
                         .ok_or_else(|| {
                             unsupported_manifest(&format!(
                                 "Cargo dependency '{dep_name}' has no registry version requirement"
                             ))
                         })?
-                        .to_string()
+                        .to_string();
+                    let features = t
+                        .get("features")
+                        .map(|value| {
+                            value
+                                .as_array()
+                                .ok_or_else(|| {
+                                    unsupported_manifest(&format!(
+                                        "Cargo dependency '{dep_name}' features must be an array of strings"
+                                    ))
+                                })?
+                                .iter()
+                                .map(|feature| {
+                                    feature
+                                        .as_str()
+                                        .filter(|feature| !feature.trim().is_empty())
+                                        .map(str::to_string)
+                                        .ok_or_else(|| {
+                                            unsupported_manifest(&format!(
+                                                "Cargo dependency '{dep_name}' features must be non-empty strings"
+                                            ))
+                                        })
+                                })
+                                .collect::<MgResult<Vec<_>>>()
+                        })
+                        .transpose()?
+                        .unwrap_or_default();
+                    let default_features = t
+                        .get("default-features")
+                        .map(|value| {
+                            value.as_bool().ok_or_else(|| {
+                                unsupported_manifest(&format!(
+                                    "Cargo dependency '{dep_name}' default-features must be a boolean"
+                                ))
+                            })
+                        })
+                        .transpose()?
+                        .unwrap_or(true);
+                    (range, features, default_features)
                 }
-                _ => "*".to_string(),
+                _ => {
+                    return Err(unsupported_manifest(&format!(
+                        "Cargo dependency '{dep_name}' must be a version string or version table"
+                    )));
+                }
             };
-            let dep = DependencySpec {
-                name: PackageName::new(dep_name)?,
-                range: VersionRange::parse(&range)?,
-                dev,
-                optional: false,
-                peer: false,
-            };
+            let mut dep =
+                DependencySpec::new(PackageName::new(dep_name)?, VersionRange::parse(&range)?);
+            dep.dev = dev;
+            dep.features = features;
+            dep.default_features = default_features;
             manifest.add_dep(dep, dev, false, false);
         }
         Ok(())

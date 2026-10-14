@@ -648,14 +648,12 @@ fn build_native_engine(project_root: &Path, crate_dir: &Path, release: bool) -> 
     // Optimizer config is generated at project root: .mgc-optimizer/rust_cargo_profile.toml
     let runtime = crate::commands::optimizer::runtime_detect::DetectedRuntime::RustLib;
     let optimizer_envs =
-        crate::commands::optimizer::env_loader::load_optimizer_env(project_root, &runtime)
-            .map_err(|e| {
-                mgc_ui::warning(&format!("Failed to load optimizer config: {}", e));
-                e
-            })
-            .unwrap_or_default();
-    let rustflags = optimizer_envs.get("RUSTFLAGS").cloned();
-    let env_opt = rustflags.map(|flags| vec![("RUSTFLAGS".to_string(), flags)]);
+        crate::commands::optimizer::env_loader::load_optimizer_env(project_root, &runtime)?;
+    let env_opt = if optimizer_envs.is_empty() {
+        None
+    } else {
+        Some(optimizer_envs.into_iter().collect())
+    };
 
     let mut args = vec!["build", "--locked", "--offline"];
     if release {

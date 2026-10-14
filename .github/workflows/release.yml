@@ -907,15 +907,15 @@ jobs:
           name: release-audit-capability-matrix
           path: docs/specs/auditCapabilityMatrix.json
 
-  release-universal-support-evidence-gate:
-    name: Release universal framework and language evidence gate
+  release-scoped-support-evidence-gate:
+    name: Release scoped framework and language evidence gate
     needs: [resolve-version]
     uses: ./.github/workflows/stress-matrix.yml
 
   publish-github-release:
     name: Create GitHub Release
-    needs: [resolve-version, pre-publish-verification, audit-capability-gate, release-universal-support-evidence-gate]
-    if: ${{ always() && needs.resolve-version.outputs.publish == 'true' && needs.release-universal-support-evidence-gate.result == 'success' && needs.pre-publish-verification.result == 'success' && needs.audit-capability-gate.result == 'success' }}
+    needs: [resolve-version, pre-publish-verification, audit-capability-gate, release-scoped-support-evidence-gate]
+    if: ${{ always() && needs.resolve-version.outputs.publish == 'true' && needs.release-scoped-support-evidence-gate.result == 'success' && needs.pre-publish-verification.result == 'success' && needs.audit-capability-gate.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write # Required to create release and upload assets

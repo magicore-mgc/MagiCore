@@ -59,7 +59,7 @@ pub(crate) async fn run_install(
     if language != LibLanguage::Ts {
         validate_lock_coverage(graph, ecosystem_for_language(language), &lock_packages)?;
         if language == LibLanguage::Rust {
-            cargo_compat::validate_install(project_root, &lock_packages)?;
+            cargo_compat::validate_install(project_root, &lock_packages, graph)?;
         }
         // Reject a malformed or hostile lock before downloads/CAS writes.
         // V4 has its own digest-aware merge reader; never feed it through
@@ -674,7 +674,13 @@ fn project_v4_lock_to_lib_model(
             dependencies: locked
                 .edges
                 .iter()
-                .map(|edge| edge.target_key.name.clone())
+                .map(|edge| {
+                    if edge.target_key.ecosystem == mgc_lockfile::EcosystemTag::Rust {
+                        format!("{}@{}", edge.target_key.name, edge.target_key.version)
+                    } else {
+                        edge.target_key.name.clone()
+                    }
+                })
                 .collect(),
             ecosystem: locked.key.ecosystem,
             registry: sources
@@ -1293,29 +1299,53 @@ async fn install_rust_native(graph: &ResolvedGraph, offline: bool) -> MgResult<I
     let protocol = CratesProtocol::from_env();
     let store = content_store()?;
     let mut added = Vec::with_capacity(graph.packages.len());
+    let mut bytes_from_cache = 0_u64;
 
     for pkg in &graph.packages {
         let entry = entry_from_package(pkg);
-        let bytes = protocol.download(&entry).await?;
+        let archive_path = cargo_archive_path(&cargo_home, &entry);
+        let bytes = match read_cached_rust_artifact(&archive_path, &entry.sha256)? {
+            Some(bytes) => {
+                bytes_from_cache = bytes_from_cache.saturating_add(bytes.len() as u64);
+                bytes
+            }
+            None => protocol.download(&entry).await?,
+        };
         protocol.verify(&entry, &bytes)?;
         store
             .import_bytes(&bytes)
             .map_err(|e| MgError::Store(e.to_string()))?;
-        protocol.materialize(&entry, &bytes, &cargo_home)?;
-        cargo_compat::write_source_checksum(
-            &cargo_home
-                .join("registry")
-                .join("src")
-                .join(format!("{}-{}", entry.name, entry.version)),
-            &entry.sha256,
-            &bytes,
-        )?;
+        let source_root = cargo_home
+            .join("registry")
+            .join("src")
+            .join(format!("{}-{}", entry.name, entry.version));
+        match std::fs::symlink_metadata(&source_root) {
+            Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
+                cargo_compat::verify_source_checksum(&source_root, &entry.sha256, &bytes)?;
+            }
+            Ok(_) => {
+                return Err(MgError::Integrity(format!(
+                    "Rust source cache entry '{}' is not a regular directory",
+                    source_root.display()
+                )));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                protocol.materialize(&entry, &bytes, &cargo_home)?;
+                cargo_compat::write_source_checksum(&source_root, &entry.sha256, &bytes)?;
+            }
+            Err(error) => {
+                return Err(MgError::Other(format!(
+                    "cannot inspect Rust source cache '{}': {error}",
+                    source_root.display()
+                )));
+            }
+        }
         added.push(pkg.id.clone());
     }
 
     Ok(InstallSummary {
         added,
-        bytes_from_cache: 0,
+        bytes_from_cache,
         duration_ms: started.elapsed().as_millis() as u64,
         cache_mode: InstallCacheMode::MgCStore,
     })

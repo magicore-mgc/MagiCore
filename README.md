@@ -32,7 +32,7 @@ In the current development tree, <code>mgc add &lt;package&gt;</code> adds a dep
 
 ~~~bash
 # Temporary npm executable; the temporary project is cleaned after it exits.
-mgc dlx opencode-ai@1.18.35 -- --version
+mgc dlx opencode-ai@1.18.35 --allow-scripts -- --version
 
 # Persistent user-level npm CLI; use --bin when the package exposes several commands.
 mgc tool install npm:@openai/codex@0.162.0 --bin codex
@@ -41,13 +41,13 @@ mgc tool update codex --version latest
 mgc tool remove codex
 ~~~
 
-Persistent tools live in <code>$MGC_DATA_DIR/tools</code>, with command shims in <code>$MGC_DATA_DIR/bin</code>; the default data directory is <code>~/MagiCore-SystemData</code>. MagiCore adds the shim directory to the current user's shell PATH, and a new terminal is needed to pick up the change. The persistent installer currently supports explicit <code>npm:</code> sources through a build that includes the Web core. It does not claim global installation for Cargo, PyPI, Go, NuGet, or other ecosystems. Package lifecycle scripts stay disabled unless <code>--allow-scripts</code> is passed; enabled scripts run with the current user's permissions. JavaScript CLIs also need a Node runtime available on PATH.
+Persistent tools live in <code>$MGC_DATA_DIR/tools</code>, with command shims in <code>$MGC_DATA_DIR/bin</code>; the default data directory is <code>~/MagiCore-SystemData</code>. MagiCore adds the shim directory to the current user's shell PATH, and a new terminal is needed to pick up the change. The persistent installer currently supports explicit <code>npm:</code> sources through a build that includes the Web core. It does not claim global installation for Cargo, PyPI, Go, NuGet, or other ecosystems. <code>dlx</code>, tool install, and tool update disable lifecycle scripts unless <code>--allow-scripts</code> is passed; enabled scripts run with the current user's permissions, so only opt in for a package you trust. JavaScript CLIs also need a Node runtime available on PATH.
 
-This development-tree feature has local macOS registry-fixture E2E coverage. It has not yet passed exact-candidate Linux and Windows CI or public release installation tests.
+The release-binary macOS fixture E2Es currently pass for persistent tools (4/4) and <code>dlx</code> script policy (1/1). A live <code>opencode-ai@1.18.35</code> run with <code>--allow-scripts</code> also completed in an isolated temporary HOME and data directory and printed version <code>1.18.35</code>. A separate persistent-tool smoke test installed and updated that package, listed it, ran the managed shim, and removed it; its record stored the normalized target <code>bin/opencode.exe</code>. The lifecycle workflow is wired to run the fixture tests, plus the AI model-audit regression, on Linux, macOS, and Windows. The current dirty working tree has no hosted exact-candidate result.
 
 ## Core support and CI evidence
 
-The available three-OS GitHub lifecycle checks passed for committed base SHA `fd94f35343b08535c32a6f72e5d48cc7a6a543bf`. They do not include the uncommitted RC10 working-tree changes in this checkout; those changes have no exact-SHA remote run yet. This is not a claim that every framework in a core family has a complete lifecycle.
+The latest inspected hosted results are for base SHA `8ce61f227b9d32cb1ced3db4fa1804992daac17b`. The [lifecycle capability matrix](https://github.com/mingd-153/MagiCore/actions/runs/38380589722), [native dependency lifecycle matrix](https://github.com/mingd-153/MagiCore/actions/runs/38380589784), and [release archive E2E](https://github.com/mingd-153/MagiCore/actions/runs/38380589931) passed on their configured OS runners. The [CI run](https://github.com/mingd-153/MagiCore/actions/runs/38380589750) failed on a Linux process-escape regression; the [stress run](https://github.com/mingd-153/MagiCore/actions/runs/38380589772) failed on the Windows AI model-path audit and reported 1,615 universal-support evidence/ownership gaps. The dirty working tree includes local fixes and new release-binary E2Es, but it has no exact-SHA hosted run yet. Passing scaffold or CLI contract checks do not prove complete lifecycle support for every framework.
 
 | Core | Current evidence and limits |
 |---|---|
@@ -101,6 +101,20 @@ Other scaffold command families include <code>create-ai</code>, <code>create-app
 ## Storage and caches
 
 MagiCore-managed global stores, shared caches, scaffold downloads, templates, search data, and telemetry default to <code>~/MagiCore-SystemData</code>. Set <code>MGC_DATA_DIR</code> to use another location. Existing store-specific overrides such as <code>MAGICORE_STORE_ROOT</code> remain available.
+
+### Project-local `.magicore/`
+
+<code>.magicore/</code> is a project-local state directory. MagiCore creates its contents when an operation needs them; it is not the core selector and an empty directory does not mean a framework is enabled or supported. The core identity is read from project manifests and, when present, the separate plain-text <code>.mgc.core</code> marker. That marker is editable text, not a signature: conflicting declarations are rejected, while a trust anchor can detect edits or a rename. Run <code>mgc trust anchor</code> and set <code>MGC_TRUST_ANCHOR=require</code> when core identity must fail closed; the default <code>warn</code> mode preserves legacy-project discovery and reports anchor problems.
+
+Common entries have different jobs:
+
+- <code>exec.log</code> is a JSON-lines record of executions made by commands that opt into auditing. Arguments are sanitized, but the file is ordinary editable project data and is not a complete or tamper-proof security record.
+- <code>cache/web/</code> holds project-scoped Web cache data. The shared package store and other machine-wide caches live under <code>$MGC_DATA_DIR</code>.
+- <code>project.id</code>, <code>journal/</code>, and <code>lock.write</code> support project identity, dependency-mutation recovery, and serialized project writes. A completed transaction clears its journal; do not remove a journal while recovery is pending.
+- <code>patches/</code> contains project patch files referenced from <code>mgc.toml</code>; keep those files when the manifest uses them.
+- <code>tmp-optimizer/</code> is staging space for optimizer materialization and can be recreated by that operation.
+
+Entries are created lazily, so a project normally contains only the state its commands have used. MagiCore excludes the whole directory from generated package archives; Git ignore behavior depends on the project's own ignore rules. Use <code>mgc cache prune</code> for cache cleanup rather than deleting transaction journals or configured patches.
 
 Run <code>mgc cache status</code> from a project to see the MagiCore data size, project size, and combined usage. The default warning threshold is 50 GiB; override it with <code>MGC_STORAGE_BUDGET_GB</code>. This is a reporting threshold, not an operating-system quota: tools launched outside MagiCore may keep writing to their own cache locations.
 

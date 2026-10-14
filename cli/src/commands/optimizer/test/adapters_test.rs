@@ -163,8 +163,37 @@ fn test_candle_adapter_generate() {
     let files = adapter.generate(&hw);
     assert_eq!(files.len(), 2); // runtime + cargo
     assert!(files[0].content.contains("RAYON_NUM_THREADS=10"));
+    assert!(!files[0].content.contains("jobs ="));
     assert!(files[1].content.contains("opt-level = 3"));
     assert!(files[1].content.contains("lto = \"thin\""));
+    assert!(files[1].content.contains("[profile.dev]"));
+    assert!(!files[1].content.contains("panic = \"abort\""));
+}
+
+#[test]
+fn rust_lib_adapter_emits_cargo_consumable_portable_profiles() {
+    let adapter = rust_lib::RustLibAdapter;
+    let hw = HardwareInfo {
+        os: "windows".to_string(),
+        arch: "x86_64".to_string(),
+        cpu_cores: Some(12),
+        total_memory_gb: Some(32),
+        profile: SystemProfile::Standard,
+        gpus: vec![],
+        gpu_detection_status: GpuDetectionStatus::Available,
+    };
+
+    let files = adapter.generate(&hw);
+    assert_eq!(files.len(), 1);
+    let config: toml::Value =
+        toml::from_str(&files[0].content).expect("optimizer output must be valid Cargo TOML");
+    assert_eq!(config["build"]["jobs"].as_integer(), Some(12));
+    assert_eq!(config["profile"]["dev"]["opt-level"].as_integer(), Some(2));
+    assert_eq!(config["profile"]["release"]["lto"].as_bool(), Some(false));
+    assert!(config.get("env").is_none());
+    assert!(!files[0].content.contains("target-cpu=native"));
+    assert!(!files[0].content.contains("linker=clang"));
+    assert!(!files[0].content.contains("panic = \"abort\""));
 }
 
 // Go AI adapter tests

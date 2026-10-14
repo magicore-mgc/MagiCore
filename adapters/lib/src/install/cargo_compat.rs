@@ -60,9 +60,11 @@ pub(crate) fn write_source_checksum(
     let files =
         mgc_resolver::protocols::archive::cargo_source_file_hashes(archive_bytes, expected_root)
             .map_err(|error| MgError::Integrity(error.to_string()))?;
-    if hash_source_files(package_root)? != files {
+    let actual_files = hash_source_files(package_root)?;
+    if !source_files_match_archive(package_root, &files, &actual_files)? {
         return Err(MgError::Integrity(
-            "extracted Cargo source differs from its verified archive".to_string(),
+            "extracted Cargo source does not match its verified archive on this filesystem"
+                .to_string(),
         ));
     }
     let checksum = CargoChecksum {
@@ -79,10 +81,11 @@ pub(crate) fn write_source_checksum(
 pub(crate) fn refresh_lock(project_root: &Path) -> MgResult<()> {
     let lock = super::read_existing_lock(project_root)?;
     let rust_packages = rust_packages(&lock)?;
+    let root_ids = rust_root_ids(project_root, &lock)?;
     let bytes = if rust_packages.is_empty() {
         super::prepare_empty_cargo_lock(project_root, &[])?
     } else {
-        Some(project_cargo_lock(project_root, &rust_packages)?)
+        Some(project_cargo_lock(project_root, &rust_packages, &root_ids)?)
     };
     if let Some(bytes) = bytes {
         super::atomic_write_cargo_lock(project_root, &bytes)?;
@@ -92,7 +95,11 @@ pub(crate) fn refresh_lock(project_root: &Path) -> MgResult<()> {
 
 /// Refuse unsupported graph shapes before install downloads or writes artifacts.
 /// Từ chối graph ngoài phạm vi trước khi install tải hay ghi artifact.
-pub(crate) fn validate_install(project_root: &Path, lock_packages: &[Package]) -> MgResult<()> {
+pub(crate) fn validate_install(
+    project_root: &Path,
+    lock_packages: &[Package],
+    graph: &mgc_types::ResolvedGraph,
+) -> MgResult<()> {
     let lock = Lockfile {
         packages: lock_packages.to_vec(),
         ..Lockfile::new()
@@ -102,16 +109,32 @@ pub(crate) fn validate_install(project_root: &Path, lock_packages: &[Package]) -
         let _ = super::prepare_empty_cargo_lock(project_root, lock_packages)?;
         return Ok(());
     }
-    let _ = project_cargo_lock(project_root, &packages)?;
+    let roots = super::direct_package_ids(graph);
+    let _ = project_cargo_lock(project_root, &packages, &roots)?;
     Ok(())
 }
 
 /// Validate both lock projections and return MGC's directory source for a Rust build.
 /// Xác minh hai lock projection và trả directory source của MGC cho bước build Rust.
 pub fn validate_build(project_root: &Path) -> MgResult<Option<PathBuf>> {
+    validate_build_for_core(project_root, "lib")
+}
+
+/// Validate a Cargo build owned by the requested MagiCore core.
+/// Xác minh Cargo build thuộc core MagiCore được yêu cầu.
+pub fn validate_build_for_core(
+    project_root: &Path,
+    expected_core: &str,
+) -> MgResult<Option<PathBuf>> {
+    if !matches!(expected_core, "lib" | "iot") {
+        return Err(MgError::Other(format!(
+            "Cargo managed build is unsupported for core '{expected_core}'"
+        )));
+    }
     let lock = super::read_existing_lock(project_root)?;
     let rust_packages = rust_packages(&lock)?;
-    validate_lib_build_ownership(&rust_packages)?;
+    validate_build_ownership(&rust_packages, expected_core)?;
+    let root_ids = rust_root_ids(project_root, &lock)?;
     let expected = if rust_packages.is_empty() {
         match super::prepare_empty_cargo_lock(project_root, &[])? {
             // `None` means the existing provider lock is byte-identical to
@@ -123,7 +146,7 @@ pub fn validate_build(project_root: &Path) -> MgResult<Option<PathBuf>> {
             Some(bytes) => bytes,
         }
     } else {
-        project_cargo_lock(project_root, &rust_packages)?
+        project_cargo_lock(project_root, &rust_packages, &root_ids)?
     };
     let cargo_lock_path = project_root.join("Cargo.lock");
     let actual = mgc_adapter_base::project_file::read_regular_text(&cargo_lock_path, "Cargo.lock")
@@ -136,9 +159,9 @@ pub fn validate_build(project_root: &Path) -> MgResult<Option<PathBuf>> {
     let actual_value: toml::Value = toml::from_str(&actual)
         .map_err(|error| MgError::Other(format!("Cargo.lock is not valid TOML: {error}")))?;
     if actual_value != expected_value {
-        return Err(MgError::Other(
-            "Cargo.lock does not match the MGC dependency graph; run `mgc install-lib`".to_string(),
-        ));
+        return Err(MgError::Other(format!(
+            "Cargo.lock does not match the MGC dependency graph; run `mgc install` for core '{expected_core}'"
+        )));
     }
     if rust_packages.is_empty() {
         return Ok(None);
@@ -152,7 +175,7 @@ pub fn validate_build(project_root: &Path) -> MgResult<Option<PathBuf>> {
         let source_dir = source_root.join(format!("{}-{}", package.name, package.version));
         let metadata = std::fs::symlink_metadata(&source_dir).map_err(|error| {
             MgError::Other(format!(
-                "managed Cargo source is missing for '{}'@{}: {error}; run `mgc install-lib`",
+                "managed Cargo source is missing for '{}'@{}: {error}; run `mgc install`",
                 package.name, package.version
             ))
         })?;
@@ -176,10 +199,9 @@ pub fn validate_build(project_root: &Path) -> MgResult<Option<PathBuf>> {
                     package.name, package.version
                 ))
             })?;
-        verify_source_checksum(&source_dir, expected_sha256, &archive)
-        .map_err(|error| {
+        verify_source_checksum(&source_dir, expected_sha256, &archive).map_err(|error| {
             MgError::Other(format!(
-                "managed Cargo source verification failed for '{}'@{}: {error}; run `mgc install-lib`",
+                "managed Cargo source verification failed for '{}'@{}: {error}; run `mgc install`",
                 package.name, package.version
             ))
         })?;
@@ -195,7 +217,6 @@ fn rust_packages(lock: &Lockfile) -> MgResult<Vec<&Package>> {
         .collect::<Vec<_>>();
     packages.sort_by(|left, right| (&left.name, &left.version).cmp(&(&right.name, &right.version)));
     let mut identities = BTreeSet::new();
-    let mut names = BTreeSet::new();
     for package in &packages {
         mgc_types::PackageName::new(package.name.clone()).map_err(|_| {
             MgError::Other(format!(
@@ -214,12 +235,6 @@ fn rust_packages(lock: &Lockfile) -> MgResult<Vec<&Package>> {
             return Err(MgError::Other(format!(
                 "Cargo projection refuses duplicate locked package '{}@{}'",
                 package.name, package.version
-            )));
-        }
-        if !names.insert(package.name.as_str()) {
-            return Err(MgError::Other(format!(
-                "Cargo projection cannot represent multiple locked versions of '{}' yet",
-                package.name
             )));
         }
         // The crates.io resolver records feature-optional and target-qualified
@@ -265,15 +280,15 @@ fn rust_packages(lock: &Lockfile) -> MgResult<Vec<&Package>> {
     Ok(packages)
 }
 
-fn validate_lib_build_ownership(packages: &[&Package]) -> MgResult<()> {
+fn validate_build_ownership(packages: &[&Package], expected_core: &str) -> MgResult<()> {
     for package in packages {
         if package
             .owner_core
             .as_deref()
-            .is_some_and(|owner| owner != "lib")
+            .is_some_and(|owner| owner != expected_core)
         {
             return Err(MgError::Other(format!(
-                "Cargo library build cannot consume Rust package '{}' owned by core '{}'",
+                "Cargo {expected_core} build cannot consume Rust package '{}' owned by core '{}'",
                 package.name,
                 package.owner_core.as_deref().unwrap_or_default()
             )));
@@ -295,7 +310,11 @@ fn is_cargo_dependency_edge_marker(marker: &str) -> bool {
         .is_some_and(|target| !target.trim().is_empty())
 }
 
-fn project_cargo_lock(project_root: &Path, packages: &[&Package]) -> MgResult<Vec<u8>> {
+fn project_cargo_lock(
+    project_root: &Path,
+    packages: &[&Package],
+    root_ids: &[String],
+) -> MgResult<Vec<u8>> {
     let manifest_path = project_root.join("Cargo.toml");
     let manifest = mgc_adapter_base::project_file::read_regular_text(&manifest_path, "Cargo.toml")?;
     let manifest: toml::Value = toml::from_str(&manifest).map_err(|error| {
@@ -355,55 +374,151 @@ fn project_cargo_lock(project_root: &Path, packages: &[&Package]) -> MgResult<Ve
     mgc_types::Version::parse(root_version)
         .map_err(|error| MgError::Other(format!("invalid Cargo.toml package.version: {error}")))?;
 
-    let mut by_name = BTreeMap::<&str, &Package>::new();
+    let mut by_id = BTreeMap::<String, &Package>::new();
+    let mut by_name = BTreeMap::<&str, Vec<&Package>>::new();
     for package in packages {
-        by_name.insert(package.name.as_str(), package);
+        by_id.insert(package_id(package), package);
+        by_name
+            .entry(package.name.as_str())
+            .or_default()
+            .push(package);
     }
     if by_name.contains_key(root_name) {
         return Err(MgError::Other(
             "Cargo root package name collides with a registry package".to_string(),
         ));
     }
+    let manifest_roots = if let Some(dependencies) = manifest.get("dependencies") {
+        dependencies
+            .as_table()
+            .ok_or_else(|| MgError::Other("Cargo.toml [dependencies] must be a table".to_string()))?
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>()
+    } else {
+        BTreeSet::new()
+    };
     let mut roots = Vec::new();
+    let mut root_ids_seen = BTreeSet::new();
+    for root_id in root_ids {
+        let package = by_id.get(root_id).ok_or_else(|| {
+            MgError::Other(format!(
+                "mgc.lock root '{root_id}' is missing from the Rust package graph"
+            ))
+        })?;
+        if !manifest_roots.contains(&package.name) {
+            return Err(MgError::Other(format!(
+                "mgc.lock root '{}' is absent from Cargo.toml [dependencies]",
+                package.name
+            )));
+        }
+        roots.push(cargo_dependency_label(package, &by_name));
+        root_ids_seen.insert(root_id.clone());
+    }
+    if root_ids_seen.len() != manifest_roots.len()
+        || manifest_roots.iter().any(|name| {
+            !root_ids.iter().any(|root_id| {
+                by_id
+                    .get(root_id)
+                    .is_some_and(|package| package.name == *name)
+            })
+        })
+    {
+        return Err(MgError::Other(
+            "mgc.lock direct roots do not match Cargo.toml [dependencies]; run `mgc install`"
+                .to_string(),
+        ));
+    }
     if let Some(dependencies) = manifest.get("dependencies") {
         let dependencies = dependencies.as_table().ok_or_else(|| {
             MgError::Other("Cargo.toml [dependencies] must be a table".to_string())
         })?;
         for (name, spec) in dependencies {
-            if !spec.is_str() {
-                return Err(MgError::Other(format!(
-                    "Cargo projection supports only plain version strings for dependency '{name}'"
-                )));
+            match spec {
+                toml::Value::String(_) => {}
+                toml::Value::Table(spec) => {
+                    if ["path", "git", "workspace", "package", "registry"]
+                        .iter()
+                        .any(|key| spec.contains_key(*key))
+                    {
+                        return Err(MgError::Other(format!(
+                            "Cargo projection does not support path/git/workspace/alias/registry dependency '{name}'"
+                        )));
+                    }
+                    if spec.get("optional").and_then(toml::Value::as_bool) == Some(true) {
+                        return Err(MgError::Other(format!(
+                            "Cargo projection does not support optional dependency '{name}' until root feature activation is modeled"
+                        )));
+                    }
+                    if spec.get("version").and_then(toml::Value::as_str).is_none() {
+                        return Err(MgError::Other(format!(
+                            "Cargo projection requires a version string for dependency '{name}'"
+                        )));
+                    }
+                    if let Some(features) = spec.get("features")
+                        && features.as_array().is_none_or(|features| {
+                            features
+                                .iter()
+                                .any(|feature| feature.as_str().is_none_or(str::is_empty))
+                        })
+                    {
+                        return Err(MgError::Other(format!(
+                            "Cargo projection requires dependency '{name}' features to be non-empty strings"
+                        )));
+                    }
+                    if let Some(default_features) = spec.get("default-features")
+                        && default_features.as_bool().is_none()
+                    {
+                        return Err(MgError::Other(format!(
+                            "Cargo projection requires dependency '{name}' default-features to be a boolean"
+                        )));
+                    }
+                    if spec.keys().any(|key| {
+                        !matches!(
+                            key.as_str(),
+                            "version" | "features" | "default-features" | "optional"
+                        )
+                    }) {
+                        return Err(MgError::Other(format!(
+                            "Cargo projection does not support an unknown dependency option for '{name}'"
+                        )));
+                    }
+                }
+                _ => {
+                    return Err(MgError::Other(format!(
+                        "Cargo projection requires a version string or version table for dependency '{name}'"
+                    )));
+                }
             }
             if !by_name.contains_key(name.as_str()) {
                 return Err(MgError::Other(format!(
-                    "Cargo dependency '{name}' is absent from mgc.lock; run `mgc install-lib`"
+                    "Cargo dependency '{name}' is absent from mgc.lock; run `mgc install`"
                 )));
             }
-            roots.push(name.clone());
         }
     }
     roots.sort();
 
     let mut reachable = BTreeSet::<String>::new();
-    let mut pending = VecDeque::from(roots.clone());
+    let mut pending = VecDeque::from(root_ids.to_vec());
     while let Some(name) = pending.pop_front() {
         if !reachable.insert(name.clone()) {
             continue;
         }
-        let package = by_name.get(name.as_str()).ok_or_else(|| {
+        let package = by_id.get(name.as_str()).ok_or_else(|| {
             MgError::Other(format!(
                 "mgc.lock dependency '{name}' is not present in its package table"
             ))
         })?;
         for dependency in &package.dependencies {
-            if !by_name.contains_key(dependency.as_str()) {
-                return Err(MgError::Other(format!(
-                    "mgc.lock package '{}'@{} references missing dependency '{dependency}'",
-                    package.name, package.version
-                )));
-            }
-            pending.push_back(dependency.clone());
+            pending.push_back(
+                resolve_locked_dependency(dependency, &by_id, &by_name).map_err(|error| {
+                    MgError::Other(format!(
+                        "mgc.lock package '{}'@{} has invalid dependency edge: {error}",
+                        package.name, package.version
+                    ))
+                })?,
+            );
         }
     }
     if reachable.len() != packages.len() {
@@ -421,7 +536,19 @@ fn project_cargo_lock(project_root: &Path, packages: &[&Package]) -> MgResult<Ve
         dependencies: roots,
     });
     for package in packages {
-        let mut dependencies = package.dependencies.clone();
+        let mut dependencies = package
+            .dependencies
+            .iter()
+            .map(|dependency| resolve_locked_dependency(dependency, &by_id, &by_name))
+            .collect::<MgResult<Vec<_>>>()?
+            .iter()
+            .map(|id| {
+                by_id
+                    .get(id)
+                    .map(|target| cargo_dependency_label(target, &by_name))
+                    .ok_or_else(|| MgError::Other(format!("missing Rust package '{id}'")))
+            })
+            .collect::<MgResult<Vec<_>>>()?;
         dependencies.sort();
         dependencies.dedup();
         rows.push(CargoPackage {
@@ -446,6 +573,71 @@ fn project_cargo_lock(project_root: &Path, packages: &[&Package]) -> MgResult<Ve
     Ok(bytes)
 }
 
+fn package_id(package: &Package) -> String {
+    format!("{}@{}", package.name, package.version)
+}
+
+fn resolve_locked_dependency(
+    value: &str,
+    by_id: &BTreeMap<String, &Package>,
+    by_name: &BTreeMap<&str, Vec<&Package>>,
+) -> MgResult<String> {
+    if by_id.contains_key(value) {
+        return Ok(value.to_string());
+    }
+    if let Some((name, version)) = value.rsplit_once('@') {
+        let id = format!("{name}@{version}");
+        if by_id.contains_key(&id) {
+            return Ok(id);
+        }
+    }
+    match by_name.get(value).map(Vec::as_slice).unwrap_or_default() {
+        [package] => Ok(package_id(package)),
+        [] => Err(MgError::Other(format!(
+            "dependency '{value}' is not present in mgc.lock"
+        ))),
+        _ => Err(MgError::Other(format!(
+            "dependency '{value}' is ambiguous across multiple locked versions"
+        ))),
+    }
+}
+
+fn cargo_dependency_label(package: &Package, by_name: &BTreeMap<&str, Vec<&Package>>) -> String {
+    if by_name
+        .get(package.name.as_str())
+        .is_some_and(|versions| versions.len() > 1)
+    {
+        format!("{} {}", package.name, package.version)
+    } else {
+        package.name.clone()
+    }
+}
+
+fn rust_root_ids(project_root: &Path, lock: &Lockfile) -> MgResult<Vec<String>> {
+    let owner = super::python_project_owner(project_root)?;
+    let mut roots = lock
+        .root_dependencies_by_owner
+        .get(&owner)
+        .into_iter()
+        .flatten()
+        .filter_map(|root| {
+            let parsed = mgc_lockfile::parse_root_pin(root);
+            (parsed.ecosystem == Some(EcosystemTag::Rust)).then(|| parsed.package_id.to_string())
+        })
+        .collect::<Vec<_>>();
+    if roots.is_empty()
+        && !lock
+            .packages
+            .iter()
+            .all(|p| p.ecosystem != EcosystemTag::Rust)
+    {
+        roots.extend(lock.root_dependencies.iter().cloned());
+    }
+    roots.sort();
+    roots.dedup();
+    Ok(roots)
+}
+
 fn required_string<'a>(table: &'a toml::value::Table, key: &str, label: &str) -> MgResult<&'a str> {
     table
         .get(key)
@@ -463,7 +655,7 @@ fn validate_sha256(value: &str) -> MgResult<()> {
     Ok(())
 }
 
-fn verify_source_checksum(
+pub(crate) fn verify_source_checksum(
     package_root: &Path,
     expected_package_sha256: &str,
     archive_bytes: &[u8],
@@ -509,12 +701,78 @@ fn verify_source_checksum(
         })
         .collect::<MgResult<BTreeMap<_, _>>>()?;
     let actual_files = hash_source_files(package_root)?;
-    if listed_files != expected_files || actual_files != expected_files {
+    if listed_files != expected_files
+        || !source_files_match_archive(package_root, &expected_files, &actual_files)?
+    {
         return Err(MgError::Other(
             "extracted package files differ from the MGC-verified source record".to_string(),
         ));
     }
     Ok(())
+}
+
+/// Compare extracted files using filesystem identity for archive case aliases.
+/// So sánh file đã giải nén theo identity filesystem khi archive có tên khác hoa/thường.
+///
+/// Some published crates contain identical files whose names differ only by
+/// case. Case-insensitive filesystems materialize them as one physical file;
+/// canonical path comparison accepts only identical bytes at that same file.
+/// (Một số crate có file trùng nội dung nhưng khác hoa/thường; chỉ gộp khi
+/// filesystem thật sự ánh xạ chúng vào cùng file vật lý và hash trùng nhau.)
+fn source_files_match_archive(
+    package_root: &Path,
+    expected: &BTreeMap<String, String>,
+    actual: &BTreeMap<String, String>,
+) -> MgResult<bool> {
+    if expected == actual {
+        return Ok(true);
+    }
+    let canonical_root = std::fs::canonicalize(package_root)
+        .map_err(|error| MgError::Other(format!("canonicalize Cargo source root: {error}")))?;
+    let expected = canonical_source_file_map(package_root, &canonical_root, expected)?;
+    let Some(expected) = expected else {
+        return Ok(false);
+    };
+    let actual = canonical_source_file_map(package_root, &canonical_root, actual)?;
+    Ok(actual.is_some_and(|actual| actual == expected))
+}
+
+fn canonical_source_file_map(
+    package_root: &Path,
+    canonical_root: &Path,
+    files: &BTreeMap<String, String>,
+) -> MgResult<Option<BTreeMap<PathBuf, String>>> {
+    let mut canonical_files = BTreeMap::new();
+    for (relative, digest) in files {
+        let relative_path = Path::new(relative);
+        if relative_path.as_os_str().is_empty()
+            || relative_path
+                .components()
+                .any(|component| !matches!(component, std::path::Component::Normal(_)))
+        {
+            return Ok(None);
+        }
+        let path = match std::fs::canonicalize(package_root.join(relative_path)) {
+            Ok(path) => path,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => {
+                return Err(MgError::Other(format!(
+                    "canonicalize Cargo source file '{relative}': {error}"
+                )));
+            }
+        };
+        let Ok(relative_path) = path.strip_prefix(canonical_root) else {
+            return Ok(None);
+        };
+        match canonical_files.get(relative_path) {
+            Some(existing) if existing != digest => return Ok(None),
+            Some(_) => {}
+            None => {
+                canonical_files.insert(relative_path.to_path_buf(), digest.clone());
+            }
+        }
+    }
+    Ok(Some(canonical_files))
 }
 
 fn hash_source_files(root: &Path) -> MgResult<BTreeMap<String, String>> {

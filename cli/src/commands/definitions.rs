@@ -333,7 +333,7 @@ pub enum Commands {
         )]
         compat_runner: Option<String>,
     },
-    #[command(about = "Run tests (auto-detect test runner: cargo/go/pytest/npm test)")]
+    #[command(about = "Run tests with a detected native runner or the project test script")]
     Test {
         #[arg(last = true, help = "Arguments passed to test runner")]
         args: Vec<String>,

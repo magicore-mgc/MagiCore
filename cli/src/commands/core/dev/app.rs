@@ -471,12 +471,7 @@ pub async fn dev(dry_run: bool) -> Result<()> {
     // Tải env optimizer cho runtime app
     let runtime = detect_app_runtime(&root, &lang);
     let optimizer_envs =
-        crate::commands::optimizer::env_loader::load_optimizer_env(&root, &runtime)
-            .map_err(|e| {
-                mgc_ui::warning(&format!("Failed to load optimizer config: {}", e));
-                e
-            })
-            .unwrap_or_default();
+        crate::commands::optimizer::env_loader::load_optimizer_env(&root, &runtime)?;
     let env_vec: Vec<(String, String)> = optimizer_envs.into_iter().collect();
     let env_opt = if env_vec.is_empty() {
         None

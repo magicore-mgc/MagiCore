@@ -16,11 +16,12 @@ use crate::commands::compat::{CompatMode, gate_runtime_spawn};
 
 /// mgc test [args...] — Run tests in project (auto-detect test runner)
 /// Auto-detect test runner based on project type:
-/// - package.json → npm test / pnpm test / yarn test
+/// - package.json scripts.test → the declared project command through MGC's native task runner
+///   `package.json` scripts.test → chạy lệnh project qua task runner native của MGC
 /// - Cargo.toml → cargo test
 /// - pyproject.toml / setup.py → pytest
-/// - go.mod → go test
-/// - pubspec.yaml → flutter test
+/// - go.mod → go test; pubspec.yaml → flutter test; Package.swift → swift test
+///   `go.mod` → go test; `pubspec.yaml` → flutter test; `Package.swift` → swift test
 /// - mgc.toml [scripts] test → custom test command
 pub async fn test(
     args: Vec<String>,
@@ -114,12 +115,7 @@ pub(crate) async fn test_at(
         // Tải env optimizer cho runtime test
         let runtime = detect_test_runtime(project_root)?;
         let optimizer_envs =
-            crate::commands::optimizer::env_loader::load_optimizer_env(project_root, &runtime)
-                .map_err(|e| {
-                    mgc_ui::warning(&format!("Failed to load optimizer config: {}", e));
-                    e
-                })
-                .unwrap_or_default();
+            crate::commands::optimizer::env_loader::load_optimizer_env(project_root, &runtime)?;
         let env: Vec<(String, String)> = optimizer_envs.into_iter().collect();
         let mut env = env;
         if runner == "go" {

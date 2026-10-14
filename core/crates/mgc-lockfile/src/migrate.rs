@@ -260,11 +260,19 @@ pub fn migrate_v3_to_v4(
             },
         };
         let mut edges = Vec::new();
-        for dep_name in &package.dependencies {
+        for dependency in &package.dependencies {
+            let (dep_name, dep_version) = dependency
+                .rsplit_once('@')
+                .filter(|(name, version)| !name.is_empty() && !version.is_empty())
+                .map_or((dependency.as_str(), None), |(name, version)| {
+                    (name, Some(version))
+                });
             let hits: Vec<&Package> = lockfile
                 .packages
                 .iter()
-                .filter(|p| &p.name == dep_name)
+                .filter(|p| {
+                    p.name == dep_name && dep_version.is_none_or(|version| p.version == version)
+                })
                 .collect();
             match hits.as_slice() {
                 [hit] => edges.push(Edge {
@@ -288,8 +296,8 @@ pub fn migrate_v3_to_v4(
                     marker: None,
                 }),
                 [] => warnings.push(format!(
-                    "dropped edge {} -> {}: no locked package bears that name",
-                    package.name, dep_name
+                    "dropped edge {} -> {}: no locked package matches that identity",
+                    package.name, dependency
                 )),
                 _ => warnings.push(format!(
                     "dropped edge {} -> {}: {} locked packages share that name (ambiguous without versions)",

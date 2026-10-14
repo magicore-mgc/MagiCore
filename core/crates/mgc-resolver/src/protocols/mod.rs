@@ -45,7 +45,7 @@ pub use swift::remove_swift_requirement;
 
 use async_trait::async_trait;
 use futures_util::stream::{self, StreamExt, TryStreamExt};
-use mgc_types::{MgError, MgResult};
+use mgc_types::{MgError, MgResult, Version, VersionRange};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
@@ -61,8 +61,12 @@ pub struct ResolvedEntry {
     pub name: String,
     /// Exact resolved version — Version chính xác đã resolve.
     pub version: String,
-    /// Direct (already filtered) dependencies as `(name, range)`.
-    /// Dependencies trực tiếp (đã lọc) dạng `(name, range)`.
+    /// Resolved dependency edges as `(name, range)`. Crates.io includes dormant
+    /// optional and target-qualified edges in its complete Cargo lock closure;
+    /// selected features remain represented separately by markers.
+    /// Cạnh dependency đã resolve dạng `(name, range)`. Crates.io giữ cả cạnh
+    /// optional dormant và theo target trong lock closure Cargo; feature được
+    /// chọn vẫn phân biệt bằng marker.
     pub deps: Vec<(String, String)>,
     /// Artifact download URL — URL tải artifact.
     pub artifact_url: String,
@@ -74,6 +78,16 @@ pub struct ResolvedEntry {
     pub extra_markers: Vec<String>,
 }
 
+/// Project root requirement with registry-specific feature selection.
+/// Root requirement của project kèm lựa chọn feature riêng cho registry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RegistryRoot {
+    pub name: String,
+    pub range: String,
+    pub features: Vec<String>,
+    pub default_features: bool,
+}
+
 /// Contract for a native registry protocol engine (Phase 2).
 /// Hợp đồng cho engine registry protocol native (Phase 2).
 #[async_trait]
@@ -81,6 +95,15 @@ pub trait RegistryProtocol: Send + Sync {
     /// Resolve `name` within `range` against this protocol's registry.
     /// Resolve `name` trong khoảng `range` trên registry của protocol này.
     async fn resolve(&self, name: &str, range: &str) -> MgResult<ResolvedEntry>;
+
+    /// Check a selected version against this protocol's requirement syntax.
+    /// Root verification must use the same range semantics as resolution;
+    /// registries such as Maven do not use semver ranges.
+    /// Kiểm tra version được chọn theo cú pháp range của protocol này. Xác
+    /// minh root phải cùng ngữ nghĩa với resolve; Maven không dùng semver.
+    fn matches_requirement(&self, range: &str, version: &Version) -> bool {
+        VersionRange::parse(range).is_ok_and(|requirement| requirement.matches(version))
+    }
 
     /// Download the artifact bytes for a resolved entry.
     /// Tải byte artifact cho entry đã resolve.
@@ -176,6 +199,22 @@ pub trait RegistryProtocol: Send + Sync {
             }
         }
         Ok(entries)
+    }
+
+    /// Resolve roots with registry-specific feature requests. Protocols that
+    /// do not model features retain the existing root resolver behavior;
+    /// feature-aware protocols override this method.
+    /// Resolve root kèm feature riêng; protocol chưa hỗ trợ feature dùng lại
+    /// resolver gốc, protocol hiểu feature sẽ override.
+    async fn resolve_graph_roots_with_options(
+        &self,
+        roots: &[RegistryRoot],
+    ) -> MgResult<Vec<ResolvedEntry>> {
+        let roots = roots
+            .iter()
+            .map(|root| (root.name.clone(), root.range.clone()))
+            .collect::<Vec<_>>();
+        self.resolve_graph_roots(&roots).await
     }
 }
 

@@ -7,32 +7,30 @@ use std::fs;
 #[cfg(unix)]
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(unix)]
 use std::time::Duration;
 
-// Monotonic per-process counter: two threads calling tmp_dir() in the SAME
-// clock tick used to share one dir (pid+nanos collide) while both run
-// `remove_dir_all` + fixed subpaths — a rare ENOENT flake under parallel
-// load. The counter alone makes collision structurally impossible within
-// the process (pid separates processes); no ThreadId — its Debug form
-// contains parens that break shell scripts embedding the path.
-// (Bộ đếm đơn điệu: đủ duy nhất trong process; không dùng ThreadId vì
-// ngoặc đơn phá shell script.)
-static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+// RAII removes each fixture on success and panic, preventing temp leaks.
+// RAII dọn fixture cả khi pass lẫn panic để test không tích lũy dữ liệu tạm.
+fn tmp_dir() -> tempfile::TempDir {
+    tempfile::Builder::new()
+        .prefix("mgc-exec-test-")
+        .tempdir()
+        .expect("create unique executor test directory")
+}
 
-fn tmp_dir() -> PathBuf {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let uniq = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let d = std::env::temp_dir().join(format!(
-        "mgc-exec-test-{}-{nanos}-{uniq}",
-        std::process::id()
-    ));
-    let _ = fs::create_dir_all(&d);
-    d
+#[cfg(unix)]
+fn require_python3() -> std::io::Result<()> {
+    let status = std::process::Command::new("python3")
+        .arg("-c")
+        .arg("pass")
+        .status()?;
+    if !status.success() {
+        return Err(std::io::Error::other(
+            "python3 -c pass exited unsuccessfully; Unix process-guard tests require Python 3",
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -235,7 +233,8 @@ fn unknown_tool_rejected() {
 
 #[test]
 fn audit_log_written_with_redacted_args() {
-    let dir = tmp_dir();
+    let fixture = tmp_dir();
+    let dir = fixture.path().to_path_buf();
     let log = dir.join("exec.log");
     let _ = fs::remove_file(&log);
     let opts = ExecOptions {
@@ -258,6 +257,21 @@ fn audit_log_written_with_redacted_args() {
     );
     assert!(content.contains("[REDACTED]"));
     let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn temp_fixture_is_removed_when_guard_drops() {
+    let path = {
+        let fixture = tmp_dir();
+        let path = fixture.path().to_path_buf();
+        assert!(path.is_dir());
+        path
+    };
+
+    assert!(
+        !path.exists(),
+        "temporary runner fixture must be removed after the test scope"
+    );
 }
 
 #[test]
@@ -292,7 +306,8 @@ fn command_timeout_kills_hung_tool() {
     use std::os::unix::fs::PermissionsExt;
     use std::time::Instant;
 
-    let dir = tmp_dir().join("timeout-tree");
+    let _fixture = tmp_dir();
+    let dir = _fixture.path().join("timeout-tree");
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     let pid_file = dir.join("grandchild.pid");
@@ -377,7 +392,8 @@ fn command_timeout_kills_hung_tool() {
 fn clean_env_blocks_forbidden_pm_spawned_by_child_path_lookup() {
     use std::os::unix::fs::PermissionsExt;
 
-    let dir = tmp_dir().join("child-pm-bin");
+    let _fixture = tmp_dir();
+    let dir = _fixture.path().join("child-pm-bin");
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     let fake_cargo = dir.join("cargo");
@@ -414,7 +430,8 @@ fn clean_env_blocks_forbidden_pm_spawned_by_child_path_lookup() {
 fn inherited_env_still_blocks_forbidden_pm_spawned_by_project_tool() {
     use std::os::unix::fs::PermissionsExt;
 
-    let dir = tmp_dir().join("inherited-child-pm-bin");
+    let _fixture = tmp_dir();
+    let dir = _fixture.path().join("inherited-child-pm-bin");
     fs::create_dir_all(&dir).unwrap();
     let fake_cargo = dir.join("cargo");
     let fake_npm = dir.join("npm");
@@ -456,14 +473,7 @@ fn inherited_env_monitor_kills_a_session_escaped_forbidden_child()
 -> Result<(), Box<dyn std::error::Error>> {
     use std::time::Instant;
 
-    if std::process::Command::new("python3")
-        .arg("-c")
-        .arg("pass")
-        .status()
-        .is_err()
-    {
-        return Ok(());
-    }
+    require_python3()?;
 
     let dir = tempfile::tempdir()?;
     let fake_pm = fake_npm(dir.path());
@@ -534,14 +544,7 @@ fn captured_runner_scans_and_stops_children_after_root_exits()
 -> Result<(), Box<dyn std::error::Error>> {
     use std::time::Instant;
 
-    if std::process::Command::new("python3")
-        .arg("-c")
-        .arg("pass")
-        .status()
-        .is_err()
-    {
-        return Ok(());
-    }
+    require_python3()?;
 
     let dir = tempfile::tempdir()?;
     let fake_pm = dir.path().join("npm");
@@ -618,14 +621,7 @@ fn inherited_env_monitor_kills_all_session_escaped_forbidden_siblings()
 -> Result<(), Box<dyn std::error::Error>> {
     use std::time::Instant;
 
-    if std::process::Command::new("python3")
-        .arg("-c")
-        .arg("pass")
-        .status()
-        .is_err()
-    {
-        return Ok(());
-    }
+    require_python3()?;
 
     let dir = tempfile::tempdir()?;
     let fake_cargo = dir.path().join("cargo");
@@ -726,14 +722,7 @@ fn inherited_env_monitor_kills_all_session_escaped_forbidden_siblings()
 #[cfg(unix)]
 fn captured_runner_rejects_a_session_escape_when_root_exits_immediately()
 -> Result<(), Box<dyn std::error::Error>> {
-    if std::process::Command::new("python3")
-        .arg("-c")
-        .arg("pass")
-        .status()
-        .is_err()
-    {
-        return Ok(());
-    }
+    require_python3()?;
 
     let dir = tempfile::tempdir()?;
     let fake_pm = dir.path().join("npm");
@@ -804,14 +793,7 @@ fn inherited_monitor_kills_forbidden_pm_and_reaps_term_escape_when_handler_is_re
 -> Result<(), Box<dyn std::error::Error>> {
     use std::time::Instant;
 
-    if std::process::Command::new("python3")
-        .arg("-c")
-        .arg("pass")
-        .status()
-        .is_err()
-    {
-        return Ok(());
-    }
+    require_python3()?;
 
     let dir = tempfile::tempdir()?;
     let fake_pm = dir.path().join("npm");
@@ -912,7 +894,8 @@ fn inherited_monitor_kills_forbidden_pm_and_reaps_term_escape_when_handler_is_re
 fn clean_env_allows_only_the_executor_npm_version_probe_shim() {
     use std::os::unix::fs::PermissionsExt;
 
-    let dir = tmp_dir().join("npm-version-probe");
+    let _fixture = tmp_dir();
+    let dir = _fixture.path().join("npm-version-probe");
     fs::create_dir_all(&dir).unwrap();
     let fake_cargo = dir.join("cargo");
     let fake_npm = dir.join("npm");
@@ -956,7 +939,8 @@ fn clean_env_allows_only_the_executor_npm_version_probe_shim() {
 fn clean_env_allows_shell_wrapped_npm_version_probe() {
     use std::os::unix::fs::PermissionsExt;
 
-    let dir = tmp_dir().join("npm-version-shell-probe");
+    let _fixture = tmp_dir();
+    let dir = _fixture.path().join("npm-version-shell-probe");
     fs::create_dir_all(&dir).unwrap();
     let fake_cargo = dir.join("cargo");
     let fake_npm = dir.join("npm");
@@ -999,7 +983,8 @@ fn clean_env_allows_shell_wrapped_npm_version_probe() {
 fn clean_env_still_blocks_shell_wrapped_npm_install() {
     use std::os::unix::fs::PermissionsExt;
 
-    let dir = tmp_dir().join("npm-install-shell-blocked");
+    let _fixture = tmp_dir();
+    let dir = _fixture.path().join("npm-install-shell-blocked");
     fs::create_dir_all(&dir).unwrap();
     let fake_cargo = dir.join("cargo");
     let fake_npm = dir.join("npm");
@@ -1043,7 +1028,8 @@ fn clean_env_still_blocks_shell_wrapped_npm_install() {
 fn runtime_monitor_ignores_package_manager_words_in_shell_code() {
     use std::os::unix::fs::PermissionsExt;
 
-    let dir = tmp_dir().join("opaque-shell-code");
+    let _fixture = tmp_dir();
+    let dir = _fixture.path().join("opaque-shell-code");
     fs::create_dir_all(&dir).unwrap();
     let fake_cargo = dir.join("cargo");
     fs::write(
@@ -1081,12 +1067,13 @@ fn runtime_monitor_ignores_package_manager_words_in_shell_code() {
 fn runtime_monitor_blocks_dependency_mutation_from_a_script_child() {
     use std::os::unix::fs::PermissionsExt;
 
-    let dir = tmp_dir().join("descendant-dependency-mutation");
+    let _fixture = tmp_dir();
+    let dir = _fixture.path().join("descendant-dependency-mutation");
     fs::create_dir_all(&dir).unwrap();
     let fake_node = dir.join("node");
     let fake_cargo = dir.join("cargo");
     let marker = dir.join("cargo-command-ran");
-    let audit_log = dir.join(".mgc/exec.log");
+    let audit_log = dir.join(".magicore/exec.log");
     fs::write(&fake_node, "#!/bin/sh\ncargo fetch\n").unwrap();
     fs::write(
         &fake_cargo,
@@ -1137,7 +1124,8 @@ fn runtime_monitor_blocks_dependency_mutation_from_a_script_child() {
 fn clean_env_still_blocks_npm_install_from_an_indirect_child() {
     use std::os::unix::fs::PermissionsExt;
 
-    let dir = tmp_dir().join("npm-install-blocked");
+    let _fixture = tmp_dir();
+    let dir = _fixture.path().join("npm-install-blocked");
     fs::create_dir_all(&dir).unwrap();
     let fake_cargo = dir.join("cargo");
     let fake_npm = dir.join("npm");
@@ -1183,7 +1171,8 @@ fn clean_env_still_blocks_npm_install_from_an_indirect_child() {
 fn clean_env_kills_forbidden_pm_spawned_by_absolute_child_path() {
     use std::os::unix::fs::PermissionsExt;
 
-    let dir = tmp_dir().join("absolute-child-pm-bin");
+    let _fixture = tmp_dir();
+    let dir = _fixture.path().join("absolute-child-pm-bin");
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     let fake_cargo = dir.join("cargo");
@@ -1233,7 +1222,8 @@ fn clean_env_kills_forbidden_pm_spawned_by_absolute_child_path() {
 fn project_binary_rejects_forbidden_binary_name() {
     use std::os::unix::fs::PermissionsExt;
 
-    let dir = tmp_dir().join("project-bin-forbidden-name");
+    let _fixture = tmp_dir();
+    let dir = _fixture.path().join("project-bin-forbidden-name");
     fs::create_dir_all(&dir).unwrap();
     let fake_npm = dir.join("npm");
     fs::write(&fake_npm, "#!/bin/sh\nexit 0\n").unwrap();
@@ -1254,7 +1244,8 @@ fn project_binary_rejects_forbidden_binary_name() {
 fn project_binary_blocks_script_that_executes_forbidden_pm() {
     use std::os::unix::fs::PermissionsExt;
 
-    let dir = tmp_dir().join("project-bin-script-pm");
+    let _fixture = tmp_dir();
+    let dir = _fixture.path().join("project-bin-script-pm");
     fs::create_dir_all(&dir).unwrap();
     let fake_bin = dir.join("tool");
     fs::write(&fake_bin, "#!/bin/sh\nnpm install\n").unwrap();
@@ -1282,7 +1273,8 @@ fn project_binary_blocks_script_that_executes_forbidden_pm() {
 fn inherited_project_binary_blocks_script_that_executes_forbidden_pm() {
     use std::os::unix::fs::PermissionsExt;
 
-    let dir = tmp_dir().join("project-bin-inherited-script-pm");
+    let _fixture = tmp_dir();
+    let dir = _fixture.path().join("project-bin-inherited-script-pm");
     fs::create_dir_all(&dir).unwrap();
     let fake_bin = dir.join("tool");
     fs::write(&fake_bin, "#!/bin/sh\nnpm install\n").unwrap();
@@ -1311,9 +1303,9 @@ fn inherited_project_binary_blocks_script_that_executes_forbidden_pm() {
 
 #[test]
 fn npm_is_blocked_even_inside_react_native_subdir() {
-    let base = std::env::temp_dir().join(format!("mgexec-rn-{}", std::process::id()));
+    let fixture = tmp_dir();
+    let base = fixture.path().to_path_buf();
     let rn = base.join("react-native");
-    let _ = fs::remove_dir_all(&base);
     fs::create_dir_all(&rn).unwrap();
     fs::write(base.join("mgc.toml"), "[app]\nlanguage = \"multi\"\n").unwrap();
     fs::write(

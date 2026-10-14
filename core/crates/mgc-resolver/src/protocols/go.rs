@@ -394,6 +394,10 @@ impl Default for GoModProtocol {
 
 #[async_trait]
 impl RegistryProtocol for GoModProtocol {
+    fn matches_requirement(&self, range: &str, version: &Version) -> bool {
+        go_matches(range, version)
+    }
+
     async fn resolve(&self, name: &str, range: &str) -> MgResult<ResolvedEntry> {
         let module = name.trim();
         // Exact-pin fast path (mirrors `go get module@version`): a bare

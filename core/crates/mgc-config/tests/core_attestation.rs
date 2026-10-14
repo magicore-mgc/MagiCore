@@ -400,3 +400,53 @@ fn require_mode_fails_closed_when_attestation_is_missing() {
         .expect_err("require mode must reject a missing attestation");
     assert!(error.to_string().contains("no core attestation"));
 }
+
+#[test]
+fn require_mode_rejects_a_renamed_attested_core_marker() {
+    let env = hermetic();
+    let paths = mgc_platform::paths::GlobalPaths::new().unwrap();
+    attest(
+        &env.root,
+        "web",
+        &env.keyring,
+        &paths.identities,
+        None,
+        false,
+        false,
+    )
+    .unwrap();
+    std::fs::rename(
+        env.root.join(".mgc.core"),
+        env.root.join(".mgc.core.disabled"),
+    )
+    .unwrap();
+    let _mode = ScopedEnvVar::set("MGC_TRUST_ANCHOR", "require");
+
+    let error = mgc_config::project::ProjectConfig::read_core_marker(&env.root)
+        .expect_err("renaming a trusted marker must not silently disable attestation");
+
+    assert!(
+        error
+            .to_string()
+            .contains("core identity attestation mismatch")
+    );
+    assert!(error.to_string().contains("project core marker is missing"));
+}
+
+#[test]
+fn warn_mode_keeps_unanchored_legacy_project_discoverable_without_marker() {
+    let env = hermetic();
+    std::fs::remove_file(env.root.join(".mgc.core")).unwrap();
+    let _mode = ScopedEnvVar::set("MGC_TRUST_ANCHOR", "warn");
+
+    let core = mgc_config::project::ProjectConfig::read_core_marker(&env.root).unwrap();
+
+    assert_eq!(core, None);
+    assert_eq!(
+        mgc_config::project::ProjectConfig::detect_core(&env.root)
+            .unwrap()
+            .as_deref(),
+        Some("web"),
+        "legacy identity remains available from mgc.toml in compatibility mode"
+    );
+}

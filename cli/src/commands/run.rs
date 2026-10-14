@@ -298,12 +298,7 @@ fn execute_task_with_bin(request: TaskRequest<'_>) -> Result<()> {
     // Load optimizer env for run command
     // Tải env optimizer cho lệnh run
     let runtime = detect_run_runtime(cwd);
-    let optimizer_envs = crate::commands::optimizer::env_loader::load_optimizer_env(cwd, &runtime)
-        .map_err(|e| {
-            mgc_ui::warning(&format!("Failed to load optimizer config: {}", e));
-            e
-        })
-        .unwrap_or_default();
+    let optimizer_envs = crate::commands::optimizer::env_loader::load_optimizer_env(cwd, &runtime)?;
     env.extend(optimizer_envs);
 
     // P0-1: truyền runtime compat đã chọn (nếu có) xuống mgc-exec để

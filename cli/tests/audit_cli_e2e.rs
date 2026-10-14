@@ -24,10 +24,28 @@ use tempfile::TempDir;
 /// Resolve the cargo-built mgc binary — fresh for this run, .exe handled.
 /// Lấy binary mgc cargo build cho run này — luôn tươi, tự xử lý .exe.
 fn find_mgc_binary() -> String {
-    std::env::var_os("CARGO_BIN_EXE_mgc")
+    let binary = std::env::var_os("MGC_TEST_CLI_BINARY")
         .map(PathBuf::from)
-        .map(|p| p.to_string_lossy().to_string())
-        .expect("CARGO_BIN_EXE_mgc unavailable — run via cargo test")
+        .map(|path| {
+            if path.is_file() {
+                return path;
+            }
+            #[cfg(windows)]
+            {
+                let executable = path.with_extension("exe");
+                if executable.is_file() {
+                    return executable;
+                }
+            }
+            panic!(
+                "MGC_TEST_CLI_BINARY does not identify an executable: {}",
+                path.display()
+            );
+        })
+        .or_else(|| std::env::var_os("CARGO_BIN_EXE_mgc").map(PathBuf::from))
+        .expect("CARGO_BIN_EXE_mgc unavailable — run via cargo test");
+    eprintln!("MagiCore audit product binary: {}", binary.display());
+    binary.to_string_lossy().to_string()
 }
 
 /// Real vulnerable fixture: rsa 0.9.10 is affected by RUSTSEC-2023-0071
@@ -1683,5 +1701,9 @@ fn audit_ai_cli_scans_checkpoint_weights_after_models_directory() {
     assert!(
         output.contains("fixture.pth") && output.contains("pickle-exploit"),
         "CLI audit must report the malicious checkpoint after scanning models:\n{output}"
+    );
+    assert!(
+        !output.contains(sandbox.path().to_string_lossy().as_ref()),
+        "CLI audit must not expose the host's absolute project path:\n{output}"
     );
 }

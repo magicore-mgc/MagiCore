@@ -63,6 +63,40 @@ fn unique_name_dep_becomes_transitive_edge() {
 }
 
 #[test]
+fn exact_dependency_reference_selects_one_of_multiple_locked_versions() {
+    let mut parent = package(
+        "left",
+        "1.0.0",
+        Some("crates://sparse+https://index.crates.io"),
+    );
+    parent.ecosystem = mgc_lockfile::EcosystemTag::Rust;
+    parent.dependencies = vec!["embassy-sync@0.6.2".to_string()];
+    let mut older = package(
+        "embassy-sync",
+        "0.6.2",
+        Some("crates://sparse+https://index.crates.io"),
+    );
+    older.ecosystem = mgc_lockfile::EcosystemTag::Rust;
+    let mut newer = package(
+        "embassy-sync",
+        "0.8.0",
+        Some("crates://sparse+https://index.crates.io"),
+    );
+    newer.ecosystem = mgc_lockfile::EcosystemTag::Rust;
+
+    let (v4, warnings) = migrate_v3_to_v4(v3_lock(vec![parent, older, newer])).unwrap();
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let left = v4
+        .packages
+        .iter()
+        .find(|package| package.key.name == "left")
+        .unwrap();
+    assert_eq!(left.edges.len(), 1);
+    assert_eq!(left.edges[0].target_key.name, "embassy-sync");
+    assert_eq!(left.edges[0].target_key.version, "0.6.2");
+}
+
+#[test]
 fn missing_and_ambiguous_deps_drop_with_warnings() {
     let mut ghost = package("ghost", "1.0.0", None);
     ghost.registry = Some("npm://registry.npmjs.org".to_string());

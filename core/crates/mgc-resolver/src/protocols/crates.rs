@@ -19,6 +19,7 @@ use mgc_types::{MgError, MgResult, Version};
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::PathBuf;
+use std::time::Duration;
 
 const DEFAULT_INDEX_URL: &str = "https://index.crates.io";
 const DEFAULT_DOWNLOAD_BASE: &str = "https://crates.io/api/v1/crates";
@@ -42,10 +43,19 @@ impl CratesProtocol {
     /// Build with explicit index + download base (testability).
     /// Dựng với index + download base tường minh (cho test).
     pub fn with_download_base(index_url: &str, download_base: &str) -> Self {
+        let timeout = mgc_http::timeout::TimeoutConfig {
+            // Some crates.io sparse-index documents exceed 1 MiB. Under
+            // bounded parallel resolution they can take longer than the
+            // generic 30s API timeout, so allow enough time for the body.
+            request: Duration::from_secs(120),
+            ..mgc_http::timeout::TimeoutConfig::default()
+        };
+        let client = mgc_http::HttpClient::with_security(&timeout, &mgc_http::TlsConfig::default())
+            .expect("default crates.io HTTP/TLS policy is valid");
         Self {
             index_url: index_url.trim_end_matches('/').to_string(),
             download_base: download_base.trim_end_matches('/').to_string(),
-            client: mgc_http::HttpClient::default(),
+            client,
         }
     }
 
@@ -74,17 +84,13 @@ impl CratesProtocol {
     }
 
     async fn get_text(&self, url: &str) -> MgResult<String> {
-        let resp = self
-            .client
-            .get(url)
-            .await
-            .map_err(|e| MgError::Network(format!("GET {url} failed: {e}")))?;
-        let status = resp.status();
-        let body = resp
-            .text()
-            .await
-            .map_err(|e| MgError::Network(format!("read {url} body failed: {e}")))?;
-        if !status.is_success() {
+        let (status, bytes) = self.get_response_body(url).await?;
+        let body = String::from_utf8(bytes).map_err(|error| {
+            MgError::Network(format!(
+                "GET {url} returned a non-UTF-8 index body: {error}"
+            ))
+        })?;
+        if !(200..300).contains(&status) {
             return Err(MgError::Network(format!(
                 "GET {url} returned {status}: {body}"
             )));
@@ -93,20 +99,51 @@ impl CratesProtocol {
     }
 
     async fn get_bytes(&self, url: &str) -> MgResult<Vec<u8>> {
-        let resp = self
-            .client
-            .get(url)
-            .await
-            .map_err(|e| MgError::Network(format!("GET {url} failed: {e}")))?;
-        let status = resp.status();
-        let bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| MgError::Network(format!("read {url} body failed: {e}")))?;
-        if !status.is_success() {
+        let (status, bytes) = self.get_response_body(url).await?;
+        if !(200..300).contains(&status) {
             return Err(MgError::Network(format!("GET {url} returned {status}")));
         }
-        Ok(bytes.to_vec())
+        Ok(bytes)
+    }
+
+    /// Retry a response-body read after headers arrive. The shared HTTP
+    /// client retries connection/status failures, but a truncated compressed
+    /// body fails later in `Response::bytes()` and previously escaped without
+    /// retrying. Index documents and crate archives are idempotent GETs.
+    /// Retry phần đọc response body sau khi đã nhận headers. HTTP client dùng
+    /// chung đã retry lỗi kết nối/status, nhưng body gzip bị cụt lỗi muộn ở
+    /// `Response::bytes()` nên trước đây không được retry.
+    async fn get_response_body(&self, url: &str) -> MgResult<(u16, Vec<u8>)> {
+        const BODY_READ_RETRIES: u32 = 2;
+        for attempt in 0..=BODY_READ_RETRIES {
+            let response = self
+                .client
+                .get(url)
+                .await
+                .map_err(|error| MgError::Network(format!("GET {url} failed: {error}")))?;
+            let status = response.status().as_u16();
+            match response.bytes().await {
+                Ok(bytes) => return Ok((status, bytes.to_vec())),
+                Err(error) if attempt < BODY_READ_RETRIES => {
+                    let delay = std::time::Duration::from_millis(200 * (1 << attempt));
+                    tracing::warn!(
+                        url,
+                        attempt = attempt + 1,
+                        "registry response body failed; retrying in {:?}: {}",
+                        delay,
+                        error
+                    );
+                    tokio::time::sleep(delay).await;
+                }
+                Err(error) => {
+                    return Err(MgError::Network(format!(
+                        "read {url} response body failed after {} attempts: {error}",
+                        BODY_READ_RETRIES + 1
+                    )));
+                }
+            }
+        }
+        unreachable!("bounded response-body retry loop always returns")
     }
 
     /// Load every version row for one crate from the sparse index.
@@ -192,38 +229,45 @@ impl CratesProtocol {
         Ok(entry)
     }
 
-    /// Resolve the Cargo feature closure without activating dormant optional dependencies.
-    /// Resolve feature closure Cargo mà không bật optional dependency còn dormant.
+    /// Resolve Cargo's non-dev lock closure for every target, including weakly
+    /// referenced optional packages without activating their features.
+    /// Resolve mọi target, bỏ dev; giữ package được weak-reference mà không bật feature.
     async fn resolve_feature_graph(
         &self,
-        roots: &[(String, String)],
+        roots: &[super::RegistryRoot],
     ) -> MgResult<Vec<ResolvedEntry>> {
-        let mut states = BTreeMap::<String, CrateResolutionState>::new();
+        let mut states = BTreeMap::<(String, String), CrateResolutionState>::new();
+        let mut index_cache = BTreeMap::<String, Vec<CrateIndexEntry>>::new();
         let mut root_requests = BTreeMap::<String, CrateDependencyRequest>::new();
-        for (name, range) in roots {
-            let request = root_requests.entry(name.clone()).or_default();
-            request.ranges.push(range.clone());
-            request.default_features = true;
+        for root in roots {
+            let request = root_requests.entry(root.name.clone()).or_default();
+            request.ranges.push(root.range.clone());
+            request.features.extend(root.features.iter().cloned());
+            request.default_features |= root.default_features;
         }
 
         for (name, request) in root_requests {
             let ranges = unique_strings(request.ranges);
-            let entry =
-                self.select_index_entry(&name, &ranges, self.index_entries(&name).await?)?;
+            let entries = self.index_entries(&name).await?;
+            let entry = self.select_index_entry(&name, &ranges, entries.clone())?;
+            index_cache.insert(name, entries);
+            let key = (entry.name.clone(), entry.vers.clone());
             states.insert(
-                name,
+                key,
                 CrateResolutionState {
                     entry,
-                    ranges,
                     requested_features: request.features,
                     default_features: request.default_features,
+                    active: true,
+                    resolved_dependencies: BTreeSet::new(),
+                    extra_markers: BTreeSet::new(),
                 },
             );
         }
 
         loop {
-            let mut pending = BTreeMap::<String, CrateDependencyRequest>::new();
-            for state in states.values() {
+            let mut pending = Vec::new();
+            for (parent, state) in &states {
                 let activation = activate_crate_features(
                     &state.entry,
                     &state.requested_features,
@@ -234,7 +278,16 @@ impl CratesProtocol {
                         continue;
                     }
                     let alias = dependency.name.as_str();
-                    if dependency.optional && !activation.optional_dependencies.contains(alias) {
+                    let dependency_active = state.active
+                        && (!dependency.optional
+                            || activation.optional_dependencies.contains(alias));
+                    let weak_lock_only = activation.lock_only_optional_dependencies.contains(alias);
+                    let feature_selected = activation.optional_dependencies.contains(alias);
+                    if dependency.optional
+                        && !dependency_active
+                        && !weak_lock_only
+                        && !(feature_selected && !state.active)
+                    {
                         continue;
                     }
                     if let Some(registry) = &dependency.registry {
@@ -248,73 +301,105 @@ impl CratesProtocol {
                         .as_deref()
                         .unwrap_or(dependency.name.as_str())
                         .to_string();
-                    let request = pending.entry(actual_name).or_default();
-                    request.ranges.push(dependency.req.clone());
+                    let mut request = CrateDependencyRequest::default();
+                    request.ranges.push(if dependency.req.trim().is_empty() {
+                        "*".to_string()
+                    } else {
+                        dependency.req.clone()
+                    });
                     request.features.extend(dependency.features.iter().cloned());
                     if let Some(features) = activation.dependency_features.get(alias) {
                         request.features.extend(features.iter().cloned());
                     }
-                    request.default_features |= dependency.default_features;
+                    request.default_features = dependency_active && dependency.default_features;
+                    pending.push((parent.clone(), actual_name, request, dependency_active));
                 }
             }
 
-            let (known, missing): (Vec<_>, Vec<_>) = pending
-                .into_iter()
-                .partition(|(name, _)| states.contains_key(name));
+            let names_to_fetch = pending
+                .iter()
+                .map(|(_, name, _, _)| name.clone())
+                .filter(|name| !index_cache.contains_key(name))
+                .collect::<BTreeSet<_>>();
+            let fetched = stream::iter(names_to_fetch.into_iter().map(|name| async move {
+                let entries = self.index_entries(&name).await?;
+                Ok::<_, MgError>((name, entries))
+            }))
+            .buffered(GRAPH_RESOLVE_CONCURRENCY)
+            .try_collect::<Vec<_>>()
+            .await?;
+            index_cache.extend(fetched);
+
             let mut changed = false;
-            for (name, mut request) in known {
+            let mut next_edges = BTreeMap::<(String, String), BTreeSet<(String, String)>>::new();
+            for (parent, name, mut request, dependency_active) in pending {
                 request.ranges = unique_strings(request.ranges);
-                let state = states.get_mut(&name).ok_or_else(|| {
-                    MgError::Other("crates.io feature resolver lost a selected package".to_string())
+                let entries = index_cache.get(&name).ok_or_else(|| {
+                    MgError::Other("crates.io index cache lost a requested package".to_string())
                 })?;
-                for range in &request.ranges {
-                    let version = Version::parse(&state.entry.vers).map_err(|error| {
-                        MgError::Other(format!(
-                            "invalid crates.io version '{}': {error}",
-                            state.entry.vers
-                        ))
-                    })?;
-                    if !cargo_matches(range, &version) {
-                        return Err(MgError::DependencyConflict(format!(
-                            "incompatible constraints for {name}: selected {}, but constraint '{range}' does not match (native crates resolver does not backtrack yet)",
-                            state.entry.vers
-                        )));
-                    }
-                }
-                for range in request.ranges {
-                    if !state.ranges.contains(&range) {
-                        state.ranges.push(range);
+                let entry = self.select_index_entry(&name, &request.ranges, entries.clone())?;
+                let key = (entry.name.clone(), entry.vers.clone());
+                next_edges.entry(parent).or_default().insert(key.clone());
+                if let Some(state) = states.get_mut(&key) {
+                    if dependency_active && !state.active {
+                        state.active = true;
                         changed = true;
                     }
-                }
-                for feature in request.features {
-                    changed |= state.requested_features.insert(feature);
-                }
-                if request.default_features && !state.default_features {
-                    state.default_features = true;
+                    for feature in request.features {
+                        changed |= state.requested_features.insert(feature);
+                    }
+                    if request.default_features && !state.default_features {
+                        state.default_features = true;
+                        changed = true;
+                    }
+                } else {
+                    states.insert(
+                        key.clone(),
+                        CrateResolutionState {
+                            entry,
+                            requested_features: request.features,
+                            default_features: request.default_features,
+                            active: dependency_active,
+                            resolved_dependencies: BTreeSet::new(),
+                            extra_markers: BTreeSet::new(),
+                        },
+                    );
                     changed = true;
                 }
             }
-            let resolved_missing =
-                stream::iter(missing.into_iter().map(|(name, request)| async move {
-                    let ranges = unique_strings(request.ranges);
-                    let entry =
-                        self.select_index_entry(&name, &ranges, self.index_entries(&name).await?)?;
-                    Ok::<_, MgError>((
-                        name,
-                        CrateResolutionState {
-                            entry,
-                            ranges,
-                            requested_features: request.features,
-                            default_features: request.default_features,
-                        },
-                    ))
-                }))
-                .buffered(GRAPH_RESOLVE_CONCURRENCY)
-                .try_collect::<Vec<_>>()
-                .await?;
-            changed |= !resolved_missing.is_empty();
-            states.extend(resolved_missing);
+            for (key, state) in &mut states {
+                state.resolved_dependencies = next_edges.remove(key).unwrap_or_default();
+                state.extra_markers.clear();
+                if !state.active {
+                    continue;
+                }
+                let activation = activate_crate_features(
+                    &state.entry,
+                    &state.requested_features,
+                    state.default_features,
+                )?;
+                for dependency in &state.entry.deps {
+                    if dependency.kind.as_deref() == Some("dev") {
+                        continue;
+                    }
+                    if let Some(target) = &dependency.target {
+                        state.extra_markers.insert(format!("target:{target}"));
+                    }
+                    if dependency.optional
+                        && !activation
+                            .optional_dependencies
+                            .contains(dependency.name.as_str())
+                    {
+                        let actual_name = dependency
+                            .package
+                            .as_deref()
+                            .unwrap_or(dependency.name.as_str());
+                        state
+                            .extra_markers
+                            .insert(format!("optional:{actual_name}"));
+                    }
+                }
+            }
             if !changed {
                 break;
             }
@@ -361,6 +446,10 @@ impl Default for CratesProtocol {
 
 #[async_trait]
 impl RegistryProtocol for CratesProtocol {
+    fn matches_requirement(&self, range: &str, version: &Version) -> bool {
+        cargo_matches(range, version)
+    }
+
     async fn resolve(&self, name: &str, range: &str) -> MgResult<ResolvedEntry> {
         let index_url = self.index_url_for(name);
         let body = self.get_text(&index_url).await?;
@@ -495,13 +584,34 @@ impl RegistryProtocol for CratesProtocol {
     }
 
     async fn resolve_graph(&self, name: &str, range: &str) -> MgResult<Vec<ResolvedEntry>> {
-        self.resolve_feature_graph(&[(name.to_string(), range.to_string())])
-            .await
+        self.resolve_feature_graph(&[super::RegistryRoot {
+            name: name.to_string(),
+            range: range.to_string(),
+            features: Vec::new(),
+            default_features: true,
+        }])
+        .await
     }
 
     async fn resolve_graph_roots(
         &self,
         roots: &[(String, String)],
+    ) -> MgResult<Vec<ResolvedEntry>> {
+        let roots = roots
+            .iter()
+            .map(|(name, range)| super::RegistryRoot {
+                name: name.clone(),
+                range: range.clone(),
+                features: Vec::new(),
+                default_features: true,
+            })
+            .collect::<Vec<_>>();
+        self.resolve_feature_graph(&roots).await
+    }
+
+    async fn resolve_graph_roots_with_options(
+        &self,
+        roots: &[super::RegistryRoot],
     ) -> MgResult<Vec<ResolvedEntry>> {
         self.resolve_feature_graph(roots).await
     }
@@ -525,103 +635,13 @@ fn sparse_prefix(name: &str) -> String {
     }
 }
 
-/// Cargo semver subset matcher: `*`, `^x.y.z`, `~x.y.z`, `=x.y.z`,
-/// `>=x`, `<=x`, `>x`, `<x`, comma = AND, bare version = caret.
-/// Matcher semver subset Cargo: `*`, `^`, `~`, `=`, `>=`, `<=`, `>`, `<`,
-/// phẩy = AND, version trần = caret.
+/// Use Cargo-compatible SemVer parsing rather than a partial hand-written matcher.
+/// Dùng parser SemVer cùng quy tắc Cargo thay cho matcher tự viết chưa đầy đủ.
 fn cargo_matches(range: &str, version: &Version) -> bool {
-    let range = range.trim();
-    if range.is_empty() || range == "*" {
-        return true;
-    }
-    range
-        .split(',')
-        .map(str::trim)
-        .all(|part| cargo_part(part, version))
-}
-
-fn cargo_part(part: &str, version: &Version) -> bool {
-    if part == "*" {
-        return true;
-    }
-    if let Some(p) = part.strip_prefix('^') {
-        return caret(p, version);
-    }
-    if let Some(p) = part.strip_prefix('~') {
-        return tilde(p, version);
-    }
-    if let Some(p) = part.strip_prefix('=') {
-        return exact(p, version);
-    }
-    if let Some(p) = part.strip_prefix(">=") {
-        return ge(p, version);
-    }
-    if let Some(p) = part.strip_prefix("<=") {
-        return le(p, version);
-    }
-    if let Some(p) = part.strip_prefix('>') {
-        return gt(p, version);
-    }
-    if let Some(p) = part.strip_prefix('<') {
-        return lt(p, version);
-    }
-    // bare version → caret semantics (cargo default).
-    // (version trần → ngữ nghĩa caret (mặc định cargo).)
-    caret(part, version)
-}
-
-fn caret(raw: &str, version: &Version) -> bool {
-    let Some(target) = Version::parse(raw.trim()).ok() else {
+    let Ok(candidate) = semver::Version::parse(&version.to_string()) else {
         return false;
     };
-    if version < &target {
-        return false;
-    }
-    // ^1.2.3 → <2.0.0; ^0.2.3 → <0.3.0; ^0.0.3 → <0.0.4.
-    if target.major > 0 {
-        version.major == target.major
-    } else if target.minor > 0 {
-        version.major == 0 && version.minor == target.minor
-    } else {
-        version.major == 0 && version.minor == 0 && version.patch == target.patch
-    }
-}
-
-fn tilde(raw: &str, version: &Version) -> bool {
-    let Some(target) = Version::parse(raw.trim()).ok() else {
-        return false;
-    };
-    version >= &target && version.major == target.major && version.minor == target.minor
-}
-
-fn exact(raw: &str, version: &Version) -> bool {
-    Version::parse(raw.trim())
-        .map(|target| version == &target)
-        .unwrap_or(false)
-}
-
-fn ge(raw: &str, version: &Version) -> bool {
-    Version::parse(raw.trim())
-        .map(|target| version >= &target)
-        .unwrap_or(false)
-}
-
-fn le(raw: &str, version: &Version) -> bool {
-    Version::parse(raw.trim())
-        .map(|target| version <= &target)
-        .unwrap_or(false)
-}
-
-fn gt(raw: &str, version: &Version) -> bool {
-    Version::parse(raw.trim())
-        .map(|target| version > &target)
-        .unwrap_or(false)
-}
-
-fn lt(raw: &str, version: &Version) -> bool {
-    Version::parse(raw.trim())
-        .map(|target| version < &target)
-        .unwrap_or(false)
+    semver::VersionReq::parse(range.trim()).is_ok_and(|requirement| requirement.matches(&candidate))
 }
 
 /// One crate version entry from the sparse index NDJSON.
@@ -678,14 +698,19 @@ struct CrateDependencyRequest {
 
 struct CrateResolutionState {
     entry: CrateIndexEntry,
-    ranges: Vec<String>,
     requested_features: BTreeSet<String>,
     default_features: bool,
+    /// Whether requested features activate this package, or it is retained
+    /// only because an active feature weakly references its optional edge.
+    active: bool,
+    resolved_dependencies: BTreeSet<(String, String)>,
+    extra_markers: BTreeSet<String>,
 }
 
 #[derive(Default)]
 struct ActivatedCrateFeatures {
     optional_dependencies: BTreeSet<String>,
+    lock_only_optional_dependencies: BTreeSet<String>,
     dependency_features: BTreeMap<String, BTreeSet<String>>,
 }
 
@@ -808,6 +833,12 @@ fn activate_crate_features(
                 .entry(alias)
                 .or_default()
                 .extend(child_features);
+        } else if entry
+            .deps
+            .iter()
+            .any(|dependency| dependency.name == alias && dependency.optional)
+        {
+            activation.lock_only_optional_dependencies.insert(alias);
         }
     }
     Ok(activation)
@@ -819,36 +850,6 @@ fn resolved_entry_for_state(
     protocol: &CratesProtocol,
     state: &CrateResolutionState,
 ) -> MgResult<ResolvedEntry> {
-    let activation = activate_crate_features(
-        &state.entry,
-        &state.requested_features,
-        state.default_features,
-    )?;
-    let mut dependencies = BTreeMap::<String, String>::new();
-    let mut markers = BTreeSet::new();
-    for dependency in &state.entry.deps {
-        if dependency.kind.as_deref() == Some("dev") {
-            continue;
-        }
-        if let Some(target) = &dependency.target {
-            markers.insert(format!("target:{target}"));
-        }
-        let actual_name = dependency
-            .package
-            .as_deref()
-            .unwrap_or(dependency.name.as_str());
-        if dependency.optional
-            && !activation
-                .optional_dependencies
-                .contains(dependency.name.as_str())
-        {
-            markers.insert(format!("optional:{actual_name}"));
-            continue;
-        }
-        dependencies
-            .entry(actual_name.to_string())
-            .or_insert_with(|| dependency.req.clone());
-    }
     let sha256 = state
         .entry
         .cksum
@@ -858,10 +859,14 @@ fn resolved_entry_for_state(
     Ok(ResolvedEntry {
         name: state.entry.name.clone(),
         version: state.entry.vers.clone(),
-        deps: dependencies.into_iter().collect(),
+        deps: state
+            .resolved_dependencies
+            .iter()
+            .map(|(name, version)| (name.clone(), format!("={version}")))
+            .collect(),
         artifact_url: protocol.download_url_for(&state.entry.name, &state.entry.vers),
         sha256,
-        extra_markers: markers.into_iter().collect(),
+        extra_markers: state.extra_markers.iter().cloned().collect(),
     })
 }
 
@@ -894,5 +899,9 @@ mod tests {
         assert!(cargo_matches("~1.2.3", &v));
         assert!(!cargo_matches("~1.2.3", &Version::parse("1.3.0").unwrap()));
         assert!(cargo_matches("=1.2.5", &v));
+        assert!(cargo_matches(
+            "^0.25.0",
+            &Version::parse("0.25.17+spec-1.1.0").unwrap()
+        ));
     }
 }

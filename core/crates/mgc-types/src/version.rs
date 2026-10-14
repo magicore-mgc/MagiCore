@@ -8,6 +8,10 @@ pub struct Version {
     pub minor: u64,
     pub patch: u64,
     pub pre: Option<String>,
+    /// Semver build metadata, preserved in package identity but ignored by range precedence.
+    /// Metadata build semver được giữ trong identity package nhưng bỏ qua khi so range.
+    #[serde(default)]
+    pub build: Option<String>,
     /// PEP 440 dev release (`1.2.3.dev1`) — sorts below every
     /// pre-release/final/post of the same triple. `None` = not a dev release.
     /// Bản dev PEP 440 xếp trước pre-release/final/post cùng bộ số; `None` = không phải dev.
@@ -41,6 +45,7 @@ impl Version {
             minor,
             patch,
             pre: None,
+            build: None,
             dev: None,
             post: None,
         }
@@ -54,6 +59,21 @@ impl Version {
     /// Chấp nhận hậu tố post/dev PEP 440; hậu tố khác hoặc nhiều segment sẽ báo lỗi thay vì bị cắt bỏ.
     pub fn parse(input: &str) -> Result<Self, MgError> {
         let trimmed = input.trim().trim_start_matches('v');
+        let (trimmed, build) = match trimmed.split_once('+') {
+            Some((base, build))
+                if !build.is_empty()
+                    && build.split('.').all(|segment| {
+                        !segment.is_empty()
+                            && segment
+                                .bytes()
+                                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+                    }) =>
+            {
+                (base, Some(build.to_string()))
+            }
+            Some(_) => return Err(MgError::InvalidVersion(input.to_string())),
+            None => (trimmed, None),
+        };
         let (base, pre) = match trimmed.split_once('-') {
             Some((base, pre)) => (base, Some(pre.to_string())),
             None => (trimmed, None),
@@ -125,34 +145,17 @@ impl Version {
             minor,
             patch,
             pre,
+            build,
             dev,
             post,
         })
     }
-}
 
-impl fmt::Display for Version {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}.{}.{}", self.major, self.minor, self.patch)?;
-        if let Some(pre) = &self.pre {
-            write!(f, "-{pre}")?;
-        }
-        if let Some(dev) = self.dev {
-            write!(f, ".dev{dev}")?;
-        }
-        if let Some(post) = self.post {
-            write!(f, ".post{post}")?;
-        }
-        Ok(())
-    }
-}
-
-impl Ord for Version {
-    fn cmp(&self, other: &Self) -> Ordering {
+    /// Compare release precedence while ignoring build metadata, as semver requirements do.
+    /// So thứ tự release và bỏ metadata build, đúng quy tắc semver của version range.
+    pub fn precedence_cmp(&self, other: &Self) -> Ordering {
         match (self.major, self.minor, self.patch).cmp(&(other.major, other.minor, other.patch)) {
             Ordering::Equal => match (self.dev, other.dev) {
-                // PEP 440: dev releases sort below everything else.
-                // Theo PEP 440, bản dev xếp trước mọi dạng phát hành còn lại.
                 (Some(left), Some(right)) => match left.cmp(&right) {
                     Ordering::Equal => {
                         match compare_prerelease(self.pre.as_deref(), other.pre.as_deref()) {
@@ -172,6 +175,32 @@ impl Ord for Version {
             },
             ordering => ordering,
         }
+    }
+}
+
+impl fmt::Display for Version {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}.{}.{}", self.major, self.minor, self.patch)?;
+        if let Some(pre) = &self.pre {
+            write!(f, "-{pre}")?;
+        }
+        if let Some(dev) = self.dev {
+            write!(f, ".dev{dev}")?;
+        }
+        if let Some(post) = self.post {
+            write!(f, ".post{post}")?;
+        }
+        if let Some(build) = &self.build {
+            write!(f, "+{build}")?;
+        }
+        Ok(())
+    }
+}
+
+impl Ord for Version {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.precedence_cmp(other)
+            .then_with(|| self.build.cmp(&other.build))
     }
 }
 

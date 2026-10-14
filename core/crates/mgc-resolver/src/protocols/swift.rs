@@ -380,6 +380,10 @@ impl SwiftDep {
 
 #[async_trait]
 impl RegistryProtocol for SwiftRegistryProtocol {
+    fn matches_requirement(&self, range: &str, version: &Version) -> bool {
+        swift_matches(range, version)
+    }
+
     async fn resolve(&self, name: &str, range: &str) -> MgResult<ResolvedEntry> {
         // Local paths never resolve anywhere: neither the git transport
         // (default-blocked) nor the scoped registry can serve them.

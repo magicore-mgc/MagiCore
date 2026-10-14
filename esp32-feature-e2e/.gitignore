@@ -1,0 +1,7 @@
+.DS_Store
+.magicore/
+.env
+.env.local
+.pio
+target
+build

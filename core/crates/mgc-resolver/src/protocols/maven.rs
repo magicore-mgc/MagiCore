@@ -323,6 +323,10 @@ impl Default for MavenProtocol {
 
 #[async_trait]
 impl RegistryProtocol for MavenProtocol {
+    fn matches_requirement(&self, range: &str, version: &Version) -> bool {
+        maven_matches(range, version)
+    }
+
     async fn resolve(&self, name: &str, range: &str) -> MgResult<ResolvedEntry> {
         let (group, artifact) = Self::split_coordinate(name)?;
 

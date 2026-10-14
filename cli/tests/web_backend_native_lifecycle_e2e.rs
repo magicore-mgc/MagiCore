@@ -67,7 +67,16 @@ fn write_backend_fixture(framework: &str, language: &str, schema: &str) -> Backe
 }
 
 fn run_mgc(fixture: &BackendFixture, args: &[&str]) -> (bool, String) {
-    let output = Command::new(env!("CARGO_BIN_EXE_mgc"))
+    let binary = std::env::var_os("MGC_TEST_CLI_BINARY")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(env!("CARGO_BIN_EXE_mgc")));
+    assert!(
+        binary.is_file(),
+        "mgc executable missing: {}",
+        binary.display()
+    );
+    eprintln!("MagiCore Web backend product binary: {}", binary.display());
+    let output = Command::new(binary)
         .args(args)
         .current_dir(fixture.project.path())
         .env("HOME", fixture.home.path())

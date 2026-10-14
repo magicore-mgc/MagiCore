@@ -454,12 +454,13 @@ fn model_artifact_report(dir: &Path) -> MgResult<AuditReport> {
             .unwrap_or_else(|| dir.display().to_string());
         vulnerabilities.push(
             Vulnerability {
-                package: PackageId::new(
-                    PackageName::new(format!("model:{file}"))
-                        .map_err(|e| MgError::Other(format!("invalid model label: {e}")))?,
-                    Version::new(0, 0, 0),
+                package: PackageId::new(model_artifact_package_name(&file)?, Version::new(0, 0, 0)),
+                title: format!(
+                    "{}: {} ({})",
+                    finding.category,
+                    finding.message,
+                    model_artifact_file_label(&file)
                 ),
-                title: format!("{}: {}", finding.category, finding.message),
                 severity: format!("{:?}", finding.severity).to_lowercase(),
                 cve: format!("model-{}", finding.category),
                 severity_level,
@@ -482,6 +483,25 @@ fn model_artifact_report(dir: &Path) -> MgResult<AuditReport> {
     })
 }
 
+/// Build a package-safe identity for a model file without putting host paths in package names.
+/// Tạo định danh package an toàn cho model mà không đưa đường dẫn máy vào tên package.
+fn model_artifact_package_name(file: &str) -> MgResult<PackageName> {
+    use sha2::{Digest, Sha256};
+
+    let path_digest = Sha256::digest(file.as_bytes());
+    let package_label = format!("model-artifact-{}", hex::encode(&path_digest[..8]));
+    PackageName::new(package_label)
+        .map_err(|error| MgError::Other(format!("invalid model label: {error}")))
+}
+
+/// Keep audit output useful without exposing the host's absolute model path.
+/// Giữ output audit hữu ích mà không để lộ đường dẫn model tuyệt đối trên máy.
+fn model_artifact_file_label(file: &str) -> &str {
+    file.rsplit(['/', '\\'])
+        .find(|component| !component.is_empty())
+        .unwrap_or("model artifact")
+}
+
 /// Poll the async model audit once — same first-poll-complete contract
 /// as the dependency scanners.
 /// Poll audit model async đúng một lần — cùng hợp đồng poll-đầu-hoàn-
@@ -495,3 +515,7 @@ fn futures_util_replay(dir: &Path) -> MgResult<crate::audit::AuditReport> {
         )),
     }
 }
+
+#[cfg(test)]
+#[path = "adapter/test/model_artifact_package_name.rs"]
+mod tests;

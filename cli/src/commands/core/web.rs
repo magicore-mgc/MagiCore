@@ -1292,12 +1292,7 @@ fn build_dev_launch(
     // Phát hiện runtime từ script để load đúng config optimizer
     let runtime = detect_runtime_from_tokens(&tokens);
     let optimizer_envs =
-        crate::commands::optimizer::env_loader::load_optimizer_env(project_root, &runtime)
-            .map_err(|e| {
-                mgc_ui::warning(&format!("Failed to load optimizer config: {}", e));
-                e
-            })
-            .unwrap_or_default();
+        crate::commands::optimizer::env_loader::load_optimizer_env(project_root, &runtime)?;
     let base_envs: Vec<(OsString, OsString)> = optimizer_envs
         .into_iter()
         .map(|(k, v)| (OsString::from(k), OsString::from(v)))
@@ -2164,7 +2159,7 @@ fn run_dev_launch_with_guard(
 
     // SAFETY: Enable audit log for dev server execution
     // AN TOÀN: Bật audit log cho dev server execution
-    let audit_log = target.dir.join(".mgc").join("exec.log");
+    let audit_log = target.dir.join(".magicore").join("exec.log");
     if let Some(parent) = audit_log.parent() {
         std::fs::create_dir_all(parent)?;
     }

@@ -687,6 +687,11 @@ impl ProjectConfig {
     ///   never guess a wrong core from a malformed marker).
     pub fn read_core_marker(project_root: &Path) -> Result<Option<String>, anyhow::Error> {
         let Some(core) = Self::read_core_marker_identity(project_root)? else {
+            // A missing marker is ordinary for an unclaimed legacy project,
+            // but it must not bypass an existing trust anchor after rename/delete.
+            // (Marker vắng vẫn hợp lệ với project cũ chưa claim, nhưng không được
+            // né anchor sẵn có bằng cách đổi tên/xóa marker.)
+            crate::attestation::enforce_missing_marker_attestation(project_root)?;
             return Ok(None);
         };
         // Cryptographic anchor check runs last: plain-text agreement is

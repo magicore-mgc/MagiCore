@@ -1768,6 +1768,10 @@ fn wait_with_timeout(
     let mut observed_process_groups = std::collections::HashSet::from([child.id()]);
     #[cfg(unix)]
     let mut root_reaped = false;
+    #[cfg(unix)]
+    let mut process_system = sysinfo::System::new();
+    #[cfg(unix)]
+    let mut monitored_process_pids = std::collections::HashSet::<sysinfo::Pid>::new();
     // DEADLOCK FIX (2026-09-09): a child writing MORE than the OS pipe
     // buffer (~64 KB) blocks on write until the parent drains the pipe.
     // Polling try_wait WITHOUT draining never sees the child exit — the
@@ -1853,6 +1857,8 @@ fn wait_with_timeout(
             #[cfg(unix)]
             terminate_process_tree_tracked(
                 child.id(),
+                &mut process_system,
+                &mut monitored_process_pids,
                 &mut observed_process_groups,
                 process_monitor.tracking_token,
                 process_monitor.exempt,
@@ -1887,11 +1893,14 @@ fn wait_with_timeout(
         let process_scan = if process_monitor.enabled {
             find_forbidden_descendant_tracking(
                 child.id(),
+                &mut process_system,
+                &mut monitored_process_pids,
                 process_monitor.exempt,
                 process_monitor.shadow_dir,
                 process_monitor.tracking_token,
                 &mut observed_process_groups,
                 process_monitor.compat_audit,
+                root_reaped,
             )
         } else {
             Ok(None)
@@ -1900,6 +1909,8 @@ fn wait_with_timeout(
         if let Ok(Some(found)) = &process_scan {
             terminate_process_tree_tracked(
                 child.id(),
+                &mut process_system,
+                &mut monitored_process_pids,
                 &mut observed_process_groups,
                 process_monitor.tracking_token,
                 process_monitor.exempt,
@@ -1946,10 +1957,33 @@ fn wait_with_timeout(
             #[cfg(unix)]
             {
                 if process_monitor.enabled {
+                    // Refresh after reaping the root: a detached child can be spawned
+                    // after this loop's earlier scan but before the root exits.
+                    // Quét lại sau khi reap root: child tách session có thể được spawn
+                    // sau lần quét đầu của vòng lặp nhưng trước khi root thoát.
+                    let needs_exit_refresh = matches!(&process_scan, Ok(None))
+                        || matches!(&process_scan, Err(error) if error.downcast_ref::<MonitoredRootNotVisible>().is_some());
+                    let process_scan = if needs_exit_refresh {
+                        find_forbidden_descendant_tracking(
+                            child.id(),
+                            &mut process_system,
+                            &mut monitored_process_pids,
+                            process_monitor.exempt,
+                            process_monitor.shadow_dir,
+                            process_monitor.tracking_token,
+                            &mut observed_process_groups,
+                            process_monitor.compat_audit,
+                            root_reaped,
+                        )
+                    } else {
+                        process_scan
+                    };
                     match process_scan {
                         Ok(Some(found)) => {
                             terminate_process_tree_tracked(
                                 child.id(),
+                                &mut process_system,
+                                &mut monitored_process_pids,
                                 &mut observed_process_groups,
                                 process_monitor.tracking_token,
                                 process_monitor.exempt,
@@ -1972,6 +2006,8 @@ fn wait_with_timeout(
                         Err(error) => {
                             terminate_process_tree_tracked(
                                 child.id(),
+                                &mut process_system,
+                                &mut monitored_process_pids,
                                 &mut observed_process_groups,
                                 process_monitor.tracking_token,
                                 process_monitor.exempt,
@@ -1986,9 +2022,15 @@ fn wait_with_timeout(
                             ));
                         }
                     }
-                    if process_groups_have_descendants(&observed_process_groups, child.id()) {
+                    if process_groups_have_descendants(
+                        &mut process_system,
+                        &observed_process_groups,
+                        child.id(),
+                    ) {
                         terminate_process_tree_tracked(
                             child.id(),
+                            &mut process_system,
+                            &mut monitored_process_pids,
                             &mut observed_process_groups,
                             process_monitor.tracking_token,
                             process_monitor.exempt,
@@ -2011,6 +2053,8 @@ fn wait_with_timeout(
                     }
                     terminate_process_tree_tracked(
                         child.id(),
+                        &mut process_system,
+                        &mut monitored_process_pids,
                         &mut observed_process_groups,
                         process_monitor.tracking_token,
                         process_monitor.exempt,
@@ -2085,11 +2129,14 @@ fn wait_with_timeout(
                             root_reaped = true;
                             match find_forbidden_descendant_tracking(
                                 child.id(),
+                                &mut process_system,
+                                &mut monitored_process_pids,
                                 process_monitor.exempt,
                                 process_monitor.shadow_dir,
                                 process_monitor.tracking_token,
                                 &mut observed_process_groups,
                                 process_monitor.compat_audit,
+                                root_reaped,
                             ) {
                                 Ok(scan) => {
                                     process_scan = Ok(scan);
@@ -2113,11 +2160,14 @@ fn wait_with_timeout(
                             std::thread::sleep(Duration::from_millis(WAIT_POLL_INTERVAL_MS));
                             match find_forbidden_descendant_tracking(
                                 child.id(),
+                                &mut process_system,
+                                &mut monitored_process_pids,
                                 process_monitor.exempt,
                                 process_monitor.shadow_dir,
                                 process_monitor.tracking_token,
                                 &mut observed_process_groups,
                                 process_monitor.compat_audit,
+                                root_reaped,
                             ) {
                                 Ok(scan) => {
                                     process_scan = Ok(scan);
@@ -2156,11 +2206,14 @@ fn wait_with_timeout(
                 // Quét lại process group cô lập sau khi thấy child thoát để khép race status cuối.
                 process_scan = match find_forbidden_descendant_tracking(
                     child.id(),
+                    &mut process_system,
+                    &mut monitored_process_pids,
                     process_monitor.exempt,
                     process_monitor.shadow_dir,
                     process_monitor.tracking_token,
                     &mut observed_process_groups,
                     process_monitor.compat_audit,
+                    root_reaped,
                 ) {
                     Ok(scan) => Ok(scan),
                     Err(error) if error.downcast_ref::<MonitoredRootNotVisible>().is_some() => {
@@ -2175,6 +2228,8 @@ fn wait_with_timeout(
                     #[cfg(unix)]
                     terminate_process_tree_tracked(
                         child.id(),
+                        &mut process_system,
+                        &mut monitored_process_pids,
                         &mut observed_process_groups,
                         process_monitor.tracking_token,
                         process_monitor.exempt,
@@ -2202,6 +2257,8 @@ fn wait_with_timeout(
                     #[cfg(unix)]
                     terminate_process_tree_tracked(
                         child.id(),
+                        &mut process_system,
+                        &mut monitored_process_pids,
                         &mut observed_process_groups,
                         process_monitor.tracking_token,
                         process_monitor.exempt,
@@ -2227,6 +2284,8 @@ fn wait_with_timeout(
             #[cfg(unix)]
             terminate_process_tree_tracked(
                 child.id(),
+                &mut process_system,
+                &mut monitored_process_pids,
                 &mut observed_process_groups,
                 process_monitor.tracking_token,
                 process_monitor.exempt,
@@ -3151,8 +3210,13 @@ fn process_signal_plan(
 }
 
 #[cfg(unix)]
+// Keep the process cache, signal targets, and policy inputs explicit across termination.
+// Giữ cache process, nhóm tín hiệu và policy tách bạch trong nhánh dừng cây process.
+#[allow(clippy::too_many_arguments)]
 fn terminate_process_tree_tracked(
     root_pid: u32,
+    system: &mut sysinfo::System,
+    monitored_process_pids: &mut std::collections::HashSet<sysinfo::Pid>,
     observed_process_groups: &mut std::collections::HashSet<u32>,
     tracking_token: &str,
     exempt: &[&str],
@@ -3171,11 +3235,14 @@ fn terminate_process_tree_tracked(
         let previous_groups = observed_process_groups.len();
         let _ = find_forbidden_descendant_tracking(
             root_pid,
+            system,
+            monitored_process_pids,
             exempt,
             shadow_dir,
             tracking_token,
             observed_process_groups,
             None,
+            root_reaped,
         );
         let new_groups = observed_process_groups
             .difference(&term_signaled_groups)
@@ -3204,11 +3271,14 @@ fn terminate_process_tree_tracked(
     loop {
         let _ = find_forbidden_descendant_tracking(
             root_pid,
+            system,
+            monitored_process_pids,
             exempt,
             shadow_dir,
             tracking_token,
             observed_process_groups,
             None,
+            root_reaped,
         );
         signal_process_groups(
             root_pid,
@@ -3216,7 +3286,7 @@ fn terminate_process_tree_tracked(
             libc::SIGKILL,
             root_reaped,
         );
-        if !process_groups_have_descendants(observed_process_groups, root_pid)
+        if !process_groups_have_descendants(system, observed_process_groups, root_pid)
             || Instant::now() >= kill_deadline
         {
             break;
@@ -3380,6 +3450,122 @@ struct ForbiddenProcess {
 struct MonitoredRootNotVisible(u32);
 
 #[cfg(unix)]
+#[derive(Clone, Copy)]
+struct ProcessScanSnapshot {
+    parent_pid: Option<u32>,
+    process_group: Option<u32>,
+    start_time_seconds: u64,
+    start_time_subseconds: u64,
+    is_zombie: bool,
+}
+
+#[cfg(target_os = "macos")]
+const PROCESS_SNAPSHOT_CAPACITY_SLACK: usize = 256;
+#[cfg(target_os = "macos")]
+const PROCESS_SNAPSHOT_RETRIES: usize = 3;
+
+#[cfg(target_os = "macos")]
+fn macos_process_snapshot(pid: u32) -> Option<ProcessScanSnapshot> {
+    let pid = libc::pid_t::try_from(pid).ok()?;
+    let expected_size = libc::c_int::try_from(std::mem::size_of::<libc::proc_bsdinfo>()).ok()?;
+    let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::zeroed();
+    // Read only BSD process identity fields; sysinfo also queries arguments and thread state.
+    // Chỉ đọc trường định danh BSD; sysinfo còn truy vấn command line và trạng thái thread.
+    #[allow(unsafe_code)]
+    let info = unsafe {
+        let read = libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            info.as_mut_ptr().cast(),
+            expected_size,
+        );
+        if read != expected_size {
+            return None;
+        }
+        info.assume_init()
+    };
+    Some(ProcessScanSnapshot {
+        parent_pid: (info.pbi_ppid != 0).then_some(info.pbi_ppid),
+        process_group: (info.pbi_pgid != 0).then_some(info.pbi_pgid),
+        start_time_seconds: info.pbi_start_tvsec,
+        start_time_subseconds: info.pbi_start_tvusec,
+        is_zombie: info.pbi_status == libc::SZOMB,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn macos_process_snapshots() -> Result<std::collections::HashMap<u32, ProcessScanSnapshot>> {
+    let mut process_count = macos_process_count()?;
+    let pids = (0..PROCESS_SNAPSHOT_RETRIES)
+        .find_map(|_| {
+            let capacity = usize::try_from(process_count)
+                .ok()?
+                .checked_add(PROCESS_SNAPSHOT_CAPACITY_SLACK)?;
+            let capacity_bytes =
+                libc::c_int::try_from(capacity.checked_mul(std::mem::size_of::<libc::pid_t>())?)
+                    .ok()?;
+            let mut pids = vec![0 as libc::pid_t; capacity];
+            #[allow(unsafe_code)]
+            let count = unsafe { libc::proc_listallpids(pids.as_mut_ptr().cast(), capacity_bytes) };
+            if count < 0 {
+                return None;
+            }
+            if count as usize >= capacity {
+                process_count = macos_process_count().ok()?;
+                return None;
+            }
+            pids.truncate(count as usize);
+            Some(pids)
+        })
+        .context("macOS process list changed while the process guard was scanning")?;
+
+    let mut snapshots = std::collections::HashMap::with_capacity(pids.len());
+    for pid in pids {
+        let Ok(pid) = u32::try_from(pid) else {
+            continue;
+        };
+        if let Some(snapshot) = macos_process_snapshot(pid) {
+            snapshots.insert(pid, snapshot);
+        }
+    }
+    Ok(snapshots)
+}
+
+#[cfg(target_os = "macos")]
+fn macos_process_count() -> Result<libc::c_int> {
+    #[allow(unsafe_code)]
+    let count = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
+    if count < 1 {
+        anyhow::bail!("cannot enumerate macOS processes for the process guard");
+    }
+    Ok(count)
+}
+
+#[cfg(unix)]
+fn current_process_scan_snapshot(
+    pid: u32,
+    system: &sysinfo::System,
+) -> Option<ProcessScanSnapshot> {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = system;
+        macos_process_snapshot(pid)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let process = system.process(sysinfo::Pid::from_u32(pid))?;
+        Some(ProcessScanSnapshot {
+            parent_pid: process.parent().map(sysinfo::Pid::as_u32),
+            process_group: None,
+            start_time_seconds: process.start_time(),
+            start_time_subseconds: 0,
+            is_zombie: process.status() == sysinfo::ProcessStatus::Zombie,
+        })
+    }
+}
+
+#[cfg(unix)]
 impl std::fmt::Display for MonitoredRootNotVisible {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -3400,62 +3586,77 @@ fn find_forbidden_descendant(
     shadow_dir: &Path,
 ) -> Result<Option<ForbiddenProcess>> {
     let mut observed_process_groups = std::collections::HashSet::from([root_pid]);
+    let mut monitored_process_pids = std::collections::HashSet::new();
     find_forbidden_descendant_tracking(
         root_pid,
+        &mut sysinfo::System::new(),
+        &mut monitored_process_pids,
         exempt,
         shadow_dir,
         "",
         &mut observed_process_groups,
         None,
+        false,
     )
 }
 
 #[cfg(unix)]
+// Keep scan policy separate from mutable OS state so each call site shows its security inputs.
+// Tách policy khỏi trạng thái OS mutable để mỗi caller thể hiện rõ đầu vào bảo mật.
+#[allow(clippy::too_many_arguments)]
 fn find_forbidden_descendant_tracking(
     root_pid: u32,
+    system: &mut sysinfo::System,
+    monitored_process_pids: &mut std::collections::HashSet<sysinfo::Pid>,
     exempt: &[&str],
     shadow_dir: &Path,
     tracking_token: &str,
     observed_process_groups: &mut std::collections::HashSet<u32>,
     compat_audit: Option<&CompatAuditContext<'_>>,
+    root_reaped: bool,
 ) -> Result<Option<ForbiddenProcess>> {
-    use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System, UpdateKind};
+    #[cfg(not(target_os = "macos"))]
+    use sysinfo::ProcessStatus;
+    use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, UpdateKind};
 
-    let mut system = System::new();
-    system.refresh_processes_specifics(
-        ProcessesToUpdate::All,
-        true,
-        ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always),
-    );
-    // Read the policy environment from the actual Go process, never from its parent.
-    // Chỉ đọc env của process Go thực tế; env không đọc được vẫn bị từ chối.
-    let go_pids = system
-        .processes()
-        .iter()
-        .filter(|(_, process)| process_basename(&process.name().to_string_lossy()) == "go")
-        .map(|(pid, _)| *pid)
-        .collect::<Vec<_>>();
-    if !go_pids.is_empty() {
-        system.refresh_processes_specifics(
-            ProcessesToUpdate::Some(&go_pids),
-            true,
-            ProcessRefreshKind::nothing()
-                .with_cmd(UpdateKind::Always)
-                .with_environ(UpdateKind::Always),
-        );
-    }
-    let root = Pid::from_u32(root_pid);
-    let live_process_groups = system
-        .processes()
-        .keys()
-        .filter_map(|pid| process_group_id(pid.as_u32()))
-        .collect::<std::collections::HashSet<_>>();
-    observed_process_groups.retain(|process_group| live_process_groups.contains(process_group));
-    let root_is_visible = system
-        .process(root)
-        .is_some_and(|process| process.status() != ProcessStatus::Zombie);
+    let process_snapshots = {
+        #[cfg(target_os = "macos")]
+        {
+            macos_process_snapshots()?
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            system.refresh_processes_specifics(
+                ProcessesToUpdate::All,
+                true,
+                ProcessRefreshKind::nothing(),
+            );
+            system
+                .processes()
+                .iter()
+                .map(|(pid, process)| {
+                    (
+                        pid.as_u32(),
+                        ProcessScanSnapshot {
+                            parent_pid: process.parent().map(Pid::as_u32),
+                            process_group: None,
+                            start_time_seconds: process.start_time(),
+                            start_time_subseconds: 0,
+                            is_zombie: process.status() == ProcessStatus::Zombie,
+                        },
+                    )
+                })
+                .collect::<std::collections::HashMap<_, _>>()
+        }
+    };
+    // Probe only runner-owned groups instead of calling getpgid for every host PID.
+    // Chỉ dò các process group của lệnh đang chạy, không gọi getpgid cho mọi PID máy.
+    observed_process_groups.retain(|process_group| process_group_is_live(*process_group));
+    let root_snapshot = process_snapshots.get(&root_pid).copied();
+    let root_is_visible = !root_reaped && root_snapshot.is_some_and(|snapshot| !snapshot.is_zombie);
     if !root_is_visible {
-        system.refresh_processes_specifics(
+        let mut exit_system = sysinfo::System::new();
+        exit_system.refresh_processes_specifics(
             ProcessesToUpdate::All,
             true,
             ProcessRefreshKind::nothing()
@@ -3468,7 +3669,7 @@ fn find_forbidden_descendant_tracking(
         let mut first_forbidden = None;
         let mut live_descendant_found = false;
         let known_groups = observed_process_groups.clone();
-        for (pid, process) in system.processes() {
+        for (pid, process) in exit_system.processes() {
             if pid.as_u32() == root_pid {
                 continue;
             }
@@ -3517,47 +3718,134 @@ fn find_forbidden_descendant_tracking(
     }
 
     observed_process_groups.insert(root_pid);
-    // Traverse native process metadata in-process so inspection cannot spawn a shell or ps.
-    // Duyệt metadata process native ngay trong process để không cần spawn shell hay ps.
-    let mut frontier = vec![root];
-    let mut seen = std::collections::HashSet::new();
-    let mut first_forbidden = None;
-    while let Some(parent_pid) = frontier.pop() {
-        if !seen.insert(parent_pid) {
-            continue;
+    if let Some(root_group) = root_snapshot.and_then(|snapshot| snapshot.process_group) {
+        observed_process_groups.insert(root_group);
+    }
+    // Build descendants from lightweight process metadata, then read command lines only there.
+    // Dựng cây con từ metadata nhẹ, rồi chỉ đọc command line của các hậu duệ này.
+    let mut children_by_parent = std::collections::HashMap::<u32, Vec<u32>>::new();
+    for (pid, snapshot) in &process_snapshots {
+        if let Some(parent) = snapshot.parent_pid {
+            children_by_parent.entry(parent).or_default().push(*pid);
         }
-        for (pid, process) in system
-            .processes()
-            .iter()
-            .filter(|(_, process)| process.parent() == Some(parent_pid))
-        {
-            if let Some(process_group) = process_group_id(pid.as_u32()) {
+    }
+    let mut frontier = vec![root_pid];
+    let mut seen = std::collections::HashSet::from([root_pid]);
+    let mut descendant_identities = Vec::<(Pid, ProcessScanSnapshot)>::new();
+    while let Some(parent_pid) = frontier.pop() {
+        if let Some(children) = children_by_parent.get(&parent_pid) {
+            for child_pid in children {
+                if !seen.insert(*child_pid) {
+                    continue;
+                }
+                let Some(snapshot) = process_snapshots.get(child_pid).copied() else {
+                    continue;
+                };
+                descendant_identities.push((Pid::from_u32(*child_pid), snapshot));
+                frontier.push(*child_pid);
+            }
+        }
+    }
+    if descendant_identities.is_empty() {
+        let stale_process_pids = monitored_process_pids.drain().collect::<Vec<_>>();
+        if !stale_process_pids.is_empty() {
+            system.refresh_processes_specifics(
+                ProcessesToUpdate::Some(&stale_process_pids),
+                true,
+                ProcessRefreshKind::nothing(),
+            );
+        }
+        return Ok(None);
+    }
+    let descendant_pids = descendant_identities
+        .iter()
+        .map(|(pid, _)| *pid)
+        .collect::<Vec<_>>();
+    let current_process_pids = descendant_pids
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    let stale_process_pids = monitored_process_pids
+        .difference(&current_process_pids)
+        .copied()
+        .collect::<Vec<_>>();
+    if !stale_process_pids.is_empty() {
+        system.refresh_processes_specifics(
+            ProcessesToUpdate::Some(&stale_process_pids),
+            true,
+            ProcessRefreshKind::nothing(),
+        );
+    }
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&descendant_pids),
+        false,
+        ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always),
+    );
+    monitored_process_pids.clone_from(&current_process_pids);
+    let live_descendant_pids = descendant_identities
+        .iter()
+        .filter_map(|(pid, snapshot)| {
+            let current = current_process_scan_snapshot(pid.as_u32(), system)?;
+            if current.start_time_seconds != snapshot.start_time_seconds
+                || current.start_time_subseconds != snapshot.start_time_subseconds
+            {
+                return None;
+            }
+            let process_group = current
+                .process_group
+                .or_else(|| process_group_id(pid.as_u32()));
+            if let Some(process_group) = process_group {
                 observed_process_groups.insert(process_group);
             }
-            if first_forbidden.is_none() {
-                audit_compat_process(
-                    compat_audit,
-                    pid.as_u32(),
-                    &process.name().to_string_lossy(),
-                    process.cmd(),
-                )?;
-                first_forbidden = forbidden_process_entry(pid, process, exempt).filter(|found| {
-                    let command_line = process
-                        .cmd()
-                        .iter()
-                        .map(|arg| arg.to_string_lossy())
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    let allowed = is_allowed_shadow_npm_version_probe(
-                        process.name().to_string_lossy().as_bytes(),
-                        command_line.as_bytes(),
-                        shadow_dir,
-                        &found.name,
-                    );
-                    !allowed
-                });
-            }
-            frontier.push(*pid);
+            Some(*pid)
+        })
+        .collect::<Vec<_>>();
+    // Read policy variables only from Go processes inside the monitored tree.
+    // Chỉ đọc biến policy từ process Go nằm trong cây đang giám sát.
+    let go_pids = live_descendant_pids
+        .iter()
+        .filter_map(|pid| {
+            system
+                .process(*pid)
+                .filter(|process| process_basename(&process.name().to_string_lossy()) == "go")
+                .map(|_| *pid)
+        })
+        .collect::<Vec<_>>();
+    if !go_pids.is_empty() {
+        system.refresh_processes_specifics(
+            ProcessesToUpdate::Some(&go_pids),
+            false,
+            ProcessRefreshKind::nothing().with_environ(UpdateKind::Always),
+        );
+    }
+
+    let mut first_forbidden = None;
+    for pid in &live_descendant_pids {
+        let Some(process) = system.process(*pid) else {
+            continue;
+        };
+        if first_forbidden.is_none() {
+            audit_compat_process(
+                compat_audit,
+                pid.as_u32(),
+                &process.name().to_string_lossy(),
+                process.cmd(),
+            )?;
+            first_forbidden = forbidden_process_entry(pid, process, exempt).filter(|found| {
+                let command_line = process
+                    .cmd()
+                    .iter()
+                    .map(|arg| arg.to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let allowed = is_allowed_shadow_npm_version_probe(
+                    process.name().to_string_lossy().as_bytes(),
+                    command_line.as_bytes(),
+                    shadow_dir,
+                    &found.name,
+                );
+                !allowed
+            });
         }
     }
     Ok(first_forbidden)
@@ -3582,12 +3870,12 @@ fn process_group_matches(pid: &sysinfo::Pid, group_leader_pid: u32) -> bool {
 
 #[cfg(unix)]
 fn process_groups_have_descendants(
+    system: &mut sysinfo::System,
     observed_process_groups: &std::collections::HashSet<u32>,
     root_pid: u32,
 ) -> bool {
-    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate};
 
-    let mut system = System::new();
     system.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
     system.processes().iter().any(|(pid, _)| {
         pid.as_u32() != root_pid
@@ -4730,6 +5018,17 @@ fn forbidden_process_match_argv_with_env(
         return Some((image_name, "executable image", None, None));
     }
 
+    // macOS may report a Cargo-spawned compiler with image `cargo` while its
+    // argv identifies the actual Rust compiler command. Permit only that
+    // compiler-shaped child; package-mutating Cargo invocations remain under
+    // dependency-resolution policy.
+    // (macOS đôi khi báo image `cargo` cho compiler do Cargo tạo, dù argv là
+    // lệnh Rust compiler. Chỉ cho qua đúng mẫu compiler; lệnh Cargo sửa gói
+    // vẫn chịu policy dependency-resolution.)
+    if image_name == "cargo" && is_rustc_compilation_argv(argv) {
+        return None;
+    }
+
     if let Some(program) = argv
         .first()
         .and_then(|arg| forbidden_entry_name(&arg.to_string_lossy(), false))
@@ -4800,6 +5099,13 @@ fn forbidden_process_match_argv_with_env(
         ));
     }
     None
+}
+
+fn is_rustc_compilation_argv(argv: &[OsString]) -> bool {
+    argv.first()
+        .is_some_and(|program| process_basename(&program.to_string_lossy()) == "rustc")
+        && argv.iter().any(|arg| arg == "--crate-name")
+        && argv.iter().any(|arg| arg == "--crate-type")
 }
 
 fn process_invocation_program(candidate: &str) -> String {

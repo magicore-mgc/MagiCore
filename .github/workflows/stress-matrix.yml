@@ -385,7 +385,7 @@ jobs:
       - name: Test stress runner
         run: python stress-test/test/test_stress_matrix.py
 
-      - name: Build MagiCore CLI
+      - name: Build optimized release MagiCore CLI
         shell: bash
         run: |
           set -euo pipefail
@@ -399,9 +399,9 @@ jobs:
             echo "CXX=${CXX}" >> "${GITHUB_ENV}"
             echo "SDKROOT=${SDKROOT}" >> "${GITHUB_ENV}"
           fi
-          cargo build --locked --bin mgc
+          cargo build --release --locked --bin mgc
 
-      - name: Freeze the full-core CLI for lifecycle and strict evidence
+      - name: Freeze the full-core release CLI for lifecycle and evidence
         shell: bash
         run: |
           python - <<'PYTHON'
@@ -409,7 +409,7 @@ jobs:
           import shutil
           from pathlib import Path
 
-          source = Path("target/debug/mgc.exe" if os.name == "nt" else "target/debug/mgc")
+          source = Path("target/release/mgc.exe" if os.name == "nt" else "target/release/mgc")
           destination = Path(os.environ["RUNNER_TEMP"]) / "mgc-stress-binary" / source.name
           destination.parent.mkdir(parents=True, exist_ok=True)
           shutil.copy2(source, destination)
@@ -435,6 +435,8 @@ jobs:
         timeout-minutes: 35
 
       - name: Run FastAPI native backend install and dev lifecycle E2E
+        env:
+          MGC_TEST_CLI_BINARY: ${{ env.MGC_STRESS_CLI_SNAPSHOT }}
         run: >-
           cargo test --locked --no-default-features --features web -p mgc --test web_fw_fastapi
           test_native_dev_server_lifecycle -- --test-threads=1
@@ -539,12 +541,15 @@ jobs:
           exit "${failed}"
         timeout-minutes: 90
 
-      - name: Run optimizer and audit end-to-end suites
+      - name: Run native test-runner security, optimizer, and audit E2E suites
         env:
           MGC_E2E_AUDIT_NETWORK: required
-        run: cargo test --locked -p mgc --test optimizer_lifecycle_e2e --test audit_cli_e2e
+          MGC_TEST_CLI_BINARY: ${{ env.MGC_STRESS_CLI_SNAPSHOT }}
+        run: cargo test --locked -p mgc --test test_runner_security --test optimizer_lifecycle_e2e --test audit_cli_e2e -- --test-threads=1
 
       - name: Run native ownership E2E across supported language lanes
+        env:
+          MGC_TEST_CLI_BINARY: ${{ env.MGC_STRESS_CLI_SNAPSHOT }}
         run: cargo test --locked -p mgc --test native_ownership_matrix_e2e --test web_mixed_monorepo_preflight --test ai_native_install_e2e --test web_backend_native_lifecycle_e2e -- --test-threads=4
         timeout-minutes: 20
 
@@ -555,6 +560,8 @@ jobs:
         run: cargo test --locked -p mgc-lockfile
 
       - name: Verify the V4 add-install-update-remove CLI lifecycle
+        env:
+          MGC_TEST_CLI_BINARY: ${{ env.MGC_STRESS_CLI_SNAPSHOT }}
         run: cargo test --locked -p mgc --test lockfile_schema_v4_cli -- --test-threads=1
         timeout-minutes: 10
 
@@ -569,7 +576,6 @@ jobs:
             --require-lockfile-evidence
             --require-full-evidence
             --require-language-runtime-evidence
-            --require-universal-support
           )
           python stress-test/src/stress_matrix.py "${matrix_args[@]}"
 

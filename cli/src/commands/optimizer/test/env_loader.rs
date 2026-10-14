@@ -151,7 +151,18 @@ fn test_load_optimizer_env_lib_runtime() {
         optimizer_dir.join("rust_cargo_profile.toml"),
         r#"
 [build]
+jobs = 6
 rustflags = ["-C", "target-cpu=native", "-C", "opt-level=3"]
+
+[profile.dev]
+opt-level = 2
+codegen-units = 8
+debug = 1
+
+[profile.release]
+opt-level = 3
+lto = false
+codegen-units = 1
 
 [env]
 RUST_BACKTRACE = "1"
@@ -168,6 +179,85 @@ RUST_BACKTRACE = "1"
         Some(&"-C target-cpu=native -C opt-level=3".to_string())
     );
 
+    assert_eq!(vars.get("CARGO_BUILD_JOBS"), Some(&"6".to_string()));
+    assert_eq!(
+        vars.get("CARGO_PROFILE_DEV_OPT_LEVEL"),
+        Some(&"2".to_string())
+    );
+    assert_eq!(
+        vars.get("CARGO_PROFILE_DEV_CODEGEN_UNITS"),
+        Some(&"8".to_string())
+    );
+    assert_eq!(
+        vars.get("CARGO_PROFILE_RELEASE_LTO"),
+        Some(&"false".to_string())
+    );
+
     // Verify [env] section parsed
     assert_eq!(vars.get("RUST_BACKTRACE"), Some(&"1".to_string()));
+}
+
+#[test]
+fn candle_runtime_loads_both_runtime_and_cargo_optimizer_settings() {
+    let temp = TempDir::new().unwrap();
+    let optimizer_dir = temp.path().join(".mgc-optimizer");
+    fs::create_dir(&optimizer_dir).unwrap();
+    fs::write(
+        optimizer_dir.join("candle_runtime.env"),
+        "RAYON_NUM_THREADS=4\nRUST_BACKTRACE=1\n",
+    )
+    .unwrap();
+    fs::write(
+        optimizer_dir.join("candle_cargo.toml"),
+        "[build]\njobs = 3\n[profile.dev]\nopt-level = 1\n[profile.release]\nopt-level = 3\nlto = \"thin\"\n",
+    )
+    .unwrap();
+
+    let vars = load_optimizer_env(temp.path(), &DetectedRuntime::RustCandle).unwrap();
+    assert_eq!(vars.get("RAYON_NUM_THREADS"), Some(&"4".to_string()));
+    assert_eq!(vars.get("CARGO_BUILD_JOBS"), Some(&"3".to_string()));
+    assert_eq!(
+        vars.get("CARGO_PROFILE_DEV_OPT_LEVEL"),
+        Some(&"1".to_string())
+    );
+    assert_eq!(
+        vars.get("CARGO_PROFILE_RELEASE_LTO"),
+        Some(&"\"thin\"".to_string())
+    );
+}
+
+#[test]
+fn invalid_or_process_control_optimizer_settings_fail_closed() {
+    let temp = TempDir::new().unwrap();
+    let optimizer_dir = temp.path().join(".mgc-optimizer");
+    fs::create_dir(&optimizer_dir).unwrap();
+    let path = optimizer_dir.join("rust_cargo_profile.toml");
+
+    fs::write(&path, "[profile.release]\nlto = \"false\"\n").unwrap();
+    assert!(load_optimizer_env(temp.path(), &DetectedRuntime::RustLib).is_err());
+
+    fs::write(&path, "[build]\njobs = 0\n").unwrap();
+    assert!(load_optimizer_env(temp.path(), &DetectedRuntime::RustLib).is_err());
+
+    fs::write(&path, "[env]\nPATH = \"/tmp/injected\"\n").unwrap();
+    assert!(load_optimizer_env(temp.path(), &DetectedRuntime::RustLib).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn optimizer_config_symlink_is_rejected() {
+    use std::os::unix::fs::symlink;
+
+    let temp = TempDir::new().unwrap();
+    let outside = temp.path().join("outside");
+    let optimizer_dir = temp.path().join(".mgc-optimizer");
+    fs::create_dir(&outside).unwrap();
+    fs::write(
+        outside.join("rust_cargo_profile.toml"),
+        "[build]\njobs = 2\n",
+    )
+    .unwrap();
+    symlink(&outside, &optimizer_dir).unwrap();
+
+    assert!(load_optimizer_env(temp.path(), &DetectedRuntime::RustLib).is_err());
 }

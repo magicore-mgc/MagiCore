@@ -17,6 +17,16 @@ use tempfile::TempDir;
 const SIX_WHEEL_NAME: &str = "six-1.17.0-py3-none-any.whl";
 
 fn mgc_binary() -> String {
+    if let Some(value) = std::env::var_os("MGC_TEST_CLI_BINARY") {
+        let binary = std::path::PathBuf::from(value);
+        assert!(
+            binary.is_file(),
+            "MGC_TEST_CLI_BINARY does not identify an executable: {}",
+            binary.display()
+        );
+        eprintln!("MagiCore AI install product binary: {}", binary.display());
+        return binary.to_string_lossy().into_owned();
+    }
     std::env::var_os("CARGO_BIN_EXE_mgc")
         .map(std::path::PathBuf::from)
         .map(|p| p.to_string_lossy().to_string())

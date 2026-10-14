@@ -77,7 +77,7 @@ mod platform {
         serde_json::json!({
             "name": package,
             "version": version,
-            "bin": { binary: "bin/cli" },
+            "bin": { binary: "./bin/cli" },
             "dependencies": {},
             "dist": {
                 "tarball": format!("{registry}/{package}/-/{package}-{version}.tgz")
@@ -89,7 +89,7 @@ mod platform {
         let manifest = serde_json::json!({
             "name": package,
             "version": version,
-            "bin": { binary: "bin/cli" }
+            "bin": { binary: "./bin/cli" }
         })
         .to_string();
         let executable = format!(
@@ -135,10 +135,31 @@ mod platform {
         registry: Option<&str>,
         success: bool,
     ) -> String {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_mgc"));
+        let mgc = std::env::var_os("MGC_TEST_CLI_BINARY")
+            .map(std::path::PathBuf::from)
+            .map(|path| {
+                if path.is_file() {
+                    return path;
+                }
+                #[cfg(windows)]
+                {
+                    let executable = path.with_extension("exe");
+                    if executable.is_file() {
+                        return executable;
+                    }
+                }
+                panic!(
+                    "MGC_TEST_CLI_BINARY does not identify an executable: {}",
+                    path.display()
+                );
+            })
+            .unwrap_or_else(|| std::path::PathBuf::from(env!("CARGO_BIN_EXE_mgc")));
+        eprintln!("MagiCore product binary: {}", mgc.display());
+        let mut command = Command::new(&mgc);
         command
             .args(args)
             .current_dir(cwd)
+            .env_remove("MGC_TEST_CLI_BINARY")
             .env("HOME", home)
             .env("USERPROFILE", home)
             .env("SHELL", "/bin/zsh")
@@ -309,7 +330,12 @@ mod platform {
 
         let bin = global_bin_path(&data, "mgc-probe");
         let first = run_tool(&bin, "before");
-        assert!(first.status.success());
+        assert!(
+            first.status.success(),
+            "global CLI shim failed:\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&first.stdout),
+            String::from_utf8_lossy(&first.stderr)
+        );
         assert_eq!(
             String::from_utf8_lossy(&first.stdout).trim(),
             "1.0.0|before"
@@ -332,6 +358,8 @@ mod platform {
             .path();
         let record_path = tool_project.join(".mgc-tool.json");
         let original_record = std::fs::read_to_string(&record_path).unwrap();
+        let parsed_record: serde_json::Value = serde_json::from_str(&original_record).unwrap();
+        assert_eq!(parsed_record["target"], "bin/cli");
         let mut invalid_record: serde_json::Value = serde_json::from_str(&original_record).unwrap();
         invalid_record["target"] = serde_json::Value::String(String::new());
         std::fs::write(&record_path, invalid_record.to_string()).unwrap();
@@ -344,6 +372,17 @@ mod platform {
             false,
         );
         assert!(invalid_list.contains("unsupported schema or identity"));
+        invalid_record["target"] = serde_json::Value::String("../escape".to_string());
+        std::fs::write(&record_path, invalid_record.to_string()).unwrap();
+        let traversal_list = run_mgc(
+            &["tool", "list"],
+            cwd.path(),
+            home.path(),
+            &data,
+            None,
+            false,
+        );
+        assert!(traversal_list.contains("unsupported schema or identity"));
         std::fs::write(&record_path, &original_record).unwrap();
 
         let pending_record: serde_json::Value = serde_json::from_str(&original_record).unwrap();
@@ -427,6 +466,19 @@ mod platform {
             String::from_utf8_lossy(&updated.stdout).trim(),
             "1.1.0|after"
         );
+        let mut legacy_record: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&record_path).unwrap()).unwrap();
+        legacy_record["target"] = serde_json::Value::String("./bin/cli".to_string());
+        std::fs::write(&record_path, legacy_record.to_string()).unwrap();
+        let legacy_list = run_mgc(
+            &["tool", "list"],
+            cwd.path(),
+            home.path(),
+            &data,
+            None,
+            true,
+        );
+        assert!(legacy_list.contains("mgc-probe\tnpm:mgc-cli-probe@1.1.0"));
 
         #[cfg(unix)]
         {
@@ -578,7 +630,13 @@ mod platform {
         let second = global_bin_path(&data, "mgc-second");
         for (path, expected) in [(&first, "1.0.0|shared"), (&second, "2.0.0|shared")] {
             let output = run_tool(path, "shared");
-            assert!(output.status.success());
+            assert!(
+                output.status.success(),
+                "global CLI shim '{}' failed:\nstdout:\n{}\nstderr:\n{}",
+                path.display(),
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
             assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), expected);
         }
         let listed = run_mgc(

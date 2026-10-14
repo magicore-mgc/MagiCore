@@ -188,6 +188,14 @@ pub struct DependencySpec {
     pub dev: bool,
     pub optional: bool,
     pub peer: bool,
+    /// Registry features selected for this dependency (Cargo only today).
+    /// Feature registry được chọn cho dependency (hiện chỉ Cargo dùng).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub features: Vec<String>,
+    /// Whether registry default features are enabled (Cargo only today).
+    /// Có bật feature mặc định của registry hay không (hiện chỉ Cargo dùng).
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub default_features: bool,
 }
 
 impl DependencySpec {
@@ -198,6 +206,8 @@ impl DependencySpec {
             dev: false,
             optional: false,
             peer: false,
+            features: Vec::new(),
+            default_features: true,
         }
     }
 
@@ -214,6 +224,14 @@ impl DependencySpec {
     }
 }
 
+fn default_true() -> bool {
+    true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
+}
+
 fn match_single_range(range: &str, version: &Version) -> bool {
     if range == "*" {
         return true;
@@ -224,7 +242,7 @@ fn match_single_range(range: &str, version: &Version) -> bool {
         .next()
         .and_then(|s| Version::parse(s).ok())
     {
-        return version == &target;
+        return version.precedence_cmp(&target) == std::cmp::Ordering::Equal;
     }
     if let Some(target) = range.strip_prefix('^').and_then(|s| Version::parse(s).ok()) {
         // Caret follows semver 0.x rules: ^1.2.3 := >=1.2.3 <2.0.0,
@@ -232,20 +250,23 @@ fn match_single_range(range: &str, version: &Version) -> bool {
         // major-only check accepted e.g. 0.28.2 for ^0.25.0.
         // (Caret đúng semver 0.x.)
         if target.major > 0 {
-            return version.major == target.major && version >= &target;
+            return version.major == target.major
+                && version.precedence_cmp(&target) != std::cmp::Ordering::Less;
         }
         if target.minor > 0 {
-            return version.major == 0 && version.minor == target.minor && version >= &target;
+            return version.major == 0
+                && version.minor == target.minor
+                && version.precedence_cmp(&target) != std::cmp::Ordering::Less;
         }
         return version.major == 0
             && version.minor == 0
             && version.patch == target.patch
-            && version >= &target;
+            && version.precedence_cmp(&target) != std::cmp::Ordering::Less;
     }
     if let Some(target) = range.strip_prefix('~').and_then(|s| Version::parse(s).ok()) {
         return version.major == target.major
             && version.minor == target.minor
-            && version >= &target;
+            && version.precedence_cmp(&target) != std::cmp::Ordering::Less;
     }
     // Enhanced: Handle wildcard ranges with comparison operators (>=22.x, <=24.x)
     // let-chain edition 2024 — gộp điều kiện theo clippy 1.98.
@@ -257,39 +278,40 @@ fn match_single_range(range: &str, version: &Version) -> bool {
     {
         // For >= and >, check lower bound; for <= and <, check upper bound
         if range.starts_with(">=") {
-            return version >= &low;
+            return version.precedence_cmp(&low) != std::cmp::Ordering::Less;
         } else if range.starts_with(">") {
-            return version > &low;
+            return version.precedence_cmp(&low) == std::cmp::Ordering::Greater;
         } else if range.starts_with("<=") {
-            return version < &high;
+            return version.precedence_cmp(&high) == std::cmp::Ordering::Less;
         } else if range.starts_with("<") {
-            return version < &low;
+            return version.precedence_cmp(&low) == std::cmp::Ordering::Less;
         }
     }
     if let Some(target) = range
         .strip_prefix(">=")
         .and_then(|s| Version::parse(s).ok())
     {
-        return version >= &target;
+        return version.precedence_cmp(&target) != std::cmp::Ordering::Less;
     }
     if let Some(target) = range
         .strip_prefix("<=")
         .and_then(|s| Version::parse(s).ok())
     {
-        return version <= &target;
+        return version.precedence_cmp(&target) != std::cmp::Ordering::Greater;
     }
     if let Some(target) = range.strip_prefix('>').and_then(|s| Version::parse(s).ok()) {
-        return version > &target;
+        return version.precedence_cmp(&target) == std::cmp::Ordering::Greater;
     }
     if let Some(target) = range.strip_prefix('<').and_then(|s| Version::parse(s).ok()) {
-        return version < &target;
+        return version.precedence_cmp(&target) == std::cmp::Ordering::Less;
     }
     // x-range wildcard: 12.x, 12.3.x, x
     if let Some((low, high)) = parse_wildcard_bounds(range) {
-        return version >= &low && version < &high;
+        return version.precedence_cmp(&low) != std::cmp::Ordering::Less
+            && version.precedence_cmp(&high) == std::cmp::Ordering::Less;
     }
     Version::parse(range)
-        .map(|target| version == &target)
+        .map(|target| version.precedence_cmp(&target) == std::cmp::Ordering::Equal)
         .unwrap_or(false)
 }
 
@@ -396,7 +418,8 @@ fn match_compound_range(range: &str, version: &Version) -> bool {
 
     // Hyphen range: "1 - 2" → >=1.0.0 <=2.0.0, "1.2.3 - 2.3.4" → >=1.2.3 <=2.3.4
     if let Some((low, high)) = parse_hyphen_range(trimmed) {
-        return version >= &low && version <= &high;
+        return version.precedence_cmp(&low) != std::cmp::Ordering::Less
+            && version.precedence_cmp(&high) != std::cmp::Ordering::Greater;
     }
 
     let mut parts = Vec::new();

@@ -1,8 +1,10 @@
 //! Security tests for ExecutionScope enforcement in test runners.
 //!
 //! Verifies that:
-//! - Package managers (npm/pnpm/yarn/bun) are allowed in TestRunner scope
-//! - Package managers are forbidden in Install scope
+//! - Project test scripts execute through the native task runner
+//!   (Script test của project chạy qua task runner native.)
+//! - Package managers remain forbidden in native test and install scopes
+//!   (Package manager tiếp tục bị chặn trong các scope test và install native.)
 //! - cwd lock prevents directory traversal
 //! - Shell injection is prevented
 //! - Audit log records all tool executions
@@ -14,19 +16,21 @@ use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
-/// Helper: Create a minimal Node.js project with package.json
-fn create_node_project(dir: &TempDir) -> PathBuf {
+/// Helper: Create a package.json project with a portable Python test script.
+/// Tạo project package.json với test script Python chạy trên nhiều OS.
+fn create_package_json_project(dir: &TempDir) -> PathBuf {
     let project_root = dir.path().to_path_buf();
     let package_json = project_root.join("package.json");
+    let python = if cfg!(windows) { "python" } else { "python3" };
+    let script = format!("{python} -c \"print('Test passed')\"");
+    let manifest = serde_json::json!({
+        "name": "test-project",
+        "version": "1.0.0",
+        "scripts": { "test": script }
+    });
     fs::write(
         &package_json,
-        r#"{
-  "name": "test-project",
-  "version": "1.0.0",
-  "scripts": {
-    "test": "echo \"Test passed\""
-  }
-}"#,
+        serde_json::to_vec_pretty(&manifest).expect("serialize package.json"),
     )
     .expect("Failed to write package.json");
     project_root
@@ -39,8 +43,21 @@ fn run_mgc(args: &[&str], cwd: Option<&PathBuf>) -> std::process::Output {
     // from the artifact under test, not the source tree).
     // (Binary vừa build đang test — không bao giờ target/debug cũ hay
     // `cargo run`.)
-    let mgc_bin = env::var("CARGO_BIN_EXE_mgc")
-        .expect("CARGO_BIN_EXE_mgc not set — run via `cargo test -p mgc`");
+    let mgc_bin = if let Some(value) = env::var_os("MGC_TEST_CLI_BINARY") {
+        let path = PathBuf::from(value);
+        assert!(
+            path.is_file(),
+            "MGC_TEST_CLI_BINARY does not exist: {}",
+            path.display()
+        );
+        eprintln!("MagiCore test-runner product binary: {}", path.display());
+        path
+    } else {
+        PathBuf::from(
+            env::var("CARGO_BIN_EXE_mgc")
+                .expect("CARGO_BIN_EXE_mgc not set — run via `cargo test -p mgc`"),
+        )
+    };
 
     let mut cmd = std::process::Command::new(&mgc_bin);
     cmd.args(args);
@@ -51,46 +68,59 @@ fn run_mgc(args: &[&str], cwd: Option<&PathBuf>) -> std::process::Output {
 }
 
 #[test]
-fn test_npm_allowed_in_test_runner_scope() {
-    // TEST: Package manager (npm) should be allowed in TestRunner scope
+fn test_package_json_script_executes_through_native_runner() {
+    // TEST: mgc test executes the project's script through the native runner.
+    // TEST: mgc test chạy script của project qua runner native.
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let project_root = create_node_project(&temp_dir);
+    let project_root = create_package_json_project(&temp_dir);
 
-    // npm is REQUIRED for this lane: a missing tool in a required lane is
-    // a FAIL, never a skip (skip must never read as pass).
-    // (npm BẮT BUỘC cho lane này: thiếu tool ở lane bắt buộc là FAIL,
-    // không bao giờ skip.)
-    if std::process::Command::new("npm")
-        .arg("--version")
-        .output()
-        .is_err()
-    {
-        panic!("FAIL: npm is required for the TestRunner-scope lane — refusing a silent skip");
-    }
-
-    // Run: mgc test (should auto-detect npm test and succeed)
+    // Run the actual product command; npm is neither required nor invoked.
+    // Chạy lệnh sản phẩm; npm không phải điều kiện và không được gọi.
     let output = run_mgc(&["test"], Some(&project_root));
 
-    // ASSERT: Should NOT be rejected by allowlist
+    assert!(
+        output.status.success(),
+        "mgc test must succeed for the declared native script: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        !stderr.contains("permanently forbidden"),
-        "npm should be allowed in TestRunner scope, got: {}",
+        !stderr.contains("forbidden package manager"),
+        "native project script must not route through a package manager, got: {}",
         stderr
     );
 
-    // ASSERT: Should detect the project test script and run it natively.
-    // Native-engine contract (2026-09-10): package.json "test" routes
-    // through the native task runner (echo is allowlisted) — the legacy
-    // npm-forwarding lane is gone, so assert the native echo output.
-    // ASSERT: nhận diện script test của project và chạy native. Hợp đồng
-    // engine native: "test" package.json đi qua task runner native (echo
-    // nằm trong allowlist) — lane forward npm cũ đã chết.
+    // ASSERT: the project-owned script's output came from the native runner.
+    // Xác nhận output của script project do runner native tạo ra.
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("Test passed"),
         "Should run the project test script natively, got: {}",
         stdout
+    );
+    let audit_log = project_root.join(".magicore").join("exec.log");
+    let programs = fs::read_to_string(&audit_log)
+        .expect("native project script should create an execution audit log")
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("valid audit JSON"))
+        .filter_map(|entry| {
+            entry
+                .get("cmd")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        programs
+            .iter()
+            .any(|program| program == "python" || program == "python3"),
+        "audit log must show the native Python runner: {programs:?}"
+    );
+    assert!(
+        programs
+            .iter()
+            .all(|program| !matches!(program.as_str(), "npm" | "pnpm" | "yarn" | "bun")),
+        "native test script must not spawn a package manager: {programs:?}"
     );
 }
 
@@ -115,29 +145,32 @@ fn test_npm_forbidden_in_install_scope() {
 }
 
 #[test]
-fn test_pnpm_allowed_in_test_runner_scope() {
-    // TEST: Package manager (pnpm) should be allowed in TestRunner scope
+fn test_package_manager_script_fails_closed_in_native_test_runner() {
+    // TEST: a package.json script cannot delegate native testing to pnpm.
+    // TEST: script package.json không được chuyển test native sang pnpm.
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let project_root = create_node_project(&temp_dir);
+    let project_root = create_package_json_project(&temp_dir);
+    let manifest_path = project_root.join("package.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(&manifest_path).expect("read package.json"))
+            .expect("parse package.json");
+    manifest["scripts"]["test"] = serde_json::Value::String("pnpm --version".into());
+    fs::write(
+        &manifest_path,
+        serde_json::to_vec_pretty(&manifest).unwrap(),
+    )
+    .expect("write package manager script fixture");
 
-    // Manually set pnpm as runner (if available)
-    if std::process::Command::new("pnpm")
-        .arg("--version")
-        .output()
-        .is_err()
-    {
-        eprintln!("SKIP: pnpm not available");
-        return;
-    }
-
-    // Run: mgc test --runner pnpm (explicit runner)
-    let output = run_mgc(&["test", "--runner", "pnpm"], Some(&project_root));
-
-    // ASSERT: Should NOT be rejected by allowlist
+    let output = run_mgc(&["test"], Some(&project_root));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        !stderr.contains("permanently forbidden"),
-        "pnpm should be allowed in TestRunner scope, got: {}",
+        !output.status.success(),
+        "mgc test must reject a package-manager script, stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(
+        stderr.contains("forbidden package manager 'pnpm'"),
+        "mgc test must identify the rejected package manager, got: {}",
         stderr
     );
 }
@@ -145,16 +178,8 @@ fn test_pnpm_allowed_in_test_runner_scope() {
 #[test]
 fn test_cwd_lock_sets_working_directory() {
     // TEST: mgc sets correct working directory for child process
-    // SCOPE: Verifies mgc passes cwd correctly, NOT that npm scripts are sandboxed
-    //
-    // THREAT MODEL CLARIFICATION:
-    // - mgc validates paths in ITS OWN args (mgc → tool)
-    // - mgc does NOT validate content of npm/package manager scripts
-    // - npm scripts can contain arbitrary commands (by design)
-    // - If user adds malicious script to package.json, it runs with npm's permissions
-    //
-    // This is npm's responsibility, not mgc's. mgc is a package manager ORCHESTRATOR,
-    // not a sandbox. Users trust their own package.json just as they trust their own code.
+    // Project scripts run with user permissions; this proves their configured cwd.
+    // Script project chạy bằng quyền user; test này xác nhận cwd được cấu hình.
 
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let parent_dir = temp_dir.path();
@@ -163,60 +188,34 @@ fn test_cwd_lock_sets_working_directory() {
     let project_root = parent_dir.join("project");
     fs::create_dir(&project_root).expect("Failed to create project dir");
 
-    // Create package.json that logs CWD
+    // Use Python to print the child working directory on all supported OSes.
+    // Dùng Python in thư mục làm việc của tiến trình con trên mọi OS hỗ trợ.
+    let python = if cfg!(windows) { "python" } else { "python3" };
+    let script = format!("{python} -c \"import os; print(os.getcwd())\"");
+    let manifest = serde_json::json!({
+        "name": "cwd-test",
+        "scripts": { "test": script }
+    });
     fs::write(
         project_root.join("package.json"),
-        r#"{
-  "name": "cwd-test",
-  "scripts": {
-    "test": "pwd > cwd.txt && echo 'done'"
-  }
-}"#,
+        serde_json::to_vec_pretty(&manifest).expect("serialize package.json"),
     )
     .expect("Failed to write package.json");
 
-    // Ensure npm/bash available
-    if std::process::Command::new("npm")
-        .arg("--version")
-        .output()
-        .is_err()
-    {
-        eprintln!("SKIP: npm not available");
-        return;
-    }
-
-    // Run: mgc test
     let output = run_mgc(&["test"], Some(&project_root));
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     println!("=== mgc test output ===\n{}{}", stdout, stderr);
 
-    // ASSERT: Verify mgc set correct cwd
-    let cwd_file = project_root.join("cwd.txt");
-    if cwd_file.exists() {
-        let logged_cwd = fs::read_to_string(&cwd_file).expect("Failed to read cwd.txt");
-        let logged_cwd = logged_cwd.trim();
-        let expected_cwd = project_root.canonicalize().expect("Failed to canonicalize");
-
-        let logged_path = PathBuf::from(logged_cwd)
-            .canonicalize()
-            .unwrap_or_else(|_| PathBuf::from(logged_cwd));
-
-        assert!(
-            logged_path == expected_cwd || logged_path.starts_with(&expected_cwd),
-            "mgc did not set correct cwd for child process.\nExpected: {}\nActual: {}",
-            expected_cwd.display(),
-            logged_path.display()
-        );
-
-        println!(
-            "CWD correctly set to project root: {}",
-            logged_path.display()
-        );
-    } else {
-        eprintln!("SKIP: cwd.txt not created (npm may have failed)");
-    }
+    assert!(output.status.success(), "mgc test failed: {stderr}");
+    let expected_cwd = project_root.canonicalize().expect("Failed to canonicalize");
+    assert!(
+        stdout.contains(&expected_cwd.to_string_lossy().to_string()),
+        "mgc did not set the project cwd. Expected '{}', got: {}",
+        expected_cwd.display(),
+        stdout
+    );
 }
 
 #[test]
@@ -268,21 +267,7 @@ fn test_audit_log_records_execution() {
     // Test verifies log file creation and content
 
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let project_root = create_node_project(&temp_dir);
-
-    // Ensure npm is available
-    if std::process::Command::new("npm")
-        .arg("--version")
-        .output()
-        .is_err()
-    {
-        panic!(
-            "UNVERIFIED: npm not available\n\
-            This test requires npm to verify audit logging.\n\
-            Install Node.js/npm or provision in CI matrix.\n\
-            Status: IMPLEMENTED-UNVERIFIED"
-        );
-    }
+    let project_root = create_package_json_project(&temp_dir);
 
     // Run: mgc test
     let output = run_mgc(&["test"], Some(&project_root));

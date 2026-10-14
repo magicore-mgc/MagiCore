@@ -36,6 +36,10 @@ jobs:
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable 2026-09-03
         with:
           components: rustfmt, clippy
+      - name: Setup Python (Unix process-guard regression tests require python3)
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
       - name: Setup Go (esbuild-rs build script needs go on PATH)
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -233,6 +237,10 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
+      - name: Setup Python (Unix process-guard regression tests require python3)
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
       - name: Setup Go (esbuild-rs build script needs go on PATH)
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -344,9 +352,14 @@ jobs:
       - name: Setup Python + Node runtimes
         run: ${{ matrix.python-setup }}
 
+      - name: Build optimized mgc binary for lifecycle E2E
+        run: cargo build --release --bin mgc --locked
+
       - name: Global CLI tool lifecycle E2E (Unix)
         if: runner.os != 'Windows'
         run: cargo test -p mgc --test global_tool_e2e --locked -- --test-threads=1 --nocapture
+        env:
+          MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
 
       - name: Verify runtimes available
         run: |
@@ -358,20 +371,25 @@ jobs:
           flutter doctor -v
           go version || echo "Go not available"
 
-      - name: Build mgc binary
-        run: cargo build -p mgc --locked
-
-      - name: Run security tests
+      - name: Run native test-runner security E2E on release binary
         run: cargo test -p mgc --test test_runner_security --locked
+        env:
+          MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
 
-      - name: Run optimizer tests (MUST PASS - no || true)
+      - name: Run optimizer E2E on release binary (MUST PASS - no || true)
         run: cargo test -p mgc --test optimizer_lifecycle_e2e --locked -- --nocapture
+        env:
+          MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
 
-      - name: Run lifecycle tests (MUST PASS - no || true)
-        # Both toolchain-dependent AI/App lifecycle tests are #[ignore] for
-        # local machines; this job provisions pytest + Flutter and must run
-        # them explicitly instead of reporting an empty suite as green.
-        run: cargo test -p mgc --test full_lifecycle_e2e --locked -- --ignored --nocapture --test-threads=1
+      - name: Run Web, App scaffold, and Lib lifecycle tests on release binary
+        run: cargo test --locked -p mgc --test full_lifecycle_e2e -- --nocapture --test-threads=1
+        env:
+          MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
+
+      - name: Run AI lifecycle test with pytest on release binary
+        run: cargo test --locked -p mgc --test full_lifecycle_e2e test_ai_full_lifecycle -- --ignored --exact --nocapture --test-threads=1
+        env:
+          MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
 
       - name: Run cache stress tests (MUST PASS)
         run: cargo test -p mgc --test cache_stress_test --locked -- --nocapture
@@ -387,7 +405,7 @@ jobs:
         run: |
           echo "=== Test Summary ==="
           echo "Runtimes provisioned: Python3, pytest, Node, npm, Flutter"
-          echo "All E2E tests running with REAL mgc commands"
+          echo "Full-core lifecycle and global-tool E2Es invoke the optimized release mgc binary"
           echo "Install smoke tests: structure verified"
 
   fault-matrix-portable:

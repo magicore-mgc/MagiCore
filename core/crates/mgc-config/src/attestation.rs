@@ -464,6 +464,62 @@ pub fn enforce_live_attestation(project_root: &Path, core: &str) -> anyhow::Resu
     }
 }
 
+/// Check trust state when `.mgc.core` is missing, including when it was renamed.
+/// Kiểm tra trust khi thiếu `.mgc.core`, kể cả trường hợp file bị đổi tên.
+///
+/// An unanchored legacy project remains discoverable in the default `warn`
+/// mode. `require` rejects missing identity and rejects an existing attestation
+/// whose marker disappeared, so detection cannot silently fall back to another
+/// manifest after a trusted marker is removed.
+/// (Project cũ chưa anchor vẫn được nhận diện ở chế độ `warn`; `require` chặn
+/// identity bị thiếu hoặc marker đã ký bị xóa/đổi tên.)
+pub fn enforce_missing_marker_attestation(project_root: &Path) -> anyhow::Result<()> {
+    let mode = AnchorMode::effective();
+    if mode == AnchorMode::Off {
+        return Ok(());
+    }
+    let identities = match mgc_platform::paths::GlobalPaths::new() {
+        Ok(paths) => paths.identities,
+        Err(error) => {
+            if mode == AnchorMode::Require {
+                anyhow::bail!(
+                    "cannot access global identities dir ({error}) — missing core marker cannot be checked"
+                );
+            }
+            return Ok(());
+        }
+    };
+
+    match verify(project_root, &identities) {
+        Ok(AttestationStatus::Absent) if mode == AnchorMode::Require => anyhow::bail!(
+            "project core marker and attestation are missing for '{}' — restore '{}' or run `mgc init --signature <core>` and `mgc trust anchor`",
+            project_root.display(),
+            crate::project::ProjectConfig::CORE_MARKER_FILE,
+        ),
+        Ok(AttestationStatus::Absent | AttestationStatus::Valid) => Ok(()),
+        Ok(AttestationStatus::Mismatch(reason)) if mode == AnchorMode::Require => anyhow::bail!(
+            "core identity attestation mismatch for '{}': {reason} — restore the trusted project identity before continuing",
+            project_root.display(),
+        ),
+        Ok(AttestationStatus::Mismatch(reason)) => {
+            warn_once(&format!(
+                "WARNING: core identity attestation mismatch at '{}': {reason}",
+                project_root.display(),
+            ));
+            Ok(())
+        }
+        Err(error) if mode == AnchorMode::Require => {
+            anyhow::bail!("cannot verify core identity attestation ({error})")
+        }
+        Err(error) => {
+            warn_once(&format!(
+                "WARNING: cannot verify core identity attestation ({error}) — proceeding without anchor"
+            ));
+            Ok(())
+        }
+    }
+}
+
 static WARNED_ONCE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
 
 fn warn_once(message: &str) {

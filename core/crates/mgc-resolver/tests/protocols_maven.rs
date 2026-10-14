@@ -6,6 +6,18 @@
 use mgc_resolver::protocols::maven::collect_pom_dependencies;
 use mgc_resolver::protocols::sha256_hex;
 use mgc_resolver::protocols::{MavenProtocol, RegistryProtocol};
+use mgc_types::Version;
+
+#[test]
+fn maven_requirement_matching_uses_maven_range_syntax() {
+    let protocol = MavenProtocol::new("https://repo.maven.apache.org/maven2");
+    let exact = Version::parse("1.2.3").unwrap();
+    let different = Version::parse("1.2.4").unwrap();
+
+    assert!(protocol.matches_requirement("[1.2.3]", &exact));
+    assert!(!protocol.matches_requirement("[1.2.3]", &different));
+    assert!(protocol.matches_requirement("[1.0,2.0)", &exact));
+}
 
 #[test]
 fn maven_materializer_rejects_path_coordinates_before_writing() {

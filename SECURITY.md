@@ -26,7 +26,7 @@ One exact compatibility probe, `npm --version`, is answered by MagiCore as `0.0.
 
 MagiCore uses an executable allowlist and execution scopes for commands it launches. Recognized package-manager names and dependency mutation forms are denied in native execution paths. Project test, build, and dev commands still execute project code with the user's operating-system permissions; allowlisting a runtime or compiler does not make the code safe.
 
-Some commands append execution records to a project-local `.magicore/exec.log` (some web paths use `.mgc/exec.log`). Recorded arguments are sanitized, but the log is ordinary project data: it is not tamper-proof, and commands that do not provide a log path may not write there. A log is evidence of observed executions, not proof that every child process was observed.
+Some commands append execution records to a project-local `.magicore/exec.log`. Recorded arguments are sanitized, but the log is ordinary project data: it is not tamper-proof, and commands that do not provide a log path may not write there. A log is evidence of observed executions, not proof that every child process was observed.
 
 For commands whose scripts MagiCore parses, only supported grammar and command forms are accepted. MagiCore does not promise to interpret every package-manager script syntax; behavior depends on the command and lane.
 

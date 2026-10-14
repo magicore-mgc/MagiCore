@@ -609,7 +609,7 @@ Options:
         self.assertIn("--require-lockfile-evidence", inventory_step)
         self.assertIn("--require-full-evidence", inventory_step)
         self.assertIn("--require-language-runtime-evidence", inventory_step)
-        self.assertIn("--require-universal-support", inventory_step)
+        self.assertNotIn("--require-universal-support", inventory_step)
         self.assertNotIn("require_language_runtime_evidence:", workflow)
         self.assertNotIn("require_universal_support:", workflow)
         self.assertIn("workflow_call:", workflow)
@@ -639,13 +639,13 @@ Options:
         upload = workflow.split("- name: Upload stress evidence", maxsplit=1)[1]
         self.assertIn("${{ runner.temp }}/mgc-framework-lifecycle.jsonl", upload)
 
-    def test_publication_requires_the_reusable_universal_support_evidence_gate(self) -> None:
+    def test_publication_requires_the_reusable_scoped_support_evidence_gate(self) -> None:
         repository = SOURCE.parents[2]
         release_workflow = (repository / ".github/workflows/release.yml").read_text(
             encoding="utf-8"
         )
         gate = release_workflow.split(
-            "  release-universal-support-evidence-gate:", maxsplit=1
+            "  release-scoped-support-evidence-gate:", maxsplit=1
         )[1].split("\n  publish-github-release:", maxsplit=1)[0]
         publish = release_workflow.split(
             "  publish-github-release:", maxsplit=1
@@ -653,8 +653,8 @@ Options:
 
         self.assertIn("uses: ./.github/workflows/stress-matrix.yml", gate)
         publish_needs = publish.split("needs:", maxsplit=1)[1].split("\n", maxsplit=1)[0]
-        self.assertIn("release-universal-support-evidence-gate", publish_needs)
-        self.assertIn("needs.release-universal-support-evidence-gate.result == 'success'", publish)
+        self.assertIn("release-scoped-support-evidence-gate", publish_needs)
+        self.assertIn("needs.release-scoped-support-evidence-gate.result == 'success'", publish)
 
         stress_workflow = (repository / ".github/workflows/stress-matrix.yml").read_text(
             encoding="utf-8"
@@ -662,7 +662,9 @@ Options:
         matrix_step = stress_workflow.split(
             "Create every advertised framework and run CLI dimensions", maxsplit=1
         )[1].split("Upload stress evidence", maxsplit=1)[0]
-        self.assertIn("--require-universal-support", matrix_step)
+        self.assertNotIn("--require-universal-support", matrix_step)
+        self.assertIn("--require-full-evidence", matrix_step)
+        self.assertIn("--require-lockfile-evidence", matrix_step)
         self.assertIn("--require-language-runtime-evidence", matrix_step)
 
     def test_single_core_web_feature_includes_native_backend_runtime_without_lib_cli(self) -> None:
@@ -682,17 +684,26 @@ Options:
 
     def test_ci_lifecycle_and_strict_gate_use_the_same_frozen_binary(self) -> None:
         workflow = (SOURCE.parents[2] / ".github/workflows/stress-matrix.yml").read_text()
+        self.assertIn("cargo build --release --locked --bin mgc", workflow)
         self.assertIn("shutil.copy2(source, destination)", workflow)
+        self.assertIn('target/release/mgc.exe" if os.name == "nt" else "target/release/mgc', workflow)
         self.assertIn("MGC_STRESS_CLI_SNAPSHOT={destination}", workflow)
-        for name in ("Verify the consolidated 11 native web framework lifecycle E2Es",
-                     "Run all dedicated frontend lifecycle E2Es, even after a lane fails"):
+        for name in (
+            "Verify the consolidated 11 native web framework lifecycle E2Es",
+            "Run FastAPI native backend install and dev lifecycle E2E",
+            "Run native test-runner security, optimizer, and audit E2E suites",
+            "Run native ownership E2E across supported language lanes",
+            "Verify the V4 add-install-update-remove CLI lifecycle",
+            "Run all dedicated frontend lifecycle E2Es, even after a lane fails",
+        ):
             block = workflow.split("- name: " + name, 1)[1].split("\n      - name:", 1)[0]
             self.assertIn("MGC_TEST_CLI_BINARY: ${{ env.MGC_STRESS_CLI_SNAPSHOT }}", block)
         block = workflow.split("- name: Create every advertised framework and run CLI dimensions", 1)[1]
         self.assertIn('--binary "${MGC_STRESS_CLI_SNAPSHOT}"', block)
-        for name in ("Run FastAPI native backend install and dev lifecycle E2E",
-                     "Verify Python runtime paths in the single-core AI distribution",
-                     "Verify App-only Flutter offline replay under V3 and V4 locks"):
+        for name in (
+            "Verify Python runtime paths in the single-core AI distribution",
+            "Verify App-only Flutter offline replay under V3 and V4 locks",
+        ):
             block = workflow.split("- name: " + name, 1)[1].split("\n      - name:", 1)[0]
             self.assertNotIn("MGC_TEST_CLI_BINARY:", block)
 
@@ -880,9 +891,10 @@ Options:
             encoding="utf-8"
         )
         audit_step = workflow.split(
-            "- name: Run optimizer and audit end-to-end suites", maxsplit=1
+            "- name: Run native test-runner security, optimizer, and audit E2E suites", maxsplit=1
         )[1].split("- name:", maxsplit=1)[0]
         self.assertIn("MGC_E2E_AUDIT_NETWORK: required", audit_step)
+        self.assertIn("--test test_runner_security", audit_step)
         self.assertIn("--test audit_cli_e2e", audit_step)
 
     def test_cli_contract_does_not_mistake_command_failure_for_parser_rejection(self) -> None:

@@ -31,7 +31,7 @@ pub enum Cause {
         package: PackageName,
         version: Version,
         dep_package: PackageName,
-        dep_version_set: VersionSet,
+        dep_version_set: Box<VersionSet>,
     },
     Conflict {
         incompatibility1: Box<Incompatibility>,
@@ -49,7 +49,7 @@ pub struct PubGrubSolver {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Decision {
-    Assigned(PackageName, Version, VersionSet),
+    Assigned(PackageName, Version, Box<VersionSet>),
     Backtracked(PackageName),
 }
 
@@ -136,7 +136,7 @@ impl PubGrubSolver {
                     name.clone(),
                     vs.satisfying_version()
                         .unwrap_or_else(|| Version::new(0, 0, 0)),
-                    vs.clone(),
+                    Box::new(vs.clone()),
                 )),
                 Term::Negative(name, _vs) => Some(Decision::Backtracked(name.clone())),
             }
@@ -150,7 +150,7 @@ impl PubGrubSolver {
             Decision::Assigned(name, version, vs) => {
                 self.decisions.insert(name.clone(), version.clone());
                 self.assignment
-                    .push((name.clone(), version.clone(), vs.clone()));
+                    .push((name.clone(), version.clone(), vs.as_ref().clone()));
                 self.decision_level += 1;
             }
             Decision::Backtracked(name) => {
@@ -207,7 +207,11 @@ impl PubGrubSolver {
             if !self.decisions.contains_key(name)
                 && let Some(version) = vs.satisfying_version()
             {
-                return Ok(Decision::Assigned(name.clone(), version, vs.clone()));
+                return Ok(Decision::Assigned(
+                    name.clone(),
+                    version,
+                    Box::new(vs.clone()),
+                ));
             }
         }
 
@@ -218,7 +222,11 @@ impl PubGrubSolver {
                     && !self.decisions.contains_key(name)
                     && let Some(version) = vs.satisfying_version()
                 {
-                    return Ok(Decision::Assigned(name.clone(), version, vs.clone()));
+                    return Ok(Decision::Assigned(
+                        name.clone(),
+                        version,
+                        Box::new(vs.clone()),
+                    ));
                 }
             }
         }

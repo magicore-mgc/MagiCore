@@ -122,6 +122,12 @@ tempfile = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_System_SystemInformation",
+] }
+
 # Feature flags per core — used for per-core binary builds
 [features]
 default = ["all"]

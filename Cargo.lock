@@ -2742,6 +2742,7 @@ dependencies = [
  "url",
  "uuid",
  "walkdir",
+ "windows-sys 0.61.2",
  "zip",
 ]
 
@@ -3328,6 +3329,7 @@ dependencies = [
  "mgc-types",
  "mockito",
  "quick-xml",
+ "semver",
  "serde",
  "serde_json",
  "sha1 0.10.7",

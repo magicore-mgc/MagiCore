@@ -58,6 +58,8 @@ fn add_dep_dedup_replaces_existing() {
         dev: false,
         optional: false,
         peer: false,
+        features: Vec::new(),
+        default_features: true,
     };
     let d2 = DependencySpec {
         name: PackageName::new("foo").unwrap(),
@@ -65,6 +67,8 @@ fn add_dep_dedup_replaces_existing() {
         dev: false,
         optional: false,
         peer: false,
+        features: Vec::new(),
+        default_features: true,
     };
     assert!(m.add_dep(d1, false, false, false));
     assert!(m.add_dep(d2, false, false, false));

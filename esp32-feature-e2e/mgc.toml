@@ -1,0 +1,22 @@
+name = "esp32-feature-e2e"
+version = "0.1.0"
+ecosystem = "iot"
+mode = ""
+frameworks = ["esp32-rust"]
+template = ""
+features = ["esp32c3"]
+registries = []
+patches = []
+
+[execution]
+architecture = "rust-first"
+lane = "compatibility-shell"
+compatibility_layer = "none"
+native_targets = []
+
+[dedupe]
+prefer = false
+
+[iot]
+framework = "esp32-rust"
+board = "esp32c3"

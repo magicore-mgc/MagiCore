@@ -5,16 +5,44 @@
 
 #![allow(clippy::unwrap_used)] // Test code: unwrap acceptable for setup
 
+use std::path::PathBuf;
 use std::process::Command;
 use tempfile::TempDir;
 
-fn find_mgc_binary() -> String {
+fn find_mgc_binary() -> PathBuf {
+    if let Some(value) = std::env::var_os("MGC_TEST_CLI_BINARY") {
+        let binary = PathBuf::from(value);
+        if binary.is_file() {
+            eprintln!("MagiCore lifecycle product binary: {}", binary.display());
+            return binary;
+        }
+        #[cfg(windows)]
+        {
+            let executable = binary.with_extension("exe");
+            if executable.is_file() {
+                eprintln!(
+                    "MagiCore lifecycle product binary: {}",
+                    executable.display()
+                );
+                return executable;
+            }
+        }
+        panic!(
+            "MGC_TEST_CLI_BINARY does not identify an executable: {}",
+            binary.display()
+        );
+    }
+
     // CARGO_BIN_EXE_mgc: cargo-provided path to the JUST-BUILT binary —
     // immune to stale target/debug/mgc picking up an older build.
     // CARGO_BIN_EXE_mgc: cargo trỏ tới binary VỪA BUILD — tránh lẫm
     // target/debug/mgc cũ là binary lỗi thời.
-    std::env::var("CARGO_BIN_EXE_mgc")
-        .expect("CARGO_BIN_EXE_mgc not set — run via `cargo test -p mgc`")
+    let binary = PathBuf::from(
+        std::env::var_os("CARGO_BIN_EXE_mgc")
+            .expect("CARGO_BIN_EXE_mgc not set — run via `cargo test -p mgc`"),
+    );
+    eprintln!("MagiCore lifecycle test binary: {}", binary.display());
+    binary
 }
 
 #[test]
@@ -463,19 +491,9 @@ fn test_ai_full_lifecycle() {
 }
 
 #[test]
-#[ignore = "Requires Flutter SDK - run with: cargo test -- --ignored"]
-fn test_app_full_lifecycle_limited() {
-    // PARTIAL E2E: app core - create → verify structure
-    // Full test (build → test) requires Flutter SDK
-    // REQUIRES: flutter
-
-    // Check flutter available - REQUIRED
-    if Command::new("flutter").arg("--version").output().is_err() {
-        panic!(
-            "TEST FAILED: flutter not available (required for App full lifecycle test). Install Flutter SDK"
-        );
-    }
-
+fn test_app_scaffold_e2e() {
+    // Product CLI E2E: App scaffold. Flutter build/test run in the dedicated
+    // lifecycle matrix; creating the project itself does not need the SDK.
     let temp = TempDir::new().unwrap();
     let project_name = "test_app_full"; // Flutter naming
     let project_path = temp.path().join(project_name);
@@ -506,6 +524,7 @@ fn test_app_full_lifecycle_limited() {
     let core_content = std::fs::read_to_string(project_path.join(".mgc.core")).unwrap();
     assert_eq!(core_content.trim(), "app", ".mgc.core should contain 'app'");
 
-    println!("App lifecycle PARTIAL: create verified");
-    println!("   Full lifecycle (build → test) requires Flutter - see optimizer tests");
+    println!(
+        "App scaffold CLI E2E verified; Flutter build/test are covered by the lifecycle matrix"
+    );
 }

@@ -3285,12 +3285,7 @@ pub async fn ai_dev(_dry_run: bool) -> Result<()> {
     // Phát hiện runtime AI để load env optimizer
     let runtime = detect_ai_runtime(&root, framework.framework.as_str());
     let optimizer_envs =
-        crate::commands::optimizer::env_loader::load_optimizer_env(&root, &runtime)
-            .map_err(|e| {
-                mgc_ui::warning(&format!("Failed to load optimizer config: {}", e));
-                e
-            })
-            .unwrap_or_default();
+        crate::commands::optimizer::env_loader::load_optimizer_env(&root, &runtime)?;
     let mut env: Vec<(String, String)> = optimizer_envs.into_iter().collect();
     crate::commands::python_runtime::extend_native_python_env(&mut env, &root, false)?;
 

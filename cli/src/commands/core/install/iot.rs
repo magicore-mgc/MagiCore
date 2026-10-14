@@ -23,11 +23,14 @@ pub async fn install(
     let iot = mgc_iot_adapter::adapter_for(&root);
     let framework = iot.as_ref().map(|a| a.framework());
     let target_owned = iot.as_ref().and_then(|a| a.target(&root));
-    // Native lane (mgc.lock, no Cargo.lock): esp32-rust projects ARE
-    // Cargo projects — deps resolve through the NATIVE crates engine
-    // (same as lib/rust) with zero `cargo` spawn. Other frameworks keep
-    // the legacy delegated path below.
-    // (Lane native: esp32-rust + Cargo.toml → engine crates native.)
+    // Native dependency lane: `mgc.lock` is canonical and `Cargo.lock` is its
+    // Cargo-compatible projection. `esp32-rust` projects resolve and fetch
+    // through the native crates engine with no Cargo process; `mgc build`
+    // later invokes Cargo for compilation. Other frameworks remain explicitly
+    // unsupported below.
+    // (Lane dependency native: `mgc.lock` chuẩn, `Cargo.lock` là projection
+    // tương thích Cargo. Resolve/fetch không spawn Cargo; `mgc build` dùng
+    // Cargo để biên dịch.)
     if framework == Some("esp32-rust") && root.join("Cargo.toml").is_file() {
         let compat = crate::commands::dep_gate::from_dep_flag(compat_runtime.as_deref())?;
         crate::commands::dep_gate::gate(

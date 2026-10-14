@@ -950,6 +950,36 @@ fn cargo_compile_is_allowed_only_with_locked_offline_flags() {
 }
 
 #[test]
+fn cargo_image_with_rustc_compilation_argv_is_allowed_but_cargo_install_is_denied() {
+    use std::ffi::OsString;
+
+    let rustc_child = [
+        "rustc",
+        "--crate-name",
+        "probe",
+        "--crate-type",
+        "bin",
+        "probe.rs",
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect::<Vec<_>>();
+    assert!(super::forbidden_process_match_argv("cargo", &rustc_child, &[]).is_none());
+
+    let cargo_install = ["cargo", "install", "some-tool"]
+        .into_iter()
+        .map(OsString::from)
+        .collect::<Vec<_>>();
+    assert!(super::forbidden_process_match_argv("cargo", &cargo_install, &[]).is_some());
+
+    let incomplete_rustc_shape = ["rustc", "--crate-name", "probe"]
+        .into_iter()
+        .map(OsString::from)
+        .collect::<Vec<_>>();
+    assert!(super::forbidden_process_match_argv("cargo", &incomplete_rustc_shape, &[]).is_some());
+}
+
+#[test]
 fn rustc_is_limited_to_the_read_only_host_target_probe() {
     assert!(
         crate::allowlist::check_tool_with_scope(

@@ -26,6 +26,7 @@ serde_json = { workspace = true }
 quick-xml = { workspace = true }
 mgc-http = { workspace = true }
 url = { workspace = true }
+semver = { workspace = true }
 blake3 = { workspace = true }
 flate2 = { workspace = true }
 tar = { workspace = true }

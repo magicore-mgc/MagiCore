@@ -232,7 +232,8 @@ fn install_into_project(
         .find(|(name, _)| name == &binary)
         .map(|(_, target)| target.clone())
         .ok_or_else(crate::error::dlx_undeclared_bin)?;
-    let canonical_target = package_root.join(&target_relative).canonicalize()?;
+    let target = normalize_tool_target(&target_relative)?;
+    let canonical_target = package_root.join(&target).canonicalize()?;
     if !canonical_target.starts_with(&package_root) || !canonical_target.is_file() {
         bail!("tool executable target is outside its installed package");
     }
@@ -251,7 +252,7 @@ fn install_into_project(
         package: package.to_string(),
         selector: selector.to_string(),
         binary,
-        target: target_relative.to_string_lossy().into_owned(),
+        target,
         installed_version,
         project_name: tool_project_name(package),
     })
@@ -316,6 +317,7 @@ fn update(binary: &str, selector_override: Option<&str>, allow_scripts: bool) ->
             .find(|(name, _)| name == binary)
             .map(|(_, target)| target.clone())
             .ok_or_else(crate::error::dlx_undeclared_bin)?;
+        let target = normalize_tool_target(&target)?;
         let canonical_target = package_root.join(&target).canonicalize()?;
         if !canonical_target.starts_with(&package_root) || !canonical_target.is_file() {
             bail!("updated tool executable target is outside its installed package");
@@ -324,7 +326,7 @@ fn update(binary: &str, selector_override: Option<&str>, allow_scripts: bool) ->
             &package_root.join("package.json"),
             "installed package manifest",
         )?;
-        record.target = target.to_string_lossy().into_owned();
+        record.target = target;
         record.installed_version = installed_manifest
             .get("version")
             .and_then(serde_json::Value::as_str)
@@ -814,10 +816,7 @@ fn validate_tool_record(root: &Path, record: &ToolRecord) -> Result<()> {
     let package_request = format!("{}@{}", record.package, record.selector);
     let package_valid =
         parse_request(&package_request).is_ok_and(|(package, _)| package == record.package);
-    let target_valid = !record.target.is_empty()
-        && Path::new(&record.target)
-            .components()
-            .all(|component| matches!(component, std::path::Component::Normal(_)));
+    let target_valid = normalize_tool_target(Path::new(&record.target)).is_ok();
     if record.schema != TOOL_SCHEMA
         || record.source != "npm"
         || !valid_bin_name(&record.binary)
@@ -832,6 +831,25 @@ fn validate_tool_record(root: &Path, record: &ToolRecord) -> Result<()> {
         );
     }
     Ok(())
+}
+
+fn normalize_tool_target(target: &Path) -> Result<String> {
+    let mut normalized = PathBuf::new();
+    let mut has_normal_component = false;
+    for component in target.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::Normal(part) => {
+                normalized.push(part);
+                has_normal_component = true;
+            }
+            _ => return Err(crate::error::dlx_invalid_package_bins()),
+        }
+    }
+    if !has_normal_component {
+        return Err(crate::error::dlx_invalid_package_bins());
+    }
+    Ok(normalized.to_string_lossy().into_owned())
 }
 
 fn write_pending(root: &Path, pending: &PendingToolInstall) -> Result<()> {

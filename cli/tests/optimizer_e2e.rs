@@ -8,8 +8,17 @@
 
 // 2. Process-level: cargo child process receives RUSTFLAGS (cargo -vv output)
 
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
+
+fn cargo_target_dir(project: &Path) -> PathBuf {
+    match std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from) {
+        Some(path) if path.is_absolute() => path,
+        Some(path) => project.join(path),
+        None => project.join("target"),
+    }
+}
 
 #[test]
 fn test_optimizer_rustflags_process_level_proof() {
@@ -212,9 +221,9 @@ MGC_OPTIMIZER_MARKER = "INJECTED"
 
     // CRITICAL: Verify binary artifact was compiled with optimizer flag
     // This is the ONLY proof that matters: does the compiled code reflect the cfg?
-    let bin_path = project.join("target/debug/test_optimizer_bin");
+    let bin_path = cargo_target_dir(project).join("debug/test_optimizer_bin");
     #[cfg(target_os = "windows")]
-    let bin_path = project.join("target/debug/test_optimizer_bin.exe");
+    let bin_path = cargo_target_dir(project).join("debug/test_optimizer_bin.exe");
 
     assert!(
         bin_path.exists(),

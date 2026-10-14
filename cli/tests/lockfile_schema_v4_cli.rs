@@ -111,9 +111,17 @@ fn run_mgc(
     registry_url: &str,
     args: &[&str],
 ) -> Output {
-    let mut command = Command::new(
-        std::env::var_os("CARGO_BIN_EXE_mgc").expect("CARGO_BIN_EXE_mgc must be set by cargo test"),
+    let binary = std::env::var_os("MGC_TEST_CLI_BINARY")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("CARGO_BIN_EXE_mgc").map(std::path::PathBuf::from))
+        .expect("CARGO_BIN_EXE_mgc must be set by cargo test");
+    assert!(
+        binary.is_file(),
+        "mgc executable missing: {}",
+        binary.display()
     );
+    eprintln!("MagiCore V4 lifecycle product binary: {}", binary.display());
+    let mut command = Command::new(binary);
     command
         .args(args)
         .current_dir(project)

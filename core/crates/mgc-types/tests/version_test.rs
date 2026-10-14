@@ -39,6 +39,26 @@ fn parse_with_prerelease() {
 }
 
 #[test]
+fn semver_build_metadata_is_preserved_without_changing_precedence() {
+    let tagged = v("0.25.17+spec-1.1.0");
+    assert_eq!(tagged.build.as_deref(), Some("spec-1.1.0"));
+    assert_eq!(tagged.to_string(), "0.25.17+spec-1.1.0");
+    assert_ne!(tagged, v("0.25.17"), "metadata is part of package identity");
+    assert_eq!(
+        tagged.precedence_cmp(&v("0.25.17")),
+        Ordering::Equal,
+        "semver requirements ignore build metadata"
+    );
+}
+
+#[test]
+fn malformed_build_metadata_is_rejected() {
+    assert!(Version::parse("1.0.0+").is_err());
+    assert!(Version::parse("1.0.0+bad..metadata").is_err());
+    assert!(Version::parse("1.0.0+bad metadata").is_err());
+}
+
+#[test]
 fn parse_empty_returns_err() {
     assert!(Version::parse("").is_err());
 }

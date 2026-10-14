@@ -277,6 +277,10 @@ impl Default for PubProtocol {
 
 #[async_trait]
 impl RegistryProtocol for PubProtocol {
+    fn matches_requirement(&self, range: &str, version: &Version) -> bool {
+        dart_matches(range, version)
+    }
+
     async fn resolve(&self, name: &str, range: &str) -> MgResult<ResolvedEntry> {
         let doc = self.package_doc(name).await?;
         Self::select_entry(name, &doc, &[range.to_string()])
