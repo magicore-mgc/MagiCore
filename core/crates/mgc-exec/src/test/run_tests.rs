@@ -1052,6 +1052,45 @@ fn windows_nested_npm_probe_requires_generated_path_marker_and_version_verb() {
         &hard_link_shadow_path
     ));
 
+    // A generated-looking directory and a self-authored matching marker do not
+    // authenticate a different executable as the MagiCore version-probe shim.
+    // (Tên thư mục và marker tự tạo không xác thực được executable khác binary MagiCore.)
+    let forged_dir = super::unique_temp_dir("mgc-exec-shadow-path");
+    std::fs::create_dir(&forged_dir).expect("create forged generated-looking directory");
+    let forged_shim = forged_dir.join("npm.exe");
+    std::fs::write(&forged_shim, b"untrusted executable bytes")
+        .expect("write untrusted probe image");
+    let forged_digest = super::windows_sha256_file(&forged_shim).expect("hash forged shim");
+    super::write_windows_npm_probe_marker(&forged_dir, &forged_digest)
+        .expect("write forged matching marker");
+    let forged_shadow_path = super::ShadowPath {
+        dir: forged_dir.join("outer-executor-shadow"),
+    };
+    let forged_probe = super::WindowsProcessSnapshot {
+        pid: 303,
+        parent_pid: Some(300),
+        creation_time: Some(303),
+        image_name: "npm.exe".to_owned(),
+        command: vec![
+            forged_shim.as_os_str().to_os_string(),
+            OsString::from("--version"),
+        ],
+    };
+    assert!(!super::is_shadow_windows_npm_version_probe(
+        &forged_probe,
+        &forged_shim,
+        &forged_shadow_path
+    ));
+    let forged_startup_probe = super::WindowsProcessSnapshot {
+        command: vec![forged_shim.as_os_str().to_os_string()],
+        ..forged_probe
+    };
+    assert!(!super::is_shadow_windows_npm_version_probe(
+        &forged_startup_probe,
+        &forged_shim,
+        &forged_shadow_path
+    ));
+
     let install = super::WindowsProcessSnapshot {
         pid: 301,
         parent_pid: Some(300),
@@ -1078,10 +1117,23 @@ fn windows_nested_npm_probe_requires_generated_path_marker_and_version_verb() {
         &shadow_path
     ));
 
+    for marker in [
+        hard_link_dir.join(".mgc-npm-probe-v1"),
+        forged_dir.join(".mgc-npm-probe-v1"),
+    ] {
+        let mut permissions = std::fs::metadata(&marker)
+            .expect("read fixture marker permissions before cleanup")
+            .permissions();
+        permissions.set_readonly(false);
+        std::fs::set_permissions(&marker, permissions).expect("make fixture marker removable");
+    }
+
     drop(shadow_path);
     std::fs::remove_dir_all(&dir).expect("remove nested Windows shim fixture");
     drop(hard_link_shadow_path);
     std::fs::remove_dir_all(&hard_link_dir).expect("remove hard-link Windows shim fixture");
+    drop(forged_shadow_path);
+    std::fs::remove_dir_all(&forged_dir).expect("remove forged Windows shim fixture");
 }
 
 #[test]

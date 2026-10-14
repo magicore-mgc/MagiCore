@@ -4708,6 +4708,7 @@ fn is_shadow_windows_npm_version_probe(
         })
         && image_digest == expected_digest;
     let is_nested_executor_alias = alias_path_matches_image
+        && image_digest == expected_digest
         && program_parent.is_some_and(|parent| {
             is_generated_shadow_directory(parent)
                 && windows_npm_probe_marker_matches(parent, program_path)
@@ -4722,6 +4723,7 @@ fn is_shadow_windows_npm_version_probe(
         });
     let is_nested_executor_image = image_is_npm_alias
         && windows_probe_argv0_matches_image(program, &image_path)
+        && image_digest == expected_digest
         && image_parent.is_some_and(|parent| {
             is_generated_shadow_directory(parent)
                 && windows_npm_probe_marker_matches(parent, &image_path)
