@@ -1017,11 +1017,14 @@ fn windows_nested_npm_probe_requires_generated_path_marker_and_version_verb() {
     // (Windows có thể báo file gốc của hard link dù argv[0] giữ alias npm.exe.)
     let hard_link_dir = super::unique_temp_dir("mgc-exec-shadow-path");
     std::fs::create_dir(&hard_link_dir).expect("create generated hard-link shadow directory");
+    let hard_link_image = hard_link_dir.join("mgc.exe");
+    std::fs::copy(&original_executable, &hard_link_image)
+        .expect("copy executor image to the temp volume");
     let hard_link_shim = hard_link_dir.join("npm.exe");
-    std::fs::hard_link(&original_executable, &hard_link_shim)
+    std::fs::hard_link(&hard_link_image, &hard_link_shim)
         .expect("create hard-linked Windows npm shim");
     let hard_link_digest =
-        super::windows_sha256_file(&original_executable).expect("hash original executable");
+        super::windows_sha256_file(&hard_link_image).expect("hash hard-link target image");
     super::write_windows_npm_probe_marker(&hard_link_dir, &hard_link_digest)
         .expect("write hard-link probe marker");
     let hard_link_shadow_path = super::ShadowPath {
@@ -1039,7 +1042,7 @@ fn windows_nested_npm_probe_requires_generated_path_marker_and_version_verb() {
     };
     assert!(super::is_shadow_windows_npm_version_probe(
         &hard_link_probe,
-        &original_executable,
+        &hard_link_image,
         &hard_link_shadow_path
     ));
     let hard_link_startup_probe = super::WindowsProcessSnapshot {
@@ -1048,7 +1051,7 @@ fn windows_nested_npm_probe_requires_generated_path_marker_and_version_verb() {
     };
     assert!(super::is_shadow_windows_npm_version_probe(
         &hard_link_startup_probe,
-        &original_executable,
+        &hard_link_image,
         &hard_link_shadow_path
     ));
 
