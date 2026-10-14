@@ -124,8 +124,6 @@ fn run_product_cli_direct_bounded(cwd: &std::path::Path, args: &[&str]) -> (bool
 }
 
 fn read_process_output_bounded(mut reader: impl std::io::Read) -> std::io::Result<Vec<u8>> {
-    use std::io::Read;
-
     const MAX_CAPTURE_BYTES: usize = 8 * 1024 * 1024;
     let mut captured = Vec::new();
     let mut buffer = [0u8; 16 * 1024];
