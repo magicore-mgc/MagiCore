@@ -301,6 +301,27 @@ class LifecycleEnvironmentIsolation(unittest.TestCase):
                     "run: bash scripts/bootstrap_flutter_sdk.sh", workflow[warm:guarded]
                 )
 
+    def test_runtime_e2e_preserves_rust_toolchains_when_isolating_home(self):
+        script = (
+            Path(__file__).resolve().parent.parent
+            / "cli"
+            / "tests"
+            / "scripts"
+            / "runtime_full_e2e.sh"
+        ).read_text(encoding="utf-8")
+
+        isolate_home = script.index('export HOME="$TEMP_BASE/home"')
+        original_home = script.index('ORIGINAL_HOME="$HOME"')
+        rustup_home = script.index(
+            'export RUSTUP_HOME="${RUSTUP_HOME:-${ORIGINAL_HOME}/.rustup}"'
+        )
+        cargo_home = script.index(
+            'export CARGO_HOME="${CARGO_HOME:-${ORIGINAL_HOME}/.cargo}"'
+        )
+        self.assertLess(original_home, rustup_home)
+        self.assertLess(rustup_home, isolate_home)
+        self.assertLess(cargo_home, isolate_home)
+
     def test_flutter_sdk_bootstrap_resolves_dependencies_and_warms_cli(self):
         script = (
             Path(__file__).resolve().parent.parent / "scripts" / "bootstrap_flutter_sdk.sh"

@@ -42,6 +42,13 @@ echo "Using mgc: $MGC_BIN"
 echo
 
 # Isolated temp workspace
+# Preserve the installed Rust toolchain roots before redirecting HOME for the
+# isolated MagiCore state. rustup stores its default toolchain under RUSTUP_HOME.
+# Giữ root toolchain Rust trước khi đổi HOME để cô lập state MagiCore. rustup
+# lưu toolchain mặc định trong RUSTUP_HOME.
+ORIGINAL_HOME="$HOME"
+export RUSTUP_HOME="${RUSTUP_HOME:-${ORIGINAL_HOME}/.rustup}"
+export CARGO_HOME="${CARGO_HOME:-${ORIGINAL_HOME}/.cargo}"
 TEMP_BASE=$(mktemp -d)
 trap 'rm -rf "$TEMP_BASE"' EXIT
 export HOME="$TEMP_BASE/home"
