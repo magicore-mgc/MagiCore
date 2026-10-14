@@ -191,11 +191,6 @@ if ! grep -q "MGC_NATIVE_DEV_E2E_OK" "$NATIVE_LOG"; then
 fi
 
 AUDIT_LOG="$PWD/.magicore/exec.log"
-if command -v cygpath >/dev/null 2>&1; then
-    AUDIT_CWD="$(cygpath -w "$PWD")"
-else
-    AUDIT_CWD="$PWD"
-fi
 if [ ! -f "$AUDIT_LOG" ]; then
     echo "✗ FAIL: real mgc dev execution did not create .magicore/exec.log"
     exit 1
@@ -204,10 +199,11 @@ if [ -e "$PWD/.mgc/exec.log" ]; then
     echo "✗ FAIL: real mgc dev execution wrote the legacy .mgc/exec.log path"
     exit 1
 fi
-node - "$AUDIT_LOG" "$AUDIT_CWD" <<'NODE'
+node - "$AUDIT_LOG" <<'NODE'
 const fs = require("node:fs");
 const path = require("node:path");
-const [auditPath, expectedCwd] = process.argv.slice(2);
+const [auditPath] = process.argv.slice(2);
+const expectedCwd = process.cwd();
 const rows = fs.readFileSync(auditPath, "utf8").trim().split(/\r?\n/).map((line) => JSON.parse(line));
 const normalizeCommand = (command) => path.basename(String(command).replaceAll("\\", "/"))
   .toLowerCase().replace(/\.(exe|cmd|bat)$/, "");
