@@ -2,7 +2,7 @@
 
 #[cfg(windows)]
 #[test]
-fn windows_bare_npm_probe_requires_exact_arguments_and_authenticated_image() {
+fn windows_bare_npm_probe_authenticates_image_and_rejects_mutations() {
     use std::ffi::OsString;
     let root = tempfile::tempdir().expect("create authenticated alias fixture");
     let image = root.path().join("npm.exe");
@@ -26,6 +26,14 @@ fn windows_bare_npm_probe_requires_exact_arguments_and_authenticated_image() {
         &process, &image, &shadow
     ));
     process.command[1] = OsString::from("--version");
+    process.command.pop();
+    assert!(super::is_shadow_windows_npm_version_probe(
+        &process, &image, &shadow
+    ));
+    process.command.clear();
+    assert!(!super::is_shadow_windows_npm_version_probe(
+        &process, &image, &shadow
+    ));
     std::fs::write(&image, b"spoofed binary").expect("replace image fixture");
     assert!(!super::is_shadow_windows_npm_version_probe(
         &process, &image, &shadow
@@ -775,7 +783,7 @@ fn windows_npm_shim_never_interpolates_caller_arguments() {
 
 #[cfg(windows)]
 #[test]
-fn windows_npm_probe_exemption_requires_exact_native_shim_and_arguments() {
+fn windows_npm_probe_exemption_requires_authenticated_native_shim_and_safe_command_shape() {
     use std::ffi::OsString;
 
     let root = tempfile::tempdir().expect("create Windows native npm shim fixture");
@@ -798,6 +806,28 @@ fn windows_npm_probe_exemption_requires_exact_native_shim_and_arguments() {
 
     assert!(super::is_shadow_windows_npm_version_probe(
         &probe,
+        &shim,
+        &shadow_path
+    ));
+
+    let starting_probe = super::WindowsProcessSnapshot {
+        pid: 201,
+        parent_pid: Some(200),
+        creation_time: Some(201),
+        image_name: "npm.exe".to_owned(),
+        command: vec![shim.as_os_str().to_os_string()],
+    };
+    assert!(super::is_shadow_windows_npm_version_probe(
+        &starting_probe,
+        &shim,
+        &shadow_path
+    ));
+    let no_arguments = super::WindowsProcessSnapshot {
+        command: Vec::new(),
+        ..starting_probe
+    };
+    assert!(!super::is_shadow_windows_npm_version_probe(
+        &no_arguments,
         &shim,
         &shadow_path
     ));
@@ -845,6 +875,34 @@ fn windows_npm_probe_exemption_requires_exact_native_shim_and_arguments() {
         None,
     )
     .expect("inspect verified Windows probe");
+    assert_eq!(inspected.descendants, [(201, None)]);
+
+    let startup_snapshots = [
+        super::WindowsProcessSnapshot {
+            pid: 200,
+            parent_pid: None,
+            creation_time: Some(200),
+            image_name: "runner.exe".to_owned(),
+            command: vec![OsString::from("runner.exe")],
+        },
+        super::WindowsProcessSnapshot {
+            pid: 201,
+            parent_pid: Some(200),
+            creation_time: Some(201),
+            image_name: "npm.exe".to_owned(),
+            command: vec![shim.as_os_str().to_os_string()],
+        },
+    ];
+    let inspected = super::inspect_windows_job_processes_with_image_paths(
+        200,
+        &[200, 201],
+        &startup_snapshots,
+        &[],
+        Some(&shadow_path),
+        &image_paths,
+        None,
+    )
+    .expect("inspect authenticated Windows shim while its arguments initialize");
     assert_eq!(inspected.descendants, [(201, None)]);
 
     let spoofed_image_paths = std::collections::HashMap::from([(201, actual_image.clone())]);

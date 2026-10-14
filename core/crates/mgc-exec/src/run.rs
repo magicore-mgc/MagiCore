@@ -4557,10 +4557,19 @@ fn is_shadow_windows_npm_version_probe(
     let Ok(expected_digest) = windows_current_executable_sha256() else {
         return false;
     };
-    if !process.image_name.eq_ignore_ascii_case("npm.exe")
-        || process.command.len() != 2
-        || process.command[1].as_os_str() != OsStr::new("--version")
-    {
+    let command_shape_is_safe = match process.command.as_slice() {
+        // Windows can expose the process image before its argument list is fully
+        // observable. This one-argv snapshot is safe only after the executable
+        // path and bytes below authenticate the private MagiCore shim; that
+        // binary itself refuses every npm request except `--version`.
+        // Windows có thể lộ image trước khi argv hiện đủ. Snapshot chỉ có argv0
+        // chỉ an toàn khi path và byte bên dưới xác thực shim MagiCore riêng;
+        // binary này tự từ chối mọi yêu cầu npm ngoài `--version`.
+        [program] => windows_probe_argv0_matches_image(program, executable_path),
+        [_, version] => version.as_os_str() == OsStr::new("--version"),
+        _ => false,
+    };
+    if !process.image_name.eq_ignore_ascii_case("npm.exe") || !command_shape_is_safe {
         return false;
     }
 
