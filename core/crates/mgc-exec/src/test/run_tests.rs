@@ -498,6 +498,25 @@ fn linux_process_stat_keeps_exact_identity_when_pid_is_reused_within_one_second(
     assert!(super::parse_linux_process_stat(43, &stat(12345)).is_none());
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_process_scan_skips_only_an_entry_with_missing_pid_directory() {
+    let root = tempfile::tempdir().expect("create proc-entry fixture");
+    let process_dir = root.path().join("4242");
+    std::fs::create_dir(&process_dir).expect("create simulated proc entry");
+
+    assert!(
+        !super::linux_proc_process_dir_is_gone(&process_dir)
+            .expect("inspect still-present proc entry")
+    );
+
+    std::fs::remove_dir(&process_dir).expect("remove simulated exited process");
+    assert!(
+        super::linux_proc_process_dir_is_gone(&process_dir)
+            .expect("recognize process disappearance")
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn unix_session_prevents_descendants_from_joining_callers_process_group()

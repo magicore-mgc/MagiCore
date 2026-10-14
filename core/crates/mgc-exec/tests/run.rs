@@ -318,9 +318,11 @@ fn command_timeout_kills_hung_tool() {
     // (Tool giả: chạy sleeper 30s (grandchild), ghi PID ra file, rồi giữ
     // shell sống bằng `wait`. Sleeper thừa hưởng stdout dạng pipe và giữ nó
     // suốt 30s.)
-    // Keep the fixture name neutral so this test measures timeout handling, not Cargo policy.
-    // Dùng tên trung tính để test đo timeout, không vô tình đo policy Cargo.
-    let fake_tool = dir.join("timeout-tool");
+    // Use the allowlisted shell only in the explicit project-test scope; an
+    // arbitrary name or the default Install scope would stop before timeout.
+    // Chỉ dùng shell đã allowlist trong TestRunner; tên tùy ý hoặc Install mặc định
+    // sẽ chặn trước khi test timeout.
+    let fake_tool = dir.join("bash");
     fs::write(
         &fake_tool,
         format!(
@@ -336,6 +338,7 @@ fn command_timeout_kills_hung_tool() {
     let opts = ExecOptions {
         clean_env: true,
         cwd: Some(dir.clone()),
+        execution_scope: Some(ExecutionScope::TestRunner),
         timeout: Some(Duration::from_secs(1)),
         ..Default::default()
     };

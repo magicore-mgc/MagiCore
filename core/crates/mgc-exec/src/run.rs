@@ -3475,10 +3475,16 @@ fn linux_process_snapshots() -> Result<std::collections::HashMap<u32, ProcessSca
         let stat_path = entry.path().join("stat");
         let stat = match std::fs::read_to_string(&stat_path) {
             Ok(stat) => stat,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) if linux_proc_process_dir_is_gone(&entry.path())? => continue,
             Err(error) => {
-                return Err(error)
-                    .with_context(|| format!("cannot read Linux process identity for PID {pid}"));
+                let kind = error.kind();
+                let os_error = error.raw_os_error();
+                return Err(error).with_context(|| {
+                    format!(
+                        "cannot read Linux process identity for PID {pid} (kind={:?}, os_error={:?})",
+                        kind, os_error
+                    )
+                });
             }
         };
         let snapshot = parse_linux_process_stat(pid, &stat)
@@ -3491,17 +3497,47 @@ fn linux_process_snapshots() -> Result<std::collections::HashMap<u32, ProcessSca
 #[cfg(target_os = "linux")]
 fn linux_process_stat_snapshot(pid: u32) -> Result<Option<ProcessScanSnapshot>> {
     let stat_path = format!("/proc/{pid}/stat");
+    let process_dir = Path::new("/proc").join(pid.to_string());
     let stat = match std::fs::read_to_string(&stat_path) {
         Ok(stat) => stat,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) if linux_proc_process_dir_is_gone(&process_dir)? => {
+            return Ok(None);
+        }
         Err(error) => {
-            return Err(error)
-                .with_context(|| format!("cannot refresh Linux process identity for PID {pid}"));
+            let kind = error.kind();
+            let os_error = error.raw_os_error();
+            return Err(error).with_context(|| {
+                format!(
+                    "cannot refresh Linux process identity for PID {pid} (kind={:?}, os_error={:?})",
+                    kind, os_error
+                )
+            });
         }
     };
     let snapshot = parse_linux_process_stat(pid, &stat)
         .ok_or_else(|| anyhow::anyhow!("cannot parse Linux process identity for PID {pid}"))?;
     Ok(Some(snapshot))
+}
+
+#[cfg(target_os = "linux")]
+fn linux_proc_process_dir_is_gone(process_dir: &Path) -> Result<bool> {
+    // `/proc/<pid>/stat` may disappear after directory enumeration while the
+    // kernel reports a transient read error. Skip only if the PID directory is
+    // gone too; a still-present but unreadable process remains fail-closed.
+    // `/proc/<pid>/stat` có thể biến mất sau khi liệt kê thư mục và kernel trả
+    // lỗi đọc tạm thời. Chỉ bỏ qua khi thư mục PID cũng đã biến mất; process
+    // còn tồn tại nhưng không đọc được vẫn bị fail-closed.
+    match std::fs::metadata(process_dir) {
+        Ok(_) => Ok(false),
+        Err(metadata_error)
+            if metadata_error.kind() == std::io::ErrorKind::NotFound
+                || metadata_error.raw_os_error() == Some(libc::ESRCH) =>
+        {
+            Ok(true)
+        }
+        Err(metadata_error) => Err(metadata_error)
+            .with_context(|| format!("cannot verify Linux proc entry {}", process_dir.display())),
+    }
 }
 
 #[cfg(target_os = "linux")]
