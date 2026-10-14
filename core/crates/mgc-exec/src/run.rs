@@ -3475,7 +3475,7 @@ fn linux_process_snapshots() -> Result<std::collections::HashMap<u32, ProcessSca
         let stat_path = entry.path().join("stat");
         let stat = match std::fs::read_to_string(&stat_path) {
             Ok(stat) => stat,
-            Err(error) if linux_proc_process_dir_is_gone(&entry.path())? => continue,
+            Err(_) if linux_proc_process_dir_is_gone(&entry.path())? => continue,
             Err(error) => {
                 let kind = error.kind();
                 let os_error = error.raw_os_error();
@@ -3500,7 +3500,7 @@ fn linux_process_stat_snapshot(pid: u32) -> Result<Option<ProcessScanSnapshot>> 
     let process_dir = Path::new("/proc").join(pid.to_string());
     let stat = match std::fs::read_to_string(&stat_path) {
         Ok(stat) => stat,
-        Err(error) if linux_proc_process_dir_is_gone(&process_dir)? => {
+        Err(_) if linux_proc_process_dir_is_gone(&process_dir)? => {
             return Ok(None);
         }
         Err(error) => {
