@@ -874,49 +874,49 @@ SHELL_EXPLICIT_DYNAMIC_REVIEWS = {
 # và lệnh bootstrap SDK Flutter.
 SHELL_EXACT_DYNAMIC_COMMAND_REVIEWS = {
     "cli/tests/scripts/runtime_full_e2e.sh": {
-        "45c2df7bac23693694ed2f03d6169d489565fc0d6c66fbc88bc145af2aacf891": (
+        "f58a70859c54a3c4fcd092f83dffef61ffe61f1e2f4a358c094b203257afc5d2": (
             "Invokes the selected executable MGC binary with fixed list args in an isolated directory to verify the no-project diagnostic.",
         ),
-        "4565cf9e6c5b1d69fc075c0a37a44dad7d40fce56e8e5e69ec889408dcc8bba3": (
+        "2717131da574245db1d41fd4c0b509fee1f8aa63ea9b47d7eeb618291b3cb6d6": (
             "Invokes the selected executable MGC binary with fixed install args in an isolated compatibility fixture.",
         ),
-        "42b049065457ab530c419aeb618a7efeafe4d26f8b13570caf75dbc72434de9c": (
+        "c5aeeadebe3afe6b38651a7338cb731e204f4847645ffdbcb77ffcdf9b9a7f72": (
             "Invokes the selected executable MGC binary with fixed native dev args to verify the Bun/Deno policy gate in an isolated fixture.",
         ),
-        "c793e345a129ab602c342cc542d70e815225018f845145012793b2bfa427354e": (
+        "efeea9421eb17f8500c605f932f49e40b1d7a3712e7646c2e0a14387e98dd050": (
             "Invokes the selected executable MGC binary with only literal Bun/Deno compat values and fixed dev args; no shell re-evaluation occurs.",
         ),
-        "8e05c9ca6b3d9f0e0101068b53083f007a92858b1a8b07f83887da8538b96e82": (
+        "86f3b5f00751343b023fa0d858c434b593a9bc49596232a6d1000a3130232bb7": (
             "Invokes the selected executable MGC binary with fixed install args in the isolated native Node fixture.",
         ),
-        "22572e053836d24f669443c41a24f9b4cfadeeacfc00f0963ad2102912e5135d": (
+        "9277070496353c54c6229e97ae2f27c74ee4f2bb0e55a4be79291a059d0518f8": (
             "Invokes the selected executable MGC binary with fixed native dev args in the isolated Node audit-log fixture.",
         ),
-        "37f3452295f770646d8e4fb34df424e4adf3ebe44af27093172926124b1fe251": (
+        "61d09974357c4a0182ec1faf890a293fd8010a27a4d22beb1931e3b4774d93d1": (
             "Invokes the selected executable MGC binary with fixed install args in the isolated short-lived-descendant churn fixture.",
         ),
-        "ba86be0b02d9187145f71a5bddc8c35d68b53760735f00c87c5c5ae477ee1ede": (
+        "f4190a49972f376d42148f054064745781c7968afa5ce73e9dce8d974903b5f9": (
             "Invokes the selected executable MGC binary with fixed dev args to exercise the real process scanner under short-lived Node child churn.",
         ),
-        "e5b593f9ef0d24dbcf99c44df7413853c991993032748f9bce2b91aa2e6b3130": (
+        "adfd095ba878f353713e20b0153acd7e0bb04c780c0c1fcc02acdfbd1e2e146a": (
             "Invokes the selected executable MGC binary with fixed install args in the isolated process-guard fixture.",
         ),
-        "4c3e260c01abc2447efc82b3006369c764e4ec2b1589120f1505b4c45318b416": (
+        "e23df9f3778da11ccfd1bfbdcbb06d22860a13c9b2584d47855d26871d9ebdfa": (
             "Runs the test-created inert fake npm executable with only its fixed probe argument before the MGC process-guard E2E.",
         ),
-        "71417048bcc8ff0986cc399eeea8091a0c8c74f39af61e2b3ab762df9cd7dceb": (
+        "31a73628b48c608a49424dbbfa63d117dd265f4b6367ff48c2bf7181c6802036": (
             "Invokes the selected executable MGC binary with fixed dev args for the detached-child process-guard E2E; the child is a test-created fixture.",
         ),
-        "1fc7f7cca52a20b5d59a7ef936957373cf02c5b7d0df52ecc9a0c9f1a93ebceb": (
+        "f5f27e88f69547e715474a607c50d2106eeea730d0c1c6fd154da9924821c352": (
             "Invokes the selected executable MGC binary with fixed optimizer args in the isolated Rust optimizer fixture.",
         ),
-        "2e7385e6fd12de86910b54f9e04289e89f4483072a638bd268c2379ae6a668a7": (
+        "8916b6b1076a142a50e3955954eaa7b47a650f2b3daf5e5df8733e9fb783b5e8": (
             "Invokes the selected executable MGC binary with fixed install args in the isolated Rust optimizer fixture.",
         ),
-        "0357e9fa9798c831b0bacd832fa9729b953ae15724164b86706550264e06daed": (
+        "2ae7e042d229d4bcf39068bd0efc6d8979fbb9addede0c4416384f3fa9e1691e": (
             "Invokes the selected executable MGC binary with fixed build args to prove optimizer profile settings reach Cargo.",
         ),
-        "dc9635aa5773f3727fb7a4af8590bf24c8b88966129a8b996a17f7c9a4ddc202": (
+        "315198dbd2f5aaed76da5564d1921f99b448626e9d876c4389e950c168c108fd": (
             "Invokes the selected executable MGC binary with fixed test args to prove optimizer profile settings reach the real test runner.",
         ),
     },

@@ -3454,9 +3454,79 @@ struct MonitoredRootNotVisible(u32);
 struct ProcessScanSnapshot {
     parent_pid: Option<u32>,
     process_group: Option<u32>,
+    #[cfg(not(target_os = "linux"))]
     start_time_seconds: u64,
+    #[cfg(not(target_os = "linux"))]
     start_time_subseconds: u64,
+    #[cfg(target_os = "linux")]
+    process_start_ticks: u64,
     is_zombie: bool,
+}
+
+#[cfg(target_os = "linux")]
+fn linux_process_snapshots() -> Result<std::collections::HashMap<u32, ProcessScanSnapshot>> {
+    let mut snapshots = std::collections::HashMap::new();
+    for entry in std::fs::read_dir("/proc").context("cannot enumerate Linux process table")? {
+        let entry = entry.context("cannot read Linux process-table entry")?;
+        let file_name = entry.file_name();
+        let Some(pid) = file_name.to_str().and_then(|name| name.parse::<u32>().ok()) else {
+            continue;
+        };
+        let stat_path = entry.path().join("stat");
+        let stat = match std::fs::read_to_string(&stat_path) {
+            Ok(stat) => stat,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("cannot read Linux process identity for PID {pid}"));
+            }
+        };
+        let snapshot = parse_linux_process_stat(pid, &stat)
+            .ok_or_else(|| anyhow::anyhow!("cannot parse Linux process identity for PID {pid}"))?;
+        snapshots.insert(pid, snapshot);
+    }
+    Ok(snapshots)
+}
+
+#[cfg(target_os = "linux")]
+fn linux_process_stat_snapshot(pid: u32) -> Result<Option<ProcessScanSnapshot>> {
+    let stat_path = format!("/proc/{pid}/stat");
+    let stat = match std::fs::read_to_string(&stat_path) {
+        Ok(stat) => stat,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("cannot refresh Linux process identity for PID {pid}"));
+        }
+    };
+    let snapshot = parse_linux_process_stat(pid, &stat)
+        .ok_or_else(|| anyhow::anyhow!("cannot parse Linux process identity for PID {pid}"))?;
+    Ok(Some(snapshot))
+}
+
+#[cfg(target_os = "linux")]
+fn parse_linux_process_stat(pid: u32, stat: &str) -> Option<ProcessScanSnapshot> {
+    // Linux comm is parenthesized and may itself contain spaces or parentheses.
+    // (Tên comm của Linux nằm trong ngoặc và có thể chứa khoảng trắng hoặc ngoặc.)
+    let open_paren = stat.find('(')?;
+    let close_paren = stat.rfind(')')?;
+    let reported_pid = stat[..open_paren].trim().parse::<u32>().ok()?;
+    if reported_pid != pid || close_paren <= open_paren {
+        return None;
+    }
+    let mut fields = stat[close_paren + 1..].split_whitespace();
+    let state = fields.next()?;
+    let parent_pid = fields.next()?.parse::<u32>().ok()?;
+    let process_group = fields.next()?.parse::<u32>().ok()?;
+    // starttime is field 22; after state, parent PID, and process group, it is offset 16.
+    // starttime là trường 22; sau state, parent PID và process group thì offset là 16.
+    let process_start_ticks = fields.nth(16)?.parse::<u64>().ok()?;
+    Some(ProcessScanSnapshot {
+        parent_pid: (parent_pid != 0).then_some(parent_pid),
+        process_group: (process_group != 0).then_some(process_group),
+        process_start_ticks,
+        is_zombie: matches!(state, "Z" | "X"),
+    })
 }
 
 #[cfg(target_os = "macos")]
@@ -3546,22 +3616,29 @@ fn macos_process_count() -> Result<libc::c_int> {
 fn current_process_scan_snapshot(
     pid: u32,
     system: &sysinfo::System,
-) -> Option<ProcessScanSnapshot> {
+) -> Result<Option<ProcessScanSnapshot>> {
     #[cfg(target_os = "macos")]
     {
         let _ = system;
-        macos_process_snapshot(pid)
+        Ok(macos_process_snapshot(pid))
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
     {
-        let process = system.process(sysinfo::Pid::from_u32(pid))?;
-        Some(ProcessScanSnapshot {
+        let _ = system;
+        linux_process_stat_snapshot(pid)
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "linux")))]
+    {
+        let Some(process) = system.process(sysinfo::Pid::from_u32(pid)) else {
+            return Ok(None);
+        };
+        Ok(Some(ProcessScanSnapshot {
             parent_pid: process.parent().map(sysinfo::Pid::as_u32),
             process_group: None,
             start_time_seconds: process.start_time(),
             start_time_subseconds: 0,
             is_zombie: process.status() == sysinfo::ProcessStatus::Zombie,
-        })
+        }))
     }
 }
 
@@ -3603,10 +3680,18 @@ fn live_descendant_identities(
 
 #[cfg(unix)]
 fn process_identity_is_live(initial: ProcessScanSnapshot, current: ProcessScanSnapshot) -> bool {
-    !initial.is_zombie
-        && !current.is_zombie
-        && initial.start_time_seconds == current.start_time_seconds
-        && initial.start_time_subseconds == current.start_time_subseconds
+    if initial.is_zombie || current.is_zombie {
+        return false;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        initial.process_start_ticks == current.process_start_ticks
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        initial.start_time_seconds == current.start_time_seconds
+            && initial.start_time_subseconds == current.start_time_subseconds
+    }
 }
 
 #[cfg(unix)]
@@ -3659,9 +3744,9 @@ fn find_forbidden_descendant_tracking(
     compat_audit: Option<&CompatAuditContext<'_>>,
     root_reaped: bool,
 ) -> Result<Option<ForbiddenProcess>> {
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(all(not(target_os = "macos"), not(target_os = "linux")))]
     use sysinfo::Pid;
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(all(not(target_os = "macos"), not(target_os = "linux")))]
     use sysinfo::ProcessStatus;
     use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, UpdateKind};
 
@@ -3670,7 +3755,11 @@ fn find_forbidden_descendant_tracking(
         {
             macos_process_snapshots()?
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "linux")]
+        {
+            linux_process_snapshots()?
+        }
+        #[cfg(all(not(target_os = "macos"), not(target_os = "linux")))]
         {
             system.refresh_processes_specifics(
                 ProcessesToUpdate::All,
@@ -3801,28 +3890,30 @@ fn find_forbidden_descendant_tracking(
             ProcessRefreshKind::nothing(),
         );
     }
+    let mut process_refresh_pids = descendant_pids.clone();
+    process_refresh_pids.push(sysinfo::Pid::from_u32(root_pid));
     system.refresh_processes_specifics(
-        ProcessesToUpdate::Some(&descendant_pids),
+        ProcessesToUpdate::Some(&process_refresh_pids),
         false,
         ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always),
     );
     monitored_process_pids.clone_from(&current_process_pids);
-    let live_descendant_pids = descendant_identities
-        .iter()
-        .filter_map(|(pid, snapshot)| {
-            let current = current_process_scan_snapshot(pid.as_u32(), system)?;
-            if !process_identity_is_live(*snapshot, current) {
-                return None;
-            }
-            let process_group = current
-                .process_group
-                .or_else(|| process_group_id(pid.as_u32()));
-            if let Some(process_group) = process_group {
-                observed_process_groups.insert(process_group);
-            }
-            Some(*pid)
-        })
-        .collect::<Vec<_>>();
+    let mut live_descendant_pids = Vec::with_capacity(descendant_identities.len());
+    for (pid, snapshot) in &descendant_identities {
+        let Some(current) = current_process_scan_snapshot(pid.as_u32(), system)? else {
+            continue;
+        };
+        if !process_identity_is_live(*snapshot, current) {
+            continue;
+        }
+        let process_group = current
+            .process_group
+            .or_else(|| process_group_id(pid.as_u32()));
+        if let Some(process_group) = process_group {
+            observed_process_groups.insert(process_group);
+        }
+        live_descendant_pids.push(*pid);
+    }
     // Read policy variables only from Go processes inside the monitored tree.
     // Chỉ đọc biến policy từ process Go nằm trong cây đang giám sát.
     let go_pids = live_descendant_pids
@@ -3855,16 +3946,18 @@ fn find_forbidden_descendant_tracking(
         .iter()
         .copied()
         .collect::<std::collections::HashSet<_>>();
-    let go_pids_live_after_env = descendant_identities
-        .iter()
-        .filter_map(|(pid, initial)| {
-            if !go_pid_set.contains(pid) {
-                return None;
-            }
-            let current = current_process_scan_snapshot(pid.as_u32(), system)?;
-            process_identity_is_live(*initial, current).then_some(*pid)
-        })
-        .collect::<std::collections::HashSet<_>>();
+    let mut go_pids_live_after_env = std::collections::HashSet::new();
+    for (pid, initial) in &descendant_identities {
+        if !go_pid_set.contains(pid) {
+            continue;
+        }
+        let Some(current) = current_process_scan_snapshot(pid.as_u32(), system)? else {
+            continue;
+        };
+        if process_identity_is_live(*initial, current) {
+            go_pids_live_after_env.insert(*pid);
+        }
+    }
     let live_descendant_pids = live_descendant_pids
         .into_iter()
         .filter(|pid| !go_pids.contains(pid) || go_pids_live_after_env.contains(pid))
@@ -4629,14 +4722,23 @@ fn windows_probe_argv0_matches_image(program: &std::ffi::OsStr, image: &Path) ->
     {
         return true;
     }
-    let (Ok(program_path), Ok(image_path)) =
-        (std::fs::canonicalize(program), std::fs::canonicalize(image))
-    else {
-        return false;
-    };
-    let program_path = program_path.to_string_lossy().replace('/', "\\");
-    let image_path = image_path.to_string_lossy().replace('/', "\\");
-    program_path.eq_ignore_ascii_case(&image_path)
+    windows_canonical_paths_equal(Path::new(program), image)
+}
+
+#[cfg(any(windows, test))]
+fn windows_canonical_paths_equal(left: &Path, right: &Path) -> bool {
+    fn normalize(path: &Path) -> Option<String> {
+        let canonical = std::fs::canonicalize(path).ok()?;
+        let mut value = canonical.to_string_lossy().replace('/', "\\");
+        if let Some(unc_path) = value.strip_prefix("\\\\?\\UNC\\") {
+            value = format!("\\\\{unc_path}");
+        } else if let Some(local_path) = value.strip_prefix("\\\\?\\") {
+            value = local_path.to_owned();
+        }
+        Some(value.trim_end_matches('\\').to_lowercase())
+    }
+
+    matches!((normalize(left), normalize(right)), (Some(left), Some(right)) if left == right)
 }
 
 #[cfg(windows)]
@@ -4701,11 +4803,8 @@ fn is_shadow_windows_npm_version_probe(
         && windows_sha256_file(program_path).is_ok_and(|digest| digest == image_digest);
     let program_parent = program_path.parent();
     let is_current_executor_alias = alias_path_matches_image
-        && program_parent.is_some_and(|parent| {
-            std::fs::canonicalize(shadow_path.path()).is_ok_and(|expected_dir| {
-                std::fs::canonicalize(parent).is_ok_and(|actual_dir| actual_dir == expected_dir)
-            })
-        })
+        && program_parent
+            .is_some_and(|parent| windows_canonical_paths_equal(parent, shadow_path.path()))
         && image_digest == expected_digest;
     let is_nested_executor_alias = alias_path_matches_image
         && image_digest == expected_digest
@@ -4718,8 +4817,8 @@ fn is_shadow_windows_npm_version_probe(
     let is_current_executor_image = image_is_npm_alias
         && windows_probe_argv0_matches_image(program, &image_path)
         && image_parent.is_some_and(|parent| {
-            std::fs::canonicalize(shadow_path.path())
-                .is_ok_and(|expected_dir| parent == expected_dir && image_digest == expected_digest)
+            windows_canonical_paths_equal(parent, shadow_path.path())
+                && image_digest == expected_digest
         });
     let is_nested_executor_image = image_is_npm_alias
         && windows_probe_argv0_matches_image(program, &image_path)
@@ -5157,17 +5256,6 @@ fn forbidden_process_match_argv_with_env(
     let exempt = |name: &str| exempt.contains(&name);
     let image_name = process_basename(image);
 
-    // Process snapshots may lose the parent PID while preserving Cargo's
-    // rustc compiler argv. Accept a direct compiler signature or a wrapper with
-    // an absolute rustc path, full crate identity, and output flags; ordinary
-    // Cargo subcommands such as `install` remain policy-checked.
-    // (Snapshot process có thể thiếu parent PID nhưng vẫn giữ argv rustc-wrapper
-    // do Cargo gọi. Chỉ nhận wrapper có rustc path tuyệt đối, đủ crate identity
-    // và output flags; subcommand Cargo thông thường vẫn chịu policy.)
-    if image_name == "cargo" && (is_rustc_compilation_argv(argv) || is_rustc_wrapper_argv(argv)) {
-        return None;
-    }
-
     if FORBIDDEN_TOOLS.contains(&image_name.as_str()) && !exempt(&image_name) {
         return Some((image_name, "executable image", None, None));
     }
@@ -5245,21 +5333,34 @@ fn forbidden_process_match_argv_with_env(
 }
 
 fn is_rustc_compilation_argv(argv: &[OsString]) -> bool {
-    argv.iter().skip(1).any(|arg| arg == "--crate-name")
-        && argv
-            .first()
-            .is_some_and(|program| process_basename(&program.to_string_lossy()) == "rustc")
-        && argv.iter().skip(1).any(|arg| arg == "--crate-type")
+    argv.first()
+        .is_some_and(|program| process_basename(&program.to_string_lossy()) == "rustc")
+        && is_rustc_compilation_flags(&argv[1..])
+        && has_rustc_option(&argv[1..], "--emit")
+        && has_rustc_option(&argv[1..], "--out-dir")
 }
 
 fn is_rustc_wrapper_argv(argv: &[OsString]) -> bool {
+    is_rustc_wrapper_argv_with_relative_compiler(argv, false)
+}
+
+fn is_rustc_toolchain_wrapper_argv(argv: &[OsString]) -> bool {
+    is_rustc_wrapper_argv_with_relative_compiler(argv, true)
+}
+
+fn is_rustc_wrapper_argv_with_relative_compiler(
+    argv: &[OsString],
+    allow_path_lookup: bool,
+) -> bool {
     let Some(compiler) = argv.get(1) else {
         return false;
     };
     let compiler = Path::new(compiler);
+    let compiler_path_is_trusted =
+        compiler.is_absolute() || (allow_path_lookup && compiler == Path::new("rustc"));
     argv.first()
         .is_some_and(|wrapper| process_basename(&wrapper.to_string_lossy()) == "cargo")
-        && compiler.is_absolute()
+        && compiler_path_is_trusted
         && process_basename(&compiler.to_string_lossy()) == "rustc"
         && is_rustc_compilation_flags(&argv[2..])
         && has_rustc_option(&argv[2..], "--emit")
@@ -5304,16 +5405,17 @@ fn is_rustc_toolchain_child(image: &str, argv: &[OsString], parent_image: Option
         return true;
     }
 
-    // Rustdoc test mode also runs doctests through Cargo's configured rustc wrapper.
-    // The complete wrapper signature remains sufficient even when the OS snapshot
-    // omits the parent process; arbitrary Cargo children remain blocked above.
-    // (Rustdoc cũng gọi rustc-wrapper khi biên dịch doctest. Chữ ký wrapper đầy đủ
-    // vẫn đủ nhận diện nếu snapshot thiếu parent; Cargo child thông thường bị chặn.)
-    is_rustc_wrapper_argv(argv)
+    // Rustdoc and Cargo may pass `rustc` through PATH to their configured wrapper;
+    // accept that relative operand only while the observed parent is trusted.
+    // (Rustdoc và Cargo có thể truyền `rustc` qua PATH cho wrapper đã cấu hình;
+    // chỉ nhận operand tương đối khi parent quan sát được thuộc toolchain.)
+    is_rustc_wrapper_argv(argv) || is_rustc_toolchain_wrapper_argv(argv)
 }
 
 fn is_rustc_compilation_flags(argv: &[OsString]) -> bool {
-    argv.iter().any(|arg| arg == "--crate-name") && argv.iter().any(|arg| arg == "--crate-type")
+    !argv.iter().any(|arg| arg == "--")
+        && argv.iter().any(|arg| arg == "--crate-name")
+        && argv.iter().any(|arg| arg == "--crate-type")
 }
 
 fn process_invocation_program(candidate: &str) -> String {

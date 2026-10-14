@@ -399,8 +399,12 @@ fn process_tree_skips_zombies_but_still_reaches_live_grandchildren() {
     let snapshot = |parent_pid, start_time_seconds, is_zombie| super::ProcessScanSnapshot {
         parent_pid,
         process_group: None,
+        #[cfg(not(target_os = "linux"))]
         start_time_seconds,
+        #[cfg(not(target_os = "linux"))]
         start_time_subseconds: 0,
+        #[cfg(target_os = "linux")]
+        process_start_ticks: start_time_seconds,
         is_zombie,
     };
     let process_snapshots = std::collections::HashMap::from([
@@ -437,6 +441,31 @@ fn process_tree_skips_zombies_but_still_reaches_live_grandchildren() {
         same_live_process,
         reused_pid
     ));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_process_stat_keeps_exact_identity_when_pid_is_reused_within_one_second() {
+    let stat = |ticks| {
+        format!("42 (go (worker) with spaces) S 1 7 7 0 -1 4194304 0 0 0 0 0 0 0 20 0 1 0 {ticks}")
+    };
+    let original = super::parse_linux_process_stat(42, &stat(12345))
+        .expect("parse Linux proc stat with parenthesized comm");
+    let reused = super::parse_linux_process_stat(42, &stat(12346))
+        .expect("parse Linux proc stat after PID reuse");
+    assert_eq!(original.parent_pid, Some(1));
+    assert_eq!(original.process_group, Some(7));
+    assert_eq!(original.process_start_ticks, 12345);
+    assert!(!original.is_zombie);
+    assert!(!super::process_identity_is_live(original, reused));
+
+    let zombie = super::parse_linux_process_stat(
+        42,
+        "42 (go worker) Z 1 7 7 0 -1 4194304 0 0 0 0 0 0 0 20 0 1 0 12347",
+    )
+    .expect("parse Linux zombie process state");
+    assert!(zombie.is_zombie);
+    assert!(super::parse_linux_process_stat(43, &stat(12345)).is_none());
 }
 
 #[cfg(unix)]
@@ -1011,6 +1040,14 @@ fn windows_nested_npm_probe_requires_generated_path_marker_and_version_verb() {
         &shim,
         &shadow_path
     ));
+    let case_variant_shadow_path = super::ShadowPath {
+        dir: std::path::PathBuf::from(shadow_path.path().to_string_lossy().to_uppercase()),
+    };
+    assert!(super::is_shadow_windows_npm_version_probe(
+        &probe,
+        &shim,
+        &case_variant_shadow_path
+    ));
 
     // Windows may report the original path for a hard-linked image while argv[0]
     // retains the private npm.exe alias used to launch it.
@@ -1153,7 +1190,7 @@ fn cargo_compile_is_allowed_only_with_locked_offline_flags() {
 }
 
 #[test]
-fn cargo_image_with_rustc_compilation_argv_is_allowed_but_cargo_install_is_denied() {
+fn rustc_child_requires_a_trusted_cargo_parent_but_cargo_install_is_denied() {
     use std::ffi::OsString;
 
     let rustc_child = [
@@ -1163,6 +1200,9 @@ fn cargo_image_with_rustc_compilation_argv_is_allowed_but_cargo_install_is_denie
         "--crate-type",
         "bin",
         "probe.rs",
+        "--emit=link",
+        "--out-dir",
+        "/tmp/mgc-rustc-probe",
     ]
     .into_iter()
     .map(OsString::from)
@@ -1203,7 +1243,7 @@ fn cargo_image_with_rustc_compilation_argv_is_allowed_but_cargo_install_is_denie
         OsString::from("--out-dir"),
         std::env::temp_dir().into_os_string(),
     ];
-    assert!(super::forbidden_process_match_argv("cargo", &cargo_wrapped_rustc, &[]).is_none());
+    assert!(super::forbidden_process_match_argv("cargo", &cargo_wrapped_rustc, &[]).is_some());
     assert!(super::is_rustc_wrapper_argv(&cargo_wrapped_rustc));
     assert!(super::is_rustc_toolchain_child(
         "cargo",
@@ -1225,6 +1265,29 @@ fn cargo_image_with_rustc_compilation_argv_is_allowed_but_cargo_install_is_denie
         &cargo_wrapped_rustc,
         None
     ));
+
+    // PATH lookup may leave only the literal `rustc` operand in argv. Trust it
+    // only when Cargo or rustdoc is the observed parent, never in a raw matcher.
+    // (argv có thể chỉ ghi operand `rustc` do tra PATH; chỉ tin khi parent là Cargo/rustdoc.)
+    let mut relative_cargo_wrapper = cargo_wrapped_rustc.clone();
+    relative_cargo_wrapper[1] = OsString::from("rustc");
+    assert!(!super::is_rustc_wrapper_argv(&relative_cargo_wrapper));
+    assert!(super::is_rustc_toolchain_child(
+        "cargo",
+        &relative_cargo_wrapper,
+        Some("cargo")
+    ));
+    assert!(super::is_rustc_toolchain_child(
+        "cargo",
+        &relative_cargo_wrapper,
+        Some("rustdoc")
+    ));
+    assert!(!super::is_rustc_toolchain_child(
+        "cargo",
+        &relative_cargo_wrapper,
+        Some("node")
+    ));
+    assert!(super::forbidden_process_match_argv("cargo", &relative_cargo_wrapper, &[]).is_some());
 
     // OS snapshots may omit argv[0] for Cargo/rustdoc compiler children;
     // require a trusted toolchain parent plus the full compiler-only signature.
@@ -1319,6 +1382,33 @@ fn cargo_image_with_rustc_compilation_argv_is_allowed_but_cargo_install_is_denie
         super::forbidden_process_match_argv("cargo", &cargo_rustc_subcommand, &[]).is_some(),
         "Cargo's rustc subcommand must remain subject to dependency policy"
     );
+
+    let cargo_rustc_with_compiler_flags = [
+        "cargo",
+        "rustc",
+        "--locked",
+        "--offline",
+        "--",
+        "--crate-type",
+        "lib",
+        "--crate-name",
+        "probe",
+        "--emit=link",
+        "--out-dir",
+        "/tmp/mgc-rustc-probe",
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect::<Vec<_>>();
+    assert!(
+        super::forbidden_process_match_argv("cargo", &cargo_rustc_with_compiler_flags, &[])
+            .is_some()
+    );
+    assert!(!super::is_rustc_toolchain_child(
+        "cargo",
+        &cargo_rustc_with_compiler_flags,
+        Some("cargo")
+    ));
 }
 
 #[test]

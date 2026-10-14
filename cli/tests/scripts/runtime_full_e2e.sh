@@ -531,15 +531,28 @@ fi
 "$MGC_BIN" build
 rm -rf "$RUST_PROJECT/target"
 "$MGC_BIN" test
-node - "$RUST_PROJECT/.magicore/exec.log" "$RUST_PROJECT" <<'NODE'
+node - "$RUST_PROJECT/.magicore/exec.log" <<'NODE'
 const fs = require("node:fs");
-const [auditPath, expectedCwd] = process.argv.slice(2);
+const path = require("node:path");
+const [auditPath] = process.argv.slice(2);
+const expectedCwd = process.cwd();
 const rows = fs.readFileSync(auditPath, "utf8").trim().split(/\r?\n/).map((line) => JSON.parse(line));
+const samePath = (actual, expected) => {
+  try {
+    const actualPath = fs.realpathSync(actual);
+    const expectedPath = fs.realpathSync(expected);
+    return process.platform === "win32"
+      ? path.normalize(actualPath).toLowerCase() === path.normalize(expectedPath).toLowerCase()
+      : actualPath === expectedPath;
+  } catch {
+    return false;
+  }
+};
 for (const subcommand of ["build", "test"]) {
   const found = rows.some((row) => row.cmd === "cargo"
     && Array.isArray(row.args) && row.args[0] === subcommand
     && row.args.includes("--locked") && row.args.includes("--offline")
-    && fs.realpathSync(row.cwd) === fs.realpathSync(expectedCwd)
+    && samePath(row.cwd, expectedCwd)
     && row.exit_code === 0);
   if (!found) {
     console.error(`Audit log did not record a successful native Cargo ${subcommand}`);
@@ -547,9 +560,10 @@ for (const subcommand of ["build", "test"]) {
       && row.cmd.toLowerCase().split(/[\\/]/).pop().replace(/\.exe$/, "") === "cargo")
       .map((row) => {
         let cwdMatches = false;
-        try { cwdMatches = fs.realpathSync(row.cwd) === fs.realpathSync(expectedCwd); } catch {}
-        return { args: row.args, cwdMatches, exit_code: row.exit_code };
+        try { cwdMatches = samePath(row.cwd, expectedCwd); } catch {}
+        return { args: row.args, cwd: row.cwd, cwdMatches, exit_code: row.exit_code };
       });
+    console.error(`Expected project cwd: ${expectedCwd}`);
     console.error(`Observed Cargo audit rows: ${JSON.stringify(cargoRows)}`);
     process.exit(1);
   }
