@@ -31,11 +31,113 @@ const version = require('node:child_process').execSync('npm --version', { encodi
 assert.equal(version, '0.0.0');
 console.log('MGC_AUTHENTICATED_NPM_PROBE_OK');
 "#;
-    let (ok, output) = common::mgc_in(root.path(), &["exec", "node", "--", "-e", script]);
+    // Invoke the product binary directly: wrapping MGC in mgc-exec here creates
+    // a second, test-harness process guard which incorrectly authenticates the
+    // product's nested npm shim against the test harness image. The MGC process
+    // still runs its own production guard around Node and the npm probe.
+    // Gọi thẳng binary sản phẩm: bọc MGC bằng mgc-exec tạo guard thứ hai của
+    // test harness, khiến guard ngoài đối chiếu nhầm shim npm lồng bên trong
+    // với image của test harness. Guard sản phẩm vẫn giám sát Node và npm.
+    let (ok, output) =
+        run_product_cli_direct_bounded(root.path(), &["exec", "node", "--", "-e", script]);
     assert!(
         ok && output.contains("MGC_AUTHENTICATED_NPM_PROBE_OK"),
         "{output}"
     );
+}
+
+fn run_product_cli_direct_bounded(cwd: &std::path::Path, args: &[&str]) -> (bool, String) {
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+
+    let mut options = mgc_exec::run::ExecOptions {
+        cwd: Some(cwd.to_path_buf()),
+        ..Default::default()
+    };
+    common::configure_test_env(&mut options);
+
+    let mut command = Command::new(mgc_binary());
+    command
+        .args(args)
+        .current_dir(cwd)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    for (key, value) in options.env {
+        command.env(key, value);
+    }
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            return (
+                false,
+                format!("could not start MGC product binary: {error}"),
+            );
+        }
+    };
+
+    // Drain both streams while polling so neither OS pipe can stall the process.
+    let stdout = child.stdout.take().expect("stdout was configured as piped");
+    let stderr = child.stderr.take().expect("stderr was configured as piped");
+    let stdout_reader = std::thread::spawn(move || read_process_output_bounded(stdout));
+    let stderr_reader = std::thread::spawn(move || read_process_output_bounded(stderr));
+
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let (status, timed_out) = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break (status, false),
+            Ok(None) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                break (child.wait().expect("wait for timed-out MGC process"), true);
+            }
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return (
+                    false,
+                    format!("could not poll MGC product process: {error}"),
+                );
+            }
+        }
+    };
+    let stdout = stdout_reader
+        .join()
+        .expect("stdout reader thread should finish")
+        .expect("read MGC stdout");
+    let stderr = stderr_reader
+        .join()
+        .expect("stderr reader thread should finish")
+        .expect("read MGC stderr");
+    let mut output = String::from_utf8_lossy(&stdout).into_owned();
+    if !stderr.is_empty() {
+        if !output.is_empty() {
+            output.push('\n');
+        }
+        output.push_str(&String::from_utf8_lossy(&stderr));
+    }
+    if timed_out {
+        output.push_str("\nMGC product process exceeded the 60-second E2E limit");
+    }
+    (status.success() && !timed_out, output)
+}
+
+fn read_process_output_bounded(mut reader: impl std::io::Read) -> std::io::Result<Vec<u8>> {
+    use std::io::Read;
+
+    const MAX_CAPTURE_BYTES: usize = 8 * 1024 * 1024;
+    let mut captured = Vec::new();
+    let mut buffer = [0u8; 16 * 1024];
+    loop {
+        let bytes_read = reader.read(&mut buffer)?;
+        if bytes_read == 0 {
+            return Ok(captured);
+        }
+        let remaining = MAX_CAPTURE_BYTES.saturating_sub(captured.len());
+        captured.extend_from_slice(&buffer[..bytes_read.min(remaining)]);
+        // Keep draining even after the capture cap so the child cannot block on a full pipe.
+    }
 }
 
 const ALL_TOOLS: &[&str] = &[
