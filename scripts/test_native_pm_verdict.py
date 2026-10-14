@@ -285,7 +285,7 @@ class LifecycleEnvironmentIsolation(unittest.TestCase):
                 "ci.yml",
                 "Setup Flutter SDK",
                 "Resolve Flutter SDK dependencies before MGC process guard",
-                "Run lifecycle tests (MUST PASS - no || true)",
+                "Run native test-runner security E2E on release binary",
             ),
         ]
 
