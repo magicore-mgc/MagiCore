@@ -3966,6 +3966,19 @@ fn forbidden_process_entry(
         |(name, match_source, matched_token, matched_token_index)| {
             let matched_operation =
                 matched_invocation_shape_argv(&name, process.cmd(), matched_token_index);
+            let matched_operation = if name == "go" {
+                let observed_proxy_off = policy_env
+                    .iter()
+                    .rev()
+                    .find(|(key, _)| key.eq_ignore_ascii_case("GOPROXY"))
+                    .is_some_and(|(_, value)| value.eq_ignore_ascii_case("off"));
+                format!(
+                    "{matched_operation} [parent={}, GOPROXY-off-observed={observed_proxy_off}]",
+                    parent_image.as_deref().unwrap_or("unavailable")
+                )
+            } else {
+                matched_operation
+            };
             ForbiddenProcess {
                 pid: pid.as_u32(),
                 name,
