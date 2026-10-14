@@ -3660,8 +3660,10 @@ fn find_forbidden_descendant_tracking(
     root_reaped: bool,
 ) -> Result<Option<ForbiddenProcess>> {
     #[cfg(not(target_os = "macos"))]
+    use sysinfo::Pid;
+    #[cfg(not(target_os = "macos"))]
     use sysinfo::ProcessStatus;
-    use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, UpdateKind};
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, UpdateKind};
 
     let process_snapshots = {
         #[cfg(target_os = "macos")]
@@ -3967,14 +3969,14 @@ fn forbidden_process_entry(
             let matched_operation =
                 matched_invocation_shape_argv(&name, process.cmd(), matched_token_index);
             let matched_operation = if name == "go" {
-                let observed_proxy_off = policy_env
-                    .iter()
-                    .rev()
-                    .find(|(key, _)| key.eq_ignore_ascii_case("GOPROXY"))
-                    .is_some_and(|(_, value)| value.eq_ignore_ascii_case("off"));
+                let proxy_observation = go_proxy_observation(&policy_env);
+                let parent_pid = process
+                    .parent()
+                    .map(|parent| parent.as_u32().to_string())
+                    .unwrap_or_else(|| "unavailable".to_string());
                 format!(
-                    "{matched_operation} [parent={}, GOPROXY-off-observed={observed_proxy_off}]",
-                    parent_image.as_deref().unwrap_or("unavailable")
+                    "{matched_operation} [parent={}({parent_pid}), GOPROXY={proxy_observation}]",
+                    parent_image.as_deref().unwrap_or("unavailable"),
                 )
             } else {
                 matched_operation
@@ -3990,6 +3992,19 @@ fn forbidden_process_entry(
             }
         },
     )
+}
+
+#[cfg(unix)]
+fn go_proxy_observation(policy_env: &[(String, String)]) -> &'static str {
+    match policy_env
+        .iter()
+        .rev()
+        .find(|(key, _)| key.eq_ignore_ascii_case("GOPROXY"))
+    {
+        Some((_, value)) if value.eq_ignore_ascii_case("off") => "off",
+        Some(_) => "present-not-off",
+        None => "missing",
+    }
 }
 
 #[cfg(unix)]
