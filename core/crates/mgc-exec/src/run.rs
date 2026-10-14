@@ -4064,7 +4064,8 @@ fn forbidden_process_entry(
             let matched_operation = if name == "cargo"
                 && (is_rustc_compilation_argv(process.cmd())
                     || is_rustc_wrapper_argv(process.cmd())
-                    || is_rustc_toolchain_wrapper_argv(process.cmd()))
+                    || is_rustc_toolchain_wrapper_argv(process.cmd())
+                    || is_rustdoc_test_compilation_argv(process.cmd()))
             {
                 let parent_pid = process
                     .parent()
@@ -5376,6 +5377,37 @@ fn is_rustc_toolchain_wrapper_argv(argv: &[OsString]) -> bool {
     is_rustc_wrapper_argv_with_relative_compiler(argv, true)
 }
 
+fn is_rustdoc_test_compilation_argv(argv: &[OsString]) -> bool {
+    use std::ffi::OsStr;
+
+    let Some(program) = argv.first() else {
+        return false;
+    };
+    let program_name = process_basename(&program.to_string_lossy());
+    let compiler_args = if program_name == "rustc" {
+        &argv[1..]
+    } else if program_name == "cargo"
+        && argv.get(1).is_some_and(|compiler| {
+            process_basename(&compiler.to_string_lossy()) == "rustc"
+                && (Path::new(compiler).is_absolute() || compiler == OsStr::new("rustc"))
+        })
+    {
+        &argv[2..]
+    } else if program.to_string_lossy().starts_with('-') {
+        argv
+    } else {
+        return false;
+    };
+
+    is_rustc_compilation_flags(compiler_args)
+        && has_rustc_option(compiler_args, "--test")
+        && compiler_args.iter().any(|argument| {
+            Path::new(argument)
+                .extension()
+                .is_some_and(|extension| extension == OsStr::new("rs"))
+        })
+}
+
 fn is_rustc_wrapper_argv_with_relative_compiler(
     argv: &[OsString],
     allow_path_lookup: bool,
@@ -5429,7 +5461,8 @@ fn is_rustc_toolchain_child(image: &str, argv: &[OsString], parent_image: Option
             && argv.iter().any(|arg| arg == "--emit")
             && argv.iter().any(|arg| arg == "--out-dir")
     });
-    if direct_rustc_shape || executable_omitted_shape {
+    let rustdoc_doctest_shape = rustdoc_parent && is_rustdoc_test_compilation_argv(argv);
+    if direct_rustc_shape || executable_omitted_shape || rustdoc_doctest_shape {
         return true;
     }
 

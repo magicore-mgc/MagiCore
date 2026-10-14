@@ -1321,6 +1321,85 @@ fn rustc_child_requires_a_trusted_cargo_parent_but_cargo_install_is_denied() {
     ));
     assert!(super::forbidden_process_match_argv("cargo", &relative_cargo_wrapper, &[]).is_some());
 
+    // Rustdoc doctest compilation omits Cargo's usual emit/output arguments;
+    // require its observed parent and a compiler operand plus a Rust test source.
+    // (Rustdoc biên dịch doctest có thể thiếu emit/output; cần parent rustdoc,
+    // operand compiler và source Rust dạng test.)
+    let rustdoc_doctest_wrapper = vec![
+        OsString::from("cargo"),
+        std::env::temp_dir().join("rustc").into_os_string(),
+        OsString::from("--crate-type"),
+        OsString::from("bin"),
+        OsString::from("--color"),
+        OsString::from("always"),
+        OsString::from("--crate-name"),
+        OsString::from("rust_out"),
+        OsString::from("--test"),
+        OsString::from("/tmp/rustdoc-doctest.rs"),
+    ];
+    assert!(super::is_rustdoc_test_compilation_argv(
+        &rustdoc_doctest_wrapper
+    ));
+    assert!(super::is_rustc_toolchain_child(
+        "cargo",
+        &rustdoc_doctest_wrapper,
+        Some("rustdoc")
+    ));
+    assert!(!super::is_rustc_toolchain_child(
+        "cargo",
+        &rustdoc_doctest_wrapper,
+        Some("cargo")
+    ));
+    assert!(!super::is_rustc_toolchain_child(
+        "cargo",
+        &rustdoc_doctest_wrapper,
+        Some("node")
+    ));
+
+    // Some OS process snapshots omit argv[0] entirely for rustdoc children.
+    // (Một số OS snapshot bỏ hẳn argv[0] của tiến trình con rustdoc.)
+    let rustdoc_doctest_without_program = [
+        "--crate-type",
+        "bin",
+        "--crate-name",
+        "rust_out",
+        "--test",
+        "/tmp/rustdoc-doctest.rs",
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect::<Vec<_>>();
+    assert!(super::is_rustdoc_test_compilation_argv(
+        &rustdoc_doctest_without_program
+    ));
+    assert!(super::is_rustc_toolchain_child(
+        "cargo",
+        &rustdoc_doctest_without_program,
+        Some("rustdoc")
+    ));
+    assert!(!super::is_rustc_toolchain_child(
+        "cargo",
+        &rustdoc_doctest_without_program,
+        Some("cargo")
+    ));
+
+    let cargo_manager_with_compiler_flags = [
+        "cargo",
+        "install",
+        "--crate-type",
+        "bin",
+        "--crate-name",
+        "rust_out",
+        "--test",
+        "/tmp/rustdoc-doctest.rs",
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect::<Vec<_>>();
+    assert!(!super::is_rustdoc_test_compilation_argv(
+        &cargo_manager_with_compiler_flags
+    ));
+
     // OS snapshots may omit argv[0] for Cargo/rustdoc compiler children;
     // require a trusted toolchain parent plus the full compiler-only signature.
     // (Snapshot có thể bỏ argv[0]; bắt buộc parent thuộc toolchain và đủ chữ ký compiler.)
