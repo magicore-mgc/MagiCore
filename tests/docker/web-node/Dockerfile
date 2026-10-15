@@ -7,10 +7,12 @@ FROM node:26.12.0-trixie-slim
 WORKDIR /app
 COPY --from=mgc-cli /usr/local/bin/mgc /usr/local/bin/mgc
 COPY --from=mgc-cli /usr/lib/libz.so.1 /usr/lib/libz.so.1
+COPY --from=mgc-cli /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=mgc-cli --chown=65532:65532 /mgc-data /mgc-data
 COPY mgc-container-entrypoint /usr/local/bin/mgc-container-entrypoint
 ENV MGC_DATA_DIR=/mgc-data
 ENV HOME=/tmp
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 COPY . .
 RUN chown -R 65532:65532 /app /mgc-data
 RUN chmod 0555 /usr/local/bin/mgc-container-entrypoint

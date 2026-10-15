@@ -85,11 +85,6 @@ pub fn layer_rel(core: &str, name: &str) -> String {
     }
 }
 
-/// Đường dẫn cache của layer — flat (v1: chỉ giữ latest; version pin là P2).
-pub fn cached_layer_path(core: &str, name: &str) -> PathBuf {
-    templates_cache_dir().join(layer_rel(core, name))
-}
-
 /// `mgc template` subcommands
 #[derive(Debug, Parser, Clone)]
 pub enum TemplateCmd {

@@ -1638,11 +1638,16 @@ fn infer_native_dev_launch(
     }
 
     if project_root.join("Cargo.toml").exists() && project_root.join("src/main.rs").exists() {
-        return Ok(DevLaunch {
-            program: PathBuf::from("cargo"),
-            args: native_cargo_run_args(project_root)?,
-            envs: env_host_port_pairs(host, port),
-        });
+        #[cfg(any(feature = "lib", feature = "web-backend-runtime"))]
+        {
+            return Ok(DevLaunch {
+                program: PathBuf::from("cargo"),
+                args: native_cargo_run_args(project_root)?,
+                envs: env_host_port_pairs(host, port),
+            });
+        }
+        #[cfg(not(any(feature = "lib", feature = "web-backend-runtime")))]
+        bail!("Rust Web dev requires a CLI build with the shared language adapter enabled");
     }
 
     if project_root.join("artisan").exists() {
@@ -1731,6 +1736,7 @@ fn infer_native_dev_launch(
 
 /// Start Rust Web backends from the Cargo projection and sources verified by MGC.
 /// Chạy backend Rust Web bằng lock/source Cargo đã được MGC xác minh.
+#[cfg(any(feature = "lib", feature = "web-backend-runtime"))]
 fn native_cargo_run_args(project_root: &Path) -> Result<Vec<OsString>> {
     let source_root =
         mgc_lib_adapter::install::cargo_compat::validate_build_for_core(project_root, "web")?;

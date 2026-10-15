@@ -710,7 +710,7 @@ fn main() {
             "pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d",
             workflow,
         )
-        self.assertIn('pulumi-version: "3.269.0"', workflow)
+        self.assertIn('pulumi-version: "3.268.0"', workflow)
 
     def test_pulumi_dependency_fixture_does_not_rewrite_existing_manifest_dependency(self):
         calls = []

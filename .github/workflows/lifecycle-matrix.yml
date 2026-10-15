@@ -124,7 +124,7 @@ jobs:
       - name: Setup Pulumi CLI (cloud lifecycle lane)
         uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7.0.0
         with:
-          pulumi-version: "3.269.0"
+          pulumi-version: "3.268.0"
 
       - name: Setup Go (lib/go lane toolchain)
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

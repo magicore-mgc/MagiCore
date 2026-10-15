@@ -12,6 +12,20 @@ use std::sync::{
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
+#[test]
+fn client_builder_diagnostic_preserves_cause_without_url() {
+    let error = match reqwest::Client::builder().user_agent("\n").build() {
+        Ok(_) => panic!("invalid user-agent must fail while building the client"),
+        Err(error) => error,
+    };
+    let diagnostic = super::client_builder_error("cannot build HTTP client", error);
+
+    assert!(diagnostic.starts_with("cannot build HTTP client:"));
+    assert_ne!(diagnostic, "cannot build HTTP client: builder error");
+    assert!(!diagnostic.contains("http://"));
+    assert!(!diagnostic.contains("https://"));
+}
+
 async fn bind_test_listener() -> Option<TcpListener> {
     match TcpListener::bind("127.0.0.1:0").await {
         Ok(listener) => Some(listener),

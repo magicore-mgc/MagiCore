@@ -113,6 +113,13 @@ fn network_profile_log(kind: &str, target: &str, message: &str) {
     }
 }
 
+fn client_builder_error(label: &str, error: reqwest::Error) -> String {
+    // A builder error's Display is only "builder error". Keep the causal
+    // source for runtime diagnostics, but remove any URL before formatting.
+    // (Display chỉ là "builder error"; giữ nguyên nhân nhưng gỡ URL trước.)
+    format!("{label}: {:?}", error.without_url())
+}
+
 /// Primary HTTP client: used for metadata fetches. Optimized for many concurrent
 /// short-lived requests against the same host (registry.npmjs.org).
 /// Built once and cheaply cloned (`Client` is reference-counted); a build
@@ -139,7 +146,7 @@ fn global_http_client() -> mgc_types::MgResult<reqwest::Client> {
                 // H2 connection window: 32 MiB
                 .http2_initial_connection_window_size(32 * 1024 * 1024)
                 .build()
-                .map_err(|error| format!("cannot build HTTP client: {error}"))
+                .map_err(|error| client_builder_error("cannot build HTTP client", error))
         })
         .clone()
         .map_err(MgError::Other)
@@ -164,7 +171,7 @@ pub fn batch_http_client() -> mgc_types::MgResult<reqwest::Client> {
                 .http2_initial_stream_window_size(16 * 1024 * 1024)
                 .http2_initial_connection_window_size(64 * 1024 * 1024)
                 .build()
-                .map_err(|error| format!("cannot build batch HTTP client: {error}"))
+                .map_err(|error| client_builder_error("cannot build batch HTTP client", error))
         })
         .clone()
         .map_err(MgError::Other)

@@ -1,6 +1,7 @@
 //! End-to-end checks that container flags are honored by the shipped CLI.
 //! Kiểm E2E rằng flag container được CLI phát hành thực thi thật.
 
+use std::path::Path;
 use std::process::Command;
 
 fn assert_project_roots_owned_before_switching_user(dockerfile: &str) {
@@ -14,6 +15,27 @@ fn assert_project_roots_owned_before_switching_user(dockerfile: &str) {
         ownership < user,
         "root ownership must be set before dropping privileges"
     );
+}
+
+fn assert_mgc_tls_roots_are_available(dockerfile: &str) {
+    assert!(
+        dockerfile.contains(
+            "COPY --from=mgc-cli /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt"
+        ),
+        "runtime image must carry the CA bundle used by MGC"
+    );
+    assert!(
+        dockerfile.contains("SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"),
+        "MGC must use the copied CA bundle for HTTPS registry access"
+    );
+}
+
+fn assert_container_readme(project: &Path) {
+    let readme = std::fs::read_to_string(project.join("README.md"))
+        .expect("container-enabled project must document its run command");
+    assert!(readme.contains("docker compose up --build"));
+    assert!(readme.contains("copies that same lock"));
+    assert!(readme.contains("mgc install --frozen"));
 }
 
 #[test]
@@ -97,6 +119,7 @@ fn create_web_docker_generates_mgc_managed_container_assets() {
     assert!(dockerfile.contains("node:26.12.0-trixie-slim"));
     assert!(dockerfile.contains("COPY --from=mgc-cli /usr/local/bin/mgc"));
     assert!(dockerfile.contains("ENV MGC_DATA_DIR=/mgc-data"));
+    assert_mgc_tls_roots_are_available(&dockerfile);
     assert!(dockerfile.contains("USER 65532:65532"));
     assert_project_roots_owned_before_switching_user(&dockerfile);
     assert!(dockerfile.contains("RUN mgc install-web --frozen"));
@@ -124,10 +147,7 @@ fn create_web_docker_generates_mgc_managed_container_assets() {
     assert!(compose.contains("4315:4315"));
     assert!(compose.contains("mgc-data:/mgc-data"));
     assert!(compose.contains("magicore-system-data"));
-    let readme = std::fs::read_to_string(project.join("README.md"))
-        .expect("Docker usage must be part of the generated project guide");
-    assert!(readme.contains("docker compose up --build"));
-    assert!(readme.contains("copies that same lock"));
+    assert_container_readme(&project);
     let dockerignore = std::fs::read_to_string(project.join(".dockerignore"))
         .expect("--docker must create a build-context ignore list");
     assert!(dockerignore.contains("node_modules"));
@@ -173,6 +193,7 @@ fn create_web_k8s_implies_docker_and_generates_local_cluster_assets() {
     let project = temp.path().join(project_name);
     let dockerfile = std::fs::read_to_string(project.join("Dockerfile"))
         .expect("--k8s must imply the MGC-managed Docker build");
+    assert_mgc_tls_roots_are_available(&dockerfile);
     assert!(dockerfile.contains("COPY --from=mgc-cli /usr/local/bin/mgc"));
     assert!(dockerfile.contains("RUN mgc install-web --frozen"));
     assert!(dockerfile.contains("ENTRYPOINT [\"/usr/local/bin/mgc-container-entrypoint\"]"));
@@ -255,6 +276,7 @@ fn create_web_native_backend_docker_profiles_keep_dependencies_under_mgc() {
         assert!(dockerfile.contains(runtime_image));
         assert!(dockerfile.contains(runtime_contract));
         assert!(dockerfile.contains("COPY --from=mgc-cli /usr/local/bin/mgc"));
+        assert_mgc_tls_roots_are_available(&dockerfile);
         assert!(dockerfile.contains("RUN mgc install-web --frozen"));
         assert!(dockerfile.contains("USER 65532:65532"));
         assert_project_roots_owned_before_switching_user(&dockerfile);
@@ -266,6 +288,7 @@ fn create_web_native_backend_docker_profiles_keep_dependencies_under_mgc() {
             .expect("native Web container must include the MGC entrypoint");
         assert!(entrypoint.contains("mgc install-web --frozen"));
         assert!(entrypoint.contains("exec mgc \"$@\""));
+        assert_container_readme(&project);
         if framework == "axum" {
             let source = std::fs::read_to_string(project.join("src/main.rs"))
                 .expect("Axum scaffold must contain its server source");
@@ -297,7 +320,10 @@ fn create_web_native_backend_docker_profiles_keep_dependencies_under_mgc() {
     )
     .expect("native Web Kubernetes profile must generate deployment manifest");
     assert!(manifest.contains("path: /api/health"));
-    assert!(manifest.contains("mgc install-web --frozen"));
+    let dockerfile =
+        std::fs::read_to_string(temp.path().join("container-web-python-k8s/Dockerfile"))
+            .expect("native Web Kubernetes profile must generate its MGC Dockerfile");
+    assert!(dockerfile.contains("RUN mgc install-web --frozen"));
     let source = std::fs::read_to_string(temp.path().join("container-web-python-k8s/main.py"))
         .expect("FastAPI scaffold must contain its health endpoint");
     assert!(source.contains("@app.get(\"/api/health\")"));
@@ -382,6 +408,7 @@ fn create_non_web_docker_profiles_run_lifecycle_through_mgc() {
         assert!(dockerfile.contains(expected_runtime));
         assert!(dockerfile.contains("COPY --from=mgc-cli /usr/local/bin/mgc"));
         assert!(dockerfile.contains("MGC_DATA_DIR=/mgc-data"));
+        assert_mgc_tls_roots_are_available(&dockerfile);
         assert!(dockerfile.contains("USER 65532:65532"));
         assert_project_roots_owned_before_switching_user(&dockerfile);
         assert!(dockerfile.contains("ENTRYPOINT [\"/usr/local/bin/mgc-container-entrypoint\"]"));
@@ -406,6 +433,7 @@ fn create_non_web_docker_profiles_run_lifecycle_through_mgc() {
         assert!(compose.contains("mgc-data:/mgc-data"));
         assert!(compose.contains("magicore-system-data"));
         assert!(project.join(".dockerignore").is_file());
+        assert_container_readme(&project);
     }
 
     let app_output = Command::new(env!("CARGO_BIN_EXE_mgc"))
@@ -429,6 +457,7 @@ fn create_non_web_docker_profiles_run_lifecycle_through_mgc() {
     let app_dockerfile = std::fs::read_to_string(app_project.join("Dockerfile"))
         .expect("Flutter --docker must write a Dockerfile");
     assert!(app_dockerfile.contains("debian:trixie-slim"));
+    assert_mgc_tls_roots_are_available(&app_dockerfile);
     assert_project_roots_owned_before_switching_user(&app_dockerfile);
     assert!(app_dockerfile.contains("FLUTTER_VERSION=3.47.7"));
     assert!(
@@ -439,6 +468,7 @@ fn create_non_web_docker_profiles_run_lifecycle_through_mgc() {
     let app_entrypoint = std::fs::read_to_string(app_project.join("mgc-container-entrypoint"))
         .expect("Flutter Docker profile must include its MGC entrypoint");
     assert!(app_entrypoint.contains("mgc install --frozen"));
+    assert_container_readme(&app_project);
     assert!(app_dockerfile.contains("sha256sum --check --strict"));
     assert!(!app_dockerfile.contains("dart pub get"));
     let app_compose = std::fs::read_to_string(app_project.join("docker-compose.yml"))
