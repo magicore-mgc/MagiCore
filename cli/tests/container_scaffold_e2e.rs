@@ -494,6 +494,20 @@ fn create_non_web_docker_profiles_run_lifecycle_through_mgc() {
     assert!(
         app_dockerfile.contains("af7455f540df951184c7953fbe3cf884766e7541dacf8571f9f582db03dd6230")
     );
+    let flutter_runtime_stage = app_dockerfile
+        .split_once("FROM ${FLUTTER_IMAGE}\n")
+        .expect("Flutter image must start a separate runtime stage")
+        .1;
+    for argument in [
+        "ARG FLUTTER_VERSION\n",
+        "ARG FLUTTER_ARCHIVE_SHA256\n",
+        "ARG FLUTTER_RELEASE_BASE_URL\n",
+    ] {
+        assert!(
+            flutter_runtime_stage.contains(argument),
+            "Flutter runtime-stage argument missing: {argument}"
+        );
+    }
     assert!(app_dockerfile.contains("RUN mgc install --frozen && mgc test && mgc build"));
     assert!(app_dockerfile.contains("ENTRYPOINT [\"/usr/local/bin/mgc-container-entrypoint\"]"));
     let app_entrypoint = std::fs::read_to_string(app_project.join("mgc-container-entrypoint"))

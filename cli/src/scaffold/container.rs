@@ -295,6 +295,9 @@ fn write_app_docker_assets(target: &Path, config: &ScaffoldConfig) -> Result<()>
          ARG FLUTTER_RELEASE_BASE_URL={DEFAULT_FLUTTER_RELEASE_BASE_URL}\n\
          FROM ${{MGC_IMAGE}} AS mgc-cli\n\
          FROM ${{FLUTTER_IMAGE}}\n\
+         ARG FLUTTER_VERSION\n\
+         ARG FLUTTER_ARCHIVE_SHA256\n\
+         ARG FLUTTER_RELEASE_BASE_URL\n\
          RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git unzip xz-utils zip libglu1-mesa && rm -rf /var/lib/apt/lists/*\n\
          RUN curl --fail --location --silent --show-error \"${{FLUTTER_RELEASE_BASE_URL}}/flutter_linux_${{FLUTTER_VERSION}}-stable.tar.xz\" --output /tmp/flutter.tar.xz && echo \"${{FLUTTER_ARCHIVE_SHA256}}  /tmp/flutter.tar.xz\" | sha256sum --check --strict - && tar -xJf /tmp/flutter.tar.xz -C /opt && rm /tmp/flutter.tar.xz\n\
          RUN /opt/flutter/bin/flutter config --no-analytics && /opt/flutter/bin/flutter precache --web\n\
