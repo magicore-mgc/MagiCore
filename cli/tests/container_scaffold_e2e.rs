@@ -9,7 +9,7 @@ fn assert_project_roots_owned_before_switching_user(dockerfile: &str) {
         .find("RUN chown 65532:65532 /app /mgc-data")
         .expect("project and shared data roots must be writable by the runtime user");
     let user = dockerfile
-        .find("USER 65532:65532")
+        .rfind("USER 65532:65532")
         .expect("container must drop root privileges");
     assert!(
         ownership < user,
@@ -508,6 +508,19 @@ fn create_non_web_docker_profiles_run_lifecycle_through_mgc() {
             "Flutter runtime-stage argument missing: {argument}"
         );
     }
+    let flutter_sdk_ownership = app_dockerfile
+        .find("RUN chown -R 65532:65532 /opt/flutter")
+        .expect("Flutter SDK files must belong to the non-root runtime user");
+    let flutter_user = app_dockerfile
+        .find("USER 65532:65532\nRUN /opt/flutter/bin/flutter config")
+        .expect("Flutter SDK config and precache must run as the SDK owner");
+    let image_setup_root = app_dockerfile
+        .find("USER 0:0")
+        .expect("privileged image setup must explicitly switch back to root");
+    assert!(
+        flutter_sdk_ownership < flutter_user && flutter_user < image_setup_root,
+        "Flutter SDK ownership must precede non-root config/precache and root image setup"
+    );
     assert!(app_dockerfile.contains("RUN mgc install --frozen && mgc test && mgc build"));
     assert!(app_dockerfile.contains("ENTRYPOINT [\"/usr/local/bin/mgc-container-entrypoint\"]"));
     let app_entrypoint = std::fs::read_to_string(app_project.join("mgc-container-entrypoint"))

@@ -300,7 +300,11 @@ fn write_app_docker_assets(target: &Path, config: &ScaffoldConfig) -> Result<()>
          ARG FLUTTER_RELEASE_BASE_URL\n\
          RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git unzip xz-utils zip libglu1-mesa && rm -rf /var/lib/apt/lists/*\n\
          RUN curl --fail --location --silent --show-error \"${{FLUTTER_RELEASE_BASE_URL}}/flutter_linux_${{FLUTTER_VERSION}}-stable.tar.xz\" --output /tmp/flutter.tar.xz && echo \"${{FLUTTER_ARCHIVE_SHA256}}  /tmp/flutter.tar.xz\" | sha256sum --check --strict - && tar -xJf /tmp/flutter.tar.xz -C /opt && rm /tmp/flutter.tar.xz\n\
+         RUN chown -R {WEB_CONTAINER_UID}:{WEB_CONTAINER_GID} /opt/flutter\n\
+         ENV PATH=/opt/flutter/bin:$PATH HOME={DEFAULT_CONTAINER_HOME_DIR}\n\
+         USER {WEB_CONTAINER_UID}:{WEB_CONTAINER_GID}\n\
          RUN /opt/flutter/bin/flutter config --no-analytics && /opt/flutter/bin/flutter precache --web\n\
+         USER 0:0\n\
          WORKDIR {DEFAULT_CONTAINER_PROJECT_DIR}\n\
          COPY --from=mgc-cli /usr/local/bin/mgc /usr/local/bin/mgc\n\
          COPY --from=mgc-cli /usr/lib/libz.so.1 /usr/lib/libz.so.1\n\
@@ -309,7 +313,6 @@ fn write_app_docker_assets(target: &Path, config: &ScaffoldConfig) -> Result<()>
          COPY {DEFAULT_CONTAINER_ENTRYPOINT_FILE} {DEFAULT_CONTAINER_ENTRYPOINT_PATH}\n\
          COPY --chown={WEB_CONTAINER_UID}:{WEB_CONTAINER_GID} . .\n\
          ENV PATH=/opt/flutter/bin:$PATH MGC_DATA_DIR={DEFAULT_CONTAINER_DATA_DIR} HOME={DEFAULT_CONTAINER_HOME_DIR} SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt\n\
-         RUN chown -R {WEB_CONTAINER_UID}:{WEB_CONTAINER_GID} /opt/flutter\n\
          RUN chmod 0555 {DEFAULT_CONTAINER_ENTRYPOINT_PATH}\n\
          RUN chown {WEB_CONTAINER_UID}:{WEB_CONTAINER_GID} {DEFAULT_CONTAINER_PROJECT_DIR} {DEFAULT_CONTAINER_DATA_DIR}\n\
          USER {WEB_CONTAINER_UID}:{WEB_CONTAINER_GID}\n\
