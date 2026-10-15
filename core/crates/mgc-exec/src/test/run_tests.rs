@@ -487,11 +487,17 @@ fn linux_process_scan_skips_only_an_entry_with_missing_pid_directory() {
         !super::linux_proc_process_dir_is_gone(&process_dir)
             .expect("inspect still-present proc entry")
     );
+    assert!(super::parse_linux_process_stat_entry(4242, "malformed stat", &process_dir).is_err());
 
     std::fs::remove_dir(&process_dir).expect("remove simulated exited process");
     assert!(
         super::linux_proc_process_dir_is_gone(&process_dir)
             .expect("recognize process disappearance")
+    );
+    assert!(
+        super::parse_linux_process_stat_entry(4242, "malformed stat", &process_dir)
+            .expect("skip a process that exited during stat parsing")
+            .is_none()
     );
 }
 

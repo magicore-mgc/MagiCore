@@ -3514,8 +3514,9 @@ fn linux_process_snapshots() -> Result<std::collections::HashMap<u32, ProcessSca
                 });
             }
         };
-        let snapshot = parse_linux_process_stat(pid, &stat)
-            .ok_or_else(|| anyhow::anyhow!("cannot parse Linux process identity for PID {pid}"))?;
+        let Some(snapshot) = parse_linux_process_stat_entry(pid, &stat, &entry.path())? else {
+            continue;
+        };
         snapshots.insert(pid, snapshot);
     }
     Ok(snapshots)
@@ -3541,9 +3542,24 @@ fn linux_process_stat_snapshot(pid: u32) -> Result<Option<ProcessScanSnapshot>> 
             });
         }
     };
-    let snapshot = parse_linux_process_stat(pid, &stat)
-        .ok_or_else(|| anyhow::anyhow!("cannot parse Linux process identity for PID {pid}"))?;
-    Ok(Some(snapshot))
+    parse_linux_process_stat_entry(pid, &stat, &process_dir)
+}
+
+#[cfg(target_os = "linux")]
+fn parse_linux_process_stat_entry(
+    pid: u32,
+    stat: &str,
+    process_dir: &Path,
+) -> Result<Option<ProcessScanSnapshot>> {
+    if let Some(snapshot) = parse_linux_process_stat(pid, stat) {
+        return Ok(Some(snapshot));
+    }
+    // A process may exit after stat was opened but before its contents are parsed.
+    // Nếu process thoát sau khi mở stat nhưng trước khi parse xong, chỉ bỏ qua khi PID dir đã mất.
+    if linux_proc_process_dir_is_gone(process_dir)? {
+        return Ok(None);
+    }
+    anyhow::bail!("cannot parse Linux process identity for PID {pid}");
 }
 
 #[cfg(target_os = "linux")]
