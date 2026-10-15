@@ -123,6 +123,9 @@ pub const ALLOWED_TOOLS: &[&str] = &[
     // web đã chạy vite/next qua node_modules/.bin; tsc vào allowlist
     // để lane test scaffold lib/ts chạy trung thực được.
     "tsc",
+    // tsx executes project-local TypeScript lifecycle scripts after MGC installs dependencies.
+    // tsx chạy script TypeScript cục bộ sau khi MagiCore cài dependency.
+    "tsx",
     // vue-tsc: the vue scaffold's typecheck test script (same read-only
     // family as tsc — P0 finding 2026-09-12).
     // vue-tsc: script test typecheck của scaffold vue (cùng họ chỉ-đọc
@@ -220,7 +223,7 @@ pub const ALLOWED_TOOLS: &[&str] = &[
 /// minh; Install và DeviceControl không được gọi.)
 const PROJECT_LANGUAGE_EXECUTABLES: &[&str] = &[
     "bash", "clang", "clang++", "dotnet", "gcc", "g++", "godot", "java", "javac", "kotlinc", "php",
-    "zig",
+    "tsx", "zig",
 ];
 
 /// Package-manager executables are forbidden in every execution scope.

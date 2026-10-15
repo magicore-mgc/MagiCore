@@ -242,30 +242,15 @@ fn unsupported_backend_scaffolds_fail_without_creating_placeholder_projects() {
     .unwrap();
     dotnet.template_dir = root.path().join("missing-dotnet-template");
 
-    for (name, config) in [
-        (
-            "fastify",
-            ScaffoldConfig {
-                core: "web".to_string(),
-                sub_type: "backend".to_string(),
-                frameworks: vec!["node".to_string(), "fastify".to_string()],
-                project_name: root.path().join("fastify").to_string_lossy().to_string(),
-                features: vec![],
-                template_dir: root.path().join("missing-fastify-template"),
-            },
-        ),
-        ("dotnet", dotnet),
-    ] {
-        let project = std::path::PathBuf::from(&config.project_name);
-        assert!(
-            Scaffolder::scaffold(&config).is_err(),
-            "{name} without a real template must fail"
-        );
-        assert!(
-            !project.exists(),
-            "{name} failure must not leave a partial project"
-        );
-    }
+    let project = std::path::PathBuf::from(&dotnet.project_name);
+    assert!(
+        Scaffolder::scaffold(&dotnet).is_err(),
+        "dotnet without a real template or native adapter must fail"
+    );
+    assert!(
+        !project.exists(),
+        "unsupported backend failure must not leave a partial project"
+    );
 }
 
 #[test]
@@ -289,9 +274,14 @@ fn web_k8s_probe_routes_exist_in_embedded_native_backends() {
 }
 
 #[test]
-fn embedded_express_is_the_only_node_backend_fallback() {
+fn embedded_node_backend_fallbacks_materialize_lifecycle_projects() {
     let root = tempfile::tempdir().unwrap();
-    for framework in ["hono", "nestjs", "trpc"] {
+    for (framework, source, test_file) in [
+        ("fastify", "src/server.ts", "test/app.test.ts"),
+        ("hono", "src/server.ts", "test/app.test.ts"),
+        ("nestjs", "src/main.ts", "test/app.test.ts"),
+        ("trpc", "src/server.ts", "test/router.test.ts"),
+    ] {
         let project = root.path().join(framework);
         let config = ScaffoldConfig {
             core: "web".to_string(),
@@ -301,11 +291,24 @@ fn embedded_express_is_the_only_node_backend_fallback() {
             features: vec![],
             template_dir: root.path().join(format!("missing-{framework}-template")),
         };
+        let out = Scaffolder::scaffold(&config)
+            .unwrap_or_else(|error| panic!("{framework} embedded fallback failed: {error}"));
+        let package: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(out.join("package.json")).unwrap()).unwrap();
+        for script in ["dev", "build", "test"] {
+            assert!(
+                package["scripts"][script].is_string(),
+                "{framework} fallback must define {script}"
+            );
+        }
         assert!(
-            Scaffolder::scaffold(&config).is_err(),
-            "{framework} must fail closed"
+            out.join(source).is_file(),
+            "{framework} server source missing"
         );
-        assert!(!project.exists(), "{framework} failure leaves no project");
+        assert!(
+            out.join(test_file).is_file(),
+            "{framework} test source missing"
+        );
     }
 }
 

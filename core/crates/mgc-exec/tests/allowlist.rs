@@ -57,7 +57,7 @@ fn language_runtimes_are_available_only_in_project_execution_scopes() {
     let root = Path::new("/tmp/project");
     let tools = [
         "bash", "clang", "clang++", "dotnet", "gcc", "g++", "godot", "java", "javac", "kotlinc",
-        "php", "zig",
+        "php", "tsx", "zig",
     ];
     for tool in tools {
         for scope in [
@@ -77,6 +77,37 @@ fn language_runtimes_are_available_only_in_project_execution_scopes() {
                 "{tool} must stay out of {scope:?}"
             );
         }
+    }
+}
+
+#[test]
+fn tsx_is_limited_to_project_execution_scopes_and_pm_tools_remain_forbidden() {
+    use mgc_exec::allowlist::check_tool_with_scope;
+    use std::path::Path;
+
+    let root = Path::new("/tmp/project");
+    for scope in [
+        ExecutionScope::TestRunner,
+        ExecutionScope::BuildRunner,
+        ExecutionScope::DevServer,
+        ExecutionScope::ScriptRunner,
+    ] {
+        assert!(
+            check_tool_with_scope("tsx", scope, Some(root)).is_ok(),
+            "tsx must run project scripts in {scope:?}"
+        );
+    }
+    for scope in [ExecutionScope::Install, ExecutionScope::DeviceControl] {
+        assert!(
+            check_tool_with_scope("tsx", scope, Some(root)).is_err(),
+            "tsx must not run in {scope:?}"
+        );
+    }
+    for manager in ["npm", "npx", "pnpm", "yarn", "bun"] {
+        assert!(
+            check_tool_with_scope(manager, ExecutionScope::ScriptRunner, Some(root)).is_err(),
+            "package manager {manager} must remain forbidden"
+        );
     }
 }
 

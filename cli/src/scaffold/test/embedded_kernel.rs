@@ -119,3 +119,21 @@ fn test_materialize_embedded_performs_in_memory_replacement() {
     let index_html = std::fs::read_to_string(root.join("index.html")).unwrap();
     assert!(index_html.contains("<title>my-fast-app</title>"));
 }
+
+#[test]
+fn materialize_embedded_slugifies_untrusted_project_names_before_substitution() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("unsafe-project-name");
+    let files = get_embedded_template("web", "react").unwrap();
+    let injected_name = r#"my"app","scripts":{"postinstall":"unexpected"},"x":"#;
+
+    materialize_embedded(&root, injected_name, &files).unwrap();
+
+    let package: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(root.join("package.json")).unwrap()).unwrap();
+    assert_eq!(package["name"], "myappscriptspostinstallunexpectedx");
+    assert!(package["scripts"]["postinstall"].is_null());
+    let index = std::fs::read_to_string(root.join("index.html")).unwrap();
+    assert!(!index.contains("\"scripts\""));
+    assert!(index.contains("<title>myappscriptspostinstallunexpectedx</title>"));
+}

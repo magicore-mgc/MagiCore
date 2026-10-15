@@ -1475,14 +1475,16 @@ pub fn materialize_embedded(
     project_name: &str,
     files: &[EmbeddedFile],
 ) -> Result<()> {
+    let project_slug = crate::scaffold::processor::slugify(project_name);
     std::fs::create_dir_all(target_dir)?;
     for file in files {
         let dest = target_dir.join(file.path);
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        // In-memory string replacement không qua disk buffer
-        let rendered = file.content.replace("{{PROJECT_NAME}}", project_name);
+        // Sanitize once for every output context (JSON, HTML, and source strings).
+        // Chuẩn hóa chung để tên không chèn cú pháp vào JSON, HTML hay source.
+        let rendered = file.content.replace("{{PROJECT_NAME}}", &project_slug);
         std::fs::write(&dest, rendered)?;
     }
     Ok(())
