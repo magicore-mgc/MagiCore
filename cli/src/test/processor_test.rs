@@ -1938,6 +1938,16 @@ const FRESHNESS_BACKLOG: &[(&str, &str, &str)] = &[
         "vite 6 line; 7/8 needs per-template build E2E",
     ),
     (
+        "vue-vite",
+        "typescript",
+        "Vue tooling currently requires TypeScript 6; TypeScript 7 API is not stable yet (Vue tooling hiện cần TypeScript 6; API TypeScript 7 chưa ổn định)",
+    ),
+    (
+        "vue",
+        "typescript",
+        "Vue tooling currently requires TypeScript 6; TypeScript 7 API is not stable yet (Vue tooling hiện cần TypeScript 6; API TypeScript 7 chưa ổn định)",
+    ),
+    (
         "solidjs",
         "typescript",
         "TS 5 line; TS 6/7 migration needs per-template tsc E2E",
