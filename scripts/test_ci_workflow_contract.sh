@@ -75,6 +75,8 @@ grep -Fq 'if [[ "$registry_ready" != 1 ]]; then' <<<"$seeded_ci_registry" \
   || fail "registry seeding must stop when the readiness budget expires"
 grep -Fq 'if (fail > 0) process.exit(1);' <<<"$seeded_ci_registry" \
   || fail "historical fixture normalization must stop on unresolved links"
+grep -Fq 'cargo test -p mgc-exec --test test_run -- --test-threads=1 2>&1' "$ROOT/.github/workflows/ci.yml" \
+  || fail "process-table executor tests must serialize synthetic process fixtures"
 if grep -Eq 'curl -sf -o /dev/null http://127\.0\.0\.1:4315/[[:space:]]' <<<"$seeded_ci_registry"; then
   fail "seeded CI registry readiness must not probe the unregistered root route"
 fi

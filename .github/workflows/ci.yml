@@ -61,7 +61,9 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: mgc-exec allowlist tests
-        run: cargo test -p mgc-exec --test test_run 2>&1
+        # These tests inspect the OS process table while launching synthetic tools; serialize their fixtures.
+        # Test này đọc process table khi spawn tool giả lập; chạy tuần tự để không gán chéo fixture.
+        run: cargo test -p mgc-exec --test test_run -- --test-threads=1 2>&1
         timeout-minutes: 2
 
   minimum-rust-version:
