@@ -520,6 +520,9 @@ jobs:
           MGC_STRESS_LIFECYCLE_EVIDENCE: ${{ runner.temp }}/mgc-framework-lifecycle.jsonl
         run: |
           set -euo pipefail
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            export MGC_TEST_DIRECT_PRODUCT=1
+          fi
           set +e
           failed=0
           for target in \

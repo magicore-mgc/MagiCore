@@ -242,6 +242,12 @@ pub fn run_binary_with_options(
     args: &[&str],
     options: &mgc_exec::run::ExecOptions,
 ) -> (bool, String) {
+    // Windows framework E2E must exercise the product guard without nesting the harness guard.
+    // Windows framework E2E cần chạy guard của sản phẩm, không lồng guard của harness.
+    if cfg!(windows) && std::env::var("MGC_TEST_DIRECT_PRODUCT").is_ok_and(|value| value == "1") {
+        return run_product_binary_direct_bounded(bin, args, options);
+    }
+
     // Reuse the platform's bounded process-tree executor instead of unbounded output().
     // Dùng executor có timeout và kill cây tiến trình thay output() không giới hạn.
     let arguments = args
@@ -260,6 +266,178 @@ pub fn run_binary_with_options(
         format!("{stdout}\n{stderr}")
     };
     (output.exit_code == 0, combined)
+}
+
+/// Invoke the product binary directly with bounded output and the configured deadline.
+/// Chạy thẳng binary sản phẩm, giới hạn capture và tôn trọng deadline cấu hình.
+pub fn run_product_binary_direct_bounded(
+    bin: &Path,
+    args: &[&str],
+    options: &mgc_exec::run::ExecOptions,
+) -> (bool, String) {
+    use std::process::Stdio;
+
+    let mut command = std::process::Command::new(bin);
+    command
+        .args(args)
+        .current_dir(
+            options
+                .cwd
+                .as_deref()
+                .unwrap_or_else(|| Path::new(MANIFEST)),
+        )
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env_remove("MGC_TEST_DIRECT_PRODUCT");
+    if options.clean_env {
+        command.env_clear();
+        for (key, value) in &options.env {
+            if !key.eq_ignore_ascii_case("PATH") {
+                command.env(key, value);
+            }
+        }
+        let path = options
+            .env
+            .iter()
+            .rev()
+            .find(|(key, _)| key.eq_ignore_ascii_case("PATH"))
+            .map(|(_, value)| std::ffi::OsString::from(value))
+            .or_else(|| std::env::var_os("PATH"));
+        if let Some(path) = path {
+            command.env("PATH", path);
+        }
+        #[cfg(windows)]
+        for key in [
+            "SYSTEMROOT",
+            "WINDIR",
+            "TEMP",
+            "TMP",
+            "USERPROFILE",
+            "APPDATA",
+            "LOCALAPPDATA",
+            "ProgramData",
+        ] {
+            if let Some(value) = std::env::var_os(key) {
+                command.env(key, value);
+            }
+        }
+    } else {
+        for (key, value) in &options.env {
+            command.env(key, value);
+        }
+    }
+
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            return (
+                false,
+                format!("could not start MGC product binary: {error}"),
+            );
+        }
+    };
+    let stdout = child.stdout.take().expect("stdout was configured as piped");
+    let stderr = child.stderr.take().expect("stderr was configured as piped");
+    let stdout_reader = std::thread::spawn(move || read_direct_process_output_bounded(stdout));
+    let stderr_reader = std::thread::spawn(move || read_direct_process_output_bounded(stderr));
+
+    let timeout = (!options.disable_timeout).then(|| {
+        options
+            .timeout
+            .unwrap_or_else(|| Duration::from_secs(COMMAND_TIMEOUT_SECS))
+    });
+    let deadline = timeout.map(|timeout| Instant::now() + timeout);
+    let (status, timed_out) = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break (status, false),
+            Ok(None) if deadline.is_some_and(|deadline| Instant::now() >= deadline) => {
+                #[cfg(windows)]
+                terminate_direct_process_tree(&mut child);
+                #[cfg(not(windows))]
+                {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+                break (child.wait().expect("wait for timed-out MGC process"), true);
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(20)),
+            Err(error) => {
+                #[cfg(windows)]
+                terminate_direct_process_tree(&mut child);
+                #[cfg(not(windows))]
+                {
+                    let _ = child.kill();
+                }
+                let _ = child.wait();
+                return (
+                    false,
+                    format!("could not poll MGC product process: {error}"),
+                );
+            }
+        }
+    };
+
+    let stdout = stdout_reader
+        .join()
+        .map_err(|_| "stdout reader thread panicked".to_string())
+        .and_then(|result| result.map_err(|error| format!("could not read MGC stdout: {error}")));
+    let stderr = stderr_reader
+        .join()
+        .map_err(|_| "stderr reader thread panicked".to_string())
+        .and_then(|result| result.map_err(|error| format!("could not read MGC stderr: {error}")));
+    let (stdout, stderr) = match (stdout, stderr) {
+        (Ok(stdout), Ok(stderr)) => (stdout, stderr),
+        (Err(error), _) | (_, Err(error)) => return (false, error),
+    };
+    let mut output = String::from_utf8_lossy(&stdout).into_owned();
+    if !stderr.is_empty() {
+        if !output.is_empty() {
+            output.push('\n');
+        }
+        output.push_str(&String::from_utf8_lossy(&stderr));
+    }
+    if timed_out {
+        let timeout_secs = timeout.map_or(0, |timeout| timeout.as_secs());
+        output.push_str(&format!(
+            "\ncommand timed out after {timeout_secs} seconds while waiting for the MGC product process"
+        ));
+    }
+    (status.success() && !timed_out, output)
+}
+
+fn read_direct_process_output_bounded(mut reader: impl Read) -> std::io::Result<Vec<u8>> {
+    const MAX_CAPTURE_BYTES: usize = 8 * 1024 * 1024;
+    let mut captured = Vec::new();
+    let mut buffer = [0u8; 16 * 1024];
+    loop {
+        let bytes_read = reader.read(&mut buffer)?;
+        if bytes_read == 0 {
+            return Ok(captured);
+        }
+        let remaining = MAX_CAPTURE_BYTES.saturating_sub(captured.len());
+        captured.extend_from_slice(&buffer[..bytes_read.min(remaining)]);
+    }
+}
+
+#[cfg(windows)]
+fn terminate_direct_process_tree(child: &mut std::process::Child) {
+    use std::process::Stdio;
+
+    if let Some(system_root) = std::env::var_os("SystemRoot") {
+        let taskkill = PathBuf::from(system_root)
+            .join("System32")
+            .join("taskkill.exe");
+        if taskkill.is_file() {
+            let pid = child.id().to_string();
+            let _ = std::process::Command::new(taskkill)
+                .args(["/PID", pid.as_str(), "/T", "/F"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
+    }
+    let _ = child.kill();
 }
 
 /// Create a temp directory for scaffold testing; remove it when this test thread exits.

@@ -834,22 +834,29 @@ fn validate_tool_record(root: &Path, record: &ToolRecord) -> Result<()> {
 }
 
 fn normalize_tool_target(target: &Path) -> Result<String> {
-    let mut normalized = PathBuf::new();
-    let mut has_normal_component = false;
-    for component in target.components() {
-        match component {
-            std::path::Component::CurDir => {}
-            std::path::Component::Normal(part) => {
-                normalized.push(part);
-                has_normal_component = true;
-            }
-            _ => return Err(crate::error::dlx_invalid_package_bins()),
-        }
-    }
-    if !has_normal_component {
+    // npm bin paths are portable manifest values; normalize both separator
+    // styles before validating so records behave identically across OSes.
+    // Đường dẫn bin của npm là dữ liệu manifest đa nền tảng; chuẩn hóa hai
+    // kiểu dấu phân cách trước khi kiểm tra để record nhất quán mọi OS.
+    let portable = target.to_string_lossy().replace('\\', "/");
+    if portable.is_empty() || portable.starts_with('/') {
         return Err(crate::error::dlx_invalid_package_bins());
     }
-    Ok(normalized.to_string_lossy().into_owned())
+    let mut components = Vec::new();
+    for component in portable.split('/') {
+        match component {
+            "" | "." => {}
+            ".." => return Err(crate::error::dlx_invalid_package_bins()),
+            component if component.contains(':') || component.chars().any(char::is_control) => {
+                return Err(crate::error::dlx_invalid_package_bins());
+            }
+            component => components.push(component),
+        }
+    }
+    if components.is_empty() {
+        return Err(crate::error::dlx_invalid_package_bins());
+    }
+    Ok(components.join("/"))
 }
 
 fn write_pending(root: &Path, pending: &PendingToolInstall) -> Result<()> {

@@ -32,3 +32,17 @@ fn windows_shim_rejects_percent_expansion_and_control_characters() {
     assert!(render_windows_shim_contents(Path::new(r"C:\tools\bad%PATH%\cli")).is_err());
     assert!(render_windows_shim_contents(Path::new("C:\\tools\\bad\npath\\cli")).is_err());
 }
+
+#[test]
+fn managed_tool_targets_use_portable_separators_and_reject_cross_os_escape() {
+    assert_eq!(
+        super::normalize_tool_target(Path::new(r".\bin\cli")).unwrap(),
+        "bin/cli"
+    );
+    for target in [r"..\escape", r"C:\outside", r"\rooted", "../escape"] {
+        assert!(
+            super::normalize_tool_target(Path::new(target)).is_err(),
+            "unsafe or rooted target must fail on every OS: {target}"
+        );
+    }
+}

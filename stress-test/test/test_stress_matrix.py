@@ -698,6 +698,11 @@ Options:
         ):
             block = workflow.split("- name: " + name, 1)[1].split("\n      - name:", 1)[0]
             self.assertIn("MGC_TEST_CLI_BINARY: ${{ env.MGC_STRESS_CLI_SNAPSHOT }}", block)
+        frontend_block = workflow.split(
+            "- name: Run all dedicated frontend lifecycle E2Es, even after a lane fails", 1
+        )[1].split("\n      - name:", 1)[0]
+        self.assertIn('if [[ "${RUNNER_OS}" == "Windows" ]]', frontend_block)
+        self.assertIn("export MGC_TEST_DIRECT_PRODUCT=1", frontend_block)
         block = workflow.split("- name: Create every advertised framework and run CLI dimensions", 1)[1]
         self.assertIn('--binary "${MGC_STRESS_CLI_SNAPSHOT}"', block)
         for name in (
