@@ -2786,7 +2786,7 @@ fn observed_go_proxy_is_required_for_readonly_execution_but_never_allows_mutatio
 }
 
 #[test]
-fn go_toolchain_version_probe_is_allowed_without_unlocking_other_go_commands() {
+fn go_toolchain_version_probe_does_not_bypass_dependency_guards() {
     use std::ffi::OsString;
 
     for tool in [
@@ -2808,14 +2808,35 @@ fn go_toolchain_version_probe_is_allowed_without_unlocking_other_go_commands() {
         );
     }
 
+    assert!(super::is_go_toolchain_version_probe(&[
+        "tool".into(),
+        "compile".into(),
+        "-v=full".into(),
+    ]));
     for args in [
-        vec!["go", "tool", "buildid", "-V=full"],
-        vec!["go", "tool", "pack", "-V=full"],
-        vec!["go", "tool", "compile", "-V=full", "extra"],
-        vec!["go", "tool", "compile", "-o", "output.o"],
-        vec!["go", "tool", "pprof", "-http=:8080"],
+        vec!["tool", "compile", "-v=full", "extra"],
+        vec!["tool", "buildid", "-v=full"],
+        vec!["tool", "pprof", "-v=full"],
+    ] {
+        assert!(
+            !super::is_go_toolchain_version_probe(
+                &args
+                    .iter()
+                    .map(|arg| (*arg).to_string())
+                    .collect::<Vec<_>>()
+            ),
+            "only the exact supported tool-version query is recognized: {args:?}"
+        );
+    }
+
+    for args in [
         vec!["go", "mod", "download"],
+        vec!["go", "work", "sync"],
+        vec!["go", "get", "example.com/pkg"],
+        vec!["go", "install", "example.com/pkg"],
+        vec!["go", "list", "example.com/pkg"],
         vec!["go", "test", "./..."],
+        vec!["go", "run", "main.go"],
     ] {
         let argv = args.iter().map(OsString::from).collect::<Vec<_>>();
         assert!(
