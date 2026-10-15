@@ -317,6 +317,39 @@ fn test_clean_env_preserves_windows_runtime_variables() {
 
 #[cfg(windows)]
 #[test]
+fn test_clean_env_honors_explicit_userprofile_override() {
+    use mgc_exec::prelude::{ExecOptions, run_project_binary};
+    use std::path::PathBuf;
+
+    let comspec = std::env::var_os("COMSPEC").expect("Windows must expose COMSPEC");
+    let isolated_home = tempfile::tempdir().expect("create isolated profile directory");
+    let isolated_path = isolated_home.path().to_string_lossy().to_string();
+    let report = run_project_binary(
+        &PathBuf::from(comspec),
+        &[
+            "/D".to_string(),
+            "/S".to_string(),
+            "/C".to_string(),
+            "echo %USERPROFILE%".to_string(),
+        ],
+        &ExecOptions {
+            clean_env: true,
+            env: vec![("USERPROFILE".to_string(), isolated_path.clone())],
+            ..Default::default()
+        },
+    )
+    .expect("clean environment must honor an explicit temporary user profile");
+
+    assert_eq!(
+        report.exit_code, 0,
+        "cmd.exe failed: {}",
+        report.stderr_tail
+    );
+    assert_eq!(report.stdout_tail.trim(), isolated_path);
+}
+
+#[cfg(windows)]
+#[test]
 fn test_priority_order_exe_over_bat() {
     // Priority: .exe > .com > .cmd/.bat > extensionless — extensionless PATH
     // entries are usually Git-bash sh scripts (flutter ships both `flutter`

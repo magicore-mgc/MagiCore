@@ -1256,6 +1256,13 @@ fn execute_command(
             "LOCALAPPDATA",
             "ProgramData",
         ] {
+            if opts
+                .env
+                .iter()
+                .any(|(key, _)| key.eq_ignore_ascii_case(critical_var))
+            {
+                continue;
+            }
             if let Ok(val) = std::env::var(critical_var) {
                 command.env(critical_var, val);
             }

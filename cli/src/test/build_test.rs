@@ -495,7 +495,8 @@ fn cdk_build_recognizes_windows_cmd_shim_as_installed() {
 #[test]
 fn cdk_synth_disables_background_telemetry() {
     let local_bin = Path::new("/lane/project/node_modules/.bin");
-    let env = super::cloud_cdk_synth_env(local_bin).unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let env = super::cloud_cdk_synth_env(local_bin, home.path()).unwrap();
 
     assert_eq!(
         env.iter()
@@ -508,6 +509,18 @@ fn cdk_synth_disables_background_telemetry() {
             .find(|(key, _)| key == "PATH")
             .and_then(|(_, value)| std::env::split_paths(value).next()),
         Some(local_bin.to_path_buf())
+    );
+    assert_eq!(
+        env.iter()
+            .find(|(key, _)| key == "HOME")
+            .map(|(_, value)| Path::new(value)),
+        Some(home.path())
+    );
+    assert_eq!(
+        env.iter()
+            .find(|(key, _)| key == "USERPROFILE")
+            .map(|(_, value)| Path::new(value)),
+        Some(home.path())
     );
 }
 

@@ -886,11 +886,16 @@ fn cloud_local_executable_exists(root: &Path, bin_name: &str, windows: bool) -> 
 }
 
 #[cfg(feature = "clo")]
-fn cloud_cdk_synth_env(local_bin: &Path) -> Result<Vec<(String, String)>> {
+fn cloud_cdk_synth_env(local_bin: &Path, home: &Path) -> Result<Vec<(String, String)>> {
     Ok(vec![
         (
             "PATH".to_string(),
             prepend_path(local_bin)?.to_string_lossy().to_string(),
+        ),
+        ("HOME".to_string(), home.to_string_lossy().to_string()),
+        (
+            "USERPROFILE".to_string(),
+            home.to_string_lossy().to_string(),
         ),
         // CDK telemetry deliberately runs in a short-lived background child;
         // disable it so the process-tree guard sees only synth work.
@@ -924,7 +929,11 @@ async fn build_cloud(root: &Path) -> Result<()> {
                 .map(|a| a.to_string_lossy().to_string())
                 .collect::<Vec<_>>();
             let local_bin = root.join("node_modules").join(".bin");
-            let env = cloud_cdk_synth_env(&local_bin)?;
+            // Use isolated home variables so Node has a profile without reading
+            // the developer's home directory or cloud credentials.
+            // (Cấp profile tạm cho Node mà không đọc home hay credential cloud của user.)
+            let cdk_home = tempfile::tempdir()?;
+            let env = cloud_cdk_synth_env(&local_bin, cdk_home.path())?;
             info(&format!("cdk synth: node {}", args.join(" ")));
             let opts = mgc_exec::prelude::ExecOptions {
                 cwd: Some(root.to_path_buf()),
