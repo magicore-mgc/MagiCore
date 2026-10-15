@@ -922,3 +922,70 @@ fn pypi_install_rejects_unhashed_non_record_wheel_files() {
         "a regular wheel member without a SHA-256 RECORD entry must not install successfully"
     );
 }
+
+#[test]
+fn pypi_vendored_dist_info_is_verified_as_payload() {
+    use base64::Engine;
+    use sha2::{Digest, Sha256};
+    let protocol = PypiProtocol::new("https://pypi.org");
+    for (unhashed_vendor, duplicate_root) in [(false, false), (true, false), (false, true)] {
+        let mut files = vec![
+            ("demo.py", b"VALUE = 1\n".as_slice()),
+            (
+                "demo-1.0.0.dist-info/METADATA",
+                b"Name: demo\nVersion: 1.0.0\n".as_slice(),
+            ),
+            (
+                "demo/_vendor/other-2.0.0.dist-info/METADATA",
+                b"Name: other\nVersion: 2.0.0\n".as_slice(),
+            ),
+            (
+                "demo/_vendor/other-2.0.0.dist-info/RECORD",
+                b"vendored record contents\n".as_slice(),
+            ),
+        ];
+        if duplicate_root {
+            files.push((
+                "other-2.0.0.dist-info/METADATA",
+                b"Name: other\nVersion: 2.0.0\n".as_slice(),
+            ));
+        }
+        let mut record = String::new();
+        for &(path, data) in &files {
+            if unhashed_vendor && path.contains("_vendor/") && path.ends_with("/RECORD") {
+                record.push_str(&format!("{path},,\n"));
+            } else {
+                let hash =
+                    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(data));
+                record.push_str(&format!("{path},sha256={hash},{}\n", data.len()));
+            }
+        }
+        record.push_str("demo-1.0.0.dist-info/RECORD,,\n");
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        for (path, data) in files.into_iter().chain(std::iter::once((
+            "demo-1.0.0.dist-info/RECORD",
+            record.as_bytes(),
+        ))) {
+            writer.start_file(path, options).unwrap();
+            writer.write_all(data).unwrap();
+        }
+        let wheel = writer.finish().unwrap().into_inner();
+        let entry = mgc_resolver::protocols::ResolvedEntry {
+            name: "demo".to_string(),
+            version: "1.0.0".to_string(),
+            deps: Vec::new(),
+            artifact_url: "https://files.pythonhosted.org/demo-1.0.0-py3-none-any.whl".to_string(),
+            sha256: sha256_hex(&wheel),
+            extra_markers: Vec::new(),
+        };
+        let root = tempfile::tempdir().unwrap();
+        let result = protocol.materialize_importable(&entry, &wheel, root.path());
+        assert_eq!(
+            result.is_ok(),
+            !unhashed_vendor && !duplicate_root,
+            "vendored metadata must be ordinary authenticated payload: {result:?}"
+        );
+    }
+}

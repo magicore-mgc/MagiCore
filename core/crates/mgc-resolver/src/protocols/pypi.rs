@@ -309,7 +309,9 @@ impl PypiProtocol {
         // (Map mượn slice từ entries; clone payload làm RAM đỉnh tăng gấp đôi.)
         let mut archive_files: BTreeMap<String, &[u8]> = BTreeMap::new();
         let mut record_bytes = None;
+        let mut record_path = None;
         let mut metadata_bytes = None;
+        let mut metadata_path = None;
         for entry in &archive_entries {
             validate_record_path(&entry.name)?;
             if archive_files
@@ -321,19 +323,24 @@ impl PypiProtocol {
                     entry.name
                 )));
             }
-            if entry.name.ends_with(".dist-info/RECORD")
-                && record_bytes.replace(entry.data.as_slice()).is_some()
-            {
-                return Err(MgError::Integrity(
-                    "Python wheel contains multiple dist-info/RECORD files".to_string(),
-                ));
+            // Only root dist-info describes this distribution; vendored metadata is payload.
+            // Metadata vendor lồng bên trong vẫn phải được RECORD gốc xác thực như file thường.
+            let is_root_metadata = entry.name.split('/').count() == 2;
+            if is_root_metadata && entry.name.ends_with(".dist-info/RECORD") {
+                if record_bytes.replace(entry.data.as_slice()).is_some() {
+                    return Err(MgError::Integrity(
+                        "Python wheel contains multiple dist-info/RECORD files".to_string(),
+                    ));
+                }
+                record_path = Some(entry.name.as_str());
             }
-            if entry.name.ends_with(".dist-info/METADATA")
-                && metadata_bytes.replace(entry.data.as_slice()).is_some()
-            {
-                return Err(MgError::Integrity(
-                    "Python wheel contains multiple dist-info/METADATA files".to_string(),
-                ));
+            if is_root_metadata && entry.name.ends_with(".dist-info/METADATA") {
+                if metadata_bytes.replace(entry.data.as_slice()).is_some() {
+                    return Err(MgError::Integrity(
+                        "Python wheel contains multiple dist-info/METADATA files".to_string(),
+                    ));
+                }
+                metadata_path = Some(entry.name.as_str());
             }
         }
         let record = record_bytes.ok_or_else(|| {
@@ -344,6 +351,14 @@ impl PypiProtocol {
         let metadata = metadata_bytes.ok_or_else(|| {
             MgError::Integrity("authenticated Python wheel has no dist-info/METADATA".to_string())
         })?;
+        if record_path.and_then(|path| path.split_once('/').map(|pair| pair.0))
+            != metadata_path.and_then(|path| path.split_once('/').map(|pair| pair.0))
+        {
+            return Err(MgError::Integrity(
+                "Python wheel METADATA and RECORD belong to different dist-info directories"
+                    .to_string(),
+            ));
+        }
         verify_wheel_identity(metadata, expected_name, expected_version)?;
         let urlsafe = base64::engine::general_purpose::URL_SAFE_NO_PAD;
         let mut expected_files = BTreeSet::new();
@@ -382,7 +397,7 @@ impl PypiProtocol {
                     "Python runtime materialization differs from authenticated wheel member '{relative}'"
                 )));
             }
-            let is_record = relative.ends_with(".dist-info/RECORD");
+            let is_record = Some(relative.as_str()) == record_path;
             if is_record {
                 if !hash.is_empty() || !size.is_empty() {
                     return Err(MgError::Integrity(
