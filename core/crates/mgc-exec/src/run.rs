@@ -95,6 +95,17 @@ pub fn shutdown_requested() -> bool {
 const DEFAULT_EXEC_TIMEOUT_SECS: u64 = 1800;
 const EXEC_TIMEOUT_ENV: &str = "MGC_EXEC_TIMEOUT_SECS";
 const WAIT_POLL_INTERVAL_MS: u64 = 20;
+/// Built-in Go tools whose exact `-V=full` query reports only the tool version.
+/// Công cụ Go tích hợp chỉ cho phép truy vấn phiên bản chính xác, không resolve dependency.
+const GO_TOOLCHAIN_VERSION_PROBE_TOOLS: &[&str] = &[
+    "asm",
+    "cgo",
+    "compile",
+    "cover",
+    "link",
+    "preprofile",
+    "vet",
+];
 /// Retry a missing-root snapshot for 100 ms before treating it as unverifiable.
 /// Thử lại snapshot thiếu root trong 100 ms trước khi xem là không thể xác minh.
 #[cfg(unix)]
@@ -575,6 +586,7 @@ pub(crate) fn dependency_resolution_deny_reason(
         .is_some_and(|(_, value)| value.eq_ignore_ascii_case("off"));
 
     let reason = match tool.as_str() {
+        "go" if is_go_toolchain_version_probe(&args) => None,
         "cargo"
             if matches!(
                 first,
@@ -723,6 +735,18 @@ pub(crate) fn dependency_resolution_deny_reason(
     };
 
     reason.map(str::to_string)
+}
+
+/// Allow only Go's exact built-in tool-version query; it cannot compile, write, or resolve.
+/// Chỉ cho phép truy vấn phiên bản tool Go chính xác; lệnh này không compile, ghi file hay resolve.
+fn is_go_toolchain_version_probe(args: &[String]) -> bool {
+    matches!(
+        args,
+        [command, tool, version]
+            if command == "tool"
+                && GO_TOOLCHAIN_VERSION_PROBE_TOOLS.contains(&tool.as_str())
+                && version == "-v=full"
+    )
 }
 
 fn has_module(args: &[String], module: &str) -> bool {
@@ -5171,6 +5195,17 @@ fn matched_invocation_shape(command_line: &str, matched_index: Option<usize>) ->
 
 fn safe_pm_argument_shape(args: &[String]) -> String {
     const SAFE_COMMANDS_AND_FLAGS: &[&str] = &[
+        "tool",
+        "asm",
+        "buildid",
+        "cgo",
+        "compile",
+        "cover",
+        "link",
+        "pack",
+        "preprofile",
+        "vet",
+        "-v=full",
         "--version",
         "-v",
         "--help",

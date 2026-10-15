@@ -2786,6 +2786,56 @@ fn observed_go_proxy_is_required_for_readonly_execution_but_never_allows_mutatio
 }
 
 #[test]
+fn go_toolchain_version_probe_is_allowed_without_unlocking_other_go_commands() {
+    use std::ffi::OsString;
+
+    for tool in [
+        "asm",
+        "cgo",
+        "compile",
+        "cover",
+        "link",
+        "preprofile",
+        "vet",
+    ] {
+        let args = ["go", "tool", tool, "-V=full"]
+            .into_iter()
+            .map(OsString::from)
+            .collect::<Vec<_>>();
+        assert!(
+            super::forbidden_process_match_argv("go", &args, &[]).is_none(),
+            "Go's exact built-in tool version probe must pass: {args:?}"
+        );
+    }
+
+    for args in [
+        vec!["go", "tool", "buildid", "-V=full"],
+        vec!["go", "tool", "pack", "-V=full"],
+        vec!["go", "tool", "compile", "-V=full", "extra"],
+        vec!["go", "tool", "compile", "-o", "output.o"],
+        vec!["go", "tool", "pprof", "-http=:8080"],
+        vec!["go", "mod", "download"],
+        vec!["go", "test", "./..."],
+    ] {
+        let argv = args.iter().map(OsString::from).collect::<Vec<_>>();
+        assert!(
+            super::forbidden_process_match_argv("go", &argv, &[]).is_some(),
+            "non-probe Go invocation must stay blocked without offline proof: {args:?}"
+        );
+    }
+
+    assert!(
+        super::reject_external_dependency_resolution(
+            "go",
+            &["tool".into(), "compile".into(), "-V=full".into()],
+            &[]
+        )
+        .is_ok(),
+        "the shared dependency classifier must recognize the exact read-only probe"
+    );
+}
+
+#[test]
 fn windows_go_policy_uses_only_observed_member_environment()
 -> Result<(), Box<dyn std::error::Error>> {
     use std::collections::HashMap;
