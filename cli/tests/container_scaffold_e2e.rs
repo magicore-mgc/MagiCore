@@ -38,6 +38,41 @@ fn assert_container_readme(project: &Path) {
     assert!(readme.contains("mgc install --frozen"));
 }
 
+fn assert_compose_configuration(project: &Path) {
+    let compose_path = project.join("docker-compose.yml");
+    let compose_text =
+        std::fs::read_to_string(&compose_path).expect("--docker must create Compose configuration");
+    let compose: serde_yaml::Value = serde_yaml::from_str(&compose_text).unwrap_or_else(|error| {
+        panic!(
+            "invalid Compose YAML at {}: {error}",
+            compose_path.display()
+        )
+    });
+
+    let service = compose
+        .get("services")
+        .and_then(|services| services.get("app"))
+        .expect("Compose must define services.app");
+    let service_volumes = service
+        .get("volumes")
+        .and_then(serde_yaml::Value::as_sequence)
+        .expect("Compose app must mount the MGC shared data volume");
+    assert!(
+        service_volumes
+            .iter()
+            .any(|volume| volume.as_str() == Some("mgc-data:/mgc-data"))
+    );
+
+    let named_volume = compose
+        .get("volumes")
+        .and_then(|volumes| volumes.get("mgc-data"))
+        .expect("Compose must declare the MGC named data volume");
+    assert_eq!(
+        named_volume.get("name").and_then(serde_yaml::Value::as_str),
+        Some("${MGC_DATA_VOLUME:-magicore-system-data}")
+    );
+}
+
 #[test]
 fn create_web_without_docker_does_not_emit_container_assets() {
     let temp = tempfile::tempdir().expect("temporary project root");
@@ -142,11 +177,10 @@ fn create_web_docker_generates_mgc_managed_container_assets() {
         );
     }
 
+    assert_compose_configuration(&project);
     let compose = std::fs::read_to_string(project.join("docker-compose.yml"))
         .expect("--docker must create Compose configuration");
     assert!(compose.contains("4315:4315"));
-    assert!(compose.contains("mgc-data:/mgc-data"));
-    assert!(compose.contains("magicore-system-data"));
     assert_container_readme(&project);
     let dockerignore = std::fs::read_to_string(project.join(".dockerignore"))
         .expect("--docker must create a build-context ignore list");
@@ -428,10 +462,7 @@ fn create_non_web_docker_profiles_run_lifecycle_through_mgc() {
             .expect("core Docker profile must include its MGC entrypoint");
         assert!(entrypoint.contains("mgc install --frozen"));
         assert!(entrypoint.contains("exec mgc \"$@\""));
-        let compose = std::fs::read_to_string(project.join("docker-compose.yml"))
-            .expect("--docker must create Compose configuration");
-        assert!(compose.contains("mgc-data:/mgc-data"));
-        assert!(compose.contains("magicore-system-data"));
+        assert_compose_configuration(&project);
         assert!(project.join(".dockerignore").is_file());
         assert_container_readme(&project);
     }
@@ -471,8 +502,5 @@ fn create_non_web_docker_profiles_run_lifecycle_through_mgc() {
     assert_container_readme(&app_project);
     assert!(app_dockerfile.contains("sha256sum --check --strict"));
     assert!(!app_dockerfile.contains("dart pub get"));
-    let app_compose = std::fs::read_to_string(app_project.join("docker-compose.yml"))
-        .expect("Flutter --docker must write Compose configuration");
-    assert!(app_compose.contains("mgc-data:/mgc-data"));
-    assert!(app_compose.contains("magicore-system-data"));
+    assert_compose_configuration(&app_project);
 }

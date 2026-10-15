@@ -262,6 +262,7 @@ jobs:
           grep -F 'pytest==9.1.1' "${project}/pyproject.toml"
           grep -F 'RUN mgc install --frozen' "${project}/Dockerfile"
           grep -F 'RUN mgc test' "${project}/Dockerfile"
+          docker compose --file "${project}/docker-compose.yml" config --quiet
           docker build \
             --build-arg MGC_IMAGE=magicore-cli-smoke \
             --file "${project}/Dockerfile" \
@@ -304,7 +305,7 @@ jobs:
           docker run --rm magicore-clo-cdk-container:local
           MGC_IMAGE_NAME=magicore-clo-cdk-container:local \
             MGC_DATA_VOLUME=magicore-clo-cdk-e2e-data \
-            docker compose --file "${project}/docker-compose.yml" run --no-build --rm app
+            docker compose --file "${project}/docker-compose.yml" run --rm app
       - name: Build and run the Rust library container with MGC-owned packages
         run: |
           set -euo pipefail
@@ -329,6 +330,7 @@ jobs:
           grep -F 'RUN mgc install --frozen' "${project}/Dockerfile"
           grep -F 'RUN mgc test' "${project}/Dockerfile"
           grep -F 'RUN mgc build' "${project}/Dockerfile"
+          docker compose --file "${project}/docker-compose.yml" config --quiet
           docker build \
             --build-arg MGC_IMAGE=magicore-cli-smoke \
             --file "${project}/Dockerfile" \
@@ -337,7 +339,7 @@ jobs:
           docker run --rm magicore-lib-rust-container:local
           MGC_IMAGE_NAME=magicore-lib-rust-container:local \
             MGC_DATA_VOLUME=magicore-lib-rust-e2e-data \
-            docker compose --file "${project}/docker-compose.yml" run --no-build --rm app
+            docker compose --file "${project}/docker-compose.yml" run --rm app
       - name: Build and run Go, Python, and TypeScript library containers through MGC
         run: |
           set -euo pipefail
@@ -373,7 +375,7 @@ jobs:
             docker run --rm "${image}"
             MGC_IMAGE_NAME="${image}" \
               MGC_DATA_VOLUME="magicore-lib-${language}-e2e-data" \
-              docker compose --file "${project}/docker-compose.yml" run --no-build --rm app
+              docker compose --file "${project}/docker-compose.yml" run --rm app
           done
       - name: Build and run the Flutter app container with MGC-owned Pub dependencies
         run: |
@@ -416,7 +418,7 @@ jobs:
           docker run --rm magicore-app-flutter-container:local
           MGC_IMAGE_NAME=magicore-app-flutter-container:local \
             MGC_DATA_VOLUME=magicore-app-flutter-e2e-data \
-            docker compose --file "${project}/docker-compose.yml" run --no-build --rm app
+            docker compose --file "${project}/docker-compose.yml" run --rm app
       - name: Verify non-root writes in every generated container profile
         run: |
           set -euo pipefail

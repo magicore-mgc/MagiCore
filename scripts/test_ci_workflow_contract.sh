@@ -84,9 +84,11 @@ grep -Fq -- '--tag magicore-ai-python-container:local' <<<"$generated_ai_contain
   || fail "AI container E2E must build the image that the Compose run reuses"
 grep -Fq 'MGC_IMAGE_NAME=magicore-ai-python-container:local' <<<"$generated_ai_container" \
   || fail "AI container Compose E2E must run the image built by the preceding MGC Docker step"
+grep -Fq 'docker compose --file "${project}/docker-compose.yml" config --quiet' <<<"$generated_ai_container" \
+  || fail "AI container E2E must validate generated Compose YAML before building the image"
 grep -Fq 'docker compose --file "${project}/docker-compose.yml" run --rm app' <<<"$generated_ai_container" \
   || fail "AI container E2E must use the supported Docker Compose run syntax"
-if grep -Fq 'run --no-build' <<<"$generated_ai_container"; then
+if grep -Eq 'docker compose .* run --no-build([[:space:]]|$)' "$ci_workflow"; then
   fail "Docker Compose run does not support --no-build"
 fi
 
