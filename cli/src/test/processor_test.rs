@@ -1905,9 +1905,8 @@ const FRESHNESS_BACKLOG: &[(&str, &str, &str)] = &[
         "typescript",
         "TS ~5.6 required by Angular 19; rides the Angular migration",
     ),
-    // Vite 6 line: templates pin the 6.x plugin set (plugin-react 4,
-    // plugin-vue 5); vite 7/8 + plugin majors need per-template build
-    // E2E before bump.
+    // React templates remain on Vite 6 and its 6.x plugin set; Vite 7/8
+    // and plugin major upgrades still need per-template build E2E.
     (
         "react",
         "@vitejs/plugin-react",
@@ -1937,46 +1936,6 @@ const FRESHNESS_BACKLOG: &[(&str, &str, &str)] = &[
         "react-vite",
         "vite",
         "vite 6 line; 7/8 needs per-template build E2E",
-    ),
-    (
-        "vue-vite",
-        "@vitejs/plugin-vue",
-        "vite 6 plugin set; bump with vite major + build E2E",
-    ),
-    (
-        "vue-vite",
-        "typescript",
-        "TS 5 line; TS 6/7 migration needs per-template tsc E2E",
-    ),
-    (
-        "vue-vite",
-        "vite",
-        "vite 6 line; 7/8 needs per-template build E2E",
-    ),
-    (
-        "vue-vite",
-        "vue-tsc",
-        "tsc 2 pairs vue 3.5 template; 3 needs tsc E2E",
-    ),
-    (
-        "vue",
-        "@vitejs/plugin-vue",
-        "vite 6 plugin set; bump with vite major + build E2E",
-    ),
-    (
-        "vue",
-        "typescript",
-        "TS 5 line; TS 6/7 migration needs per-template tsc E2E",
-    ),
-    (
-        "vue",
-        "vite",
-        "vite 6 line; 7/8 needs per-template build E2E",
-    ),
-    (
-        "vue",
-        "vue-tsc",
-        "tsc 2 pairs vue 3.5 template; 3 needs tsc E2E",
     ),
     (
         "solidjs",
