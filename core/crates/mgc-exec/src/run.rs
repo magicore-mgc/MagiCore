@@ -5446,8 +5446,11 @@ fn is_rustdoc_test_compilation_argv(argv: &[OsString]) -> bool {
         return false;
     };
 
-    is_rustc_compilation_flags(compiler_args)
-        && has_rustc_option(compiler_args, "--test")
+    !compiler_args.iter().any(|argument| argument == "--")
+        && compiler_args
+            .iter()
+            .any(|argument| argument == "--crate-name")
+        && compiler_args.iter().any(|argument| argument == "--test")
         && compiler_args.iter().any(|argument| {
             Path::new(argument)
                 .extension()

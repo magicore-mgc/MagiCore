@@ -1307,9 +1307,68 @@ fn rustc_child_requires_a_trusted_cargo_parent_but_cargo_install_is_denied() {
     ));
     assert!(super::forbidden_process_match_argv("cargo", &relative_cargo_wrapper, &[]).is_some());
 
-    // Rustdoc doctest compilation omits Cargo's usual emit/output arguments;
-    // require its observed parent and a compiler operand plus a Rust test source.
-    // (Rustdoc biên dịch doctest có thể thiếu emit/output; cần parent rustdoc,
+    // Rust test/doctest compilation may omit `--crate-type`; require its
+    // observed Cargo/rustdoc parent, a test-harness flag, and a Rust source.
+    // (Compiler test/doctest có thể thiếu `--crate-type`; cần parent Cargo/
+    // rustdoc, cờ test harness và source Rust.)
+    let cargo_test_without_crate_type = [
+        "--crate-name",
+        "test_lib",
+        "/tmp/test-lib/src/lib.rs",
+        "--test",
+        "--emit=dep-info,link",
+        "--out-dir",
+        "/tmp/test-lib/target/debug/deps",
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect::<Vec<_>>();
+    assert!(super::is_rustdoc_test_compilation_argv(
+        &cargo_test_without_crate_type
+    ));
+    assert!(super::is_rustc_toolchain_child(
+        "cargo",
+        &cargo_test_without_crate_type,
+        Some("cargo")
+    ));
+    assert!(!super::is_rustc_toolchain_child(
+        "cargo",
+        &cargo_test_without_crate_type,
+        Some("node")
+    ));
+    assert!(
+        super::forbidden_process_match_argv("cargo", &cargo_test_without_crate_type, &[]).is_some()
+    );
+    let cargo_test_missing_source = ["--crate-name", "test_lib", "--test"]
+        .into_iter()
+        .map(OsString::from)
+        .collect::<Vec<_>>();
+    assert!(!super::is_rustc_toolchain_child(
+        "cargo",
+        &cargo_test_missing_source,
+        Some("cargo")
+    ));
+    let cargo_rustc_test_subcommand = [
+        "cargo",
+        "rustc",
+        "--",
+        "--crate-name",
+        "test_lib",
+        "--test",
+        "/tmp/test-lib/src/lib.rs",
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect::<Vec<_>>();
+    assert!(!super::is_rustc_toolchain_child(
+        "cargo",
+        &cargo_rustc_test_subcommand,
+        Some("cargo")
+    ));
+
+    // Rustdoc doctest compilation also omits emit/output arguments; it still
+    // requires a trusted parent and a compiler operand plus Rust test source.
+    // (Rustdoc doctest cũng có thể thiếu emit/output; vẫn cần parent đáng tin,
     // operand compiler và source Rust dạng test.)
     let rustdoc_doctest_wrapper = vec![
         OsString::from("cargo"),
