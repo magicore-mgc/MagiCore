@@ -73,8 +73,21 @@ grep -Fq 'curl -sf -o /dev/null http://127.0.0.1:4315/v2/' <<<"$seeded_ci_regist
   || fail "seeded CI registry readiness must probe its registered OCI /v2/ ping route"
 grep -Fq 'if [[ "$registry_ready" != 1 ]]; then' <<<"$seeded_ci_registry" \
   || fail "registry seeding must stop when the readiness budget expires"
-grep -Fq 'if (fail > 0) process.exit(1);' <<<"$seeded_ci_registry" \
-  || fail "historical fixture normalization must stop on unresolved links"
+grep -Fq 'python3 scripts/materialize_embedded_template_sources.py' <<<"$seeded_ci_registry" \
+  || fail "registry seeding must materialize the compiled product template layers"
+grep -Fq -- '--manifest cli/src/scaffold/embedded.rs' <<<"$seeded_ci_registry" \
+  || fail "registry seeding must derive layers from the binary's embedded-template manifest"
+grep -Fq 'cargo run -p mgc -- template publish-all' <<<"$seeded_ci_registry" \
+  || fail "registry seeding must publish product layers through the MGC CLI"
+grep -Fq './target/debug/mgc template fetch' <<<"$seeded_ci_registry" \
+  || fail "registry integration must fetch product layers through the MGC CLI"
+grep -Fq 'diff -qr --exclude=.mgc-version' <<<"$seeded_ci_registry" \
+  || fail "registry integration must compare fetched files with the embedded product layers"
+if grep -Eq 'git archive 1b69dd0|APP_SECRET=changeme|storage/logs/\.gitkeep' <<<"$seeded_ci_registry"; then
+  fail "registry seeding must not resurrect historical templates or fabricate framework files"
+fi
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test_materialize_embedded_template_sources.py" \
+  || fail "compiled-template materialization security tests failed"
 grep -Fq 'cargo test -p mgc-exec --test test_run -- --test-threads=1 2>&1' "$ROOT/.github/workflows/ci.yml" \
   || fail "process-table executor tests must serialize synthetic process fixtures"
 if grep -Eq 'curl -sf -o /dev/null http://127\.0\.0\.1:4315/[[:space:]]' <<<"$seeded_ci_registry"; then

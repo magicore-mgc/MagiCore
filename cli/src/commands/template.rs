@@ -150,6 +150,8 @@ async fn publish_all() -> Result<()> {
     if layers.is_empty() {
         return Err(crate::error::no_web_layer_found(root_path));
     }
+    layers.sort();
+    let cores = published_template_cores(root_path, &layers)?;
     for layer in &layers {
         let rel = layer
             .strip_prefix(root_path)
@@ -157,7 +159,12 @@ async fn publish_all() -> Result<()> {
             .to_string_lossy()
             .replace('\\', "/");
         // rel = "web/frontend/react-vite" → core = segment đầu (web/lib/cicd).
-        let core = rel.split('/').next().unwrap_or("web").to_string();
+        let core = rel
+            .split('/')
+            .next()
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| crate::error::web_template_path_missing(&layer.display().to_string()))?
+            .to_string();
         let pkg = registry_package_name(&core, &rel);
         println!("  publishing {} (as {pkg})", rel);
         publish(TemplatePublishArgs {
@@ -168,8 +175,37 @@ async fn publish_all() -> Result<()> {
         })
         .await?;
     }
-    println!("Publish-all done: {} layers across all cores", layers.len());
+    let core_label = if cores.len() == 1 { "core" } else { "cores" };
+    println!(
+        "Publish-all done: {} layers across {} {}: {}",
+        layers.len(),
+        cores.len(),
+        core_label,
+        cores.join(", ")
+    );
     Ok(())
+}
+
+fn published_template_cores(root: &Path, layers: &[PathBuf]) -> Result<Vec<String>> {
+    let mut cores = std::collections::BTreeSet::new();
+    for layer in layers {
+        let relative = layer
+            .strip_prefix(root)
+            .map_err(|_| crate::error::web_template_path_missing(&layer.display().to_string()))?;
+        let Some(core) = relative.components().next() else {
+            return Err(crate::error::web_template_path_missing(
+                &layer.display().to_string(),
+            ));
+        };
+        let core = core.as_os_str().to_string_lossy().into_owned();
+        if core.is_empty() {
+            return Err(crate::error::web_template_path_missing(
+                &layer.display().to_string(),
+            ));
+        }
+        cores.insert(core);
+    }
+    Ok(cores.into_iter().collect())
 }
 
 /// Thu thập mọi folder có template.toml + sources dưới root (không đệ quy vào leaf đã chứa).

@@ -634,36 +634,26 @@ jobs:
             echo "FAIL: isolated registry did not become ready" >&2
             exit 1
           fi
-          mkdir -p /tmp/mgc-tpl && git archive 1b69dd0^ templates | tar -x -C /tmp/mgc-tpl
-          node -e '
-            const fs = require("fs"), path = require("path");
-            const root = "/tmp/mgc-tpl/templates";
-            let ok = 0, fail = 0;
-            function walk(d) {
-              for (const f of fs.readdirSync(d, { withFileTypes: true })) {
-                const p = path.join(d, f.name);
-                if (f.isDirectory()) { walk(p); continue; }
-                if (!f.isSymbolicLink()) continue;
-                let tgt = fs.readlinkSync(p);
-                let resolved;
-                if (tgt.startsWith("/")) {
-                  const i = tgt.indexOf("/templates/");
-                  if (i < 0) { fail++; continue; }
-                  resolved = path.join(root, tgt.slice(i + "/templates/".length));
-                } else { resolved = path.resolve(path.dirname(p), tgt); }
-                if (resolved !== root && !resolved.startsWith(root + path.sep)) { fail++; continue; }
-                try { fs.rmSync(p); fs.cpSync(resolved, p, { recursive: true, verbatimSymlinks: false }); ok++; }
-                catch (e) { fail++; }
-              }
-            }
-            walk(root);
-            console.log(`resolved symlinks: ${ok} ok, ${fail} failed`);
-            if (fail > 0) process.exit(1);
-          '
-          mkdir -p /tmp/mgc-tpl/templates/web/backend/php/laravel/sources/storage/logs
-          touch /tmp/mgc-tpl/templates/web/backend/php/laravel/sources/storage/logs/.gitkeep
-          printf 'APP_ENV=dev\nAPP_DEBUG=1\nAPP_SECRET=changeme\nAPP_NAME={{project_name}}\n' > /tmp/mgc-tpl/templates/web/backend/php/symfony/sources/.env
-          MAGICORE_TEMPLATE_DIR=/tmp/mgc-tpl/templates MGC_NPM_REGISTRY=http://127.0.0.1:4315 cargo run -p mgc -- template publish-all
+          # Seed only the compiled product template archives; no historical source snapshot or hand-written fixture files.
+          # Seed chỉ từ archive template được biên dịch vào sản phẩm; không lấy snapshot cũ hoặc tự chèn file fixture.
+          python3 scripts/materialize_embedded_template_sources.py \
+            --embedded-dir cli/embedded \
+            --manifest cli/src/scaffold/embedded.rs \
+            --output "${RUNNER_TEMP}/mgc-template-source/templates"
+          MAGICORE_TEMPLATE_DIR="${RUNNER_TEMP}/mgc-template-source/templates" \
+            MGC_NPM_REGISTRY=http://127.0.0.1:4315 \
+            cargo run -p mgc -- template publish-all
+          template_cache="${RUNNER_TEMP}/mgc-template-fetch-cache"
+          mkdir -p "$template_cache"
+          while IFS= read -r template_manifest; do
+            layer_dir="${template_manifest%/template.toml}"
+            layer_rel="${layer_dir#"${RUNNER_TEMP}/mgc-template-source/templates/"}"
+            layer_core="${layer_rel%%/*}"
+            MGC_TEMPLATES_DIR="$template_cache" \
+              ./target/debug/mgc template fetch "$layer_core" "$layer_rel" \
+                --registry http://127.0.0.1:4315 --tag 0.1.0
+            diff -qr --exclude=.mgc-version "$layer_dir" "${template_cache}/${layer_rel}"
+          done < <(find "${RUNNER_TEMP}/mgc-template-source/templates" -type f -name template.toml | sort)
           mkdir -p /tmp/mgc-empty-cache
           MGC_NPM_REGISTRY=http://127.0.0.1:4315 MGC_TEMPLATES_DIR=/tmp/mgc-empty-cache cargo test -p mgc -p mgc-e2e --locked -- --test-threads=4 --skip bench_
 
