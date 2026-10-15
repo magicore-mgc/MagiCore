@@ -3163,7 +3163,11 @@ const FRAMEWORK_SEEDS: &[WebFrameworkSeed] = &[
                 section: "devDependencies",
                 package: "typescript",
                 typescript_only: true,
-                version: None,
+                // Angular 22.2 supports TypeScript >=6.0.0 <6.1.0; the
+                // global latest major (TypeScript 7) breaks compiler-cli.
+                // (Angular 22.2 cần TypeScript >=6.0.0 <6.1.0; major mới
+                // nhất TypeScript 7 làm lỗi compiler-cli.)
+                version: Some("~6.0.3"),
             },
         ],
     },

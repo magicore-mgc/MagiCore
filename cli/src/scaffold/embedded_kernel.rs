@@ -856,19 +856,19 @@ export default defineConfig({ plugins: [sveltekit({ adapter: adapter() })] });
     "test": "tsc --noEmit -p tsconfig.app.json"
   },
   "dependencies": {
-    "@angular/common": "^19.0.0",
-    "@angular/compiler": "^19.0.0",
-    "@angular/core": "^19.0.0",
-    "@angular/platform-browser": "^19.0.0",
-    "rxjs": "^7.8.0",
-    "tslib": "^2.8.0",
-    "zone.js": "^0.15.0"
+    "@angular/common": "^22.2.3",
+    "@angular/compiler": "^22.2.3",
+    "@angular/core": "^22.2.3",
+    "@angular/platform-browser": "^22.2.3",
+    "rxjs": "^7.8.2",
+    "tslib": "^2.8.1",
+    "zone.js": "^0.16.3"
   },
   "devDependencies": {
-    "@angular-devkit/build-angular": "^19.0.0",
-    "@angular/cli": "^19.0.0",
-    "@angular/compiler-cli": "^19.0.0",
-    "typescript": "~5.6.0"
+    "@angular-devkit/build-angular": "^22.2.2",
+    "@angular/cli": "^22.2.2",
+    "@angular/compiler-cli": "^22.2.3",
+    "typescript": "~6.0.3"
   }
 }"#,
             },

@@ -1862,48 +1862,10 @@ const FRESHNESS_TEMPLATES: &[&str] = &[
 /// (never edited into silence).
 /// (Tồn đọng migration: dep lag major phải có mặt kèm lý do.)
 const FRESHNESS_BACKLOG: &[(&str, &str, &str)] = &[
-    // Angular 19 stack: compiler/cli/core + TS ~5.6 are COUPLED —
-    // Angular 20+ requires TS 5.8+/6 + zone 0.16 + new build
-    // pipeline; bump = full template migration + E2E. Tracked, not silent.
-    (
-        "angular",
-        "@angular-devkit/build-angular",
-        "coupled Angular 19 stack; needs 20+ migration",
-    ),
-    (
-        "angular",
-        "@angular/cli",
-        "coupled Angular 19 stack; needs 20+ migration",
-    ),
-    (
-        "angular",
-        "@angular/common",
-        "coupled Angular 19 stack; needs 20+ migration",
-    ),
-    (
-        "angular",
-        "@angular/compiler",
-        "coupled Angular 19 stack; needs 20+ migration",
-    ),
-    (
-        "angular",
-        "@angular/compiler-cli",
-        "coupled Angular 19 stack; needs 20+ migration",
-    ),
-    (
-        "angular",
-        "@angular/core",
-        "coupled Angular 19 stack; needs 20+ migration",
-    ),
-    (
-        "angular",
-        "@angular/platform-browser",
-        "coupled Angular 19 stack; needs 20+ migration",
-    ),
     (
         "angular",
         "typescript",
-        "TS ~5.6 required by Angular 19; rides the Angular migration",
+        "Angular 22.2 supports TS >=6.0 <6.1; TS 7 breaks compiler-cli (Angular 22.2 cần TS >=6.0 <6.1; TS 7 làm hỏng compiler-cli)",
     ),
     // React templates remain on Vite 6 and its 6.x plugin set; Vite 7/8
     // and plugin major upgrades still need per-template build E2E.
