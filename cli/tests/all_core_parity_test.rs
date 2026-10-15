@@ -3,8 +3,6 @@
 //! Hermetic: temp HOME, no workspace templates/ — hermetic: HOME tạm, không dùng workspace templates/.
 
 #![allow(clippy::unwrap_used)]
-// Tests mutate env single-threaded (edition 2024 unsafe rule) — test đổi env 1 luồng.
-#![allow(unsafe_code)]
 #![allow(clippy::needless_borrows_for_generic_args)]
 
 use std::fs;
@@ -13,20 +11,26 @@ use std::process::Command;
 use tempfile::TempDir;
 
 fn mgc_binary() -> PathBuf {
-    // Cargo-provided per-test binary: fresh for this run and portable across
-    // platforms (adds .exe suffix on Windows automatically).
-    // Binary do cargo cung cấp theo từng run test: tươi và portable mọi
-    // nền tảng (tự thêm đuôi .exe trên Windows).
-    std::env::var_os("CARGO_BIN_EXE_mgc")
-        .map(PathBuf::from)
-        .expect("CARGO_BIN_EXE_mgc unavailable — run via cargo test")
+    PathBuf::from(env!("CARGO_BIN_EXE_mgc"))
 }
 
 fn setup_hermetic_home() -> TempDir {
-    let temp_home = TempDir::new().unwrap();
-    unsafe { std::env::set_var("HOME", temp_home.path()) };
-    unsafe { std::env::set_var("MGC_CACHE_DIR", temp_home.path().join(".mgc")) };
-    temp_home
+    TempDir::new().unwrap()
+}
+
+// Scope all environment overrides to the child; parallel tests keep their own home.
+// Không đổi environment của test runner; mỗi process có cache/store/template root riêng.
+fn hermetic_command(home: &std::path::Path) -> Command {
+    let mut command = Command::new(mgc_binary());
+    command
+        .env("HOME", home)
+        .env("USERPROFILE", home)
+        .env("MGC_DATA_DIR", home.join("data"))
+        .env("MGC_CACHE_DIR", home.join("cache"))
+        .env("MGC_TEMPLATES_DIR", home.join("templates"))
+        .env("MAGICORE_STORE_ROOT", home.join("store"))
+        .env_remove("MAGICORE_TEMPLATE_DIR");
+    command
 }
 
 #[test]
@@ -36,7 +40,7 @@ fn test_all_core_parity_embedded() {
     let workspace_path = temp_workspace.path();
 
     // 1. Web vanilla (embedded kernel)
-    let web_output = Command::new(mgc_binary())
+    let web_output = hermetic_command(_temp_home.path())
         .args(&["create-web", "vanilla", "test-web", "--ts"])
         .current_dir(workspace_path)
         .output()
@@ -57,7 +61,7 @@ fn test_all_core_parity_embedded() {
     );
 
     // 2. AI python-agent (embedded kernel)
-    let ai_output = Command::new(mgc_binary())
+    let ai_output = hermetic_command(_temp_home.path())
         .args(&["create-ai", "python-agent", "test-ai"])
         .current_dir(workspace_path)
         .output()
@@ -78,8 +82,8 @@ fn test_all_core_parity_embedded() {
     );
 
     // 3. App flutter (embedded kernel)
-    let app_output = Command::new(mgc_binary())
-        .args(&["create-app", "flutter@stable", "test-app"])
+    let app_output = hermetic_command(_temp_home.path())
+        .args(&["create-app", "flutter", "test-app"])
         .current_dir(workspace_path)
         .output()
         .expect("Failed to execute mgc create-app");
@@ -98,14 +102,10 @@ fn test_all_core_parity_embedded() {
         "app: .mgc.core marker not created"
     );
 
-    // 4. Lib rust (embedded kernel) — use the moving `latest` tag, not a
-    // pinned stale version: the scaffold emits edition 2024, which does
-    // not compile on rust 1.75; version policy stays centralized.
-    // Lib rust — dùng tag động `latest`, không pin version cũ: scaffold
-    // sinh edition 2024 không compile trên rust 1.75; policy version tập
-    // trung ở spec parser, không hardcode trong test.
-    let lib_output = Command::new(mgc_binary())
-        .args(&["create-lib", "rust@latest", "test-lib"])
+    // The default uses the compiled processor; registry template tags are a separate lane.
+    // Kiểm default builtin riêng; tag template không phải version của Rust toolchain.
+    let lib_output = hermetic_command(_temp_home.path())
+        .args(&["create-lib", "rust", "test-lib"])
         .current_dir(workspace_path)
         .output()
         .expect("Failed to execute mgc create-lib");

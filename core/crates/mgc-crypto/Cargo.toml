@@ -37,39 +37,39 @@ path = "benches/crypto_perf.rs"
 
 [dependencies]
 # BLAKE3 hasher with SIMD support (AVX2, AVX-512, NEON)
-blake3 = { version = "1.5", features = ["rayon", "mmap"] }
+blake3 = { workspace = true, features = ["rayon", "mmap"] }
 
 # Memory mapping for fast file hashing
-memmap2 = "0.9"
+memmap2 = "0.9.11"
 
 # Ed25519 signing/verification (ring = fast, well-audited)
-ring = "0.17"
+ring = "0.17.14"
 
 # Base64 encoding for signatures
-base64 = "0.21"
+base64 = { workspace = true }
 
 # Serialization for keyring
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 
 # Error handling
-anyhow = "1.0"
-thiserror = "1.0"
+anyhow = { workspace = true }
+thiserror = { workspace = true }
 
 # Home directory detection
-dirs = "5.0"
+dirs = { workspace = true }
 
 # Platform-specific secure memory (mlock)
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.52", features = ["Win32_System_Memory", "Win32_Storage_FileSystem", "Win32_Foundation"] }
+windows-sys = { version = "0.61.2", features = ["Win32_System_Memory", "Win32_Storage_FileSystem", "Win32_Foundation"] }
 
 [dev-dependencies]
 # Testing framework
-criterion = { version = "0.5", features = ["html_reports"] }
-tempfile = "3.8"
+criterion = { workspace = true, features = ["html_reports"] }
+tempfile = { workspace = true }
 
 [features]
 default = []

@@ -183,9 +183,9 @@ impl MgDevServer {
             .route("/@magicore/hmr.js", get(serve_hmr_client))
             .route("/@magicore/hmr", get(hmr_ws_handler))
             // Dependency pre-bundling: /@magicore/deps/{package}
-            .route("/@magicore/deps/*pkg", get(serve_dep))
+            .route("/@magicore/deps/{*pkg}", get(serve_dep))
             // Source files: transpile on-the-fly
-            .route("/*path", get(serve_source_or_static))
+            .route("/{*path}", get(serve_source_or_static))
             .with_state(state);
 
         let bind_host = if self.config.host == "localhost" {
@@ -313,10 +313,10 @@ pub(crate) fn js_string_literal(s: &str) -> String {
 }
 
 /// Serve a pre-bundled dependency.
-/// Route: GET /@magicore/deps/*pkg
+/// Route: GET /@magicore/deps/{*pkg}
 /// E.g. /@magicore/deps/react → bundle react from node_modules/react
 ///      /@magicore/deps/@tanstack/react-query → scoped package
-/// (Phục vụ dependency đã pre-bundled: /@magicore/deps/*pkg — đứng sau
+/// (Phục vụ dependency đã pre-bundled: /@magicore/deps/{*pkg} — đứng sau
 /// cổng validator tên package P1-1.)
 async fn serve_dep(Path(pkg): Path<String>, State(state): State<ServerState>) -> impl IntoResponse {
     debug!("deps request: {}", pkg);

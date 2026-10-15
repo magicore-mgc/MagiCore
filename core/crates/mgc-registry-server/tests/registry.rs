@@ -127,8 +127,8 @@ async fn rbac_role_controls_publish() {
     assert!(!auth.can_access(&viewer, "@other/x"));
 }
 
-/// Param routes use matchit 0.7 `:param` syntax (not `{param}` which is
-/// matchit 0.8 / axum 0.8). Guard against silent 404 regression.
+/// Axum 0.8 capture syntax uses `{param}`; guard against route regressions.
+/// (Axum 0.8 dùng `{param}` để bắt tham số; test ngăn route âm thầm trả 404.)
 #[tokio::test]
 async fn param_route_minimal() {
     use axum::body::Body;
@@ -136,7 +136,7 @@ async fn param_route_minimal() {
     use axum::{Router, routing::get};
     use tower::ServiceExt;
 
-    let app = Router::new().route("/a/:x", get(|| async {}));
+    let app = Router::new().route("/a/{x}", get(|| async {}));
     let resp = app
         .oneshot(
             Request::builder()
@@ -776,7 +776,7 @@ async fn pypi_upload_index_download() {
     let wheel = b"dummy wheel content for test";
     let mut hasher = Sha256::new();
     hasher.update(wheel);
-    let digest = format!("sha256:{:x}", hasher.finalize());
+    let digest = format!("sha256:{}", hex::encode(hasher.finalize()));
 
     // multipart upload → twine format
     let boundary = "MGBTEST";

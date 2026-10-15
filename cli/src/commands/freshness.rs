@@ -527,8 +527,7 @@ fn validate_manifest_syntax(file: &str, content: &str) -> Result<()> {
             }
         }
         "pyproject.toml" => {
-            let value = content
-                .parse::<toml::Value>()
+            let value = toml::from_str::<toml::Value>(content)
                 .with_context(|| format!("{file} is not valid TOML"))?;
             if let Some(project) = value.get("project") {
                 let Some(project) = project.as_table() else {
@@ -568,8 +567,7 @@ fn validate_manifest_syntax(file: &str, content: &str) -> Result<()> {
             }
         }
         "Cargo.toml" => {
-            let value = content
-                .parse::<toml::Value>()
+            let value = toml::from_str::<toml::Value>(content)
                 .with_context(|| format!("{file} is not valid TOML"))?;
             for section in ["dependencies", "dev-dependencies", "build-dependencies"] {
                 if value.get(section).is_some_and(|value| !value.is_table()) {

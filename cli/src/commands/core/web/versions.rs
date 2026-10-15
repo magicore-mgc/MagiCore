@@ -32,106 +32,106 @@ const SCAFFOLD_VERSION_OVERRIDES_ENV: &str = "MAGICORE_WEB_SCAFFOLD_VERSION_OVER
 /// Version baseline — trước đây ở templates/web/versions/scaffold-baseline.toml;
 /// registry-first (templates/ xóa khỏi repo) → giữ thẳng trong code.
 const SCAFFOLD_BASELINE_VERSIONS_TOML: &str = r#"[versions]
-vue = "^3.5.39"
-react = "^19.2.7"
-react-dom = "^19.2.7"
-vite = "^8.1.4"
-"@vitejs/plugin-react" = "^6.0.3"
-"@vitejs/plugin-vue" = "^6.0.7"
-solid-js = "^1.9.14"
-vite-plugin-solid = "^2.11.12"
-typescript = "^5.9.2"
-"@types/react" = "^19.2.17"
-"@types/react-dom" = "^19.2.3"
-"@types/node" = "^26.1.1"
-tailwindcss = "^4.3.2"
-"@sveltejs/kit" = "^3.0.0"
-"@sveltejs/vite-plugin-svelte" = "^7.2.0"
+vue = "^3.5.44"
+react = "^19.3.1"
+react-dom = "^19.3.1"
+vite = "^8.3.4"
+"@vitejs/plugin-react" = "^6.1.2"
+"@vitejs/plugin-vue" = "^6.0.10"
+solid-js = "^1.9.17"
+vite-plugin-solid = "^2.11.14"
+typescript = "^7.0.2"
+"@types/react" = "^19.3.0"
+"@types/react-dom" = "^19.3.0"
+"@types/node" = "^26.6.5"
+tailwindcss = "^4.3.3"
+"@sveltejs/kit" = "^3.1.0"
+"@sveltejs/vite-plugin-svelte" = "^7.3.1"
 "@sveltejs/adapter-auto" = "^8.0.0"
-svelte = "^5.57.1"
-next = "^16.2.10"
-nuxt = "^4.4.8"
-unplugin = "^3.0.0"
-"@angular/core" = "^22.0.6"
-"@angular/platform-browser" = "^22.0.6"
-"@angular/platform-browser-dynamic" = "^22.0.6"
-"@angular/router" = "^22.0.6"
-"@angular/compiler" = "^22.0.6"
-"@angular/common" = "^22.0.6"
+svelte = "^5.57.2"
+next = "^16.4.1"
+nuxt = "^4.6.1"
+unplugin = "^3.4.0"
+"@angular/core" = "^22.2.3"
+"@angular/platform-browser" = "^22.2.3"
+"@angular/platform-browser-dynamic" = "^22.2.3"
+"@angular/router" = "^22.2.3"
+"@angular/compiler" = "^22.2.3"
+"@angular/common" = "^22.2.3"
 rxjs = "^7.8.2"
-"zone.js" = "^0.16.2"
+"zone.js" = "^0.16.3"
 tslib = "^2.8.1"
-"@angular/cli" = "^22.0.6"
-"@angular/compiler-cli" = "^22.0.6"
-"@angular-devkit/build-angular" = "^22.0.6"
-"@builder.io/qwik" = "^1.20.0"
-"@builder.io/qwik-city" = "^1.20.0"
-astro = "^7.0.7"
-express = "^5.2.1"
+"@angular/cli" = "^22.2.2"
+"@angular/compiler-cli" = "^22.2.3"
+"@angular-devkit/build-angular" = "^22.2.2"
+"@builder.io/qwik" = "^1.20.2"
+"@builder.io/qwik-city" = "^1.20.2"
+astro = "^7.3.8"
+express = "^5.3.0"
 "@types/express" = "^5.0.6"
-hono = "^4.12.30"
-"@hono/node-server" = "^1.19.6"
-"@nestjs/core" = "^11.1.28"
-"@nestjs/common" = "^11.1.28"
-"@nestjs/platform-express" = "^11.1.28"
+hono = "^4.13.13"
+"@hono/node-server" = "^2.1.5"
+"@nestjs/core" = "^12.1.3"
+"@nestjs/common" = "^12.1.3"
+"@nestjs/platform-express" = "^12.1.3"
 reflect-metadata = "^0.2.2"
-zod = "^4.4.3"
-"@trpc/server" = "^11.18.0"
-fastify = "^5.10.0"
-tsx = "^4.23.0"
-"@prisma/client" = "^6.6.0"
-prisma = "^6.6.0"
-vitest = "^3.2.0"
-eslint = "^9.28.0"
-eslint-config-next = "^16.2.10"
-prettier = "^3.6.0"
-"@tailwindcss/postcss" = "^4.3.2"
-pg = "^8.15.0"
-zustand = "^5.0.3"
-"@tanstack/react-query" = "^5.62.0"
-next-auth = "^5.0.0"
-"@playwright/test" = "^1.52.0"
-husky = "^9.2.0"
-lint-staged = "^15.5.0"
-"@biomejs/biome" = "^1.9.0"
-clsx = "^2.1.0"
-tailwind-merge = "^3.2.0"
-class-variance-authority = "^0.7.0"
-sass = "^1.83.0"
-unocss = "^65.5.0"
-daisyui = "^4.12.0"
-"@reduxjs/toolkit" = "^2.6.0"
-react-redux = "^9.2.0"
-jest = "^29.7.0"
-"@testing-library/react" = "^16.0.0"
-"@testing-library/jest-dom" = "^6.6.0"
-jest-environment-jsdom = "^29.7.0"
-cypress = "^14.2.0"
-drizzle-orm = "^0.38.0"
-drizzle-kit = "^0.30.0"
-"@clerk/nextjs" = "^6.12.0"
-styled-components = "^6.1.0"
-"@types/styled-components" = "^5.1.0"
-"@commitlint/cli" = "^19.5.0"
-"@commitlint/config-conventional" = "^19.5.0"
-"@apollo/server" = "^4.11.0"
-"@as-integrations/next" = "^3.2.0"
-"@trpc/client" = "^11.0.0"
-"@trpc/next" = "^11.0.0"
-"@grpc/grpc-js" = "^1.11.0"
-"@grpc/proto-loader" = "^0.7.0"
-lucia = "^3.2.0"
+zod = "^4.6.7"
+"@trpc/server" = "^11.19.0"
+fastify = "^5.12.7"
+tsx = "^4.23.15"
+"@prisma/client" = "^7.10.0"
+prisma = "^7.10.0"
+vitest = "^5.0.4"
+eslint = "^10.12.0"
+eslint-config-next = "^16.4.1"
+prettier = "^3.9.10"
+"@tailwindcss/postcss" = "^4.3.3"
+pg = "^8.23.1"
+zustand = "^5.0.15"
+"@tanstack/react-query" = "^5.104.2"
+next-auth = "^4.24.15"
+"@playwright/test" = "^1.64.1"
+husky = "^9.1.7"
+lint-staged = "^17.6.0"
+"@biomejs/biome" = "^2.5.15"
+clsx = "^2.1.1"
+tailwind-merge = "^3.7.0"
+class-variance-authority = "^0.7.1"
+sass = "^1.105.1"
+unocss = "^66.11.0"
+daisyui = "^5.7.50"
+"@reduxjs/toolkit" = "^2.13.0"
+react-redux = "^9.3.0"
+jest = "^30.5.2"
+"@testing-library/react" = "^16.3.3"
+"@testing-library/jest-dom" = "^7.0.1"
+jest-environment-jsdom = "^30.5.2"
+cypress = "^16.2.0"
+drizzle-orm = "^0.45.4"
+drizzle-kit = "^0.31.11"
+"@clerk/nextjs" = "^7.9.15"
+styled-components = "^6.6.0"
+"@types/styled-components" = "^5.1.36"
+"@commitlint/cli" = "^21.2.3"
+"@commitlint/config-conventional" = "^21.2.3"
+"@apollo/server" = "^5.5.1"
+"@as-integrations/next" = "^4.1.0"
+"@trpc/client" = "^11.19.0"
+"@trpc/next" = "^11.19.0"
+"@grpc/grpc-js" = "^1.14.6"
+"@grpc/proto-loader" = "^0.8.1"
+lucia = "^3.2.2"
 "@lucia-auth/adapter-drizzle" = "^1.1.0"
-jose = "^5.7.0"
-dotenv-cli = "^7.4.0"
-next-i18next = "^15.3.0"
+jose = "^6.2.12"
+dotenv-cli = "^11.0.0"
+next-i18next = "^16.3.1"
 next-pwa = "^5.6.0"
-"@storybook/nextjs" = "^8.2.0"
-"@storybook/react" = "^8.2.0"
-"@sentry/nextjs" = "^8.21.0"
-"@vercel/analytics" = "^1.3.0"
-"@railway/cli" = "^4.2.0"
-flyctl = "^0.2.0"
+"@storybook/nextjs" = "^10.6.2"
+"@storybook/react" = "^10.6.2"
+"@sentry/nextjs" = "^11.7.0"
+"@vercel/analytics" = "^2.0.1"
+"@railway/cli" = "^5.68.0"
+flyctl = "^1.2.11"
 "#;
 
 /// TOML shape of the baseline table.
@@ -333,6 +333,63 @@ pub(crate) async fn resolve_seed_dependency_version(
     fetch_npm_latest_version(package, None).await
 }
 
+/// Resolve an explicitly selected npm dist-tag to its concrete package version.
+/// Chuyển dist-tag do người dùng chọn thành version cụ thể của package.
+#[cfg(feature = "web")]
+pub(crate) async fn resolve_npm_dist_tag_version(
+    package: &str,
+    tag: &str,
+    age_policy: Option<ScaffoldAgePolicy>,
+) -> Result<String> {
+    let age_policy = age_policy.filter(|policy| policy.cutoff_hours > 0);
+    let metadata = if age_policy.is_some() {
+        fetch_age_gated_npm_metadata(package).await?
+    } else {
+        NpmRegistry::new(DEFAULT_NPM_REGISTRY)
+            .fetch_metadata(package)
+            .await
+            .map_err(|error| crate::error::network_error_fetching(package, &error))?
+    };
+    selected_dist_tag_version(package, tag, &metadata, age_policy)
+}
+
+#[cfg(feature = "web")]
+pub(super) fn selected_dist_tag_version(
+    package: &str,
+    tag: &str,
+    metadata: &PackageMetadata,
+    age_policy: Option<ScaffoldAgePolicy>,
+) -> Result<String> {
+    let tagged_version = metadata
+        .dist_tags
+        .get(tag)
+        .ok_or_else(|| crate::error::web_scaffold_dist_tag_missing(package, tag))?;
+    let version = Version::parse(tagged_version)
+        .map_err(|_| crate::error::web_scaffold_dist_tag_invalid(package, tag))?;
+
+    if let Some(policy) = age_policy.filter(|policy| policy.cutoff_hours > 0) {
+        let package_name = PackageName::new(package)?;
+        let eligible = eligible_versions(&package_name, metadata, Some(policy.into()))
+            .map_err(anyhow::Error::msg)?;
+        if !eligible.contains(&version) {
+            return Err(crate::error::web_scaffold_dist_tag_not_eligible(
+                package, tag, &version,
+            ));
+        }
+    }
+
+    Ok(version.to_string())
+}
+
+#[cfg(not(feature = "web"))]
+pub(crate) async fn resolve_npm_dist_tag_version(
+    package: &str,
+    tag: &str,
+    _age_policy: Option<ScaffoldAgePolicy>,
+) -> Result<String> {
+    fetch_npm_selector_version_from_registry(DEFAULT_NPM_REGISTRY, package, tag).await
+}
+
 #[cfg(not(feature = "web"))]
 pub(crate) async fn resolve_seed_dependency_version(
     package: &str,
@@ -417,7 +474,20 @@ async fn fetch_npm_latest_version_from_registry(
     registry_url: &str,
     package: &str,
 ) -> Result<String> {
-    let url = format!("{}/{package}/latest", registry_url.trim_end_matches('/'));
+    let selected =
+        fetch_npm_selector_version_from_registry(registry_url, package, "latest").await?;
+    Ok(format!("^{selected}"))
+}
+
+async fn fetch_npm_selector_version_from_registry(
+    registry_url: &str,
+    package: &str,
+    selector: &str,
+) -> Result<String> {
+    let url = format!(
+        "{}/{package}/{selector}",
+        registry_url.trim_end_matches('/')
+    );
     let resp = global_cli_http_client()
         .get(&url)
         .send()
@@ -430,13 +500,9 @@ async fn fetch_npm_latest_version_from_registry(
         .json()
         .await
         .map_err(|e| crate::error::bad_npm_response(package, &e))?;
-    parse_latest_version_response(package, &body)
-}
-
-fn parse_latest_version_response(package: &str, body: &serde_json::Value) -> Result<String> {
     body["version"]
         .as_str()
-        .map(|s| format!("^{}", s))
+        .map(str::to_owned)
         .ok_or_else(|| crate::error::no_version_field(package))
 }
 

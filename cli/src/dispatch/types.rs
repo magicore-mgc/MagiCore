@@ -221,10 +221,12 @@ pub enum CoreCommand {
     CreateAi {
         framework: String,
         project_name: String,
+        container: crate::commands::core::scaffold_flags::ContainerFlags,
     },
     CreateClo {
         framework: String,
         project_name: String,
+        container: crate::commands::core::scaffold_flags::ContainerFlags,
     },
     CreateCicd {
         framework: String,
@@ -237,10 +239,12 @@ pub enum CoreCommand {
     CreateApp {
         framework: String,
         project_name: String,
+        container: crate::commands::core::scaffold_flags::ContainerFlags,
     },
     CreateLib {
         framework: String,
         project_name: String,
+        container: crate::commands::core::scaffold_flags::ContainerFlags,
     },
     CreateHardware {
         framework: String,

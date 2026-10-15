@@ -41,6 +41,7 @@ name: Lifecycle Capability Matrix
 # OS tải artifact để chẩn đoán và platform lỗi sẽ làm workflow thất bại.)
 
 on:
+  workflow_call:
   pull_request:
     branches: [main]
     paths:
@@ -63,6 +64,11 @@ on:
 
 permissions:
   contents: read
+
+# Replace superseded validation runs on the same ref. — Hủy lượt kiểm cũ khi ref có lượt mới.
+concurrency:
+  group: lifecycle-matrix-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -92,7 +98,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable 2026-09-03
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
+        with:
+          toolchain: "1.99.0"
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -100,7 +108,7 @@ jobs:
       - name: Setup Python runtime (AI/Lib Python build and test)
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.15.0"
 
       - name: Test native-PM verdict and matrix provenance guards
         run: ${{ matrix.python_cmd }} scripts/test_native_pm_verdict.py
@@ -109,19 +117,19 @@ jobs:
         run: ${{ matrix.python_cmd }} scripts/test_dep_gate_consistency.py
 
       - name: Setup Node.js (web lane)
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "24"
+          node-version: "26.12.0"
 
       - name: Setup Pulumi CLI (cloud lifecycle lane)
         uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7.0.0
         with:
-          pulumi-version: "3.267.0"
+          pulumi-version: "3.269.0"
 
       - name: Setup Go (lib/go lane toolchain)
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.1"
+          go-version: "1.27.2"
           cache: false
 
       - name: Setup Swift installer Python (Windows)
@@ -181,7 +189,7 @@ jobs:
         if: runner.os != 'Windows'
         uses: swift-actions/setup-swift@364295d9c23900ce04d4e5cc708387921b4e50f9 # v3.0.0-beta.1
         with:
-          swift-version: "6.4.0"
+          swift-version: "6.4.1"
 
       # Swift.org's Windows installer is distributed through WinGet.
       # Installer Windows của Swift.org được phân phối qua WinGet.
@@ -189,11 +197,11 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          winget install --id Swift.Toolchain --exact --source winget --scope user --version 6.4.0 --accept-source-agreements --accept-package-agreements
-          if ($LASTEXITCODE -ne 0) { throw "WinGet failed to install Swift 6.4.0" }
+          winget install --id Swift.Toolchain --exact --source winget --scope user --version 6.4.1 --accept-source-agreements --accept-package-agreements
+          if ($LASTEXITCODE -ne 0) { throw "WinGet failed to install Swift 6.4.1" }
           $swiftRoot = Join-Path $env:LOCALAPPDATA "Programs\Swift\Toolchains"
-          $toolchain = Get-ChildItem -Path $swiftRoot -Directory | Where-Object { $_.Name -like "6.4.0*" } | Select-Object -First 1
-          if ($null -eq $toolchain) { throw "Swift 6.4.0 toolchain directory was not installed" }
+          $toolchain = Get-ChildItem -Path $swiftRoot -Directory | Where-Object { $_.Name -like "6.4.1*" } | Select-Object -First 1
+          if ($null -eq $toolchain) { throw "Swift 6.4.1 toolchain directory was not installed" }
           $swiftBin = Join-Path $toolchain.FullName "usr\bin"
           if (!(Test-Path (Join-Path $swiftBin "swift.exe"))) { throw "Swift executable is missing from the installed toolchain" }
           $swiftRuntimeVersion = $toolchain.Name -replace '\+.*$', ''
@@ -218,14 +226,14 @@ jobs:
         if: matrix.os == 'windows-latest'
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.15.0"
 
       # App lane: flutter toolchain for create→install→test→build.
       # Lane App: toolchain flutter cho create→install→test→build.
       - name: Setup Flutter (app lane)
-        uses: subosito/flutter-action@44ac965b96f18d999802d4b807e3256d5a3f9fa1 # v2.16.0 (latest, node24)
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: "3.47.4"
+          flutter-version: "3.47.7"
           channel: "stable"
 
       # Resolve SDK-owned Pub packages before mgc-exec monitors app operations.
@@ -247,6 +255,18 @@ jobs:
 
       - name: Build release mgc binary for product E2E
         run: cargo build --release --bin mgc --locked
+
+      - name: Verify template fetch, cache, and integrity boundaries
+        run: cargo test --release --locked -p mgc --lib commands::template::tests -- --test-threads=1
+
+      - name: Verify versioned scaffold cache compatibility boundaries
+        run: cargo test --release --locked -p mgc --lib scaffold::cache::tests -- --test-threads=1
+
+      - name: Verify shared template materializer boundaries
+        run: cargo test --release --locked -p mgc --lib scaffold::processor::tests -- --test-threads=1
+
+      - name: Verify scaffold identity and all-core defaults through the release CLI
+        run: cargo test --release --locked -p mgc --test scaffold_integration_test --test all_core_parity_test -- --test-threads=1
 
       - name: Verify persistent CLI tool lifecycle with the release binary
         run: cargo test --locked -p mgc --test global_tool_e2e -- --test-threads=1 --nocapture
@@ -322,7 +342,7 @@ jobs:
                   print(f"  {dim:<14} {status}")
 
       - name: Upload lifecycle matrix
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: lifecycle-capability-matrix-${{ runner.os }}
           path: docs/specs/lifecycleCapabilityMatrix.json

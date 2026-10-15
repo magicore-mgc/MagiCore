@@ -39,19 +39,19 @@ serde = { workspace = true, features = ["derive"] }
 toml.workspace = true
 toml_edit.workspace = true
 serde_json = { workspace = true }
-serde_yaml = "0.9"
+serde_yaml = { workspace = true }
 
 # Crypto
 sha2 = { workspace = true }
 hex = { workspace = true }
 
 url = { workspace = true }
-which = "6.0"
-reqwest = { version = "0.12", features = ["json"] }
+which = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
 mgc-lib-adapter = { path = "../lib" }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
 criterion = { workspace = true }

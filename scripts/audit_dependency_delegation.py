@@ -112,6 +112,11 @@ PYTHON_PROCESS_FUNCTIONS = {
 # Fingerprints bind the review to the argv construction and subprocess options,
 # while the reason records why that exact process boundary is expected.
 PYTHON_PROCESS_REVIEWS = {
+    "tests/test_scaffold_acceptance_runner.py": {
+        ("subprocess.run", "bfb5000bd69ce3452a1825e37bbc0cacd76cb7cbc7ff6c1139036d68f8848936"): (
+            1, "Runs only the fixed repository scaffold acceptance Bash script with a generated local fixture binary, isolated temporary HOME/data/cache, captured output, a 20-second timeout, and startup-file environment removed; verifies runner verdicts, not product support.",
+        ),
+    },
     "docs/specs/productReadinessAudit20261012/build-cache.py": {
         ("subprocess.run", "8751fdaf374dc887f5b90b093179398b5e2e99cc5faf1581ba92450cbb033d3e"): (
             1, "Local audit E2E helper; calls only the checkout's mgc binary with source-defined argv, isolated temporary cwd/HOME, captured output, and a timeout.",
@@ -846,12 +851,11 @@ SHELL_CONTROL_WORDS = {
 SHELL_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\[[^]]+\])?\+?=")
 SHELL_ARGV_DISPATCH_REVIEWS = {
     "cli/tests/scripts/acceptance_phase2.sh": {
-        'if "$@" >/dev/null 2>&1; then',
-        'output=$("$@" 2>&1 || true)',
+        'if "$@"; then',
     },
     "cli/tests/scripts/all_core_scaffold_stress.sh": {
         'if "$@" >/dev/null 2>&1; then',
-        'output=$("$@" 2>&1 || true)',
+        'output=$("$@" 2>&1) || status=$?',
     },
     "cli/tests/scripts/cli_syntax_stress.sh": {
         'if "$@" >/dev/null 2>&1; then',
@@ -3453,7 +3457,7 @@ def review_python_process_helpers(sources: dict, expected_files=None) -> list:
 
 def _portable_ast_dump(node):
     """Match the reviewed AST representation across Python versions.
-    Giữ fingerprint chính xác khi Python 3.12/3.14 khác cách in list rỗng.
+    Giữ fingerprint chính xác khi Python 3.15 khác cách in list rỗng.
     """
     if isinstance(node, ast.AST):
         fields = [

@@ -5,12 +5,11 @@ use crate::language::find_csproj;
 use mgc_types::{DependencySpec, Ecosystem, Manifest, MgResult, PackageName, VersionRange};
 use std::path::Path;
 
-/// Whether the MGC native Python engine can own this project's dependency
-/// declarations without silently ignoring another tool's lock or source.
-/// PEP 621 optional dependency groups are metadata unless explicitly selected;
-/// MGC currently installs only the default `dependencies` set.
-/// (Chỉ nhận lane Python native khi MGC sở hữu đủ khai báo và không bỏ qua
-/// lockfile/nguồn dependency do tool khác quản lý.)
+/// Whether MGC can own Python runtime requirements and the supported PEP 735
+/// `dev` group without ignoring another manager's lock or dependency source.
+/// PEP 621 optional extras remain inactive unless explicitly selected.
+/// (Chỉ nhận lane Python native khi MGC quản lý runtime + nhóm `dev` mà
+/// không bỏ qua lockfile/nguồn dependency do tool khác quản lý.)
 pub fn supports_native_python_project(root: &Path) -> bool {
     let manifest_path = root.join("pyproject.toml");
     let Ok(content) =
@@ -57,6 +56,9 @@ pub fn supports_native_python_project(root: &Path) -> bool {
             return false;
         }
     }
+    if !supports_native_python_dependency_groups(&document) {
+        return false;
+    }
 
     // Do not select only PEP 621 dependencies when a second manager or
     // dependency-group mechanism may contribute packages to the environment.
@@ -69,7 +71,6 @@ pub fn supports_native_python_project(root: &Path) -> bool {
         uv.and_then(|v| v.get("sources")),
         uv.and_then(|v| v.get("dev-dependencies")),
         uv.and_then(|v| v.get("dependency-groups")),
-        document.get("dependency-groups"),
     ]
     .into_iter()
     .flatten()
@@ -104,6 +105,30 @@ pub fn supports_native_python_project(root: &Path) -> bool {
                 | "pylock.toml"
         ) && !(name.starts_with("requirements") && name.ends_with(".txt"))
             && !(name.starts_with("pylock.") && name.ends_with(".toml"))
+    })
+}
+
+/// MGC models PEP 735's conventional `dev` group only. Other groups, group
+/// includes, and non-simple PEP 508 requirements remain outside the native
+/// mutation lane until their selection semantics can be preserved.
+/// (MGC chỉ mô hình nhóm `dev`; nhóm khác/include/cú pháp chưa hỗ trợ phải
+/// fail-closed để không làm sai ý nghĩa khai báo.)
+fn supports_native_python_dependency_groups(document: &toml::Value) -> bool {
+    let Some(groups) = document.get("dependency-groups") else {
+        return true;
+    };
+    let Some(groups) = groups.as_table() else {
+        return false;
+    };
+    groups.iter().all(|(name, value)| {
+        name == "dev"
+            && value.as_array().is_some_and(|dependencies| {
+                dependencies.iter().all(|dependency| {
+                    dependency
+                        .as_str()
+                        .is_some_and(|spec| parse_python_dependency(spec).is_ok())
+                })
+            })
     })
 }
 
@@ -887,6 +912,11 @@ pub(crate) fn parse_pyproject_manifest(root: &Path) -> MgResult<Manifest> {
     )?;
     let v: toml::Value = toml::from_str(&content)
         .map_err(|e| mgc_types::MgError::Other(format!("parse pyproject.toml: {e}")))?;
+    if !supports_native_python_dependency_groups(&v) {
+        return Err(mgc_types::MgError::Other(
+            "pyproject.toml dependency groups are outside the MGC native Python lane; only simple requirements in [dependency-groups].dev are supported".to_string(),
+        ));
+    }
     let name = v
         .get("project")
         .and_then(|p| p.get("name"))
@@ -903,6 +933,20 @@ pub(crate) fn parse_pyproject_manifest(root: &Path) -> MgResult<Manifest> {
             let spec = dep.as_str().unwrap_or_default();
             let dep = parse_python_dependency(spec)?;
             manifest.add_dep(dep, false, false, false);
+        }
+    }
+    if let Some(deps) = v
+        .get("dependency-groups")
+        .and_then(|groups| groups.get("dev"))
+        .and_then(toml::Value::as_array)
+    {
+        for dep in deps {
+            let spec = dep.as_str().ok_or_else(|| {
+                mgc_types::MgError::Other(
+                    "[dependency-groups].dev must contain only simple PEP 508 strings".to_string(),
+                )
+            })?;
+            manifest.add_dep(parse_python_dependency(spec)?, true, false, false);
         }
     }
     Ok(manifest)
@@ -953,6 +997,11 @@ pub(crate) fn write_pyproject_manifest(root: &Path, manifest: &Manifest) -> MgRe
     let content = mgc_adapter_base::project_file::read_regular_text(&path, "pyproject.toml")?;
     let mut v: toml::Value = toml::from_str(&content)
         .map_err(|e| mgc_types::MgError::Other(format!("parse pyproject.toml: {e}")))?;
+    if !supports_native_python_dependency_groups(&v) {
+        return Err(mgc_types::MgError::Other(
+            "refusing to rewrite unsupported Python dependency groups; only [dependency-groups].dev with simple requirements is MGC-managed".to_string(),
+        ));
+    }
     let project = v
         .as_table_mut()
         .and_then(|t| t.get_mut("project"))
@@ -962,47 +1011,69 @@ pub(crate) fn write_pyproject_manifest(root: &Path, manifest: &Manifest) -> MgRe
     let deps = manifest
         .dependencies
         .iter()
-        .map(|dep| {
-            // Star ranges are REAL pins-any-version deps (hand-written
-            // `dependencies = ["six"]` or `*`): serialize as the bare
-            // PEP 508 name — dropping them would silently delete a dep
-            // the user declared.
-            // (Range `*` là dep thật: ghi tên trần, không được rào mất.)
-            if dep.range.is_star() {
-                return toml::Value::String(dep.name.as_str().to_string());
-            }
-            let raw = dep.range.as_str().trim();
-            // Faithful operator mapping (mgc spelling → PEP 508): exact
-            // pins (`==`, mgc's own `=`, bare versions) serialize as
-            // `==` — never widened to `>=`. Only npm-isms (`^`, `~`,
-            // which PEP 508 lacks) coerce to a lower bound.
-            // (Ánh xạ operator trung thực: ghim exact giữ `==`.)
-            let bound = if let Some(v) = raw.strip_prefix("==").or_else(|| raw.strip_prefix('=')) {
-                format!("=={v}")
-            } else if let Some(v) = raw.strip_prefix("~=") {
-                format!("~={v}")
-            } else if raw.starts_with(">=") || raw.starts_with("<=") || raw.starts_with("!=") {
-                raw.to_string()
-            } else if let Some(v) = raw.strip_prefix('>') {
-                format!(">{v}")
-            } else if let Some(v) = raw.strip_prefix('<') {
-                format!("<{v}")
-            } else if let Some(v) = raw.strip_prefix('^').or_else(|| raw.strip_prefix('~')) {
-                format!(">={v}")
-            } else {
-                // Bare version = exact pin (mgc convention; PEP 508 has
-                // no bare form).
-                format!("=={raw}")
-            };
-            toml::Value::String(format!("{}{}", dep.name.as_str(), bound))
-        })
+        .map(python_dependency_value)
         .collect();
     project.insert("dependencies".to_string(), toml::Value::Array(deps));
+
+    let dependency_groups = v
+        .as_table_mut()
+        .expect("parsed TOML root is a table")
+        .entry("dependency-groups")
+        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()))
+        .as_table_mut()
+        .ok_or_else(|| {
+            mgc_types::MgError::Other("dependency-groups must be a TOML table".to_string())
+        })?;
+    if manifest.dev_dependencies.is_empty() {
+        dependency_groups.remove("dev");
+    } else {
+        dependency_groups.insert(
+            "dev".to_string(),
+            toml::Value::Array(
+                manifest
+                    .dev_dependencies
+                    .iter()
+                    .map(python_dependency_value)
+                    .collect(),
+            ),
+        );
+    }
+    if dependency_groups.is_empty() {
+        v.as_table_mut()
+            .expect("parsed TOML root is a table")
+            .remove("dependency-groups");
+    }
 
     let rendered =
         toml::to_string_pretty(&v).map_err(|e| mgc_types::MgError::Other(e.to_string()))?;
     mgc_adapter_base::project_file::atomic_write_regular(&path, rendered.as_bytes())?;
     Ok(())
+}
+
+fn python_dependency_value(dep: &DependencySpec) -> toml::Value {
+    // Star ranges remain bare PEP 508 names; exact pins stay exact, and
+    // unsupported npm-style ranges are represented as lower bounds.
+    // (Range `*` giữ tên trần, pin exact không bị nới rộng.)
+    if dep.range.is_star() {
+        return toml::Value::String(dep.name.as_str().to_string());
+    }
+    let raw = dep.range.as_str().trim();
+    let bound = if let Some(version) = raw.strip_prefix("==").or_else(|| raw.strip_prefix('=')) {
+        format!("=={version}")
+    } else if let Some(version) = raw.strip_prefix("~=") {
+        format!("~={version}")
+    } else if raw.starts_with(">=") || raw.starts_with("<=") || raw.starts_with("!=") {
+        raw.to_string()
+    } else if let Some(version) = raw.strip_prefix('>') {
+        format!(">{version}")
+    } else if let Some(version) = raw.strip_prefix('<') {
+        format!("<{version}")
+    } else if let Some(version) = raw.strip_prefix('^').or_else(|| raw.strip_prefix('~')) {
+        format!(">={version}")
+    } else {
+        format!("=={raw}")
+    };
+    toml::Value::String(format!("{}{bound}", dep.name.as_str()))
 }
 
 #[cfg(test)]

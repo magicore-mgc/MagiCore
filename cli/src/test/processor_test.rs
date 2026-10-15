@@ -4,6 +4,44 @@
 
 use super::*;
 
+#[test]
+fn template_layers_cannot_emit_cli_owned_container_assets() {
+    for target in [
+        "Dockerfile",
+        ".dockerignore",
+        "docker-compose.yml",
+        "mgc-container-entrypoint",
+        "k8s/deployment.yaml",
+    ] {
+        let file = TemplateFile {
+            source: target.to_string(),
+            target: target.to_string(),
+            required_context: vec![],
+            include_features: vec![],
+            exclude_features: vec![],
+        };
+        assert!(file.is_cli_generated_container_asset(), "{target}");
+    }
+
+    let feature_owned = TemplateFile {
+        source: "runtime.config".to_string(),
+        target: "runtime.config".to_string(),
+        required_context: vec![],
+        include_features: vec!["docker".to_string()],
+        exclude_features: vec![],
+    };
+    assert!(feature_owned.is_cli_generated_container_asset());
+
+    let framework_source = TemplateFile {
+        source: "src/server.ts".to_string(),
+        target: "src/server.ts".to_string(),
+        required_context: vec![],
+        include_features: vec![],
+        exclude_features: vec![],
+    };
+    assert!(!framework_source.is_cli_generated_container_asset());
+}
+
 /// Registry-first: template layer cần fetch/cache sẵn (~/.mgc/templates hoặc
 /// MGC_TEMPLATES_DIR). Máy sạch offline → skip test materialize.
 fn template_layer_ready(rel: &str) -> bool {
@@ -173,95 +211,101 @@ fn zephyr_scaffold_contains_a_real_build_entrypoint() {
 }
 
 #[test]
-fn dotnet_web_scaffold_has_a_minimal_api_source_without_a_node_manifest() {
+fn embedded_express_backend_uses_a_complete_declared_runtime() {
     let root = tempfile::tempdir().unwrap();
-    let project = root.path().join("dotnet-web");
-    let mut config = crate::scaffold::processor::Scaffolder::infer_web_create_config(
-        "dotnet-webapi",
-        project.to_str().unwrap(),
-    )
-    .unwrap();
-    config.project_name = project.to_string_lossy().to_string();
-    let out = crate::scaffold::processor::Scaffolder::scaffold(&config).unwrap();
-    assert!(out.join("dotnet-web.csproj").is_file());
-    let source = std::fs::read_to_string(out.join("Program.cs")).unwrap();
-    assert!(source.contains("WebApplication.CreateBuilder"));
-    assert!(!out.join("package.json").exists());
+    let project = root.path().join("express-backend");
+    let config = ScaffoldConfig {
+        core: "web".to_string(),
+        sub_type: "backend".to_string(),
+        frameworks: vec!["node".to_string(), "express".to_string()],
+        project_name: project.to_string_lossy().to_string(),
+        features: vec![],
+        template_dir: root.path().join("missing-express-template"),
+    };
+
+    let out = Scaffolder::scaffold(&config).unwrap();
+    let package: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(out.join("package.json")).unwrap()).unwrap();
+    let server = std::fs::read_to_string(out.join("src/server.ts")).unwrap();
+    assert_eq!(package["dependencies"]["express"], "^5.0.0");
+    assert_eq!(package["devDependencies"]["tsx"], "^4.19.0");
+    assert!(server.contains("app.listen(port, '0.0.0.0'"));
 }
 
 #[test]
-fn split_fullstack_presets_have_frontend_and_backend_source_fallbacks() {
+fn unsupported_backend_scaffolds_fail_without_creating_placeholder_projects() {
     let root = tempfile::tempdir().unwrap();
-    for (framework, frontend, backend_source) in [
-        ("react-fastify", "src/App.tsx", "server/src/server.js"),
+    let mut dotnet = Scaffolder::infer_web_create_config(
+        "dotnet-webapi",
+        root.path().join("dotnet").to_str().unwrap(),
+    )
+    .unwrap();
+    dotnet.template_dir = root.path().join("missing-dotnet-template");
+
+    for (name, config) in [
         (
-            "react-spring",
-            "src/App.tsx",
-            "server/src/main/java/App.java",
+            "fastify",
+            ScaffoldConfig {
+                core: "web".to_string(),
+                sub_type: "backend".to_string(),
+                frameworks: vec!["node".to_string(), "fastify".to_string()],
+                project_name: root.path().join("fastify").to_string_lossy().to_string(),
+                features: vec![],
+                template_dir: root.path().join("missing-fastify-template"),
+            },
         ),
-        ("vue-laravel", "src/App.vue", "server/public/index.php"),
+        ("dotnet", dotnet),
     ] {
-        let project = root.path().join(framework);
-        let config = crate::scaffold::processor::Scaffolder::infer_web_create_config(
-            framework,
-            project.to_str().unwrap(),
-        )
-        .unwrap();
-        let out = crate::scaffold::processor::Scaffolder::scaffold(&config).unwrap();
-        assert!(out.join(frontend).is_file(), "{framework} frontend");
-        assert!(out.join(backend_source).is_file(), "{framework} backend");
+        let project = std::path::PathBuf::from(&config.project_name);
+        assert!(
+            Scaffolder::scaffold(&config).is_err(),
+            "{name} without a real template must fail"
+        );
+        assert!(
+            !project.exists(),
+            "{name} failure must not leave a partial project"
+        );
     }
 }
 
 #[test]
-fn node_web_backend_fallbacks_generate_servers_and_framework_tests() {
+fn web_k8s_probe_routes_exist_in_embedded_native_backends() {
+    let axum = crate::scaffold::embedded_kernel::get_embedded_template("web", "axum")
+        .expect("Axum embedded template");
+    let axum_source = axum
+        .iter()
+        .find(|file| file.path == "src/main.rs")
+        .expect("Axum server entrypoint");
+    assert!(axum_source.content.contains("0.0.0.0:4315"));
+    assert!(axum_source.content.contains("/api/health"));
+
+    let fastapi = crate::scaffold::embedded_kernel::get_embedded_template("web", "fastapi")
+        .expect("FastAPI embedded template");
+    let fastapi_source = fastapi
+        .iter()
+        .find(|file| file.path == "main.py")
+        .expect("FastAPI server entrypoint");
+    assert!(fastapi_source.content.contains("@app.get(\"/api/health\")"));
+}
+
+#[test]
+fn embedded_express_is_the_only_node_backend_fallback() {
     let root = tempfile::tempdir().unwrap();
-    for (framework, source_file, framework_marker) in [
-        ("fastify", "src/app.js", "Fastify"),
-        ("hono", "src/app.js", "Hono"),
-        ("nestjs", "src/app.module.js", "AppModule"),
-        ("trpc", "src/router.js", "appRouter"),
-    ] {
-        let project = root.path().join(format!("{framework}-fallback"));
+    for framework in ["hono", "nestjs", "trpc"] {
+        let project = root.path().join(framework);
         let config = ScaffoldConfig {
             core: "web".to_string(),
             sub_type: "backend".to_string(),
             frameworks: vec!["node".to_string(), framework.to_string()],
             project_name: project.to_string_lossy().to_string(),
             features: vec![],
-            // Force the offline/missing-layer fallback used on a fresh install.
-            // (Buộc vào fallback thiếu template layer như máy mới/offline.)
-            template_dir: root.path().join("missing-template-layer").join(framework),
+            template_dir: root.path().join(format!("missing-{framework}-template")),
         };
-
-        let out = Scaffolder::scaffold(&config).unwrap();
-        let server = std::fs::read_to_string(out.join("src/server.js")).unwrap();
-        let framework_source = std::fs::read_to_string(out.join(source_file)).unwrap();
-        let test = std::fs::read_to_string(out.join("test/scaffold.test.cjs")).unwrap();
-        let package: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(out.join("package.json")).unwrap()).unwrap();
-
         assert!(
-            server.contains("process.env.PORT"),
-            "{framework} honors MGC dev port"
+            Scaffolder::scaffold(&config).is_err(),
+            "{framework} must fail closed"
         );
-        assert!(server.contains("127.0.0.1"), "{framework} binds loopback");
-        assert!(
-            framework_source.contains(framework_marker),
-            "{framework} source is real"
-        );
-        assert!(
-            test.contains("node:test"),
-            "{framework} includes a runtime test"
-        );
-        assert_eq!(
-            package["scripts"]["build"], "node --check src/server.js",
-            "{framework} exposes a real Node syntax-check build"
-        );
-        assert!(
-            !server.contains("service ready on 127.0.0.1:4315"),
-            "{framework} must not use a print-only placeholder"
-        );
+        assert!(!project.exists(), "{framework} failure leaves no project");
     }
 }
 
@@ -2396,5 +2440,126 @@ fn iot_fallback_scaffold_uses_selected_esp_hal_feature() {
         Scaffolder::scaffold(&config).unwrap();
         let manifest = std::fs::read_to_string(project_dir.join("Cargo.toml")).unwrap();
         assert!(manifest.contains(&format!("features = [\"{board}\"]")));
+    }
+}
+
+#[test]
+fn manifest_paths_reject_cross_platform_escape_syntax() {
+    let root = tempfile::tempdir().unwrap();
+    for path in [
+        "",
+        "../outside",
+        "a/../../outside",
+        "a/.. /outside",
+        "a/.. ./outside",
+        "directory./file",
+        "/absolute",
+        "C:/outside",
+        "a\\outside",
+        "./file",
+        "a//file",
+        "a/",
+        "a\nfile",
+    ] {
+        assert!(
+            checked_template_path(root.path(), path).is_err(),
+            "{path:?}"
+        );
+    }
+    for path in [
+        "src/main.rs",
+        ".gitignore",
+        "@scope/package/index.js",
+        "file with spaces",
+    ] {
+        assert_eq!(
+            checked_template_path(root.path(), path).unwrap(),
+            root.path().join(path)
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn manifest_paths_reject_source_and_destination_links() {
+    let root = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("secret"), "preserve").unwrap();
+    std::os::unix::fs::symlink(outside.path(), root.path().join("sources")).unwrap();
+    std::os::unix::fs::symlink(outside.path().join("secret"), root.path().join("output")).unwrap();
+    assert!(checked_template_path(root.path(), "sources/secret").is_err());
+    assert!(checked_template_path(root.path(), "output").is_err());
+    assert_eq!(
+        std::fs::read_to_string(outside.path().join("secret")).unwrap(),
+        "preserve"
+    );
+}
+
+#[test]
+fn materialization_rejects_manifest_escape_before_writing_any_file_for_four_cores() {
+    for core in ["web", "ai", "app", "lib"] {
+        let root = tempfile::tempdir().unwrap();
+        let layer_dir = root.path().join("layer");
+        let target = root.path().join("project");
+        std::fs::create_dir_all(layer_dir.join("sources")).unwrap();
+        std::fs::create_dir(&target).unwrap();
+        std::fs::write(layer_dir.join("sources/main.txt"), "untrusted").unwrap();
+        for (source, destination) in [("main.txt", "../escaped"), ("../../secret", "output.txt")] {
+            let manifest = format!(
+                "[[files]]\nsource = 'main.txt'\ntarget = 'first.txt'\n[[files]]\nsource = '{source}'\ntarget = '{destination}'\n"
+            );
+            std::fs::write(layer_dir.join("template.toml"), manifest).unwrap();
+            let layer = TemplateRoot::disk(layer_dir.clone());
+            let config = ScaffoldConfig {
+                core: core.to_string(),
+                sub_type: "frontend".to_string(),
+                frameworks: vec!["vanilla".to_string()],
+                project_name: "probe".to_string(),
+                features: vec![],
+                template_dir: layer_dir.clone(),
+            };
+            let result = if core == "web" {
+                let context = WebTemplateContext::new(&config, std::slice::from_ref(&layer));
+                Scaffolder::materialize_template_layer(&target, &layer, &context)
+            } else {
+                let context = CoreTemplateContext::try_new(&config, "probe", "fixture").unwrap();
+                Scaffolder::materialize_core_template(&target, &layer, &context)
+            };
+            assert!(result.is_err(), "{core}: {source} -> {destination}");
+            assert!(!target.join("first.txt").exists());
+            assert!(!root.path().join("escaped").exists());
+        }
+    }
+}
+
+#[test]
+fn oversized_manifest_is_rejected_before_schema_parsing() {
+    let root = tempfile::tempdir().unwrap();
+    let file = std::fs::File::create(root.path().join("template.toml")).unwrap();
+    file.set_len(MAX_TEMPLATE_MANIFEST_BYTES + 1).unwrap();
+    let error = validate_template_manifest(root.path()).unwrap_err();
+    assert!(error.to_string().contains("byte limit"));
+}
+
+#[test]
+fn core_template_lookup_uses_the_preflight_namespace() {
+    for (core, expected) in [
+        ("web", "web"),
+        ("ai", "ai"),
+        ("app", "app"),
+        ("lib", "lib"),
+        ("clo", "cloud"),
+        ("cloud", "cloud"),
+        ("game", "game"),
+        ("iot", "iot"),
+        ("cicd", "cicd"),
+    ] {
+        let layer = Scaffolder::core_template_layer(core, "mgc-cache-fixture");
+        assert!(
+            layer
+                .path()
+                .ends_with(Path::new(expected).join("mgc-cache-fixture")),
+            "{core}"
+        );
     }
 }

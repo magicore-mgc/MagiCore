@@ -1262,7 +1262,7 @@ async fn test_resolve_does_not_reuse_legacy_resolution_cache_schema() {
             hasher.update(entry.as_bytes());
             hasher.update(b"\0");
         }
-        let legacy_key = format!("{:x}", hasher.finalize());
+        let legacy_key = hex::encode(hasher.finalize());
         cache
             .write_resolution(&legacy_key, registry_url, &stale_graph)
             .unwrap();

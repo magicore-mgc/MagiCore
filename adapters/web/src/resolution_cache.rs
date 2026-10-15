@@ -31,5 +31,5 @@ pub fn manifest_resolution_cache_key(manifest: &Manifest, registry_url: &str) ->
         hasher.update(entry.as_bytes());
         hasher.update(b"\0");
     }
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }

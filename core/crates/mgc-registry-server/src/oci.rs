@@ -1,20 +1,19 @@
 //! OCI Distribution Spec endpoints (/v2/*)
 //! (OCI API: blob upload/download, manifest push/pull)
-//! NOTE: repo names may contain slashes (e.g. `ai/mymodel`), so routes are
-//! matched via `/v2/*rest` and split manually — `:name` matches one segment only.
+//! NOTE: repository names may contain slashes, so capture a wildcard and split it manually.
+//! (Tên repo có thể chứa `/`, nên bắt wildcard rồi tự tách các phần.)
 
 use crate::{AppState, model::*, storage::RegistryStore};
 use axum::{
     Router,
     body::Bytes,
-    extract::{ConnectInfo, Path, Query, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, HeaderValue, Method, StatusCode},
     response::{IntoResponse, Json, Response},
     routing::get,
 };
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::net::SocketAddr;
 
 fn header_value(value: &str) -> Result<HeaderValue, StatusCode> {
     HeaderValue::from_str(value).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
@@ -25,7 +24,7 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         // Blob + manifest operations, dispatcher parses `rest`
         .route(
-            "/v2/*rest",
+            "/v2/{*rest}",
             get(v2_dispatch)
                 .head(v2_dispatch)
                 .post(v2_dispatch)
@@ -88,7 +87,7 @@ async fn v2_dispatch(
     method: Method,
     Path(rest): Path<String>,
     headers: HeaderMap,
-    peer: Option<ConnectInfo<SocketAddr>>,
+    peer: crate::OptionalPeerAddress,
     Query(query): Query<HashMap<String, String>>,
     body: Bytes,
 ) -> Result<Response, StatusCode> {
@@ -103,11 +102,7 @@ async fn v2_dispatch(
     {
         let package_scope = crate::trusted::scoped_package("oci", name)?;
         let publisher = auth
-            .authorize_package_write_from(
-                &headers,
-                &package_scope,
-                peer.map(|ConnectInfo(address)| address),
-            )
+            .authorize_package_write_from(&headers, &package_scope, crate::peer_address(peer))
             .await?;
         if publisher.is_some()
             && !(section == "blobs/uploads" || (section == "manifests" && method == Method::PUT))

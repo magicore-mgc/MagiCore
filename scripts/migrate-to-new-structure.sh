@@ -113,40 +113,40 @@ resolver = "2"
 
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 license = "MIT"
 repository = "https://github.com/mingd-153/MagiCore"
 authors = ["MagiCore Contributors"]
 
 [workspace.dependencies]
 # Async runtime
-tokio = { version = "1.40", features = ["full"] }
-async-trait = "0.1"
+tokio = { version = "1.53.3", features = ["full"] }
+async-trait = "0.1.92"
 
 # HTTP
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "stream", "rustls", "http2"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-toml = "0.8"
+serde_json = "1.0.154"
+toml = "1.1.8"
 
 # CLI
-clap = { version = "4.5", features = ["derive"] }
-indicatif = "0.17"
-console = "0.15"
+clap = { version = "4.6.7", features = ["derive"] }
+indicatif = "0.18.6"
+console = "0.16.6"
 
 # TUI
-ratatui = "0.28"
-crossterm = "0.28"
+ratatui = "0.30.2"
+crossterm = "0.29.0"
 
 # Crypto
-sha2 = "0.10"
-hex = "0.4"
+sha2 = "0.11.1"
+hex = "0.4.3"
 
 # Error handling
-thiserror = "2.0"
-anyhow = "1.0"
+thiserror = "2.0.21"
+anyhow = "1.0.104"
 
 # Concurrency
 dashmap = "6.1"

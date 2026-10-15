@@ -3,7 +3,14 @@
 
 use anyhow::Result;
 
-pub async fn run(framework: &str, project_name: &str) -> Result<()> {
+pub async fn run(
+    framework: &str,
+    project_name: &str,
+    container: super::super::scaffold_flags::ContainerFlags,
+) -> Result<()> {
+    if container.k8s {
+        return Err(crate::error::k8s_profile_unsupported("lib"));
+    }
     // Parse scaffold spec sớm với typo detection (Phase 2 all-core parity) — parse sớm có typo detection (Phase 2 cân bằng cores)
     use crate::scaffold::spec::{CoreKind, parse_scaffold_spec};
 
@@ -26,15 +33,30 @@ pub async fn run(framework: &str, project_name: &str) -> Result<()> {
         frameworks: vec![lang.to_string()],
         core: "lib".to_string(),
         sub_type: String::new(),
-        features: vec![],
+        features: if container.docker {
+            vec!["docker".to_string()]
+        } else {
+            vec![]
+        },
         template_dir: std::path::PathBuf::new(),
     };
 
     // Resolve layer: embedded → cache → registry → fallback — giải quyết layer: embedded → cache → registry → fallback
-    match crate::commands::template::ensure_layer(&format!("lib/{}", lang)).await {
+    let request = parsed_framework
+        .as_ref()
+        .map(|spec| spec.template_request())
+        .unwrap_or_else(|| lang.to_string());
+    let explicit_ref = parsed_framework.as_ref().is_some_and(|spec| {
+        !matches!(
+            &spec.requested_ref,
+            crate::scaffold::spec::ScaffoldRef::Default
+        )
+    });
+    match crate::commands::template::ensure_layer(&format!("lib/{request}")).await {
         Ok(status) if status.is_available() => {
             // Layer available - proceed — layer có sẵn - tiếp tục
         }
+        Err(error) if explicit_ref || !error.is_availability_failure() => return Err(error.into()),
         Ok(_) | Err(_) => {
             // Fallback: generate warning, continue with minimal scaffold — fallback: cảnh báo, tiếp với scaffold tối thiểu
             mgc_ui::warning(&format!(

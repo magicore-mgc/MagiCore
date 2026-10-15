@@ -33,7 +33,7 @@ fn blake3_or_sha256(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(bytes);
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 /// Encode native path units so distinct source names cannot collapse to one cache key.
@@ -110,7 +110,7 @@ fn hash_source_entries(file_hashes: &BTreeMap<String, String>) -> String {
         update_hash_part(&mut hasher, rel_path.as_bytes());
         update_hash_part(&mut hasher, f_hash.as_bytes());
     }
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 fn update_hash_part(hasher: &mut sha2::Sha256, bytes: &[u8]) {
@@ -236,7 +236,7 @@ pub fn compute_composite_hash(source_hash: &str, dep_hashes: &BTreeMap<String, S
         update_hash_part(&mut hasher, dep_name.as_bytes());
         update_hash_part(&mut hasher, dep_hash.as_bytes());
     }
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 const CACHE_FILE_NAME: &str = ".mgc_build_cache.json";

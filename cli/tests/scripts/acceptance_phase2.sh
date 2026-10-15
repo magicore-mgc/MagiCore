@@ -1,163 +1,61 @@
 #!/usr/bin/env bash
-# Phase 2 Acceptance Tests - Runtime activation validation (STRICT)
-
-set -e
+# Exercise the supplied CLI binary; report only operations executed in this run.
+# Kiểm binary thật và filesystem thật; không cộng PASS từ file nguồn hay test chưa chạy.
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 MGC_BIN="${MGC_BIN:-$PROJECT_ROOT/target/debug/mgc}"
-TEST_DIR="/tmp/mgc-acceptance-test-$$"
-TEST_HOME="$TEST_DIR/home"
-PASSED=0
-TOTAL=0
-
-# Setup isolated test environment
-export HOME="$TEST_HOME"
-export MGC_CACHE_DIR="$TEST_HOME/.mgc"
-
-echo "=== Phase 2 Acceptance Tests (STRICT) ==="
-echo "Binary: $MGC_BIN"
-echo "Test dir: $TEST_DIR"
-echo "Test home: $TEST_HOME"
-echo
-
-# Cleanup
-cleanup() {
-    rm -rf "$TEST_DIR"
-}
-trap cleanup EXIT
-
-mkdir -p "$TEST_DIR" "$TEST_HOME"
+[[ -x "$MGC_BIN" ]] || { echo "FAIL: executable MGC_BIN is required" >&2; exit 1; }
+MGC_BIN="$(cd "$(dirname "$MGC_BIN")" && pwd)/$(basename "$MGC_BIN")"
+TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mgc-acceptance.XXXXXX")"
+trap 'rm -rf "$TEST_DIR"' EXIT
+export HOME="$TEST_DIR/home"
+export USERPROFILE="$HOME"
+export MGC_DATA_DIR="$HOME/data"
+export MGC_CACHE_DIR="$HOME/cache"
+export MGC_TEMPLATES_DIR="$HOME/templates"
+export MAGICORE_STORE_ROOT="$HOME/store"
+unset MAGICORE_TEMPLATE_DIR
+mkdir -p "$HOME"
 cd "$TEST_DIR"
 
+PASSED=0
 run_test() {
     local name="$1"
     shift
-    TOTAL=$((TOTAL + 1))
-    echo "Test $TOTAL: $name"
-    if "$@" >/dev/null 2>&1; then
-        echo "✓ PASS"
+    if "$@"; then
         PASSED=$((PASSED + 1))
-        return 0
+        echo "PASS: $name"
     else
-        echo "✗ FAIL"
-        return 1
+        echo "FAIL: $name" >&2
+        exit 1
     fi
 }
-
-run_test_expect_output() {
-    local name="$1"
-    local expected="$2"
-    shift 2
-    TOTAL=$((TOTAL + 1))
-    echo "Test $TOTAL: $name"
+reject_typo() {
     local output
-    output=$("$@" 2>&1 || true)
-    if echo "$output" | grep -q "$expected"; then
-        echo "✓ PASS (found: '$expected')"
-        PASSED=$((PASSED + 1))
-        return 0
-    else
-        echo "✗ FAIL (expected '$expected' not found)"
-        echo "   Output: ${output:0:200}"
+    if output=$("$MGC_BIN" create-web nextjs@laster typo-project 2>&1); then
+        echo "FAIL: invalid ref unexpectedly succeeded" >&2
         return 1
     fi
+    [[ "$output" == *"Did you mean"* ]] && [[ ! -e typo-project ]]
+}
+check_project() {
+    local project="$1" core="$2" manifest="$3" source="$4"
+    [[ -s "$project/$manifest" && -s "$project/$source" && -s "$project/mgc.toml" ]] &&
+    [[ "$(tr -d '\r\n' < "$project/.mgc.core")" == "$core" ]]
 }
 
-run_test_file_exists() {
-    local name="$1"
-    local file="$2"
-    TOTAL=$((TOTAL + 1))
-    echo "Test $TOTAL: $name"
-    if [ -f "$file" ]; then
-        echo "✓ PASS (file exists)"
-        PASSED=$((PASSED + 1))
-        return 0
-    else
-        echo "✗ FAIL (file not found: $file)"
-        return 1
-    fi
-}
-
-# Test 1: Binary executes
-run_test "Binary version check" "$MGC_BIN" --version
-
-# Test 2: Typo detection
-run_test_expect_output \
-    "Spec parser typo detection (nextjs@laster)" \
-    "Did you mean" \
-    "$MGC_BIN" create-web nextjs@laster test-typo
-
-# Test 3: All-core spec parsing (no double @tag bug) — now passes with embedded
-run_test_expect_output \
-    "All-core spec parsing (no @stable@latest)" \
-    "Created app project" \
-    "$MGC_BIN" create-app flutter@stable test-app
-
-# Test 4: Registry-first error message
-run_test_expect_output \
-    "Registry-first error message" \
-    "Required scaffold layers missing" \
-    "$MGC_BIN" create-web nextjs@latest test-nextjs
-
-# Test 5: Binary independence (no workspace templates/)
-TOTAL=$((TOTAL + 1))
-echo "Test $TOTAL: Binary independence check"
-BINARY_DEPS=$(strings "$MGC_BIN" 2>/dev/null | grep -c "workspace.*templates" || true)
-if [ "$BINARY_DEPS" -eq 0 ]; then
-    echo "✓ PASS (no workspace templates/ hardcoded)"
-    PASSED=$((PASSED + 1))
-else
-    echo "⚠ WARN (found $BINARY_DEPS references - likely comments)"
-    PASSED=$((PASSED + 1)) # Not fatal
-fi
-
-# Test 6: Versioned cache structure (isolated)
-TOTAL=$((TOTAL + 1))
-echo "Test $TOTAL: Versioned cache structure (isolated HOME)"
-mkdir -p "$MGC_CACHE_DIR/scaffolds/web/test-scaffold/1.0.0"
-echo "1.0.0" > "$MGC_CACHE_DIR/scaffolds/web/test-scaffold/1.0.0/.mgc-version"
-if [ -f "$MGC_CACHE_DIR/scaffolds/web/test-scaffold/1.0.0/.mgc-version" ]; then
-    echo "✓ PASS (versioned cache writable)"
-    PASSED=$((PASSED + 1))
-else
-    echo "✗ FAIL (cache write failed)"
-fi
-
-# Test 7: Embedded kernel availability
-TOTAL=$((TOTAL + 1))
-echo "Test $TOTAL: Embedded kernel compiled in"
-if [ -f "$PROJECT_ROOT/cli/embedded/web-vanilla.tar.gz" ]; then
-    echo "✓ PASS (web/vanilla kernel exists: $(stat -f%z "$PROJECT_ROOT/cli/embedded/web-vanilla.tar.gz" 2>/dev/null || stat -c%s "$PROJECT_ROOT/cli/embedded/web-vanilla.tar.gz" 2>/dev/null) bytes)"
-    PASSED=$((PASSED + 1))
-else
-    echo "✗ FAIL (embedded kernel missing)"
-fi
-
-# Test 8: All-core parity — verified via cargo test all_core_parity_test (separate integration test)
-TOTAL=$((TOTAL + 1))
-echo "Test $TOTAL: All-core parity (see cargo test all_core_parity_test)"
-echo "✓ PASS (verified separately: all 4 cores create projects with embedded kernels)"
-PASSED=$((PASSED + 1))
-
-echo
-echo "=== Results ==="
-echo "Passed: $PASSED/$TOTAL"
-
-if [ "$PASSED" -eq "$TOTAL" ]; then
-    echo "✓ ALL TESTS PASSED"
-    echo
-    echo "Phase 2 Status: PASS"
-    echo "Runtime unblock: ✓ (web/ai/app/lib create projects)"
-    echo "All-core minimal scaffold: ✓ (4 cores have embedded kernels)"
-    echo "Full competitive parity: PENDING (registry infrastructure + extended kernels)"
-    exit 0
-else
-    FAILED=$((TOTAL - PASSED))
-    echo "✗ $FAILED TESTS FAILED"
-    echo
-    echo "Phase 2 Status: PARTIAL"
-    echo "Foundation: GOOD ($PASSED/$TOTAL core tests pass)"
-    echo "Runtime scaffold: BLOCKED (see failures above)"
-    exit 1
-fi
+run_test "binary executes" "$MGC_BIN" --version
+run_test "typo fails without creating project" reject_typo
+run_test "web default scaffold" "$MGC_BIN" create-web vanilla test-web --ts
+run_test "web manifest/source/identity" check_project test-web web package.json index.html
+run_test "AI default scaffold" "$MGC_BIN" create-ai python-agent test-ai
+run_test "AI manifest/source/identity" check_project test-ai ai pyproject.toml src/agent.py
+run_test "App default scaffold" "$MGC_BIN" create-app flutter test-app
+run_test "App manifest/source/identity" check_project test-app app pubspec.yaml lib/main.dart
+run_test "Lib default scaffold" "$MGC_BIN" create-lib rust test-lib
+run_test "Lib manifest/source/identity" check_project test-lib lib Cargo.toml src/lib.rs
+run_test "second project with shared template cache" "$MGC_BIN" create-web vanilla test-web-again --ts
+run_test "second project's manifest/source/identity" check_project test-web-again web package.json index.html
+printf 'PASS: %s executed scaffold checks; package install/build/test lifecycle was not evaluated\n' "$PASSED"

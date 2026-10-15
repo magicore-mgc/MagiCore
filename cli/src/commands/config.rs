@@ -511,7 +511,7 @@ fn redact_toml_config(content: &str) -> Result<String> {
         }
     }
 
-    let mut value: toml::Value = content.parse()?;
+    let mut value: toml::Value = toml::from_str(content)?;
     redact_value(&mut value);
     Ok(toml::to_string_pretty(&value)?)
 }

@@ -560,7 +560,7 @@ impl HermeticMaven {
         let mut server = mockito::Server::new();
         let url = server.url();
         let jar = b"maven native add test artifact";
-        let checksum = format!("{:x}", Sha256::digest(jar));
+        let checksum = hex::encode(Sha256::digest(jar));
         let base = "/org/apache/commons/commons-lang3";
         let mocks = vec![
             server

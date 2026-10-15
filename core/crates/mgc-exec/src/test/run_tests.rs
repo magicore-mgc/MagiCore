@@ -1901,7 +1901,7 @@ fn command_line_is_required_when_missing_for_any_child_image() {
         "node.exe",
         "nodejs.exe",
         "C:\\Program Files\\Python\\python.exe",
-        "python3.14.exe",
+        "python3.15.exe",
         "C:\\Windows\\System32\\cmd.exe",
         "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
         "pwsh.exe",

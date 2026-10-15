@@ -20,7 +20,7 @@ mgc-store = { workspace = true }
 mgc-lockfile = { workspace = true }
 mgc-crypto = { workspace = true }
 mgc-oidc = { workspace = true }
-sigstore-sign = "0.11.0"
+sigstore-sign = "0.15.0"
 axum = { workspace = true }
 tower-http = { workspace = true }
 notify = { workspace = true }
@@ -28,26 +28,26 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 url = { workspace = true }
-reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "gzip", "rustls-tls", "http2"] }
+reqwest = { workspace = true }
 object_store = { workspace = true }
 futures-util = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { workspace = true }
 base64 = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 tempfile = { workspace = true }
 clap = { workspace = true }
-sqlx = { version = "0.9", features = ["runtime-tokio", "tls-rustls", "sqlite", "uuid", "chrono", "json", "migrate"] }  # 0.9: runtime-tokio-rustls → runtime-tokio + tls-rustls
+sqlx = { version = "0.9.0", features = ["runtime-tokio", "tls-rustls", "sqlite", "uuid", "chrono", "json", "migrate"] }
 chrono = { workspace = true }
 
 [dev-dependencies]
-http = "1"
+http = { workspace = true }
 tempfile = { workspace = true }
-tokio-test = "0.4"
-tower = "0.5"
+tokio-test = "0.4.6"
+tower = "0.5.3"
 
 [[test]]
 name = "registry"

@@ -2,7 +2,7 @@ use anyhow::{Result, bail};
 use std::env;
 use std::path::{Path, PathBuf};
 
-/// A template directory on disk (env → workspace templates/ → registry cache).
+/// A template directory from the dev override or registry cache.
 #[derive(Debug, Clone)]
 pub struct TemplateRoot {
     path: PathBuf,
@@ -13,7 +13,7 @@ impl TemplateRoot {
         TemplateRoot { path }
     }
 
-    /// Resolve a template rel (relative to templates/) against the source
+    /// Resolve a template rel (relative to templates/) from the source
     /// priority: MAGICORE_TEMPLATE_DIR env → registry cache ONLY.
     ///
     /// **workspace templates/ NO LONGER USED** — binary must be independent.

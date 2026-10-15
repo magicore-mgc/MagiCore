@@ -137,8 +137,68 @@ fn non_python_backend_does_not_parse_python_framework_config() {
 }
 
 #[test]
+fn native_go_dev_uses_mgc_module_cache_and_disables_network_fallbacks() {
+    let root = tempfile::tempdir().expect("create Go store roots");
+    let module_cache = root.path().join("store").join("go");
+    let build_cache = root.path().join("cache").join("go").join("build");
+
+    let environment = super::go_native_runtime_env(&module_cache, &build_cache);
+
+    assert!(environment.contains(&("GOMODCACHE".to_string(), module_cache.display().to_string())));
+    assert!(environment.contains(&("GOCACHE".to_string(), build_cache.display().to_string())));
+    assert!(environment.contains(&("GOPROXY".to_string(), "off".to_string())));
+    assert!(environment.contains(&("GOSUMDB".to_string(), "off".to_string())));
+    assert!(environment.contains(&("GOTOOLCHAIN".to_string(), "local".to_string())));
+}
+
+#[test]
+fn native_rust_dev_uses_the_verified_mgc_directory_source_offline() {
+    let root = tempfile::tempdir().expect("create managed Cargo source");
+
+    let args = super::cargo_run_args_from_managed_source(Some(root.path()))
+        .expect("build Cargo arguments");
+    let values = args
+        .iter()
+        .map(|argument| argument.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+
+    assert!(
+        values
+            .iter()
+            .any(|value| value == "source.crates-io.replace-with=\"mgc-managed\"")
+    );
+    assert!(values.contains(&format!(
+        "source.mgc-managed.directory={}",
+        toml::Value::String(root.path().to_string_lossy().into_owned())
+    )));
+    assert!(values.ends_with(&[
+        "run".to_string(),
+        "--locked".to_string(),
+        "--offline".to_string()
+    ]));
+}
+
+#[test]
+fn native_rust_dev_without_mgc_lock_fails_before_cargo_launch() {
+    let root = tempfile::tempdir().expect("create unmanaged Rust project");
+    std::fs::create_dir(root.path().join("src")).expect("create source directory");
+    std::fs::write(
+        root.path().join("Cargo.toml"),
+        "[package]\nname = \"unmanaged-web\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+    )
+    .expect("write Cargo manifest");
+    std::fs::write(root.path().join("src/main.rs"), "fn main() {}\n")
+        .expect("write Rust entrypoint");
+
+    let error = super::infer_native_dev_launch(root.path(), None, None)
+        .expect_err("Rust dev must require MGC lock and verified source state");
+
+    assert!(!error.to_string().is_empty());
+}
+
+#[test]
 fn python_interpreter_name_detection_covers_supported_executable_names() {
-    for name in ["python", "python3", "python3.12", "python312", "python.exe"] {
+    for name in ["python", "python3", "python3.15", "python315", "python.exe"] {
         assert!(
             super::is_python_interpreter_name(name),
             "expected {name} to be recognized as Python"
@@ -197,6 +257,114 @@ fn web_framework_aliases_resolve_to_supported_defaults() {
 }
 
 #[test]
+fn web_framework_request_keeps_an_explicit_older_version() {
+    let spec = crate::scaffold::spec::parse_scaffold_spec(
+        crate::scaffold::spec::CoreKind::Web,
+        "nextjs@15.2.0",
+    )
+    .expect("older framework version should parse as a scaffold ref");
+    let request = super::framework_request_from_spec("nextjs", &spec.requested_ref);
+    assert_eq!(request.normalized, "nextjs");
+    assert_eq!(request.version.as_deref(), Some("15.2.0"));
+    assert_eq!(request.dist_tag, None);
+}
+
+#[tokio::test]
+async fn create_framework_version_reaches_the_primary_manifest_selector() {
+    let spec = crate::scaffold::spec::parse_scaffold_spec(
+        crate::scaffold::spec::CoreKind::Web,
+        "nextjs@15.2.0",
+    )
+    .expect("older framework version should parse as a scaffold ref");
+    let request = super::framework_request_from_spec("nextjs", &spec.requested_ref);
+    let selected = super::resolve_primary_version(&request, "next", None)
+        .await
+        .expect("explicit framework version should not require registry access");
+
+    assert_eq!(selected, "15.2.0");
+}
+
+#[test]
+fn framework_dist_tag_is_preserved_for_registry_resolution() {
+    let spec = crate::scaffold::spec::parse_scaffold_spec(
+        crate::scaffold::spec::CoreKind::Web,
+        "nextjs@beta",
+    )
+    .expect("dist tag should parse as a scaffold ref");
+    let request = super::framework_request_from_spec("nextjs", &spec.requested_ref);
+
+    assert_eq!(request.version, None);
+    assert_eq!(request.dist_tag.as_deref(), Some("beta"));
+}
+
+#[tokio::test]
+async fn scaffold_keeps_a_user_requested_older_package_range() {
+    let selected = super::versions::resolve_seed_dependency_version("next", Some("^15.2.0"), None)
+        .await
+        .expect("an explicit compatible user range must be retained");
+    assert_eq!(selected, "^15.2.0");
+}
+
+#[test]
+#[cfg(feature = "web")]
+fn selected_scaffold_dist_tag_obeys_the_release_age_gate() {
+    use mgc_web_adapter::native::npm_registry::{PackageMetadata, VersionInfo};
+    use std::collections::HashMap;
+
+    let old_release = (chrono::Utc::now() - chrono::Duration::hours(48))
+        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let version_info = VersionInfo {
+        version: "15.2.0".to_string(),
+        dependencies: None,
+        dev_dependencies: None,
+        peer_dependencies: None,
+        peer_dependencies_meta: HashMap::new(),
+        optional_dependencies: None,
+        os: None,
+        cpu: None,
+        dist: None,
+    };
+    let metadata = PackageMetadata {
+        name: "next".to_string(),
+        description: None,
+        versions: HashMap::from([("15.2.0".to_string(), version_info)]),
+        dist_tags: HashMap::from([("beta".to_string(), "15.2.0".to_string())]),
+        time: HashMap::from([("15.2.0".to_string(), old_release)]),
+    };
+    let selected = super::versions::selected_dist_tag_version(
+        "next",
+        "beta",
+        &metadata,
+        Some(super::versions::ScaffoldAgePolicy {
+            cutoff_hours: 24,
+            allow_missing_time: false,
+        }),
+    )
+    .expect("a dist tag pointing to an eligible release should resolve");
+
+    assert_eq!(selected, "15.2.0");
+
+    let fresh_release = (chrono::Utc::now() - chrono::Duration::hours(1))
+        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let mut fresh_metadata = metadata;
+    fresh_metadata
+        .time
+        .insert("15.2.0".to_string(), fresh_release);
+    assert!(
+        super::versions::selected_dist_tag_version(
+            "next",
+            "beta",
+            &fresh_metadata,
+            Some(super::versions::ScaffoldAgePolicy {
+                cutoff_hours: 24,
+                allow_missing_time: false,
+            }),
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn nuxt_scaffold_seeds_unplugin_at_project_root_for_builder_resolution() {
     let seed = super::FRAMEWORK_SEEDS
         .iter()
@@ -212,7 +380,7 @@ fn nuxt_scaffold_seeds_unplugin_at_project_root_for_builder_resolution() {
     }));
     assert_eq!(
         super::versions::scaffold_baseline_version("unplugin"),
-        Some("^3.0.0")
+        Some("^3.4.0")
     );
 }
 
@@ -226,20 +394,30 @@ fn monorepo_alias_selects_a_frontend_and_backend() {
 }
 
 #[test]
-fn monorepo_alias_has_an_offline_frontend_and_backend_scaffold() {
-    let root = tempfile::tempdir().unwrap();
-    let project = root.path().join("sample-monorepo");
+fn scaffold_preflight_selects_the_actual_framework_layer_for_each_core_lane() {
     let mut flags = crate::commands::core::scaffold_flags::ScaffoldFlags::default();
     super::apply_framework_alias_defaults("monorepo", &mut flags);
-    let config = super::build_web_config("monorepo", project.to_str().unwrap(), &flags).unwrap();
-    let out = crate::scaffold::processor::Scaffolder::scaffold(&config).unwrap();
-    assert!(out.join("magicore.workspace.toml").is_file());
-    assert!(out.join("apps/frontend/src/App.tsx").is_file());
-    assert!(out.join("apps/backend/src/server.js").is_file());
-    let package: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(out.join("package.json")).unwrap()).unwrap();
-    assert_eq!(package["workspaces"][0], "apps/frontend");
-    assert_eq!(package["workspaces"][1], "apps/backend");
+    let monorepo = super::build_web_config("monorepo", "sample-monorepo", &flags).unwrap();
+    let monorepo_layers = super::required_web_layers_for_config(
+        &monorepo,
+        &super::parse_framework_request("monorepo"),
+    );
+    assert!(monorepo_layers.contains(&"web/monorepo/frontend/react-vite".to_string()));
+    assert!(monorepo_layers.contains(&"web/monorepo/backend/node/express".to_string()));
+    assert!(!monorepo_layers.contains(&"web/monorepo/backend/node/node".to_string()));
+
+    let backend = crate::wizard::engine::ScaffoldConfig {
+        core: "web".to_string(),
+        sub_type: "backend".to_string(),
+        frameworks: vec!["go".to_string(), "gin".to_string()],
+        project_name: "sample-gin".to_string(),
+        features: vec![],
+        template_dir: std::path::PathBuf::new(),
+    };
+    let backend_layers =
+        super::required_web_layers_for_config(&backend, &super::parse_framework_request("gin"));
+    assert!(backend_layers.contains(&"web/backend/go/gin".to_string()));
+    assert!(!backend_layers.contains(&"web/backend/go/go".to_string()));
 }
 
 #[test]

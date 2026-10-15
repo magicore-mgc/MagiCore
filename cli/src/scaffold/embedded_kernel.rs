@@ -245,8 +245,8 @@ app.get('/', (_req, res) => {
   res.json({ message: 'Hello from MagiCore Express!', project: '{{PROJECT_NAME}}' })
 })
 
-app.listen(port, () => {
-  console.log(`Listening on http://127.0.0.1:${port}`)
+app.listen(port, '0.0.0.0', () => {
+  console.log(`Listening on http://0.0.0.0:${port}`)
 })
 "#,
             },
@@ -272,10 +272,10 @@ app.listen(port, () => {
                 content: r#"[package]
 name = "{{PROJECT_NAME}}"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
-axum = "0.7"
+axum = "0.8.9"
 tokio = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -287,9 +287,11 @@ serde_json = "1.0"
 
 #[tokio::main]
 async fn main() {
-    let app = Router::new().route("/", get(|| async { "Hello from MagiCore Axum!" }));
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:4315").await.unwrap();
-    println!("Listening on http://127.0.0.1:4315");
+    let app = Router::new()
+        .route("/", get(|| async { "Hello from MagiCore Axum!" }))
+        .route("/api/health", get(|| async { "ok" }));
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:4315").await.unwrap();
+    println!("Listening on http://0.0.0.0:4315");
     axum::serve(listener, app).await.unwrap();
 }
 "#,
@@ -305,6 +307,10 @@ app = FastAPI(title="{{PROJECT_NAME}}")
 @app.get("/")
 def read_root():
     return {"message": "Hello from MagiCore FastAPI!", "project": "{{PROJECT_NAME}}"}
+
+@app.get("/api/health")
+def health_check():
+    return {"status": "ok"}
 "#,
             },
             EmbeddedFile {
@@ -313,8 +319,8 @@ def read_root():
 name = "{{PROJECT_NAME}}"
 version = "0.1.0"
 dependencies = [
-    "fastapi>=0.110.0",
-    "uvicorn>=0.28.0",
+    "fastapi==0.143.1",
+    "uvicorn==0.54.0",
 ]
 "#,
             },

@@ -271,8 +271,8 @@ rustflags = ["-C", "opt-level=2", "--cfg", "mgc_lib_optimized"]
 
 #[test]
 fn test_ai_python_mgc_test_with_optimizer() {
-    // REAL E2E: mgc test (ai/python) → verify child pytest receives optimizer env
-    // REQUIRES: python3 + pytest installed
+    // Isolated runner contract: mgc test invokes Python -m pytest and passes
+    // optimizer env without relying on a globally installed pytest package.
 
     let temp = TempDir::new().unwrap();
     let project = temp.path();
@@ -280,19 +280,25 @@ fn test_ai_python_mgc_test_with_optimizer() {
     let fake_bin = project.join("fake-bin");
     std::fs::create_dir(&fake_bin).unwrap();
     #[cfg(unix)]
-    write_fake_tool(
-        &fake_bin,
-        "pytest",
-        r#"echo "OPTIMIZER_STATUS: ${PYTHON_OPTIMIZER_MARKER:-NOT_SET}"
+    for python in ["python", "python3"] {
+        write_fake_tool(
+            &fake_bin,
+            python,
+            r#"test "$1" = "-S" && test "$2" = "-m" && test "$3" = "pytest"
+test -z "${PYTHONPATH:-}"
+echo "OPTIMIZER_STATUS: ${PYTHON_OPTIMIZER_MARKER:-NOT_SET}"
 test "${PYTHON_OPTIMIZER_MARKER:-NOT_SET}" = "PYTHON_OPTIMIZED"
 echo "1 passed""#,
-    );
+        );
+    }
     #[cfg(windows)]
-    write_fake_tool(
-        &fake_bin,
-        "pytest",
-        "echo OPTIMIZER_STATUS: %PYTHON_OPTIMIZER_MARKER%\r\nif not \"%PYTHON_OPTIMIZER_MARKER%\"==\"PYTHON_OPTIMIZED\" exit /b 1\r\necho 1 passed",
-    );
+    for python in ["python", "python3"] {
+        write_fake_tool(
+            &fake_bin,
+            python,
+            "if not \"%1\"==\"-S\" exit /b 2\r\nif not \"%2\"==\"-m\" exit /b 2\r\nif not \"%3\"==\"pytest\" exit /b 2\r\nif not \"%PYTHONPATH%\"==\"\" exit /b 3\r\necho OPTIMIZER_STATUS: %PYTHON_OPTIMIZER_MARKER%\r\nif not \"%PYTHON_OPTIMIZER_MARKER%\"==\"PYTHON_OPTIMIZED\" exit /b 1\r\necho 1 passed",
+        );
+    }
 
     // This test isolates optimizer environment propagation; dependency
     // ownership/install is covered by native AI lifecycle tests. Keep the
@@ -310,9 +316,6 @@ framework = "python-agent"
 name = "test-optimizer-ai"
 version = "0.1.0"
 dependencies = []
-
-[project.optional-dependencies]
-ai = ["torch>=2.8"]
 "#,
     )
     .unwrap();
@@ -367,7 +370,10 @@ if __name__ == '__main__':
     // Run mgc test
     let mgc = find_mgc_binary();
     let mut command = Command::new(&mgc);
-    command.arg("test").current_dir(project);
+    command
+        .arg("test")
+        .current_dir(project)
+        .env("PYTHONPATH", "host-controlled-module-path");
     prepend_fake_tool_path(&mut command, &fake_bin);
     let output = command.output().expect("mgc test failed to execute");
 
@@ -377,7 +383,7 @@ if __name__ == '__main__':
 
     println!("=== mgc test output ===\n{}", combined);
 
-    // VERIFY: Child python/pytest process received optimizer env
+    // VERIFY: Child Python -m pytest process received optimizer env
     // Success indicators:
     // 1. Command succeeded
     // 2. Pytest test passed (marker assertion passed)
@@ -411,7 +417,7 @@ if __name__ == '__main__':
         panic!("Optimizer env not passed to pytest");
     }
 
-    println!("AI (Python) mgc test → pytest optimizer env verified");
+    println!("AI (Python) mgc test → MGC-isolated pytest optimizer env verified");
 }
 
 #[test]

@@ -232,7 +232,7 @@ fn test_sha256_checksum_verification() {
     let mut hasher = Sha256::new();
     hasher.update(&binary_data);
     let hash_result = hasher.finalize();
-    let checksum = format!("{:x}", hash_result);
+    let checksum = hex::encode(hash_result);
 
     println!("SHA256 calculated: {}", checksum);
     println!("   Binary size: {} bytes", binary_data.len());
@@ -251,7 +251,7 @@ fn test_sha256_checksum_verification() {
     // Verify reproducibility: calculate again, should match
     let mut hasher2 = Sha256::new();
     hasher2.update(&binary_data);
-    let checksum2 = format!("{:x}", hasher2.finalize());
+    let checksum2 = hex::encode(hasher2.finalize());
 
     assert_eq!(
         checksum, checksum2,

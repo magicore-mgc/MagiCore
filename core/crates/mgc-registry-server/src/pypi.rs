@@ -4,22 +4,21 @@
 use crate::{AppState, model::PypiFile};
 use axum::{
     Router,
-    extract::{ConnectInfo, Multipart, Path, State},
+    extract::{Multipart, Path, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::net::SocketAddr;
 use tracing::warn;
 
 /// PyPI routes — namespace riêng /pypi để không đụng npm routes gốc
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/pypi/simple/:name", get(simple_index))
-        .route("/pypi/simple/:name/", get(simple_index))
-        .route("/pypi/packages/:name/:filename", get(download_file))
+        .route("/pypi/simple/{name}", get(simple_index))
+        .route("/pypi/simple/{name}/", get(simple_index))
+        .route("/pypi/packages/{name}/{filename}", get(download_file))
         .route("/pypi/legacy/", post(upload_legacy))
 }
 
@@ -110,7 +109,7 @@ async fn download_file(
 async fn upload_legacy(
     State((store, auth)): State<AppState>,
     headers: HeaderMap,
-    peer: Option<ConnectInfo<SocketAddr>>,
+    peer: crate::OptionalPeerAddress,
     mut multipart: Multipart,
 ) -> Result<JsonOk, StatusCode> {
     // Reject missing credentials before buffering multipart content — từ chối auth thiếu trước khi đọc file.
@@ -156,11 +155,7 @@ async fn upload_legacy(
     let name = crate::trusted::canonical_pypi_name(&name)?;
     let package_scope = crate::trusted::scoped_package("pypi", &name)?;
     let trusted_publisher = auth
-        .authorize_package_write_from(
-            &headers,
-            &package_scope,
-            peer.map(|ConnectInfo(address)| address),
-        )
+        .authorize_package_write_from(&headers, &package_scope, crate::peer_address(peer))
         .await?;
     let version = version
         .filter(|v| !v.is_empty())
@@ -173,7 +168,7 @@ async fn upload_legacy(
     // sha256 verify (fail-closed: không đúng digest → từ chối)
     let mut hasher = Sha256::new();
     hasher.update(&content);
-    let actual = format!("sha256:{:x}", hasher.finalize());
+    let actual = format!("sha256:{}", hex::encode(hasher.finalize()));
     let expected = match sha256_digest {
         Some(d) => {
             let d = d.trim().to_lowercase();

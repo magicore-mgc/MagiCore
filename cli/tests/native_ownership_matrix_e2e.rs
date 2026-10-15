@@ -2203,7 +2203,7 @@ impl HermeticMaven {
         let mut server = mockito::Server::new();
         let url = server.url();
         let jar = b"maven test artifact";
-        let checksum = format!("{:x}", Sha256::digest(jar));
+        let checksum = hex::encode(Sha256::digest(jar));
         let base = "/org/apache/commons/commons-lang3";
         let mocks = vec![
             server.mock("GET", format!("{base}/maven-metadata.xml").as_str())
@@ -2254,7 +2254,7 @@ impl HermeticPub {
         let mut server = mockito::Server::new();
         let url = server.url();
         let archive = build_test_pub_archive(name, version);
-        let archive_hash = format!("{:x}", Sha256::digest(&archive));
+        let archive_hash = hex::encode(Sha256::digest(&archive));
         let archive_path = format!("/archives/{name}-{version}.tar.gz");
         let package_doc = serde_json::json!({
             "versions": [{
@@ -2331,7 +2331,7 @@ impl HermeticGo {
         let mut server = mockito::Server::new();
         let url = server.url();
         let zip = build_test_go_module_zip(module, version.trim_start_matches('v'));
-        let ziphash = format!("{:x}", Sha256::digest(&zip));
+        let ziphash = hex::encode(Sha256::digest(&zip));
         let base = format!("/{module}/@v");
         let mocks = vec![
             server
@@ -2426,7 +2426,7 @@ impl HermeticCrates {
         let index_url = server.url();
         let download_url = format!("{index_url}/api/v1/crates");
         let archive = build_test_crate_archive();
-        let checksum = format!("{:x}", Sha256::digest(&archive));
+        let checksum = hex::encode(Sha256::digest(&archive));
         let index_entry = serde_json::json!({
             "name": "mgcfixture",
             "vers": "1.0.0",
@@ -2882,7 +2882,7 @@ impl HermeticPypi {
                 use sha2::{Digest, Sha256};
                 let mut hasher = Sha256::new();
                 hasher.update(&wheel);
-                format!("{:x}", hasher.finalize())
+                hex::encode(hasher.finalize())
             };
             let doc = serde_json::json!({
                 "info": { "requires_python": ">=3.8" },

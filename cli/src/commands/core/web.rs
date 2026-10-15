@@ -15,7 +15,6 @@ use mgc_ui::info;
 
 // P1 split (2026-09-11): npm version resolution lives in web/versions.rs.
 mod versions;
-use versions::scaffold_baseline_version;
 
 fn web_command_profile_enabled() -> bool {
     std::env::var_os("MAGICORE_WEB_PROFILE_COMMAND").is_some()
@@ -1641,7 +1640,7 @@ fn infer_native_dev_launch(
     if project_root.join("Cargo.toml").exists() && project_root.join("src/main.rs").exists() {
         return Ok(DevLaunch {
             program: PathBuf::from("cargo"),
-            args: vec![OsString::from("run")],
+            args: native_cargo_run_args(project_root)?,
             envs: env_host_port_pairs(host, port),
         });
     }
@@ -1728,6 +1727,39 @@ fn infer_native_dev_launch(
     }
 
     Err(crate::error::web_no_dev_entrypoint(project_root))
+}
+
+/// Start Rust Web backends from the Cargo projection and sources verified by MGC.
+/// Chạy backend Rust Web bằng lock/source Cargo đã được MGC xác minh.
+fn native_cargo_run_args(project_root: &Path) -> Result<Vec<OsString>> {
+    let source_root =
+        mgc_lib_adapter::install::cargo_compat::validate_build_for_core(project_root, "web")?;
+    cargo_run_args_from_managed_source(source_root.as_deref())
+}
+
+fn cargo_run_args_from_managed_source(source_root: Option<&Path>) -> Result<Vec<OsString>> {
+    let mut args = Vec::new();
+    if let Some(source_root) = source_root {
+        let source_path = source_root.to_str().ok_or_else(|| {
+            anyhow::anyhow!("MagiCore Cargo source path must be valid UTF-8 on this platform")
+        })?;
+        let source_config = format!(
+            "source.mgc-managed.directory={}",
+            toml::Value::String(source_path.to_string())
+        );
+        args.extend([
+            OsString::from("--config"),
+            OsString::from("source.crates-io.replace-with=\"mgc-managed\""),
+            OsString::from("--config"),
+            OsString::from(source_config),
+        ]);
+    }
+    args.extend([
+        OsString::from("run"),
+        OsString::from("--locked"),
+        OsString::from("--offline"),
+    ]);
+    Ok(args)
 }
 
 /// Resolve the ASGI module only when the project explicitly declares FastAPI.
@@ -1864,16 +1896,29 @@ fn native_install_env(project_root: &Path, program: &str) -> Result<Vec<(String,
         ));
     }
     if program == "go" {
-        let go_root = project_root.join(".magicore").join("cache").join("go");
-        let mod_cache = go_root.join("pkg").join("mod");
-        let build_cache = go_root.join("build");
+        let paths = mgc_platform::paths::GlobalPaths::new()?;
+        let mod_cache = paths.store.join("go");
+        let build_cache = paths.cache.join("go").join("build");
         std::fs::create_dir_all(&mod_cache)?;
         std::fs::create_dir_all(&build_cache)?;
-        env.push(("GOPATH".to_string(), go_root.display().to_string()));
-        env.push(("GOMODCACHE".to_string(), mod_cache.display().to_string()));
-        env.push(("GOCACHE".to_string(), build_cache.display().to_string()));
+        env.extend(go_native_runtime_env(&mod_cache, &build_cache));
+    }
+    if program == "cargo" {
+        env.push(("CARGO_NET_OFFLINE".to_string(), "true".to_string()));
     }
     Ok(env)
+}
+
+/// Keep Go dev execution on the same verified module cache used by native install.
+/// Buộc `mgc dev` dùng module cache đã cài/xác minh bởi MGC và chặn tải ngoài.
+fn go_native_runtime_env(mod_cache: &Path, build_cache: &Path) -> Vec<(String, String)> {
+    vec![
+        ("GOMODCACHE".to_string(), mod_cache.display().to_string()),
+        ("GOCACHE".to_string(), build_cache.display().to_string()),
+        ("GOPROXY".to_string(), "off".to_string()),
+        ("GOSUMDB".to_string(), "off".to_string()),
+        ("GOTOOLCHAIN".to_string(), "local".to_string()),
+    ]
 }
 
 async fn run_single_dev_target(
@@ -2304,6 +2349,7 @@ pub(crate) struct FrameworkRequest {
     pub raw: String,
     pub normalized: String,
     pub version: Option<String>,
+    pub dist_tag: Option<String>,
 }
 
 pub async fn run_create_with_options(
@@ -2338,7 +2384,7 @@ pub async fn run_create_with_options(
 
     // Registry-first preflight — ensure only layers this scaffold mode uses.
     // Kiểm đúng layer theo mode, không bắt backend/monorepo partials cho frontend.
-    let frontend = parse_framework_request(&fe_framework);
+    let frontend = framework_request_from_spec(&fe_framework, &spec.requested_ref);
     let rels = required_web_layers_for_config(&config, &frontend);
 
     // Phase 3: Typed resolution với MissingLayersReport thay vì warning spam
@@ -2349,11 +2395,16 @@ pub async fn run_create_with_options(
         match crate::commands::template::ensure_layer(rel).await {
             Ok(status) => {
                 if !status.is_available() {
-                    report.add_optional(rel.clone());
+                    if web_layer_has_scaffold_fallback(&config, rel) {
+                        report.add_optional(rel.clone());
+                    } else {
+                        report.add_required_failure(rel, format!("{status:?}"));
+                    }
                 }
             }
             Err(error) => {
-                if web_layer_has_scaffold_fallback(&config, rel) {
+                if error.is_availability_failure() && web_layer_has_scaffold_fallback(&config, rel)
+                {
                     report.add_optional(rel.clone());
                 } else {
                     report.add_required_failure(rel, error);
@@ -2365,6 +2416,12 @@ pub async fn run_create_with_options(
     // Fail early nếu có required layers missing
     if report.has_required_missing() {
         bail!(report.format_error("web", &frontend.normalized));
+    }
+    if !report.optional.is_empty() {
+        mgc_ui::warning(&format!(
+            "Using the built-in scaffold because template layers are unavailable: {}",
+            report.optional.join(", ")
+        ));
     }
 
     let project_dir = crate::scaffold::Scaffolder::scaffold(&config)?;
@@ -2395,7 +2452,6 @@ pub async fn run_create_with_options(
         mgc_ui::warning(&format!("Failed to write provenance: {}", e));
     }
 
-    let frontend = parse_framework_request(&fe_framework);
     let be_name = detect_backend_framework(&flags);
     let backend = be_name
         .as_deref()
@@ -2418,11 +2474,12 @@ fn required_web_layers_for_config(
     frontend: &FrameworkRequest,
 ) -> Vec<String> {
     let mut rels = vec!["web/shared/partials/base".to_string()];
-    let primary = config
-        .frameworks
-        .first()
-        .cloned()
-        .unwrap_or_else(|| frontend.normalized.clone());
+    let primary = match config.sub_type.as_str() {
+        "backend" => config.frameworks.last(),
+        _ => config.frameworks.first(),
+    }
+    .cloned()
+    .unwrap_or_else(|| frontend.normalized.clone());
 
     match config.sub_type.as_str() {
         "frontend" => {
@@ -2468,54 +2525,19 @@ fn required_web_layers_for_config(
 
 fn web_layer_has_scaffold_fallback(
     config: &crate::wizard::engine::ScaffoldConfig,
-    rel: &str,
+    _rel: &str,
 ) -> bool {
-    let framework = config.frameworks.first().map(String::as_str).unwrap_or("");
-    let frontend_leaf = format!("web/frontend/{framework}");
-    if rel == frontend_leaf {
-        return crate::scaffold::embedded_kernel::get_embedded_template("web", framework).is_some();
+    if config.sub_type == "monorepo" {
+        return false;
     }
-    // All-in-one fullstack frameworks (remix) resolve under
-    // web/fullstack/all-in-one/* — same const template backs them.
-    // (Framework fullstack all-in-one dùng chung const template.)
-    if rel == format!("web/fullstack/all-in-one/{framework}") {
-        return crate::scaffold::embedded_kernel::get_embedded_template("web", framework).is_some();
+    let framework = match config.sub_type.as_str() {
+        "backend" => config.frameworks.last(),
+        _ => config.frameworks.first(),
     }
-    if config.sub_type == "fullstack"
-        && !crate::scaffold::processor::is_all_in_one_fullstack(framework)
-        && rel == format!("web/fullstack/split/{framework}")
-    {
-        let frontend = if framework.starts_with("react-") {
-            "react-vite"
-        } else if framework.starts_with("vue-") {
-            "vue-vite"
-        } else if framework.starts_with("svelte-") {
-            "sveltekit"
-        } else {
-            return false;
-        };
-        let Some(backend) = fullstack_backend_framework(framework) else {
-            return false;
-        };
-        return crate::scaffold::embedded_kernel::get_embedded_template("web", frontend).is_some()
-            && crate::scaffold::processor::infer_backend_language(backend).is_some();
-    }
-    if config.sub_type == "monorepo"
-        && (rel.starts_with("web/monorepo/") || rel.starts_with("web/shared/partials/monorepo"))
-    {
-        let Some(frontend) = config.frameworks.first() else {
-            return false;
-        };
-        let Some(backend) = config.frameworks.get(1) else {
-            return false;
-        };
-        return crate::scaffold::embedded_kernel::get_embedded_template("web", frontend).is_some()
-            && crate::scaffold::processor::infer_backend_language(backend).is_some();
-    }
-
-    let backend_leaf = crate::scaffold::processor::infer_backend_language(framework)
-        .map(|lang| format!("web/backend/{lang}/{framework}"));
-    backend_leaf.as_deref() == Some(rel)
+    .map(String::as_str)
+    .unwrap_or("");
+    framework == "vanilla"
+        || crate::scaffold::embedded_kernel::get_embedded_template("web", framework).is_some()
 }
 
 fn resolve_framework(pos: Option<&str>, flags: &ScaffoldFlags) -> Result<String> {
@@ -2930,8 +2952,11 @@ fn web_features(flags: &ScaffoldFlags) -> Vec<String> {
     }
 
     // Deployment
-    if flags.docker {
+    if flags.docker || flags.k8s {
         features.push("docker".into());
+    }
+    if flags.k8s {
+        features.push("k8s".into());
     }
     if flags.github_actions {
         features.push("github-actions".into());
@@ -2978,17 +3003,60 @@ fn web_features(flags: &ScaffoldFlags) -> Vec<String> {
 
 pub(crate) fn parse_framework_request(input: &str) -> FrameworkRequest {
     let (framework, version) = match input.rsplit_once('@') {
-        Some((name, version)) if !name.is_empty() && !version.is_empty() => {
-            (name.to_string(), Some(version.to_string()))
+        Some((name, selector)) if !name.is_empty() && !selector.is_empty() => {
+            (name.to_string(), Some(selector.to_string()))
         }
         _ => (input.to_string(), None),
+    };
+
+    let (version, dist_tag) = match version {
+        Some(selector) if selector == "latest" => (None, None),
+        Some(selector)
+            if selector
+                .chars()
+                .next()
+                .is_some_and(|first| first.is_ascii_digit() || matches!(first, '^' | '~')) =>
+        {
+            (Some(selector), None)
+        }
+        Some(selector) => (None, Some(selector)),
+        None => (None, None),
     };
 
     FrameworkRequest {
         raw: input.to_string(),
         normalized: normalize_cli_web_framework(&framework),
         version,
+        dist_tag,
     }
+}
+
+/// Carry the user's selected scaffold ref into native package resolution.
+/// Chuyển version/tag user chọn từ scaffold spec sang bước ghi manifest.
+fn framework_request_from_spec(
+    framework: &str,
+    requested_ref: &crate::scaffold::spec::ScaffoldRef,
+) -> FrameworkRequest {
+    let mut request = parse_framework_request(framework);
+    match requested_ref {
+        crate::scaffold::spec::ScaffoldRef::Version(version) => {
+            request.version = Some(version.clone());
+            request.dist_tag = None;
+        }
+        crate::scaffold::spec::ScaffoldRef::DistTag(tag) if tag != "latest" => {
+            request.version = None;
+            request.dist_tag = Some(tag.clone());
+        }
+        crate::scaffold::spec::ScaffoldRef::DistTag(_)
+        | crate::scaffold::spec::ScaffoldRef::Default => {
+            request.version = None;
+            request.dist_tag = None;
+        }
+        crate::scaffold::spec::ScaffoldRef::Range(_) => {
+            // Range refs are rejected by parse_scaffold_spec::validate before this point.
+        }
+    }
+    request
 }
 
 fn normalize_cli_web_framework(framework: &str) -> String {
@@ -4021,6 +4089,9 @@ async fn resolve_primary_version(
     package: &str,
     age_policy: Option<versions::ScaffoldAgePolicy>,
 ) -> Result<String> {
+    if let Some(tag) = request.dist_tag.as_deref() {
+        return versions::resolve_npm_dist_tag_version(package, tag, age_policy).await;
+    }
     match request.version.as_deref() {
         Some("latest") | None => versions::fetch_npm_latest_version(package, age_policy).await,
         Some(version) => {
@@ -4088,27 +4159,17 @@ async fn apply_web_manifest_seed(
             ensure_primary_package(object, package, &primary);
         }
         for &package in seed.supplemental {
-            let version = versions::resolve_seed_dependency_version(
-                package,
-                scaffold_baseline_version(package),
-                age_policy,
-            )
-            .await?;
+            let version =
+                versions::resolve_seed_dependency_version(package, None, age_policy).await?;
             ensure_package(object, "dependencies", package, &version);
         }
         for tool in seed.toolchain {
             if tool.typescript_only && !flags.ts {
                 continue;
             }
-            let preferred_range = tool
-                .version
-                .or_else(|| scaffold_baseline_version(tool.package));
-            let version = versions::resolve_seed_dependency_version(
-                tool.package,
-                preferred_range,
-                age_policy,
-            )
-            .await?;
+            let version =
+                versions::resolve_seed_dependency_version(tool.package, tool.version, age_policy)
+                    .await?;
             ensure_package(object, tool.section, tool.package, &version);
         }
     }
@@ -4164,12 +4225,9 @@ async fn apply_web_manifest_seed(
             _ => false,
         };
         if is_active {
-            let version = versions::resolve_seed_dependency_version(
-                feat_pkg.package,
-                scaffold_baseline_version(feat_pkg.package),
-                age_policy,
-            )
-            .await?;
+            let version =
+                versions::resolve_seed_dependency_version(feat_pkg.package, None, age_policy)
+                    .await?;
             ensure_package(object, feat_pkg.section, feat_pkg.package, &version);
         }
     }

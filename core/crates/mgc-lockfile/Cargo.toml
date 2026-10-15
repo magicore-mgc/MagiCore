@@ -73,8 +73,8 @@ mgc-crypto = { path = "../mgc-crypto" }
 mgc-types = { path = "../mgc-types" }
 
 # TOML parsing/serialization
-toml = "0.8"
-toml_edit = { version = "0.22", features = ["serde"] }
+toml = { workspace = true }
+toml_edit = { workspace = true, features = ["serde"] }
 
 # Base64 for digest strings (workspace-pinned)
 base64 = { workspace = true }
@@ -84,19 +84,19 @@ hex = { workspace = true }
 fs2 = { workspace = true }
 
 # Serialization
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 serde_yaml.workspace = true
 
 # Error handling
-anyhow = "1.0"
-thiserror = "1.0"
+anyhow = { workspace = true }
+thiserror = { workspace = true }
 
 # Chrono for timestamps
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3.8"
+tempfile = { workspace = true }
 
 [features]
 default = []
@@ -106,8 +106,8 @@ default = []
 libc = { workspace = true }
 
 # Atomic replace + reparse-point refusal (Windows-only). MoveFileExW's
-# link in windows-sys 0.52 additionally requires Win32_Foundation (BOOL)
+# link in windows-sys additionally requires Win32_Foundation (BOOL)
 # — without it Windows builds fail with unresolved import E0432.
 # (MoveFileExW cần thêm feature Win32_Foundation.)
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.52", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }

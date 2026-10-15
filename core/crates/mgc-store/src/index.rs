@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use blake3::Hasher;
 use serde::{Deserialize, Serialize};
 
-use crate::database::Database;
+use crate::database::{Database, u64_from_sqlite};
 use crate::layout::Layout;
 use mgc_types::PackageId;
 
@@ -97,7 +97,7 @@ impl StoreIndex {
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
                     row.get::<_, String>(3)?,
-                    row.get::<_, u64>(4)?,
+                    u64_from_sqlite(row.get(4)?, 4)?,
                 ))
             })
             .context("scan package_files")?;

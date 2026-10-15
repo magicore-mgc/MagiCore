@@ -53,6 +53,20 @@ fn rust_and_go_tests_are_locked_offline() {
 }
 
 #[test]
+fn python_tests_run_from_the_mgc_import_path_without_system_site_packages() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("pyproject.toml"),
+        "[project]\nname='fixture'\nversion='0.1.0'\ndependencies=[]\n",
+    )
+    .unwrap();
+
+    let (runner, args) = detect_test_runner(dir.path()).unwrap().unwrap();
+    assert!(runner == "python" || runner == "python3");
+    assert_eq!(args, ["-S", "-m", "pytest", "-s", "-v"]);
+}
+
+#[test]
 fn core_detection_uses_shared_marker_parser_and_accepts_its_comment_format() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join(".mgc.core"), "app # project identity\n").unwrap();

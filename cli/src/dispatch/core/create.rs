@@ -67,14 +67,16 @@ pub async fn dispatch(command: CoreCommand) -> Result<()> {
         CoreCommand::CreateAi {
             framework,
             project_name,
-        } => commands::core::create::ai::run(&framework, &project_name).await,
+            container,
+        } => commands::core::create::ai::run(&framework, &project_name, container).await,
         #[cfg(not(feature = "ai"))]
         CoreCommand::CreateAi { .. } => Err(crate::error::core_not_in_build("ai")),
         #[cfg(feature = "clo")]
         CoreCommand::CreateClo {
             framework,
             project_name,
-        } => commands::core::create::clo::run(&framework, &project_name).await,
+            container,
+        } => commands::core::create::clo::run(&framework, &project_name, container).await,
         #[cfg(not(feature = "clo"))]
         CoreCommand::CreateClo { .. } => Err(crate::error::core_not_in_build("clo")),
         #[cfg(feature = "cicd")]
@@ -95,14 +97,16 @@ pub async fn dispatch(command: CoreCommand) -> Result<()> {
         CoreCommand::CreateApp {
             framework,
             project_name,
-        } => commands::core::create::app::run(&framework, &project_name).await,
+            container,
+        } => commands::core::create::app::run(&framework, &project_name, container).await,
         #[cfg(not(feature = "app"))]
         CoreCommand::CreateApp { .. } => Err(crate::error::core_not_in_build("app")),
         #[cfg(feature = "lib")]
         CoreCommand::CreateLib {
             framework,
             project_name,
-        } => commands::core::create::library::run(&framework, &project_name).await,
+            container,
+        } => commands::core::create::library::run(&framework, &project_name, container).await,
         #[cfg(not(feature = "lib"))]
         CoreCommand::CreateLib { .. } => Err(crate::error::core_not_in_build("lib")),
         #[cfg(feature = "hardware")]

@@ -399,6 +399,7 @@ impl Scaffolder {
             std::fs::create_dir_all(&staging_path)?;
             Self::write_common_files(&staging_path, config)?;
             Self::write_core_files(&staging_path, config)?;
+            super::container::generate_assets(&staging_path, config)?;
             Ok(())
         })();
 
@@ -512,7 +513,7 @@ impl Scaffolder {
     /// the (possibly staging temp) target path.
     /// Tên hiển thị lấy từ project name trong config, không phải từ target
     /// path (có thể là temp dir của staging nguyên tử).
-    fn config_display_name(config: &ScaffoldConfig) -> String {
+    pub(super) fn config_display_name(config: &ScaffoldConfig) -> String {
         Path::new(&config.project_name)
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
@@ -539,7 +540,7 @@ impl Scaffolder {
         root
     }
 
-    fn framework(config: &ScaffoldConfig) -> String {
+    pub(super) fn framework(config: &ScaffoldConfig) -> String {
         config
             .frameworks
             .last()
@@ -637,38 +638,15 @@ impl Scaffolder {
         let write_result = match Self::resolve_web_template_layers(config) {
             Ok(layers) => Self::materialize_web_templates(target, config, &layers),
             Err(err) => {
-                if config.sub_type == "monorepo" {
-                    Self::ensure_web_fallback_common_files(target, name, framework)?;
-                    Self::write_monorepo_fallback(target, name, config)
-                } else if let Some(files) =
-                    crate::scaffold::embedded_kernel::get_embedded_template("web", framework)
+                if config.sub_type != "monorepo"
+                    && let Some(files) =
+                        crate::scaffold::embedded_kernel::get_embedded_template("web", framework)
                 {
                     Self::ensure_web_fallback_common_files(target, name, framework)?;
                     crate::scaffold::embedded_kernel::materialize_embedded(target, name, &files)
                 } else if framework == "vanilla" {
                     Self::ensure_web_fallback_common_files(target, name, framework)?;
                     Self::write_vanilla_web_fallback(target, name)
-                } else if effective_web_mode(config) == "backend"
-                    && let Some(language) = infer_backend_language(framework)
-                {
-                    Self::ensure_web_fallback_common_files(target, name, framework)?;
-                    Self::write_minimal_backend_fallback(target, name, framework, language)
-                } else if let Some((frontend, backend, language)) =
-                    fullstack_fallback_parts(framework)
-                {
-                    Self::ensure_web_fallback_common_files(target, name, framework)?;
-                    let files =
-                        crate::scaffold::embedded_kernel::get_embedded_template("web", frontend)
-                            .ok_or_else(|| {
-                                crate::error::unsupported_fullstack_framework(framework)
-                            })?;
-                    crate::scaffold::embedded_kernel::materialize_embedded(target, name, &files)?;
-                    Self::write_minimal_backend_fallback(
-                        &target.join("server"),
-                        name,
-                        backend,
-                        language,
-                    )
                 } else {
                     return Err(err);
                 }
@@ -780,318 +758,8 @@ impl Scaffolder {
         )
     }
 
-    /// Materialize an offline monorepo fallback with one embedded frontend
-    /// and one native backend entry.
-    /// Dựng monorepo offline gồm frontend embedded và backend native.
-    fn write_monorepo_fallback(target: &Path, name: &str, config: &ScaffoldConfig) -> Result<()> {
-        let (frontend, backend) = match config.frameworks.as_slice() {
-            [frontend, backend, ..] => (frontend.as_str(), backend.as_str()),
-            _ => return Err(crate::error::web_scaffold_needs_fe_be()),
-        };
-        let files = crate::scaffold::embedded_kernel::get_embedded_template("web", frontend)
-            .ok_or_else(|| crate::error::unsupported_monorepo_frontend(frontend))?;
-        crate::scaffold::embedded_kernel::materialize_embedded(
-            &target.join("apps/frontend"),
-            name,
-            &files,
-        )?;
-        let language = infer_backend_language(backend)
-            .ok_or_else(|| crate::error::unsupported_monorepo_backend(backend))?;
-        Self::write_minimal_backend_fallback(
-            &target.join("apps/backend"),
-            name,
-            backend,
-            language,
-        )?;
-        Self::write_file(
-            &target.join("magicore.workspace.toml"),
-            "mode = \"monorepo\"\n\n[layout]\napps_dir = \"apps\"\npackages_dir = \"packages\"\n",
-        )?;
-        Self::write_file(
-            &target.join("package.json"),
-            &format!(
-                "{{\n  \"name\": \"{}\",\n  \"private\": true,\n  \"workspaces\": [\"apps/frontend\", \"apps/backend\"]\n}}\n",
-                slugify(name)
-            ),
-        )
-    }
-
-    fn write_minimal_backend_fallback(
-        target: &Path,
-        name: &str,
-        framework: &str,
-        language: &str,
-    ) -> Result<()> {
-        match language {
-            "rust" => {
-                Self::write_file(
-                    &target.join("Cargo.toml"),
-                    &format!(
-                        "[package]\nname = \"{}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\n",
-                        slugify(name)
-                    ),
-                )?;
-                Self::write_file(
-                    &target.join("src/main.rs"),
-                    &format!(
-                        "fn main() {{\n    println!(\"MagiCore {framework} service ready on 127.0.0.1:4315\");\n}}\n"
-                    ),
-                )
-            }
-            "go" => {
-                Self::write_file(
-                    &target.join("go.mod"),
-                    &format!("module {}\n\ngo 1.22\n", slugify(name)),
-                )?;
-                Self::write_file(
-                    &target.join("main.go"),
-                    &format!(
-                        "package main\n\nimport \"fmt\"\n\nfunc main() {{\n\tfmt.Println(\"MagiCore {framework} service ready on 127.0.0.1:4315\")\n}}\n"
-                    ),
-                )
-            }
-            "python" => {
-                Self::write_file(
-                    &target.join("pyproject.toml"),
-                    &format!(
-                        "[project]\nname = \"{}\"\nversion = \"0.1.0\"\ndependencies = []\n",
-                        slugify(name)
-                    ),
-                )?;
-                Self::write_file(
-                    &target.join("main.py"),
-                    &format!("print('MagiCore {framework} service ready on 127.0.0.1:4315')\n"),
-                )
-            }
-            "php" => {
-                Self::write_file(
-                    &target.join("composer.json"),
-                    &format!(
-                        "{{\n  \"name\": \"magicore/{}\",\n  \"type\": \"project\",\n  \"require\": {{}}\n}}\n",
-                        slugify(name)
-                    ),
-                )?;
-                Self::write_file(
-                    &target.join("public/index.php"),
-                    &format!(
-                        "<?php\necho 'MagiCore {framework} service ready on 127.0.0.1:4315';\n"
-                    ),
-                )
-            }
-            "java" => {
-                Self::write_file(
-                    &target.join("pom.xml"),
-                    &format!(
-                        "<project><modelVersion>4.0.0</modelVersion><groupId>dev.magicore</groupId><artifactId>{}</artifactId><version>0.1.0</version></project>\n",
-                        slugify(name)
-                    ),
-                )?;
-                Self::write_file(
-                    &target.join("src/main/java/App.java"),
-                    &format!(
-                        "public class App {{\n  public static void main(String[] args) {{\n    System.out.println(\"MagiCore {framework} service ready on 127.0.0.1:4315\");\n  }}\n}}\n"
-                    ),
-                )
-            }
-            "dotnet" => {
-                Self::write_file(
-                    &target.join(format!("{}.csproj", slugify(name))),
-                    "<Project Sdk=\"Microsoft.NET.Sdk.Web\">\n  <PropertyGroup>\n    <TargetFramework>net8.0</TargetFramework>\n    <Nullable>enable</Nullable>\n    <ImplicitUsings>enable</ImplicitUsings>\n  </PropertyGroup>\n</Project>\n",
-                )?;
-                Self::write_file(
-                    &target.join("Program.cs"),
-                    &format!(
-                        "var builder = WebApplication.CreateBuilder(args);\nvar app = builder.Build();\napp.MapGet(\"/\", () => \"MagiCore {framework} service ready\");\napp.Run(\"http://127.0.0.1:4315\");\n"
-                    ),
-                )
-            }
-            "node" => {
-                Self::write_file(
-                    &target.join("package.json"),
-                    &format!(
-                        "{{\n  \"name\": \"{}\",\n  \"private\": true,\n  \"version\": \"0.1.0\",\n  \"type\": \"module\",\n  \"scripts\": {{ \"dev\": \"node src/server.js\", \"build\": \"node --check src/server.js\" }}\n}}\n",
-                        slugify(name)
-                    ),
-                )?;
-                match framework {
-                    "fastify" => Self::write_fastify_fallback(target),
-                    "hono" => Self::write_hono_fallback(target),
-                    "nestjs" => Self::write_nestjs_fallback(target),
-                    "trpc" => Self::write_trpc_fallback(target),
-                    _ => Self::write_file(
-                        &target.join("src/server.js"),
-                        &format!(
-                            "console.log('MagiCore {framework} service ready on 127.0.0.1:4315')\n"
-                        ),
-                    ),
-                }
-            }
-            _ => Err(crate::error::unsupported_scaffold_framework(framework)),
-        }
-    }
-
-    fn write_fastify_fallback(target: &Path) -> Result<()> {
-        Self::write_file(
-            &target.join("src/app.js"),
-            r#"import Fastify from 'fastify';
-
-export const app = Fastify({ logger: false });
-app.get('/', async () => ({ status: 'ok', message: 'Hello from MagiCore Fastify!' }));
-"#,
-        )?;
-        Self::write_file(
-            &target.join("src/server.js"),
-            r#"import { app } from './app.js';
-
-const port = Number(process.env.PORT ?? 4315);
-await app.listen({ host: '127.0.0.1', port });
-console.log(`Fastify listening on http://127.0.0.1:${port}`);
-"#,
-        )?;
-        Self::write_file(
-            &target.join("test/scaffold.test.cjs"),
-            r#"const test = require('node:test');
-const assert = require('node:assert/strict');
-
-test('Fastify serves its root route', async (t) => {
-  const { app } = await import('../src/app.js');
-  t.after(() => app.close());
-  const response = await app.inject({ method: 'GET', url: '/' });
-  assert.equal(response.statusCode, 200);
-  assert.equal(response.json().status, 'ok');
-});
-"#,
-        )
-    }
-
-    fn write_hono_fallback(target: &Path) -> Result<()> {
-        Self::write_file(
-            &target.join("src/app.js"),
-            r#"import { Hono } from 'hono';
-
-export const app = new Hono();
-app.get('/', (context) => context.json({ status: 'ok', message: 'Hello from MagiCore Hono!' }));
-"#,
-        )?;
-        Self::write_file(
-            &target.join("src/server.js"),
-            r#"import { serve } from '@hono/node-server';
-import { app } from './app.js';
-
-const port = Number(process.env.PORT ?? 4315);
-serve({ fetch: app.fetch, hostname: '127.0.0.1', port });
-console.log(`Hono listening on http://127.0.0.1:${port}`);
-"#,
-        )?;
-        Self::write_file(
-            &target.join("test/scaffold.test.cjs"),
-            r#"const test = require('node:test');
-const assert = require('node:assert/strict');
-
-test('Hono serves its root route', async () => {
-  const { app } = await import('../src/app.js');
-  const response = await app.request('/');
-  assert.equal(response.status, 200);
-  assert.equal((await response.json()).status, 'ok');
-});
-"#,
-        )
-    }
-
-    fn write_nestjs_fallback(target: &Path) -> Result<()> {
-        Self::write_file(
-            &target.join("src/app.controller.js"),
-            r#"import { Controller, Get } from '@nestjs/common';
-
-class AppController {
-  health() {
-    return { status: 'ok', message: 'Hello from MagiCore NestJS!' };
-  }
-}
-
-Controller()(AppController);
-Get('/')(AppController.prototype, 'health', Object.getOwnPropertyDescriptor(AppController.prototype, 'health'));
-export { AppController };
-"#,
-        )?;
-        Self::write_file(
-            &target.join("src/app.module.js"),
-            r#"import { Module } from '@nestjs/common';
-import { AppController } from './app.controller.js';
-
-class AppModule {}
-Module({ controllers: [AppController] })(AppModule);
-export { AppModule };
-"#,
-        )?;
-        Self::write_file(
-            &target.join("src/server.js"),
-            r#"import 'reflect-metadata';
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module.js';
-
-const port = Number(process.env.PORT ?? 4315);
-const app = await NestFactory.create(AppModule, { logger: false });
-await app.listen(port, '127.0.0.1');
-console.log(`NestJS listening on http://127.0.0.1:${port}`);
-"#,
-        )?;
-        Self::write_file(
-            &target.join("test/scaffold.test.cjs"),
-            r#"const test = require('node:test');
-const assert = require('node:assert/strict');
-require('reflect-metadata');
-
-test('NestJS module registers its root controller', async () => {
-  const { AppModule } = await import('../src/app.module.js');
-  const controllers = Reflect.getMetadata('controllers', AppModule);
-  assert.equal(controllers.length, 1);
-  assert.equal(Reflect.getMetadata('path', controllers[0]), '/');
-});
-"#,
-        )
-    }
-
-    fn write_trpc_fallback(target: &Path) -> Result<()> {
-        Self::write_file(
-            &target.join("src/router.js"),
-            r#"import { initTRPC } from '@trpc/server';
-
-const t = initTRPC.create();
-export const appRouter = t.router({
-  hello: t.procedure.query(() => ({ status: 'ok', message: 'Hello from MagiCore tRPC!' })),
-});
-"#,
-        )?;
-        Self::write_file(
-            &target.join("src/server.js"),
-            r#"import express from 'express';
-import { createExpressMiddleware } from '@trpc/server/adapters/express';
-import { appRouter } from './router.js';
-
-const app = express();
-const port = Number(process.env.PORT ?? 4315);
-app.get('/', (_request, response) => response.json({ status: 'ok', message: 'Hello from MagiCore tRPC!' }));
-app.use('/trpc', createExpressMiddleware({ router: appRouter }));
-app.listen(port, '127.0.0.1', () => console.log(`tRPC listening on http://127.0.0.1:${port}`));
-"#,
-        )?;
-        Self::write_file(
-            &target.join("test/scaffold.test.cjs"),
-            r#"const test = require('node:test');
-const assert = require('node:assert/strict');
-
-test('tRPC hello procedure returns a response', async () => {
-  const { appRouter } = await import('../src/router.js');
-  const response = await appRouter.createCaller({}).hello();
-  assert.equal(response.status, 'ok');
-});
-"#,
-        )
-    }
-
     /// C9 — multi-platform: shared Kotlin (KMP) + android/ios (swift+objc)/react-native/flutter.
-    fn write_file(path: &Path, content: &str) -> Result<()> {
+    pub(super) fn write_file(path: &Path, content: &str) -> Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -1333,7 +1001,10 @@ test('tRPC hello procedure returns a response', async () => {
 
     /// Layer scaffold của core non-web: `templates/{core}/{framework}` (Q13).
     fn core_template_layer(core: &str, framework: &str) -> TemplateRoot {
-        TemplateRoot::resolve(&format!("{core}/{framework}"))
+        // The CLI alias must resolve the same namespace that preflight fetched.
+        // Alias clo phải đọc cloud/, đúng nơi ensure_layer đã publish cache.
+        let namespace = if core == "clo" { "cloud" } else { core };
+        TemplateRoot::resolve(&format!("{namespace}/{framework}"))
     }
 
     /// Materialize template đơn layer cho core non-web (chung cho game/iot/cloud/cicd/app/ai/lib).
@@ -1352,12 +1023,15 @@ test('tRPC hello procedure returns a response', async () => {
         let active_files = manifest
             .files
             .iter()
+            .filter(|file| !file.is_cli_generated_container_asset())
             .filter(|file| file.is_enabled(&active_features))
             .collect::<Vec<_>>();
 
         let mut seen_targets = HashSet::new();
         for file in &active_files {
             let target_path = render_core_target_path(&file.target, context);
+            checked_template_path(target, &target_path)?;
+            checked_template_path(layer.path(), &format!("sources/{}", file.source))?;
             if !seen_targets.insert(target_path.clone()) {
                 return Err(crate::error::duplicate_template_target(
                     &file.target,
@@ -1423,12 +1097,15 @@ test('tRPC hello procedure returns a response', async () => {
         let active_files = manifest
             .files
             .iter()
+            .filter(|file| !file.is_cli_generated_container_asset())
             .filter(|file| file.is_enabled(&active_features))
             .collect::<Vec<_>>();
 
         let mut seen_targets = HashSet::new();
         for file in &active_files {
             let target_path = render_target_path(&file.target, context);
+            checked_template_path(target, &target_path)?;
+            checked_template_path(layer.path(), &format!("sources/{}", file.source))?;
             if !seen_targets.insert(target_path.clone()) {
                 return Err(crate::error::duplicate_template_target(
                     &file.target,
@@ -1470,6 +1147,47 @@ test('tRPC hello procedure returns a response', async () => {
 
         Ok(())
     }
+}
+
+/// Validate portable manifest paths and reject existing link/reparse descendants.
+/// Chặn đường dẫn thoát root trên mọi OS trước khi đọc source hoặc ghi project.
+fn checked_template_path(root: &Path, relative: &str) -> Result<PathBuf> {
+    if relative.is_empty()
+        || relative.contains(['\\', ':'])
+        || relative.chars().any(char::is_control)
+        || relative
+            .split('/')
+            .any(|part| part.is_empty() || part.ends_with(['.', ' ']))
+    {
+        return Err(crate::error::template_materialization_path_invalid(
+            relative,
+        ));
+    }
+    let mut current = root.to_path_buf();
+    for part in std::iter::once(None).chain(relative.split('/').map(Some)) {
+        if let Some(part) = part {
+            current.push(part);
+        }
+        match std::fs::symlink_metadata(&current) {
+            Ok(metadata) => {
+                let linked = metadata.file_type().is_symlink();
+                #[cfg(windows)]
+                let linked = {
+                    use std::os::windows::fs::MetadataExt;
+                    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+                    linked || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+                };
+                if linked {
+                    return Err(crate::error::template_materialization_path_invalid(
+                        relative,
+                    ));
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(current)
 }
 
 fn render_target_path(target: &str, context: &WebTemplateContext) -> String {
@@ -1869,6 +1587,36 @@ struct TemplateManifest {
     files: Vec<TemplateFile>,
 }
 
+/// These defaults are generated by compiled processors, not cached template archives.
+/// Các mặc định này chạy processor thật; archive snapshot cũ không phải template layer.
+pub(crate) fn has_builtin_scaffold_processor(layer: &str) -> bool {
+    matches!(layer, "ai/python-agent" | "app/flutter" | "lib/rust")
+}
+
+const MAX_TEMPLATE_MANIFEST_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Validate the exact manifest schema consumed by the materializer.
+/// Fetch/cache phải nhận cùng contract với processor, không chỉ TOML hợp cú pháp.
+pub(crate) fn validate_template_manifest(root: &Path) -> Result<()> {
+    let _: TemplateManifest = toml::from_str(&read_template_manifest(root)?)?;
+    Ok(())
+}
+
+fn read_template_manifest(root: &Path) -> Result<String> {
+    use std::io::Read;
+    let path = checked_template_path(root, "template.toml")?;
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)?
+        .take(MAX_TEMPLATE_MANIFEST_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_TEMPLATE_MANIFEST_BYTES {
+        return Err(crate::error::template_manifest_too_large(
+            MAX_TEMPLATE_MANIFEST_BYTES,
+        ));
+    }
+    Ok(String::from_utf8(bytes)?)
+}
+
 impl TemplateManifest {
     fn load(layer: &TemplateRoot) -> Result<Option<Self>> {
         if !layer.exists("template.toml") {
@@ -1880,7 +1628,7 @@ impl TemplateManifest {
             ));
         }
 
-        let contents = String::from_utf8(layer.read("template.toml")?)?;
+        let contents = read_template_manifest(layer.path())?;
         let mut manifest: Self = toml::from_str(&contents)?;
         manifest.apply_root_token_contracts();
         Ok(Some(manifest))
@@ -1923,6 +1671,34 @@ struct TemplateFile {
 }
 
 impl TemplateFile {
+    fn is_cli_generated_container_asset(&self) -> bool {
+        let target = self.target.replace('\\', "/");
+        let normalized = target.trim_start_matches("./");
+        let file_name = normalized
+            .rsplit('/')
+            .next()
+            .unwrap_or(normalized)
+            .to_ascii_lowercase();
+
+        self.include_features.iter().any(|feature| {
+            feature.eq_ignore_ascii_case("docker") || feature.eq_ignore_ascii_case("k8s")
+        }) || matches!(
+            file_name.as_str(),
+            "dockerfile"
+                | "containerfile"
+                | ".dockerignore"
+                | ".containerignore"
+                | "docker-compose.yml"
+                | "docker-compose.yaml"
+                | "compose.yml"
+                | "compose.yaml"
+                | "mgc-container-entrypoint"
+        ) || normalized == "k8s"
+            || normalized.starts_with("k8s/")
+            || normalized == "kubernetes"
+            || normalized.starts_with("kubernetes/")
+    }
+
     fn is_enabled(&self, active_features: &HashSet<&str>) -> bool {
         self.include_features
             .iter()
@@ -1942,7 +1718,11 @@ fn common_readme(name: &str, core: &str, framework: &str, features: &[String]) -
     if !features.is_empty() {
         out.push_str(&format!("- Features: `{}`\n", features.join("`, `")));
     }
-    let next_step = "Run `mgc install` in this directory; MagiCore detects the core from `mgc.toml` and `.mgc.core`.";
+    let next_step = if features.iter().any(|feature| feature == "docker") {
+        "Run `mgc install` in this directory to create the project lockfile, then run `docker compose up --build`. The image copies that same lock and uses `mgc install --frozen`; dependency resolution and lifecycle remain identical between the host project and container."
+    } else {
+        "Run `mgc install` in this directory; MagiCore detects the core from `mgc.toml` and `.mgc.core`."
+    };
     out.push_str(&format!("\n## Next\n\n{next_step}\n"));
     out
 }
@@ -2015,7 +1795,7 @@ fn common_gitignore(core: &str, framework: &str) -> String {
     lines.join("\n") + "\n"
 }
 
-fn slugify(name: &str) -> String {
+pub(super) fn slugify(name: &str) -> String {
     let mut slug = String::with_capacity(name.len());
     for ch in name.chars() {
         if ch.is_ascii_alphanumeric() {
@@ -2102,47 +1882,6 @@ pub fn infer_backend_language(framework: &str) -> Option<&'static str> {
         .iter()
         .find(|f| f.name == framework)
         .and_then(|f| f.base)
-}
-
-/// Return the embedded frontend and native language fallback for a split
-/// fullstack preset when its optional composite registry template is missing.
-/// Trả frontend embedded và backend fallback khi thiếu composite fullstack.
-fn fullstack_fallback_parts(framework: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    if is_all_in_one_fullstack(framework) {
-        return None;
-    }
-    let backend = match framework {
-        "react-fastify" => "fastify",
-        "react-spring" => "spring-boot",
-        "vue-laravel" => "laravel",
-        "react-express" | "svelte-express" | "vue-express" => "express",
-        "react-hono" | "svelte-hono" | "vue-hono" => "hono",
-        "react-nestjs" | "vue-nestjs" => "nestjs",
-        "react-trpc" => "trpc",
-        "react-axum" | "vue-axum" | "svelte-axum" => "axum",
-        "react-actix-web" | "vue-actix-web" => "actix-web",
-        "react-gin" | "vue-gin" | "svelte-gin" => "gin",
-        "react-echo" | "vue-echo" => "echo",
-        "react-fiber" | "vue-fiber" => "fiber",
-        "react-fastapi" | "vue-fastapi" | "svelte-fastapi" => "fastapi",
-        "react-django" | "vue-django" => "django",
-        "react-flask" | "vue-flask" => "flask",
-        "react-quarkus" | "vue-quarkus" | "svelte-quarkus" => "quarkus",
-        "react-symfony" | "vue-symfony" => "symfony",
-        _ => return None,
-    };
-    let frontend = if framework.starts_with("react-") {
-        "react-vite"
-    } else if framework.starts_with("vue-") {
-        "vue-vite"
-    } else if framework.starts_with("svelte-") {
-        "sveltekit"
-    } else {
-        return None;
-    };
-    crate::scaffold::embedded_kernel::get_embedded_template("web", frontend)?;
-    let language = infer_backend_language(backend)?;
-    Some((frontend, backend, language))
 }
 
 #[cfg(test)]

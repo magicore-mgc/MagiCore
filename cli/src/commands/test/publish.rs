@@ -483,7 +483,7 @@ async fn trusted_oci_artifact_upload_streams_blobs_and_publishes_manifest() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let app = Router::new()
-        .route("/v2/*path", any(mock_oci_registry))
+        .route("/v2/{*path}", any(mock_oci_registry))
         .with_state(state.clone());
     let server = tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();

@@ -80,14 +80,15 @@ impl EmbeddedKernel {
     fn kernel_map() -> HashMap<String, EmbeddedLayer> {
         let mut map = HashMap::new();
 
-        // Web kernel: vanilla
+        // The short alias shares the current processor-compatible frontend kernel.
+        // Alias rút gọn dùng cùng contract frontend, không dùng tarball legacy thiếu files.
         map.insert(
             "web/vanilla".to_string(),
             EmbeddedLayer {
                 name: "vanilla",
                 core: "web",
-                version: "1.0.0",
-                data: include_bytes!("../../embedded/web-vanilla.tar.gz"),
+                version: "1.1.0",
+                data: include_bytes!("../../embedded/web-frontend-vanilla.tar.gz"),
             },
         );
 
@@ -250,44 +251,6 @@ impl EmbeddedKernel {
             },
         );
 
-        // Future kernels:
-        // - ai/python-simple
-        // - app/flutter-hello
-        // - lib/rust-lib
-
-        // AI kernel: python-agent (Phase 2 all-core parity) — kernel AI: python-agent (Phase 2 cân bằng 4 cores)
-        map.insert(
-            "ai/python-agent".to_string(),
-            EmbeddedLayer {
-                name: "python-agent",
-                core: "ai",
-                version: "1.0.0",
-                data: include_bytes!("../../embedded/ai-python-agent.tar.gz"),
-            },
-        );
-
-        // App kernel: flutter (Phase 2 all-core parity) — kernel App: flutter (Phase 2 cân bằng 4 cores)
-        map.insert(
-            "app/flutter".to_string(),
-            EmbeddedLayer {
-                name: "flutter",
-                core: "app",
-                version: "1.0.0",
-                data: include_bytes!("../../embedded/app-flutter.tar.gz"),
-            },
-        );
-
-        // Lib kernel: rust (Phase 2 all-core parity) — kernel Lib: rust (Phase 2 cân bằng 4 cores)
-        map.insert(
-            "lib/rust".to_string(),
-            EmbeddedLayer {
-                name: "rust",
-                core: "lib",
-                version: "1.0.0",
-                data: include_bytes!("../../embedded/lib-rust.tar.gz"),
-            },
-        );
-
         map
     }
 }
@@ -303,24 +266,5 @@ struct EmbeddedLayer {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_has_vanilla_kernel() {
-        // Will fail until we create embedded/web-vanilla.tar.gz
-        // but structure is ready
-        assert!(
-            EmbeddedKernel::list_available().contains(&"web/vanilla".to_string())
-                || EmbeddedKernel::list_available().is_empty()
-        );
-    }
-
-    #[test]
-    fn test_list_available_format() {
-        let available = EmbeddedKernel::list_available();
-        for kernel in available {
-            assert!(kernel.contains('/'), "Kernel should be core/name format");
-        }
-    }
-}
+#[path = "test/embedded.rs"]
+mod tests;

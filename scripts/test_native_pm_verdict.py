@@ -50,8 +50,7 @@ from lifecycle_capability_matrix import (
     lifecycle_environment,
     pulumi_local_environment,
     recovery_environment,
-    python_venv_environment,
-    provision_python_build_tools,
+    mgc_add_python_test_build_tools,
     validate_adapter_consistency,
     _materialize_marker,
     _lockfile_candidates,
@@ -711,7 +710,7 @@ fn main() {
             "pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d",
             workflow,
         )
-        self.assertIn('pulumi-version: "3.267.0"', workflow)
+        self.assertIn('pulumi-version: "3.269.0"', workflow)
 
     def test_pulumi_dependency_fixture_does_not_rewrite_existing_manifest_dependency(self):
         calls = []
@@ -910,8 +909,8 @@ fn main() {
         self.assertEqual(marker, ("gomodcache", go_env["GOMODCACHE"]))
         self.assertEqual(run.call_args.kwargs["env"], go_env)
 
-    def test_python_provision_only_installs_into_lane_venv(self):
-        sandbox = "/tmp/lane"
+    def test_python_test_build_tools_are_added_through_mgc(self):
+        mgc_bin = "/tmp/mgc"
         project = "/tmp/lane/project"
         environment = {"PATH": "/usr/bin:/bin"}
         success = subprocess.CompletedProcess(args=[], returncode=0)
@@ -921,44 +920,41 @@ fn main() {
             calls.append((argv, kwargs))
             return success
 
-        with patch("lifecycle_capability_matrix.shutil.which", return_value="/usr/bin/python3"), \
-             patch("lifecycle_capability_matrix.subprocess.run", side_effect=fake_run):
-            result, isolated = provision_python_build_tools(
-                sandbox, project, environment, timeout_s=30
+        with patch("lifecycle_capability_matrix.subprocess.run", side_effect=fake_run):
+            result, returned_environment = mgc_add_python_test_build_tools(
+                mgc_bin, project, environment, timeout_s=30
             )
 
         self.assertIs(result, success)
-        self.assertEqual(len(calls), 2)
-        self.assertEqual(calls[0][0][:3], ["/usr/bin/python3", "-m", "venv"])
-        venv_python = os.path.join(
-            sandbox,
-            ".mgc-lifecycle-python",
-            "Scripts" if os.name == "nt" else "bin",
-            "python.exe" if os.name == "nt" else "python",
+        self.assertEqual(
+            [call[0] for call in calls],
+            [
+                [mgc_bin, "add", "pytest@9.1.1"],
+                [mgc_bin, "add", "build@1.6.1"],
+                [mgc_bin, "add", "setuptools@84.0.0"],
+            ],
         )
-        self.assertEqual(calls[1][0][0], venv_python)
-        self.assertEqual(calls[1][1]["env"]["PIP_REQUIRE_VIRTUALENV"], "true")
-        self.assertEqual(isolated["VIRTUAL_ENV"], os.path.dirname(os.path.dirname(venv_python)))
+        self.assertTrue(all(call[1]["cwd"] == project for call in calls))
+        self.assertTrue(all(call[1]["env"] == environment for call in calls))
+        self.assertIs(returned_environment, environment)
         self.assertEqual(environment, {"PATH": "/usr/bin:/bin"})
 
-    def test_python_tools_use_isolated_venv_path_and_require_venv(self):
-        original = {
-            "PATH": "/usr/bin:/bin",
-            "MAGICORE_STORE_ROOT": "/tmp/lane-store",
-            "MGC_CACHE_DIR": "/tmp/project/.magicore",
-        }
-        active = python_venv_environment(original, "/tmp/lane/.venv")
+    def test_python_tool_add_stops_after_first_mgc_failure(self):
+        calls = []
+        failure = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="offline")
 
-        scripts_dir = "Scripts" if os.name == "nt" else "bin"
-        self.assertTrue(
-            active["PATH"].startswith(
-                os.path.join("/tmp/lane/.venv", scripts_dir) + os.pathsep
+        def fake_run(argv, **kwargs):
+            calls.append(argv)
+            return failure
+
+        with patch("lifecycle_capability_matrix.subprocess.run", side_effect=fake_run):
+            result, environment = mgc_add_python_test_build_tools(
+                "/tmp/mgc", "/tmp/project", {"PATH": "/usr/bin"}, timeout_s=30
             )
-        )
-        self.assertEqual(active["VIRTUAL_ENV"], "/tmp/lane/.venv")
-        self.assertEqual(active["PIP_REQUIRE_VIRTUALENV"], "true")
-        self.assertNotIn("VIRTUAL_ENV", original)
-        self.assertEqual(original["PATH"], "/usr/bin:/bin")
+
+        self.assertIs(result, failure)
+        self.assertEqual(calls, [["/tmp/mgc", "add", "pytest@9.1.1"]])
+        self.assertEqual(environment, {"PATH": "/usr/bin"})
 
 
 class LanePreparationFailure(unittest.TestCase):
@@ -1019,7 +1015,7 @@ class LanePreparationFailure(unittest.TestCase):
         self.assertEqual(result["dims"]["build"], STATUS_UNVERIFIED)
         self.assertNotIn(["install"], calls)
 
-    def test_failed_python_tool_provisioning_blocks_test_and_build(self):
+    def test_failed_mgc_python_tool_add_blocks_test_and_build(self):
         calls = []
 
         def fake_run(argv, **kwargs):
@@ -1030,18 +1026,17 @@ class LanePreparationFailure(unittest.TestCase):
                 return subprocess.CompletedProcess(argv, 0, "created", "")
             if args[0] == "install":
                 return subprocess.CompletedProcess(argv, 0, "installed", "")
+            if args[0] == "add":
+                return subprocess.CompletedProcess(argv, 1, "", "registry unavailable")
             if args[0] == "optimizer":
                 return subprocess.CompletedProcess(argv, 0, "Optimizer skipped", "")
             raise AssertionError(f"step without provisioned tools was run: {args}")
 
-        provision_failure = subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr="build backend unavailable"
-        )
         lane = {
             "core": "lib",
             "language": "matrix-test-language",
             "scaffold": ["create-test", "fixture"],
-            "pre_steps": ["provision_py_build_tools"],
+            "pre_steps": ["mgc_add_python_test_build_tools"],
             "steps": [
                 ("install", ["install"]),
                 ("test", ["test"]),
@@ -1051,11 +1046,7 @@ class LanePreparationFailure(unittest.TestCase):
             "install_owner": "native-engine",
         }
 
-        with patch("lifecycle_capability_matrix.subprocess.run", side_effect=fake_run), \
-             patch(
-                 "lifecycle_capability_matrix.provision_python_build_tools",
-                 return_value=(provision_failure, {"PATH": "/lane/bin"}),
-             ):
+        with patch("lifecycle_capability_matrix.subprocess.run", side_effect=fake_run):
             result = run_lane("/tmp/fake-mgc", lane)
 
         self.assertEqual(result["dims"]["install"], STATUS_NATIVE)
@@ -1601,7 +1592,7 @@ class NativePackageManagerVerdict(unittest.TestCase):
             workflow,
         )
         self.assertIn("if: matrix.os == 'ubuntu-24.04'", workflow)
-        self.assertIn('swift-version: "6.4.0"', workflow)
+        self.assertIn('swift-version: "6.4.1"', workflow)
         self.assertIn("id: swift_python_310", workflow)
         self.assertIn("${{ steps.swift_python_310.outputs.python-path }}", workflow)
         self.assertIn("- name: Preserve Swift Python 3.10 runtime (Windows)", workflow)
@@ -1630,18 +1621,18 @@ class NativePackageManagerVerdict(unittest.TestCase):
             release_workflow,
         )
         self.assertIn("if: matrix.os == 'ubuntu-24.04'", release_workflow)
-        self.assertIn('swift-version: "6.4.0"', release_workflow)
+        self.assertIn('swift-version: "6.4.1"', release_workflow)
         self.assertIn("id: swift_python_310", release_workflow)
         self.assertIn("${{ steps.swift_python_310.outputs.python-path }}", release_workflow)
         swift_windows_setup = release_workflow.split(
             "- name: Setup Swift toolchain (Windows)", 1
         )[1].split("- name: Lifecycle app swift", 1)[0]
         self.assertIn(
-            "https://download.swift.org/swift-6.4.0-release/windows10/swift-6.4.0-RELEASE/swift-6.4.0-RELEASE-windows10.exe",
+            "https://download.swift.org/swift-6.4.1-release/windows10/swift-6.4.1-RELEASE/swift-6.4.1-RELEASE-windows10.exe",
             swift_windows_setup,
         )
         self.assertIn(
-            "76169A85BCBA82854A0CD8F9655FFB74B3758D60C35A245457510095F2823C03",
+            "9382E14919EEAE5E7B5DBFE0575452FE2154178E089A595C8B44D03960D91D59",
             swift_windows_setup,
         )
         self.assertIn("Get-AuthenticodeSignature", swift_windows_setup)

@@ -5,10 +5,16 @@ use anyhow::Result;
 pub async fn run(framework: &str, project_name: &str) -> Result<()> {
     // Phase 4: Parse scaffold spec sớm với typo detection
     use crate::scaffold::spec::{CoreKind, parse_scaffold_spec};
-    let config = if !framework.is_empty() {
-        let spec = parse_scaffold_spec(CoreKind::Iot, framework).map_err(|e| {
-            anyhow::anyhow!("Invalid IoT framework specification '{}': {}", framework, e)
-        })?;
+    let parsed_framework = if framework.is_empty() {
+        None
+    } else {
+        Some(
+            parse_scaffold_spec(CoreKind::Iot, framework).map_err(|error| {
+                crate::error::invalid_framework_spec("iot", framework, &error.to_string())
+            })?,
+        )
+    };
+    let config = if let Some(spec) = &parsed_framework {
         // Keep board IDs such as `nrf52dk_nrf52832` byte-exact: the generic
         // scaffold parser normalizes underscores for registry template names.
         // Giữ nguyên ID board có dấu gạch dưới; parser chung chuẩn hóa tên layer.
@@ -46,7 +52,21 @@ pub async fn run(framework: &str, project_name: &str) -> Result<()> {
     config.project_name = project_name.to_string();
     if let Some(fw) = config.frameworks.last() {
         // Phase 3: Handle typed result
-        match crate::commands::template::ensure_layer(&format!("iot/{fw}")).await {
+        let request = parsed_framework
+            .as_ref()
+            .map(|spec| {
+                let mut canonical = spec.clone();
+                canonical.normalized_name = fw.clone();
+                canonical.template_request()
+            })
+            .unwrap_or_else(|| fw.to_string());
+        let explicit_ref = parsed_framework.as_ref().is_some_and(|spec| {
+            !matches!(
+                &spec.requested_ref,
+                crate::scaffold::spec::ScaffoldRef::Default
+            )
+        });
+        match crate::commands::template::ensure_layer(&format!("iot/{request}")).await {
             Ok(status) if status.is_available() => {}
             Ok(_) => {
                 mgc_ui::warning(&format!(
@@ -54,6 +74,7 @@ pub async fn run(framework: &str, project_name: &str) -> Result<()> {
                     fw
                 ));
             }
+            Err(e) if explicit_ref || !e.is_availability_failure() => return Err(e.into()),
             Err(e) => {
                 // Built-in generator fallback — but ONLY for frameworks
                 // this core's processor actually generates; anything else

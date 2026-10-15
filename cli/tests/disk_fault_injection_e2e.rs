@@ -257,7 +257,7 @@ fn enospc_on_the_store_volume_fails_clean_and_recovers() {
     // OS thực sự cấp phát block — nếu không write buffer trong memory
     // thành công nhưng ENOSPC chỉ nổ lúc flush.)
     let filler_file = mountpoint.join("filler.dat");
-    use rand::RngCore;
+    use rand::Rng;
     let mut rng = rand::rng();
     let chunk: Vec<u8> = (0..65536).map(|_| rng.next_u32() as u8).collect();
     {

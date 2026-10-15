@@ -2,17 +2,24 @@
 # All-Core Scaffold Stress Test — Phase 2
 # Verify web/ai/app/lib create runtime + embedded/cache/registry/fallback order
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 MGC_BIN="${MGC_BIN:-$PROJECT_ROOT/target/debug/mgc}"
-TEST_DIR="/tmp/mgc-scaffold-stress-$$"
+[[ -x "$MGC_BIN" ]] || { echo "FAIL: executable MGC_BIN is required" >&2; exit 1; }
+MGC_BIN="$(cd "$(dirname "$MGC_BIN")" && pwd)/$(basename "$MGC_BIN")"
+TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mgc-scaffold-stress.XXXXXX")"
 TEST_HOME="$TEST_DIR/home"
 
 # Setup isolated test environment — môi trường test cô lập
 export HOME="$TEST_HOME"
-export MGC_CACHE_DIR="$TEST_HOME/.mgc"
+export USERPROFILE="$TEST_HOME"
+export MGC_DATA_DIR="$TEST_HOME/data"
+export MGC_CACHE_DIR="$TEST_HOME/cache"
+export MGC_TEMPLATES_DIR="$TEST_HOME/templates"
+export MAGICORE_STORE_ROOT="$TEST_HOME/store"
+unset MAGICORE_TEMPLATE_DIR
 
 PASSED=0
 TOTAL=0
@@ -54,8 +61,9 @@ run_test_expect_output() {
     TOTAL=$((TOTAL + 1))
     echo "Test $TOTAL: $name"
     local output
-    output=$("$@" 2>&1 || true)
-    if grep -q "$expected" <<<"$output"; then
+    local status=0
+    output=$("$@" 2>&1) || status=$?
+    if [[ "$status" -ne 0 ]] && grep -q "$expected" <<<"$output"; then
         echo "✓ PASS (found: '$expected')"
         PASSED=$((PASSED + 1))
         return 0
@@ -65,23 +73,6 @@ run_test_expect_output() {
     return 1
 }
 
-run_test_not_expect_output() {
-    local name="$1"
-    local unexpected="$2"
-    shift 2
-    TOTAL=$((TOTAL + 1))
-    echo "Test $TOTAL: $name"
-    local output
-    output=$("$@" 2>&1 || true)
-    if ! grep -q "$unexpected" <<<"$output"; then
-        echo "✓ PASS (did not find: '$unexpected')"
-        PASSED=$((PASSED + 1))
-        return 0
-    fi
-    echo "✗ FAIL (unexpected '$unexpected' found)"
-    echo "   Output: ${output:0:200}"
-    return 1
-}
 
 verify_file() {
     local name="$1"
@@ -146,10 +137,6 @@ verify_content "web/vanilla: index.html contains project name" "test-web-vanilla
 run_test_expect_output "web: typo detection (nextjs@laster)" "Did you mean" \
     "$MGC_BIN" create-web nextjs@laster test-typo
 
-# Test framework not found (fallback to error) — framework không tìm thấy
-run_test_expect_output "web: framework not found (nextjs@latest requires registry)" "Required scaffold layers missing" \
-    "$MGC_BIN" create-web nextjs@latest test-nextjs
-
 # === AI CORE === — core AI
 echo
 echo "=== AI CORE TESTS ==="
@@ -168,8 +155,8 @@ verify_dir "ai/python-agent: configs/ dir" "test-ai-python/configs"
 echo
 echo "=== APP CORE TESTS ==="
 
-run_test "app: create flutter@stable" \
-    "$MGC_BIN" create-app flutter@stable test-app-flutter
+run_test "app: create flutter" \
+    "$MGC_BIN" create-app flutter test-app-flutter
 
 verify_file "app/flutter: pubspec.yaml" "test-app-flutter/pubspec.yaml"
 verify_file "app/flutter: mgc.toml" "test-app-flutter/mgc.toml"
@@ -177,18 +164,13 @@ verify_file "app/flutter: .mgc.core marker" "test-app-flutter/.mgc.core"
 verify_content "app/flutter: .mgc.core = app" "test-app-flutter/.mgc.core" "^app$"
 verify_file "app/flutter: lib/main.dart" "test-app-flutter/lib/main.dart"
 
-# Test @tag parsing (no double @tag bug) — kiểm tra parsing @tag (không bug double @tag)
-run_test_not_expect_output "app: @tag parsing (flutter@stable not flutter@stable@latest)" "stable@latest" \
-    "$MGC_BIN" create-app flutter@stable test-app-stable
-
 # === LIB CORE === — core lib
 echo
 echo "=== LIB CORE TESTS ==="
 
-# Note: using rust@1.96.0 because local toolchain is 1.96.0 (< baseline 1.98.0)
-# Ghi chú: dùng rust@1.96.0 vì toolchain local là 1.96.0 (< baseline 1.98.0)
-run_test "lib: create rust@1.96.0 (local toolchain)" \
-    "$MGC_BIN" create-lib rust@1.96.0 test-lib-rust
+# Template refs are not compiler versions. — Ref template không phải version toolchain.
+run_test "lib: create rust default" \
+    "$MGC_BIN" create-lib rust test-lib-rust
 
 verify_file "lib/rust: Cargo.toml" "test-lib-rust/Cargo.toml"
 verify_file "lib/rust: src/lib.rs" "test-lib-rust/src/lib.rs"
@@ -217,58 +199,11 @@ run_test "lib: create ts (fallback)" \
 verify_file "lib/ts: mgc.toml" "test-lib-ts/mgc.toml"
 verify_file "lib/ts: .mgc.core marker" "test-lib-ts/.mgc.core"
 
-# === CACHE PATH VERIFICATION === — kiểm tra đường dẫn cache
-echo
-echo "=== CACHE PATH TESTS ==="
+# Verify cache content actually produced by the web runs, not manually written markers.
+# Chỉ kiểm cache do CLI tạo; không cộng PASS cho biến env hay archive nằm trong source.
+verify_file "web: real embedded template cache manifest" "$MGC_TEMPLATES_DIR/web/frontend/vanilla/template.toml"
+verify_file "web: real embedded template cache source" "$MGC_TEMPLATES_DIR/web/frontend/vanilla/sources/index.html"
 
-TOTAL=$((TOTAL + 1))
-echo "Test $TOTAL: Cache path in isolated HOME"
-if [ -d "$MGC_CACHE_DIR" ]; then
-    echo "✓ PASS (cache dir exists: $MGC_CACHE_DIR)"
-    PASSED=$((PASSED + 1))
-else
-    echo "✗ FAIL (cache dir not in test HOME)"
-fi
-
-TOTAL=$((TOTAL + 1))
-echo "Test $TOTAL: Cache path not in user HOME"
-if [[ "$MGC_CACHE_DIR" == "$TEST_HOME"* ]]; then
-    echo "✓ PASS (cache path hermetic)"
-    PASSED=$((PASSED + 1))
-else
-    echo "✗ FAIL (cache path leaked to user HOME)"
-fi
-
-# === EMBEDDED KERNEL VERIFICATION === — kiểm tra embedded kernel
-echo
-echo "=== EMBEDDED KERNEL TESTS ==="
-
-# Check embedded kernels compiled in — kiểm tra embedded kernels đã compile
-EMBEDDED_DIR="$PROJECT_ROOT/cli/embedded"
-
-verify_file "embedded: web-vanilla.tar.gz" "$EMBEDDED_DIR/web-vanilla.tar.gz"
-verify_file "embedded: ai-python-agent.tar.gz" "$EMBEDDED_DIR/ai-python-agent.tar.gz"
-verify_file "embedded: app-flutter.tar.gz" "$EMBEDDED_DIR/app-flutter.tar.gz"
-verify_file "embedded: lib-rust.tar.gz" "$EMBEDDED_DIR/lib-rust.tar.gz"
-
-# Verify embedded kernel sizes — kiểm tra kích thước embedded kernels
-TOTAL=$((TOTAL + 1))
-echo "Test $TOTAL: Embedded kernels are compact"
-WEB_SIZE=$(stat -f%z "$EMBEDDED_DIR/web-vanilla.tar.gz" 2>/dev/null || stat -c%s "$EMBEDDED_DIR/web-vanilla.tar.gz" 2>/dev/null || echo 0)
-AI_SIZE=$(stat -f%z "$EMBEDDED_DIR/ai-python-agent.tar.gz" 2>/dev/null || stat -c%s "$EMBEDDED_DIR/ai-python-agent.tar.gz" 2>/dev/null || echo 0)
-APP_SIZE=$(stat -f%z "$EMBEDDED_DIR/app-flutter.tar.gz" 2>/dev/null || stat -c%s "$EMBEDDED_DIR/app-flutter.tar.gz" 2>/dev/null || echo 0)
-LIB_SIZE=$(stat -f%z "$EMBEDDED_DIR/lib-rust.tar.gz" 2>/dev/null || stat -c%s "$EMBEDDED_DIR/lib-rust.tar.gz" 2>/dev/null || echo 0)
-TOTAL_SIZE=$((WEB_SIZE + AI_SIZE + APP_SIZE + LIB_SIZE))
-
-if [ "$TOTAL_SIZE" -lt 10000 ]; then
-    echo "✓ PASS (total 4 kernels: $TOTAL_SIZE bytes < 10KB)"
-    PASSED=$((PASSED + 1))
-else
-    echo "⚠ WARN (total 4 kernels: $TOTAL_SIZE bytes, expected < 10KB)"
-    PASSED=$((PASSED + 1))  # Not blocking
-fi
-
-echo
 echo "=== Results ==="
 echo "Passed: $PASSED/$TOTAL"
 
@@ -277,13 +212,13 @@ if [ "$PASSED" -eq "$TOTAL" ]; then
     echo
     echo "Summary:"
     echo "  web/vanilla: embedded kernel → project created"
-    echo "  ai/python-agent: embedded kernel → project created"
-    echo "  app/flutter: embedded kernel → project created"
-    echo "  lib/rust@1.96.0: embedded kernel → project created"
+    echo "  ai/python-agent: compiled processor → project created"
+    echo "  app/flutter: compiled processor → project created"
+    echo "  lib/rust: compiled processor → project created"
     echo "  lib/python,go,ts: fallback scaffold → project created"
     echo "  Typo detection: working"
     echo "  Cache path: hermetic (in test HOME)"
-    echo "  Embedded kernels: 4 cores compiled in"
+    echo "  Scope: scaffold checks only; install/build/test lifecycle not evaluated"
     exit 0
 else
     FAILED=$((TOTAL - PASSED))

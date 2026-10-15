@@ -56,12 +56,25 @@ on:
       - "core/crates/mgc-exec/src/allowlist.rs"
   workflow_dispatch:
 
+# Replace superseded validation runs on the same ref. — Hủy lượt kiểm cũ khi ref có lượt mới.
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   audit:
     name: cargo audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup current Rust toolchain
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
+        with:
+          toolchain: "1.99.0"
+      - name: Setup current Go toolchain
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.2"
       - name: Install cargo-audit
         run: cargo install cargo-audit --version 0.22.2 --locked
       - name: Prove advisory-only RSA is unreachable
@@ -85,9 +98,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install and Run OSV-Scanner
         run: |
-          OSV_VERSION="2.5.1"
+          OSV_VERSION="2.6.0"
           OSV_URL="https://github.com/google/osv-scanner/releases/download/v${OSV_VERSION}/osv-scanner_linux_amd64"
-          OSV_SHA="f9f25499a2c8cc367b3af45df2ea7eeca7fbccceab9c35079968f4b3652194be"
+          OSV_SHA="ca69b3d3cd08f889a49dc0a383122f71cc528b83803671df5fd874d97485b108"
 
           # Download specific version with checksum
           # Tải phiên bản cố định kèm checksum
@@ -111,11 +124,28 @@ jobs:
       MGC_E2E_AUDIT_NETWORK: required
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup current Rust toolchain
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
+        with:
+          toolchain: "1.99.0"
+      - name: Setup current Python runtime
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.15.0"
+      - name: Setup current Go toolchain
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.2"
+      - name: Setup current Java runtime
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "27.0.0+35"
       - name: Install cargo-audit
         run: cargo install cargo-audit --version 0.22.2 --locked
       - name: Install pip-audit (pinned, single install path — P0-5)
         run: |
-          python3 -m pip install --user 'pip-audit==2.9.0'
+          python3 -m pip install --user 'pip-audit==2.10.1'
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Install govulncheck (pinned — P1 Go lane)
         run: |
@@ -123,7 +153,7 @@ jobs:
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: Install Gradle (pinned — Kotlin success E2E, P2 2026-09-10)
         run: |
-          GRADLE_VERSION="8.14.3"
+          GRADLE_VERSION="9.8.1"
           cd /tmp && curl -sSLO "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" \
             && unzip -q "gradle-${GRADLE_VERSION}-bin.zip" \
             && echo "/tmp/gradle-${GRADLE_VERSION}/bin" >> "$GITHUB_PATH" \
@@ -149,7 +179,7 @@ jobs:
       - name: Generate capability matrix from E2E evidence
         run: python3 scripts/audit_capability_matrix.py
       - name: Upload capability matrix artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: audit-capability-matrix
           path: docs/specs/auditCapabilityMatrix.json
@@ -173,6 +203,10 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup current Rust toolchain
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
+        with:
+          toolchain: "1.99.0"
       # Go toolchain (CI fix 2026-09-11): esbuild-rs 0.13.8's build
       # script compiles a Go library at BUILD time — without Go the mgc
       # crate cannot compile on macOS/Windows runners (ubuntu ships Go
@@ -181,9 +215,9 @@ jobs:
       # viện Go ngay lúc BUILD — thiếu Go thì crate mgc không compile
       # được trên runner macOS/Windows (ubuntu có sẵn Go nên chỉ lane
       # đó pass).
-      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.1"
+          go-version: "1.27.2"
       - name: Parser lanes (OS-independent)
         run: cargo test -p mgc-audit --locked -- --nocapture
       - name: OSV-backed lane E2E (Java/.NET/Swift/Dart — network, no toolchain)
@@ -243,10 +277,25 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@44ac965b96f18d999802d4b807e3256d5a3f9fa1 # v2.16.0 (latest, node24)
+      - name: Setup current Rust toolchain
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
         with:
-          flutter-version: "3.47.4"
+          toolchain: "1.99.0"
+
+      - name: Setup current Python runtime
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.15.0"
+
+      - name: Setup current Go toolchain
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.2"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: "3.47.7"
           channel: "stable"
 
       - name: Resolve Flutter SDK dependencies before MGC process guard
@@ -258,7 +307,7 @@ jobs:
 
       - name: Install pip-audit (python parity lane on this SHA)
         run: |
-          python3 -m pip install --user 'pip-audit==2.9.0'
+          python3 -m pip install --user 'pip-audit==2.10.1'
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Verify scanner versions (fail fast on drift)

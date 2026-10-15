@@ -141,9 +141,12 @@ fn test_create_core_commands_follow_create_core_name_shape() {
         Commands::CreateAi {
             framework,
             project_name,
+            container,
         } => {
             assert_eq!(framework, "python-agent");
             assert_eq!(project_name, "demo-ai");
+            assert!(!container.docker);
+            assert!(!container.k8s);
         }
         _ => panic!("expected create-ai command"),
     }
@@ -153,9 +156,12 @@ fn test_create_core_commands_follow_create_core_name_shape() {
         Commands::CreateApp {
             framework,
             project_name,
+            container,
         } => {
             assert_eq!(framework, "flutter");
             assert_eq!(project_name, "demo-app");
+            assert!(!container.docker);
+            assert!(!container.k8s);
         }
         _ => panic!("expected create-app command"),
     }
@@ -165,11 +171,68 @@ fn test_create_core_commands_follow_create_core_name_shape() {
         Commands::CreateLib {
             framework,
             project_name,
+            container,
         } => {
             assert_eq!(framework, "rust");
             assert_eq!(project_name, "demo-lib");
+            assert!(!container.docker);
+            assert!(!container.k8s);
         }
         _ => panic!("expected create-lib command"),
+    }
+}
+
+#[test]
+fn test_ai_and_lib_create_commands_accept_container_flags() {
+    let ai =
+        Cli::try_parse_from(["mgc", "create-ai", "python-agent", "demo-ai", "--docker"]).unwrap();
+    match ai.command.unwrap() {
+        Commands::CreateAi { container, .. } => {
+            assert!(container.docker);
+            assert!(!container.k8s);
+        }
+        _ => panic!("expected create-ai command"),
+    }
+
+    let lib = Cli::try_parse_from(["mgc", "create-lib", "rust", "demo-lib", "--docker"]).unwrap();
+    match lib.command.unwrap() {
+        Commands::CreateLib { container, .. } => {
+            assert!(container.docker);
+            assert!(!container.k8s);
+        }
+        _ => panic!("expected create-lib command"),
+    }
+}
+
+#[test]
+fn test_app_create_command_accepts_docker_flag() {
+    let app =
+        Cli::try_parse_from(["mgc", "create-app", "flutter", "demo-app", "--docker"]).unwrap();
+    match app.command.unwrap() {
+        Commands::CreateApp { container, .. } => {
+            assert!(container.docker);
+            assert!(!container.k8s);
+        }
+        _ => panic!("expected create-app command"),
+    }
+}
+
+#[test]
+fn test_cloud_create_command_accepts_docker_flag() {
+    let cloud = Cli::try_parse_from([
+        "mgc",
+        "create-clo",
+        "cdk-typescript",
+        "demo-cloud",
+        "--docker",
+    ])
+    .unwrap();
+    match cloud.command.unwrap() {
+        Commands::CreateClo { container, .. } => {
+            assert!(container.docker);
+            assert!(!container.k8s);
+        }
+        _ => panic!("expected create-clo command"),
     }
 }
 

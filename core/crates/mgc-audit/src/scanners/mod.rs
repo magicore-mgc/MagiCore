@@ -378,13 +378,13 @@ pub fn parse_pip_audit_json(json: &str) -> MgResult<PipAuditParse> {
         .find('[')
         .unwrap_or_else(|| json.find('{').unwrap_or(0));
     // Stream-parse the FIRST complete JSON value from the payload:
-    // pip-audit 2.9.0 on some CI runners emits trailing noise after
+    // pip-audit 2.10.1 on some CI runners emits trailing noise after
     // the JSON body (progress/status lines merged into stdout) —
     // serde_json's streaming deserializer consumes exactly one value
     // and ignores anything after, while still failing on a genuinely
     // broken body (fail-closed on corruption, tolerant of suffix junk).
     // Parse-stream GIÁ TRỊ JSON đầu tiên trong payload: pip-audit
-    // 2.9.0 trên một số runner CI in thêm rác sau thân JSON (dòng
+    // 2.10.1 trên một số runner CI in thêm rác sau thân JSON (dòng
     // progress/status lẫn vào stdout) — deserializer streaming của
     // serde_json tiêu thụ đúng một giá trị và bỏ qua phần sau, nhưng
     // vẫn fail trên thân JSON thật sự hỏng (fail-closed với hỏng,

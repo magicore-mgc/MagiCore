@@ -1,6 +1,17 @@
 use clap::Args;
 use serde::{Deserialize, Serialize};
 
+/// Container lifecycle flags shared by non-Web scaffold commands.
+/// Các cờ container dùng chung cho lệnh scaffold ngoài Web.
+#[derive(Debug, Clone, Args, Serialize, Deserialize, Default)]
+#[command(next_help_heading = "Container")]
+pub struct ContainerFlags {
+    #[arg(long, help = "Generate a Docker image that runs the MGC lifecycle")]
+    pub docker: bool,
+    #[arg(long, help = "Generate a Kubernetes deployment profile when supported")]
+    pub k8s: bool,
+}
+
 #[derive(Debug, Clone, Args, Serialize, Deserialize, Default)]
 #[command(next_help_heading = "Core")]
 pub struct ScaffoldFlags {
@@ -226,6 +237,11 @@ pub struct ScaffoldFlags {
     // ── Deployment / CI/CD ────────────────────────────────────────
     #[arg(long, help = "Generate Dockerfile + docker-compose")]
     pub docker: bool,
+    #[arg(
+        long,
+        help = "Generate a local Kubernetes development manifest (also enables Docker)"
+    )]
+    pub k8s: bool,
     #[arg(long, help = "GitHub Actions CI workflow")]
     pub github_actions: bool,
     #[arg(long, help = "Vercel deploy config")]

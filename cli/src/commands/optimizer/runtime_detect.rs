@@ -90,7 +90,7 @@ pub fn detect_optimizer_runtimes(project_root: &Path, core: &str) -> Vec<Detecte
         runtimes.retain(|runtime| *runtime != DetectedRuntime::Unknown);
 
         let cargo_package = project_text(project_root, "Cargo.toml")
-            .and_then(|content| content.parse::<toml::Value>().ok())
+            .and_then(|content| toml::from_str::<toml::Value>(&content).ok())
             .is_some_and(|manifest| {
                 manifest
                     .get("package")
@@ -113,7 +113,7 @@ pub fn detect_optimizer_runtimes(project_root: &Path, core: &str) -> Vec<Detecte
         }
 
         let python_project = project_text(project_root, "pyproject.toml")
-            .and_then(|content| content.parse::<toml::Value>().ok())
+            .and_then(|content| toml::from_str::<toml::Value>(&content).ok())
             .is_some_and(|manifest| {
                 manifest
                     .get("project")
@@ -263,7 +263,7 @@ pub(crate) fn python_project_declares_package(project_root: &Path, package: &str
     let normalized_package = normalize_python_package_name(package);
     requirements_file_declares_package(project_root.join("requirements.txt"), &normalized_package)
         || project_text(project_root, "pyproject.toml")
-            .and_then(|content| content.parse::<toml::Value>().ok())
+            .and_then(|content| toml::from_str::<toml::Value>(&content).ok())
             .is_some_and(|manifest| pyproject_declares_package(&manifest, &normalized_package))
 }
 

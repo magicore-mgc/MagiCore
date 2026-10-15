@@ -8,7 +8,7 @@ use crate::manifest::{
     parse_pyproject_manifest, write_cargo_manifest, write_csproj_manifest, write_go_mod_manifest,
     write_pom_manifest, write_pyproject_manifest,
 };
-use crate::native::engine::resolve_with_protocol;
+use crate::native::engine::{resolve_with_protocol, resolve_with_protocol_including_dev};
 use anyhow::Result;
 use async_trait::async_trait;
 use mgc_lockfile::EcosystemTag;
@@ -235,7 +235,7 @@ impl LibAdapter {
         else {
             return Ok(None);
         };
-        let document: toml::Value = text.parse().map_err(|error| {
+        let document: toml::Value = toml::from_str(&text).map_err(|error| {
             mgc_types::MgError::Other(format!("invalid TOML in {}: {error}", path.display()))
         })?;
         let Some(security_value) = document.get("security") else {
@@ -504,7 +504,11 @@ impl LibAdapter {
                 "maven://repo.maven.apache.org",
             ),
         };
-        let resolution = resolve_with_protocol(protocol.as_ref(), tag, registry, &scratch).await?;
+        let resolution = if opts.dev {
+            resolve_with_protocol_including_dev(protocol.as_ref(), tag, registry, &scratch).await?
+        } else {
+            resolve_with_protocol(protocol.as_ref(), tag, registry, &scratch).await?
+        };
         let resolved = resolution
             .graph
             .packages
@@ -516,8 +520,7 @@ impl LibAdapter {
                     name.as_str()
                 ))
             })?;
-        // Python: `==` form (the pyproject writer trims it to a bare
-        // version and saves `name>=version`, which round-trips).
+        // Python: exact `==` pin; the PEP 508 writer keeps it exact.
         // Rust: bare version (the Cargo writer saves it verbatim —
         // `serde_json = "1.0.140"`, caret-implied like `cargo add`).
         // Go: bare version (the go.mod writer v-prefixes it —
@@ -815,7 +818,7 @@ impl DependencyResolver for LibAdapter {
             // wheel/sdist → đệ quy qua requires_dist (mgc-native).
             LibLanguage::Python => {
                 let protocol = self.pypi_protocol_for(&self.project_root)?;
-                let resolution = resolve_with_protocol(
+                let resolution = resolve_with_protocol_including_dev(
                     &protocol,
                     EcosystemTag::Python,
                     "pypi://pypi.org",

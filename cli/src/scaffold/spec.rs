@@ -22,6 +22,21 @@ pub struct ScaffoldSpec {
     pub requested_ref: ScaffoldRef,
 }
 
+impl ScaffoldSpec {
+    /// Preserve an explicit registry ref while using the normalized template name.
+    /// Không làm mất version/tag khi CLI tách tên framework để ghi config.
+    pub(crate) fn template_request(&self) -> String {
+        match &self.requested_ref {
+            ScaffoldRef::Default => self.normalized_name.clone(),
+            ScaffoldRef::Version(reference)
+            | ScaffoldRef::DistTag(reference)
+            | ScaffoldRef::Range(reference) => {
+                format!("{}@{reference}", self.normalized_name)
+            }
+        }
+    }
+}
+
 /// Core kind
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CoreKind {

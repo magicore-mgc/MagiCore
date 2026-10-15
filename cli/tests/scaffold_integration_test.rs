@@ -5,6 +5,78 @@
 use mgc::scaffold::spec::{CoreKind, parse_scaffold_spec};
 
 #[test]
+fn corrupted_embedded_cache_is_not_silently_replaced_by_core_fallbacks() {
+    for (command, framework, layer, enabled) in [
+        (
+            "create-web",
+            "vanilla",
+            "web/shared/partials/base",
+            cfg!(feature = "web"),
+        ),
+        (
+            "create-ai",
+            "python-agent",
+            "ai/python-agent",
+            cfg!(feature = "ai"),
+        ),
+        (
+            "create-app",
+            "flutter",
+            "app/flutter",
+            cfg!(feature = "app"),
+        ),
+        ("create-lib", "rust", "lib/rust", cfg!(feature = "lib")),
+    ] {
+        if !enabled {
+            continue;
+        }
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join("home");
+        let data = home.join("data");
+        let cache = home.join("cache");
+        let templates = home.join("templates");
+        let store = home.join("store");
+        for path in [&data, &cache, &templates, &store] {
+            std::fs::create_dir_all(path).unwrap();
+        }
+        let cache_entry = templates.join(layer);
+        std::fs::create_dir_all(cache_entry.parent().unwrap()).unwrap();
+        let sentinel: &[u8] = b"not-a-template-directory";
+        std::fs::write(&cache_entry, sentinel).unwrap();
+
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_mgc"))
+            .args([command, framework, "blocked-project"])
+            .current_dir(root.path())
+            .env("HOME", &home)
+            .env("USERPROFILE", &home)
+            .env("MGC_DATA_DIR", &data)
+            .env("MGC_CACHE_DIR", &cache)
+            .env("MGC_TEMPLATES_DIR", &templates)
+            .env("MAGICORE_STORE_ROOT", &store)
+            .output()
+            .unwrap();
+        let diagnostic = format!(
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            !output.status.success(),
+            "{command} ignored the cache error: {diagnostic}"
+        );
+        assert!(
+            diagnostic.contains("refusing unsafe, linked, or non-directory template cache path"),
+            "{command} failed for an unrelated reason: {diagnostic}"
+        );
+        assert!(
+            !root.path().join("blocked-project").exists(),
+            "{command} created a project after a cache failure"
+        );
+        assert_eq!(std::fs::read(&cache_entry).unwrap().as_slice(), sentinel);
+    }
+}
+
+#[test]
 fn test_web_nextjs_laster_typo_fails_early() {
     let result = parse_scaffold_spec(CoreKind::Web, "nextjs@laster");
     assert!(result.is_err(), "Should fail on typo");

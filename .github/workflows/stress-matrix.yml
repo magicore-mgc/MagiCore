@@ -25,9 +25,14 @@ on:
 permissions:
   contents: read
 
+# Replace superseded validation runs on the same ref. — Hủy lượt kiểm cũ khi ref có lượt mới.
+concurrency:
+  group: stress-matrix-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
-  MGC_PYTHON_VERSION: "3.12"
+  MGC_PYTHON_VERSION: "3.15.0"
 
 jobs:
   stress-matrix:
@@ -41,23 +46,39 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable 2026-09-03
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
+        with:
+          toolchain: "1.99.0"
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.15.0"
 
       - name: Set up Node.js for native web framework E2Es
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "24"
+          node-version: "26.12.0"
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.3"
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: "2.9.7"
+
+      - name: Set up current Node package managers
+        shell: bash
+        run: npm install --global npm@12.2.0 pnpm@12.11.2 @yarnpkg/cli-dist@4.18.1
 
       - name: Set up Java for Java and Kotlin runtime probes
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
-          java-version: "25.0.4"
+          java-version: "27.0.0+35"
 
       - name: Set up Kotlin compiler for Kotlin runtime probes (Linux/macOS)
         if: runner.os != 'Windows'
@@ -112,9 +133,9 @@ jobs:
 
       - name: Set up PHP for PHP runtime probes
         if: runner.os != 'macOS'
-        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        uses: shivammathur/setup-php@4424c9aab975b57bd706ee5a39c6b4334d6e4f60 # 2.40.0
         with:
-          php-version: "8.5"
+          php-version: "8.5.11"
           tools: none
 
       # Use Homebrew directly on macOS instead of the failing setup-php installer.
@@ -132,12 +153,12 @@ jobs:
       - name: Set up .NET for C# runtime probes
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: "10.0.401"
+          dotnet-version: "10.0.402"
 
       - name: Set up Go for native runtime probes
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.1"
+          go-version: "1.27.2"
           cache: false
 
       - name: Set up Zig for Zig runtime probes
@@ -153,27 +174,27 @@ jobs:
           case "$(uname -s):$(uname -m)" in
             Linux:x86_64)
               archive_platform="linux_amd64"
-              expected_sha256="71fc43d92ea09907be5d416d2405a6a9c2d1ceaed633f5e175c0af26e8c4b365"
+              expected_sha256="38034b38d03096399a7a1264a14561a8029b2b496fd1f169452656e53968f1b7"
               ;;
             Darwin:arm64)
               archive_platform="darwin_arm64"
-              expected_sha256="8362e7284b38a1194884963deed83481696d468b42dab88052775f4280383584"
+              expected_sha256="85e1bc78ab45bdc5f82a7bac3929e37d072834a584d22583a2498dc67bb624cd"
               ;;
             Darwin:x86_64)
               archive_platform="darwin_amd64"
-              expected_sha256="5ef8e19091106b1921af26db5bcee3cd84a475eae2fd190fc02b1049b320d042"
+              expected_sha256="794a36c3f7ebf6c58f2089c226068a539d1705ba358a5679b51671c8dc7ebc7b"
               ;;
             *)
               echo "No pinned Terraform archive exists for this runner architecture" >&2
               exit 1
               ;;
           esac
-          archive_name="terraform_1.13.3_${archive_platform}.zip"
+          archive_name="terraform_1.16.6_${archive_platform}.zip"
           archive_path="${RUNNER_TEMP}/${archive_name}"
           install_dir="${RUNNER_TEMP}/terraform-cli"
           mkdir -p "${install_dir}"
           curl --fail --location --retry 3 --silent --show-error \
-            "https://releases.hashicorp.com/terraform/1.13.3/${archive_name}" \
+            "https://releases.hashicorp.com/terraform/1.16.6/${archive_name}" \
             --output "${archive_path}"
           python - "${archive_path}" "${expected_sha256}" <<'PY'
           import hashlib
@@ -194,11 +215,11 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $archiveName = 'terraform_1.13.3_windows_amd64.zip'
+          $archiveName = 'terraform_1.16.6_windows_amd64.zip'
           $archivePath = Join-Path $env:RUNNER_TEMP $archiveName
           $installDir = Join-Path $env:RUNNER_TEMP 'terraform-cli'
-          $expectedSha256 = 'e75a97238f2dc43ab90fca1af554c18f995b16a4b06a4ec27bcdbab52c1d2dc8'
-          Invoke-WebRequest -Uri "https://releases.hashicorp.com/terraform/1.13.3/$archiveName" -OutFile $archivePath
+          $expectedSha256 = '6ea2c186e0e76a113af30fbcdcf7a4b4c70756317994a04929e5c90b9e94b1df'
+          Invoke-WebRequest -Uri "https://releases.hashicorp.com/terraform/1.16.6/$archiveName" -OutFile $archivePath
           $actualSha256 = (Get-FileHash -Path $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actualSha256 -ne $expectedSha256) { throw "Terraform archive SHA-256 mismatch: $actualSha256" }
           Expand-Archive -Path $archivePath -DestinationPath $installDir -Force
@@ -297,9 +318,9 @@ jobs:
           & (Join-Path $gccBin 'g++.exe') --version
 
       - name: Set up Flutter and Dart for app runtime probes
-        uses: subosito/flutter-action@44ac965b96f18d999802d4b807e3256d5a3f9fa1 # v2.16.0
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: "3.47.4"
+          flutter-version: "3.47.7"
 
       - name: Import Swift.org signing keys (Linux)
         if: runner.os == 'Linux'
@@ -324,17 +345,17 @@ jobs:
         if: runner.os != 'Windows'
         uses: swift-actions/setup-swift@7ca6abe6b3b0e8b5421b88be48feee39cbf52c6a # v2.4.0
         with:
-          swift-version: "6.2.1"
+          swift-version: "6.4.1"
 
       - name: Set up Swift toolchain (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          winget install --id Swift.Toolchain --exact --source winget --scope user --version 6.2.1 --accept-source-agreements --accept-package-agreements
-          if ($LASTEXITCODE -ne 0) { throw "WinGet failed to install Swift 6.2.1" }
+          winget install --id Swift.Toolchain --exact --source winget --scope user --version 6.4.1 --accept-source-agreements --accept-package-agreements
+          if ($LASTEXITCODE -ne 0) { throw "WinGet failed to install Swift 6.4.1" }
           $swiftRoot = Join-Path $env:LOCALAPPDATA "Programs\Swift\Toolchains"
-          $toolchain = Get-ChildItem -Path $swiftRoot -Directory | Where-Object { $_.Name -like "6.2.1*" } | Select-Object -First 1
-          if ($null -eq $toolchain) { throw "Swift 6.2.1 toolchain directory was not installed" }
+          $toolchain = Get-ChildItem -Path $swiftRoot -Directory | Where-Object { $_.Name -like "6.4.1*" } | Select-Object -First 1
+          if ($null -eq $toolchain) { throw "Swift 6.4.1 toolchain directory was not installed" }
           $swiftBin = Join-Path $toolchain.FullName "usr\bin"
           if (!(Test-Path (Join-Path $swiftBin "swift.exe"))) { throw "Swift executable is missing from the installed toolchain" }
           $swiftRuntimeVersion = $toolchain.Name -replace '\+.*$', ''
@@ -355,13 +376,13 @@ jobs:
         if: matrix.os == 'windows-latest'
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.15.0"
 
       - name: Verify language probe toolchains
         shell: bash
         run: |
           set -euo pipefail
-          runtime_tools=(bash node python go dart rustc cargo swift java dotnet php kotlinc terraform godot zig)
+          runtime_tools=(bash node npm pnpm yarn bun deno python go dart rustc cargo swift java dotnet php kotlinc terraform godot zig)
           case "${RUNNER_OS}" in
             macOS)
               runtime_tools+=(clang clang++)
@@ -380,6 +401,24 @@ jobs:
               exit 1
             fi
           done
+          test "$(node --version)" = "v26.12.0"
+          test "$(npm --version)" = "12.2.0"
+          test "$(pnpm --version)" = "12.11.2"
+          test "$(yarn --version)" = "4.18.1"
+          test "$(bun --version)" = "1.4.3"
+          deno --version | head -1 | grep -F "deno 2.9.7"
+          rustc --version | grep -F "rustc 1.99.0"
+          go version | grep -F "go1.27.2"
+          python --version 2>&1 | grep -F "Python 3.15.0" || python3 --version 2>&1 | grep -F "Python 3.15.0"
+          java -version 2>&1 | head -1 | grep -F '27.0.0'
+          dotnet --version | grep -F "10.0.402"
+          php --version | head -1 | grep -F "8.5.11"
+          flutter --version | head -1 | grep -F "3.47.7"
+          swift --version | head -1 | grep -F "6.4.1"
+          kotlinc -version 2>&1 | grep -F "2.4.21"
+          terraform version | head -1 | grep -F "1.16.6"
+          godot --headless --version | grep -F "4.7.2"
+          zig version | grep -F "0.17.0"
 
       - name: Cache Cargo
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -597,7 +636,7 @@ jobs:
 
       - name: Upload stress evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: stress-matrix-${{ matrix.os }}
           path: |

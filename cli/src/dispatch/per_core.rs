@@ -269,16 +269,20 @@ pub fn command_to_dispatch(
         Commands::CreateAi {
             framework,
             project_name,
+            container,
         } => Some(CoreCommand::CreateAi {
             framework,
             project_name,
+            container,
         }),
         Commands::CreateClo {
             framework,
             project_name,
+            container,
         } => Some(CoreCommand::CreateClo {
             framework,
             project_name,
+            container,
         }),
         Commands::CreateCicd {
             framework,
@@ -297,16 +301,20 @@ pub fn command_to_dispatch(
         Commands::CreateApp {
             framework,
             project_name,
+            container,
         } => Some(CoreCommand::CreateApp {
             framework,
             project_name,
+            container,
         }),
         Commands::CreateLib {
             framework,
             project_name,
+            container,
         } => Some(CoreCommand::CreateLib {
             framework,
             project_name,
+            container,
         }),
         Commands::CreateHardware {
             framework,

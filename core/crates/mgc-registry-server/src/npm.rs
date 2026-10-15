@@ -2,56 +2,55 @@ use crate::{AppState, model::*};
 use axum::{
     Router,
     body::Bytes,
-    extract::{ConnectInfo, Path, Query, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Json, Response},
     routing::{delete, get, post, put},
 };
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use tracing::warn;
 
 /// npm API routes — alias không prefix (chuẩn npm client: PUT /:name) + /npm/ (nội bộ)
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/npm/:name", get(get_package).put(publish_package))
-        .route("/:name", get(get_package).put(publish_package))
+        .route("/npm/{name}", get(get_package).put(publish_package))
+        .route("/{name}", get(get_package).put(publish_package))
         .route(
-            "/:scope/:name",
+            "/{scope}/{name}",
             get(get_package_scoped).put(publish_package_scoped),
         )
         .route(
-            "/npm/:name/-/:filename",
+            "/npm/{name}/-/{filename}",
             get(download_tarball).delete(delete_package_version_route),
         )
-        .route("/npm/:name/-/:filename", put(upload_tarball))
+        .route("/npm/{name}/-/{filename}", put(upload_tarball))
         .route(
-            "/:name/-/:filename",
+            "/{name}/-/{filename}",
             get(download_tarball)
                 .put(upload_tarball)
                 .delete(delete_package_version_route),
         )
         .route(
-            "/:scope/:name/-/:filename",
+            "/{scope}/{name}/-/{filename}",
             get(download_tarball_scoped).delete(delete_package_version_scoped),
         )
-        .route("/:scope/:name/-/:filename", put(upload_tarball_scoped))
+        .route("/{scope}/{name}/-/{filename}", put(upload_tarball_scoped))
         .route(
-            "/-/package/:name/dist-tags/:tag",
+            "/-/package/{name}/dist-tags/{tag}",
             put(set_dist_tag).delete(delete_dist_tag),
         )
-        .route("/-/package/:name/dist-tags", get(get_dist_tags))
+        .route("/-/package/{name}/dist-tags", get(get_dist_tags))
         .route(
-            "/-/package/:scope/:name/dist-tags/:tag",
+            "/-/package/{scope}/{name}/dist-tags/{tag}",
             put(set_dist_tag_scoped).delete(delete_dist_tag_scoped),
         )
         .route(
-            "/-/package/:scope/:name/dist-tags",
+            "/-/package/{scope}/{name}/dist-tags",
             get(get_dist_tags_scoped),
         )
-        .route("/-/user/:name", put(adduser).delete(delete_user))
-        .route("/-/user/token/:token", delete(revoke_token))
+        .route("/-/user/{name}", put(adduser).delete(delete_user))
+        .route("/-/user/token/{token}", delete(revoke_token))
         .route("/-/whoami", get(whoami))
         .route("/-/v1/search", get(search))
         .route("/-/v1/publish", post(batch_publish))
@@ -79,7 +78,7 @@ async fn get_package_scoped(
 async fn publish_package_scoped(
     State(state): State<AppState>,
     headers: HeaderMap,
-    peer: Option<ConnectInfo<SocketAddr>>,
+    peer: crate::OptionalPeerAddress,
     Path((scope, name)): Path<(String, String)>,
     body: Bytes,
 ) -> Result<Json<Package>, StatusCode> {
@@ -125,7 +124,7 @@ async fn download_tarball_scoped(
 async fn upload_tarball_scoped(
     State(state): State<AppState>,
     headers: HeaderMap,
-    peer: Option<ConnectInfo<SocketAddr>>,
+    peer: crate::OptionalPeerAddress,
     Path((scope, name, filename)): Path<(String, String, String)>,
     body: Bytes,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
@@ -150,7 +149,7 @@ async fn upload_tarball_scoped(
 async fn delete_package_version_scoped(
     State(state): State<AppState>,
     headers: HeaderMap,
-    peer: Option<ConnectInfo<SocketAddr>>,
+    peer: crate::OptionalPeerAddress,
     Path((scope, name, filename)): Path<(String, String, String)>,
 ) -> Result<StatusCode, StatusCode> {
     delete_package_version_route(
@@ -217,12 +216,12 @@ async fn publish_package(
     State((store, auth)): State<AppState>,
     headers: HeaderMap,
     Path(name): Path<String>,
-    peer: Option<ConnectInfo<SocketAddr>>,
+    peer: crate::OptionalPeerAddress,
     body: Bytes,
 ) -> Result<Json<Package>, StatusCode> {
     crate::trusted::scoped_package("npm", &name)?;
     let trusted_identity = auth
-        .authorize_package_write_from(&headers, &name, peer.map(|ConnectInfo(address)| address))
+        .authorize_package_write_from(&headers, &name, crate::peer_address(peer))
         .await?;
     // npm CLI thật gửi metadata + _attachments (tarball base64) trong 1 PUT
     use base64::Engine;
@@ -435,11 +434,11 @@ async fn download_tarball(
 async fn upload_tarball(
     State((store, auth)): State<AppState>,
     headers: HeaderMap,
-    peer: Option<ConnectInfo<SocketAddr>>,
+    peer: crate::OptionalPeerAddress,
     Path((_name, _filename)): Path<(String, String)>,
     body: Bytes,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    auth.authorize_npm_write_from(&headers, &_name, peer.map(|ConnectInfo(address)| address))
+    auth.authorize_npm_write_from(&headers, &_name, crate::peer_address(peer))
         .await?;
     use sha2::{Digest, Sha512};
 
@@ -467,10 +466,10 @@ async fn upload_tarball(
 async fn delete_package_version_route(
     State((store, auth)): State<AppState>,
     headers: HeaderMap,
-    peer: Option<ConnectInfo<SocketAddr>>,
+    peer: crate::OptionalPeerAddress,
     Path((name, filename)): Path<(String, String)>,
 ) -> Result<StatusCode, StatusCode> {
-    auth.authorize_npm_delete_from(&headers, &name, peer.map(|ConnectInfo(address)| address))
+    auth.authorize_npm_delete_from(&headers, &name, crate::peer_address(peer))
         .await?;
     // filename: :name-:version.tgz → trích version
     let version = filename
@@ -530,11 +529,11 @@ struct SetDistTagBody {
 async fn set_dist_tag(
     State((store, auth)): State<AppState>,
     headers: HeaderMap,
-    peer: Option<ConnectInfo<SocketAddr>>,
+    peer: crate::OptionalPeerAddress,
     Path((name, tag)): Path<(String, String)>,
     Json(body): Json<SetDistTagBody>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    auth.authorize_npm_write_from(&headers, &name, peer.map(|ConnectInfo(address)| address))
+    auth.authorize_npm_write_from(&headers, &name, crate::peer_address(peer))
         .await?;
     let mut pkg = store
         .get_package(&name)
@@ -569,10 +568,10 @@ async fn set_dist_tag(
 async fn delete_dist_tag(
     State((store, auth)): State<AppState>,
     headers: HeaderMap,
-    peer: Option<ConnectInfo<SocketAddr>>,
+    peer: crate::OptionalPeerAddress,
     Path((name, tag)): Path<(String, String)>,
 ) -> Result<StatusCode, StatusCode> {
-    auth.authorize_npm_delete_from(&headers, &name, peer.map(|ConnectInfo(address)| address))
+    auth.authorize_npm_delete_from(&headers, &name, crate::peer_address(peer))
         .await?;
     let mut pkg = store
         .get_package(&name)
@@ -668,7 +667,7 @@ async fn get_dist_tags_scoped(
 async fn set_dist_tag_scoped(
     State(state): State<AppState>,
     headers: HeaderMap,
-    peer: Option<ConnectInfo<SocketAddr>>,
+    peer: crate::OptionalPeerAddress,
     Path((scope, name, tag)): Path<(String, String, String)>,
     Json(body): Json<SetDistTagBody>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
@@ -685,7 +684,7 @@ async fn set_dist_tag_scoped(
 async fn delete_dist_tag_scoped(
     State(state): State<AppState>,
     headers: HeaderMap,
-    peer: Option<ConnectInfo<SocketAddr>>,
+    peer: crate::OptionalPeerAddress,
     Path((scope, name, tag)): Path<(String, String, String)>,
 ) -> Result<StatusCode, StatusCode> {
     delete_dist_tag(

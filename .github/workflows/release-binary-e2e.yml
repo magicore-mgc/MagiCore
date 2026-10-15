@@ -57,6 +57,11 @@ on:
 permissions:
   contents: read
 
+# Replace superseded validation runs on the same ref. — Hủy lượt kiểm cũ khi ref có lượt mới.
+concurrency:
+  group: release-binary-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   # The native MGC audit lanes require a reachable OSV API; they do not
@@ -80,20 +85,22 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable 2026-09-03
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
+        with:
+          toolchain: "1.99.0"
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Setup Node.js (web lane deps)
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "24"
+          node-version: "26.12.0"
 
       - name: Setup Python (AI lane runtime)
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.15.0"
 
       # esbuild-rs build script compiles a Go library — Go is required
       # on every OS (CI workflow already does this; P0-8 lesson).
@@ -102,21 +109,8 @@ jobs:
       - name: Setup Go (esbuild-rs build dep)
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.1"
+          go-version: "1.27.2"
           cache: false
-
-      # AI lane test/build tooling: `mgc test` (ai) runs pytest;
-      # `mgc build` (ai) runs python -m build — provision BOTH so no
-      # lane step can hide behind a missing tool.
-      # Tool cho lane AI: `mgc test` (ai) chạy pytest; `mgc build` (ai)
-      # chạy python -m build — provision CẢ HAI để không bước nào trốn
-      # sau lý do thiếu tool.
-      - name: Provision python test/build tools (ai lane)
-        shell: bash
-        run: |
-          python -m pip install 'build==1.3.0' 'pytest==8.4.2' 'setuptools==80.9.0'
-          command -v pytest
-          python -m build --version
 
       # --- Build the release binary + pack the EXACT release layout ---
       - name: Build release binary
@@ -481,8 +475,8 @@ jobs:
           unset MGC_AUDIT_STRICT
 
       # AI/Python release lane uses the MGC-owned PyPI graph and mgc.lock.
-      # Python/pytest/build are execution tools only; uv/pip do not resolve
-      # or install project dependencies in this lane.
+      # Python is the system runtime; pytest/build/setuptools are MGC-managed
+      # project packages imported from its verified store.
       # Lane AI/Python dùng graph PyPI và mgc.lock do MGC sở hữu.
       - name: Lifecycle ai python (native add → install → test → build → strict audit)
         shell: bash
@@ -493,11 +487,13 @@ jobs:
           cd "$WORK"
           "$MGCBIN" create-ai python-agent test-ai
           cd test-ai
-          # six 1.17.0 ships a universal py2.py3-none-any wheel, the only
-          # artifact class this native installer currently materializes.
-          # Compiled wheels/sdists remain fail-closed; this lane does not
-          # claim full PyPI artifact coverage.
+          # These pure-Python tools are resolved and installed into the MGC
+          # store; neither test nor build may use globally pip-installed tools.
+          # Compiled wheels/sdists remain fail-closed in this current lane.
           "$MGCBIN" add-ai six@1.17.0
+          "$MGCBIN" add-ai pytest@9.1.1
+          "$MGCBIN" add-ai build@1.6.1
+          "$MGCBIN" add-ai setuptools@84.0.0
           "$MGCBIN" install
           test -f mgc.lock
           test ! -f uv.lock
@@ -533,9 +529,9 @@ jobs:
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
 
       - name: Setup Flutter (app lane)
-        uses: subosito/flutter-action@44ac965b96f18d999802d4b807e3256d5a3f9fa1 # v2.16.0 (latest, node24)
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: "3.47.4"
+          flutter-version: "3.47.7"
           channel: "stable"
 
       - name: Resolve Flutter SDK dependencies before MGC process guard
@@ -585,26 +581,26 @@ jobs:
         if: runner.os != 'Windows'
         uses: swift-actions/setup-swift@364295d9c23900ce04d4e5cc708387921b4e50f9 # v3.0.0-beta.1
         with:
-          swift-version: "6.4.0"
+          swift-version: "6.4.1"
 
-      # Install the official signed Swift 6.4.0 bundle; Windows Server 2022 has no WinGet.
-      # Cài bundle Swift 6.4.0 chính thức có chữ ký; Windows Server 2022 không có WinGet.
+      # Install the official signed Swift 6.4.1 bundle; Windows Server 2022 has no WinGet.
+      # Cài bundle Swift 6.4.1 chính thức có chữ ký; Windows Server 2022 không có WinGet.
       - name: Setup Swift toolchain (Windows)
         if: matrix.os == 'windows-2022'
         shell: pwsh
         run: |
-          $installerPath = Join-Path $env:RUNNER_TEMP "swift-6.4.0-RELEASE-windows10.exe"
-          Invoke-WebRequest -Uri "https://download.swift.org/swift-6.4.0-release/windows10/swift-6.4.0-RELEASE/swift-6.4.0-RELEASE-windows10.exe" -OutFile $installerPath
-          $expectedSha256 = "76169A85BCBA82854A0CD8F9655FFB74B3758D60C35A245457510095F2823C03"
+          $installerPath = Join-Path $env:RUNNER_TEMP "swift-6.4.1-RELEASE-windows10.exe"
+          Invoke-WebRequest -Uri "https://download.swift.org/swift-6.4.1-release/windows10/swift-6.4.1-RELEASE/swift-6.4.1-RELEASE-windows10.exe" -OutFile $installerPath
+          $expectedSha256 = "9382E14919EEAE5E7B5DBFE0575452FE2154178E089A595C8B44D03960D91D59"
           $actualSha256 = (Get-FileHash -Algorithm SHA256 -Path $installerPath).Hash
-          if ($actualSha256 -ne $expectedSha256) { throw "Swift 6.4.0 installer SHA-256 mismatch: $actualSha256" }
+          if ($actualSha256 -ne $expectedSha256) { throw "Swift 6.4.1 installer SHA-256 mismatch: $actualSha256" }
           $signature = Get-AuthenticodeSignature -FilePath $installerPath
           if ($signature.Status -ne 'Valid') { throw "Swift installer Authenticode signature is not valid: $($signature.Status)" }
           $install = Start-Process -FilePath $installerPath -ArgumentList @('/quiet', '/norestart') -Wait -PassThru
           if ($install.ExitCode -ne 0) { throw "Swift installer failed with exit code $($install.ExitCode)" }
           $swiftRoot = Join-Path $env:LOCALAPPDATA "Programs\Swift\Toolchains"
-          $toolchain = Get-ChildItem -Path $swiftRoot -Directory | Where-Object { $_.Name -like "6.4.0*" } | Select-Object -First 1
-          if ($null -eq $toolchain) { throw "Swift 6.4.0 toolchain directory was not installed" }
+          $toolchain = Get-ChildItem -Path $swiftRoot -Directory | Where-Object { $_.Name -like "6.4.1*" } | Select-Object -First 1
+          if ($null -eq $toolchain) { throw "Swift 6.4.1 toolchain directory was not installed" }
           $swiftBin = Join-Path $toolchain.FullName "usr\bin"
           if (!(Test-Path (Join-Path $swiftBin "swift.exe"))) { throw "Swift executable is missing from the installed toolchain" }
           $swiftRuntimeVersion = $toolchain.Name -replace '\+.*$', ''
@@ -641,13 +637,13 @@ jobs:
           "$MGCBIN" build
           find .build -type f \( -name MagiCoreApp -o -name MagiCoreApp.exe \) -print -quit | grep -q .
 
-      # Restore Python 3.12 after Swift has finished using its pinned Python 3.10 runtime.
-      # Khôi phục Python 3.12 sau khi Swift dùng xong runtime Python 3.10 đã ghim.
+      # Restore Python 3.15.0 after Swift has finished using its pinned Python 3.10 runtime.
+      # Khôi phục Python 3.15.0 sau khi Swift dùng xong runtime Python 3.10 đã ghim.
       - name: Restore Python runtime (AI lane)
         if: matrix.os == 'windows-2022'
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.15.0"
 
       - name: Lifecycle app flutter (create → install → test → build)
         shell: bash

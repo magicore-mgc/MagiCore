@@ -125,12 +125,16 @@ pub(crate) async fn test_at(
         }
 
         // Native MGC-installed Python packages must be visible to Python
-        // test runners. Invalid/missing materializations fail closed.
-        if matches!(runner.as_str(), "pytest" | "python" | "python3") {
+        // test runners. Clear ambient/optimizer PYTHONPATH first so a host
+        // package cannot satisfy an absent dependency; invalid materializations
+        // fail closed.
+        if matches!(runner.as_str(), "python" | "python3") {
+            env.retain(|(key, _)| key != "PYTHONPATH");
+            env.push(("PYTHONPATH".to_string(), String::new()));
             crate::commands::python_runtime::extend_native_python_env(
                 &mut env,
                 project_root,
-                true,
+                false,
             )?;
         }
 
@@ -214,12 +218,20 @@ fn detect_test_runner(project_root: &Path) -> Result<Option<(String, Vec<String>
     if read_project_manifest(project_root, "pyproject.toml")?.is_some()
         || read_project_manifest(project_root, "setup.py")?.is_some()
     {
-        // Try pytest first, fall back to python -m unittest — thử pytest trước
-        // Note: pytest auto-discovers test_*.py and *_test.py in current directory
-        // -s: no output capture, -v: verbose
+        // Run pytest as a module with site initialization disabled. The MGC
+        // verified packages are added explicitly through PYTHONPATH, so a
+        // globally installed pytest cannot make an incomplete MGC install pass.
+        // Chạy pytest qua Python module; bỏ site-packages toàn cục và chỉ dùng
+        // package MGC đã xác minh được nối vào PYTHONPATH.
         return Ok(Some((
-            "pytest".to_string(),
-            vec!["-s".to_string(), "-v".to_string()],
+            crate::commands::build::python_cmd().to_string(),
+            vec![
+                "-S".to_string(),
+                "-m".to_string(),
+                "pytest".to_string(),
+                "-s".to_string(),
+                "-v".to_string(),
+            ],
         )));
     }
 

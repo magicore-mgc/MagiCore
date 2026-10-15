@@ -149,7 +149,10 @@ pub async fn run(
                         )
                         .await
                         .map_err(|_| anyhow::anyhow!("Sigstore trust-root fetch timed out"))??;
-                        sigstore_verifier = Some(Verifier::new(&trusted_root));
+                        sigstore_verifier = Some(
+                            Verifier::new(&trusted_root)
+                                .map_err(|_| crate::error::trusted_signatures_invalid())?,
+                        );
                     }
                     verify_public_attestation(
                         entry,
@@ -344,9 +347,7 @@ fn verify_public_attestation(
         .or(entry.payload.builder.workflow_ref.as_deref())
         .ok_or_else(crate::error::trusted_signatures_invalid)?;
     let expected_identity = format!("https://github.com/{workflow}");
-    let policy = VerificationPolicy::default()
-        .require_issuer(entry.payload.builder.issuer.clone())
-        .require_identity(expected_identity);
+    let policy = VerificationPolicy::new(expected_identity, entry.payload.builder.issuer.clone());
     verifier
         .verify(Sha256Hash::from_hex(artifact_hash)?, &bundle, &policy)
         .map_err(|_| crate::error::trusted_signatures_invalid())?;
@@ -365,7 +366,12 @@ fn validate_sigstore_statement(
     let expected_builder = serde_json::to_value(&payload.builder)?;
     let predicate = &statement.predicate;
     let subject_matches = statement.subject.iter().any(|subject| {
-        !subject.name.is_empty() && subject.digest.sha256.as_deref() == Some(artifact_sha256)
+        !subject.name.is_empty()
+            && subject
+                .digest
+                .sha256
+                .as_ref()
+                .is_some_and(|digest| digest.to_hex() == artifact_sha256)
     });
     if statement.type_ != "https://in-toto.io/Statement/v1"
         || statement.predicate_type != mgc_registry_server::trusted::TRUSTED_PUBLISH_PREDICATE_TYPE

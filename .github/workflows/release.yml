@@ -167,14 +167,15 @@ jobs:
           echo "Building web-only: $WEB_ARTIFACT_NAME"
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable 2026-09-03
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
         with:
+          toolchain: "1.99.0"
           targets: ${{ matrix.target }}
 
       - name: Setup Go for esbuild-rs
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.1"
+          go-version: "1.27.2"
           cache: false
 
       - name: Install Cross (if cross-compiling on Linux)
@@ -365,7 +366,7 @@ jobs:
           }
 
       - name: Upload Build Artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1 (latest, node24)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ steps.artifacts.outputs.artifact_name }}
           path: |
@@ -460,7 +461,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Download build artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1 (latest, node24)
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: artifacts
           merge-multiple: true
@@ -591,7 +592,7 @@ jobs:
         run: bash scripts/test-release-manifest.sh
 
       - name: Download all build artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1 (latest, node24)
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: verify-assets
           merge-multiple: true
@@ -807,7 +808,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable 2026-09-03
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
+        with:
+          toolchain: "1.99.0"
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -815,10 +818,10 @@ jobs:
       - name: Install scanner toolchain (pinned — required lanes)
         run: |
           cargo install cargo-audit --version 0.22.2 --locked
-          python3 -m pip install --user 'pip-audit==2.9.0'
+          python3 -m pip install --user 'pip-audit==2.10.1'
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          GO_ARCHIVE="go1.27.1.linux-amd64.tar.gz"
-          GO_SHA256="63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445"
+          GO_ARCHIVE="go1.27.2.linux-amd64.tar.gz"
+          GO_SHA256="ecbadb99091a3f46e31f5f934b068b1864eafa7995211b39eaddf76996045fe5"
           curl -fsSL "https://go.dev/dl/${GO_ARCHIVE}" -o /tmp/go.tgz
           # Verify the pinned Go archive before extraction.
           # Xác minh archive Go đã ghim trước khi giải nén.
@@ -902,7 +905,7 @@ jobs:
           print(f"OK: {len(data.get('capability', []))} lanes — every expected release lane supported with full evidence at {sha[:12]}")
 
       - name: Upload gate matrix (audit trail)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-audit-capability-matrix
           path: docs/specs/auditCapabilityMatrix.json
@@ -912,10 +915,54 @@ jobs:
     needs: [resolve-version]
     uses: ./.github/workflows/stress-matrix.yml
 
+  release-lifecycle-evidence-gate:
+    name: Release lifecycle and scaffold evidence gate
+    needs: [resolve-version]
+    uses: ./.github/workflows/lifecycle-matrix.yml
+
+  release-source-ci-gate:
+    name: Release workspace tests, lint, and packaging gate
+    needs: [resolve-version]
+    uses: ./.github/workflows/ci.yml
+
+  publish-cli-container:
+    name: Publish MagiCore CLI container (Linux amd64)
+    needs: [resolve-version, pre-publish-verification, audit-capability-gate, release-scoped-support-evidence-gate, release-lifecycle-evidence-gate, release-source-ci-gate]
+    if: ${{ always() && needs.resolve-version.outputs.publish == 'true' && needs.release-scoped-support-evidence-gate.result == 'success' && needs.pre-publish-verification.result == 'success' && needs.audit-capability-gate.result == 'success' && needs.release-lifecycle-evidence-gate.result == 'success' && needs.release-source-ci-gate.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build, publish, and smoke-test the versioned CLI image
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}/magicore"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker buildx create --use
+          TAG_ARGS=(--tag "$IMAGE:$RELEASE_VERSION")
+          if [[ "$RELEASE_VERSION" != *-* ]]; then TAG_ARGS+=(--tag "$IMAGE:latest"); fi
+          docker buildx build \
+            --platform linux/amd64 \
+            --provenance=mode=max \
+            --sbom=true \
+            --push \
+            "${TAG_ARGS[@]}" \
+            .
+          docker pull "$IMAGE:$RELEASE_VERSION"
+          docker run --rm "$IMAGE:$RELEASE_VERSION" --version
+          docker run --rm "$IMAGE:$RELEASE_VERSION" --help
+
   publish-github-release:
     name: Create GitHub Release
-    needs: [resolve-version, pre-publish-verification, audit-capability-gate, release-scoped-support-evidence-gate]
-    if: ${{ always() && needs.resolve-version.outputs.publish == 'true' && needs.release-scoped-support-evidence-gate.result == 'success' && needs.pre-publish-verification.result == 'success' && needs.audit-capability-gate.result == 'success' }}
+    needs: [resolve-version, pre-publish-verification, audit-capability-gate, release-scoped-support-evidence-gate, publish-cli-container, release-lifecycle-evidence-gate, release-source-ci-gate]
+    if: ${{ always() && needs.resolve-version.outputs.publish == 'true' && needs.release-scoped-support-evidence-gate.result == 'success' && needs.pre-publish-verification.result == 'success' && needs.audit-capability-gate.result == 'success' && needs.publish-cli-container.result == 'success' && needs.release-lifecycle-evidence-gate.result == 'success' && needs.release-source-ci-gate.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write # Required to create release and upload assets
@@ -926,7 +973,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Download all build artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1 (latest, node24)
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: release-assets
           merge-multiple: true
@@ -1163,7 +1210,7 @@ jobs:
 
   dry-run-summary:
     name: Dry-Run Summary
-    needs: [resolve-version, pre-publish-verification]
+    needs: [resolve-version, pre-publish-verification, release-lifecycle-evidence-gate, release-source-ci-gate]
     if: ${{ needs.resolve-version.outputs.publish == 'false' }}
     runs-on: ubuntu-latest
     steps:
@@ -1177,4 +1224,4 @@ jobs:
           echo "Pre-publish: ✅ PASS (10 archives + checksums + SBOMs)"
           echo ""
           echo "Publish readiness: NOT ASSESSED (dry-run does not authorize publishing)"
-          echo "Draft publication requires an approved tag and successful pre-publish and audit-capability gates"
+          echo "Draft publication requires an approved tag and successful pre-publish, audit-capability, scoped-support, lifecycle, and workspace CI gates"

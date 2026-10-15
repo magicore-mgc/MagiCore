@@ -203,11 +203,11 @@ fn lane_python_10_evidence_stamp_and_honest_info_severity() {
     }
 }
 
-/// CI fix (2026-09-11): pip-audit 2.9.0 on some CI runners emits noise
+/// CI fix (2026-09-11): pip-audit 2.10.1 on some CI runners emits noise
 /// AFTER the JSON body (progress lines merged into stdout) — the
 /// stream parser must consume the FIRST value and ignore suffix junk,
 /// while a genuinely broken body still fails closed.
-/// Fix CI: pip-audit 2.9.0 trên một số runner CI in rác SAU thân JSON
+/// Fix CI: pip-audit 2.10.1 trên một số runner CI in rác SAU thân JSON
 /// (dòng progress lẫn stdout) — parser stream phải tiêu thụ GIÁ TRỊ đầu
 /// và bỏ rác hậu tố, còn thân JSON thật sự hỏng thì vẫn fail-closed.
 #[test]

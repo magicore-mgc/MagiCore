@@ -659,32 +659,27 @@ fn normalize_pom_xml(pom: &str) -> MgResult<String> {
                 ));
             }
             Event::CData(text) => {
-                let decoded = text.decode().map_err(|error| {
-                    MgError::Other(format!("invalid Maven POM CDATA encoding: {error}"))
-                })?;
+                let decoded = text.xml10_content();
                 writer
-                    .write_event(Event::Text(BytesText::new(&decoded)))
+                    .write_event(Event::Text(BytesText::new(decoded.as_ref())))
                     .map_err(|error| MgError::Other(format!("normalize Maven POM XML: {error}")))?;
             }
             Event::Start(mut start) => {
-                let local_name = start.local_name().into_inner().to_vec();
+                let local_name = start.local_name().into_inner().to_owned();
                 start.set_name(&local_name);
                 writer
                     .write_event(Event::Start(start.into_owned()))
                     .map_err(|error| MgError::Other(format!("normalize Maven POM XML: {error}")))?;
             }
             Event::Empty(mut empty) => {
-                let local_name = empty.local_name().into_inner().to_vec();
+                let local_name = empty.local_name().into_inner().to_owned();
                 empty.set_name(&local_name);
                 writer
                     .write_event(Event::Empty(empty.into_owned()))
                     .map_err(|error| MgError::Other(format!("normalize Maven POM XML: {error}")))?;
             }
             Event::End(end) => {
-                let local_name =
-                    std::str::from_utf8(end.local_name().into_inner()).map_err(|error| {
-                        MgError::Other(format!("invalid Maven POM element name: {error}"))
-                    })?;
+                let local_name = end.local_name().into_inner();
                 writer
                     .write_event(Event::End(BytesEnd::new(local_name)))
                     .map_err(|error| MgError::Other(format!("normalize Maven POM XML: {error}")))?;

@@ -1,24 +1,25 @@
-//! Versioned scaffold cache (MGC_DATA_DIR/scaffolds/{core}/{name}/{version}/).
-//! Cache scaffold theo phiên bản, lưu dưới root dữ liệu MagiCore.
+//! Compatibility API for versioned scaffold archives; live CLI uses the processor-visible cache.
+//! API cache version cũ giữ tương thích; không dùng directory/marker đơn lẻ làm bằng chứng cache hit.
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::spec::ScaffoldSpec;
+use crate::commands::template::{
+    extract_tarball_into, lock_embedded_cache_layer, read_template_cache_version,
+    template_cache_is_link, template_layer_has_contract,
+};
 
 fn cache_root_with_override(override_root: Option<PathBuf>, default_root: PathBuf) -> PathBuf {
     override_root.unwrap_or(default_root)
 }
 
-/// Scaffold cache manager (versioned storage).
 pub struct ScaffoldCache;
 
 impl ScaffoldCache {
-    /// Cache path for a specific scaffold version.
-    ///
-    /// Example: `MGC_DATA_DIR/scaffolds/web/nextjs/15.5.0/`
-    /// Ví dụ: đường dẫn scaffold web Next.js theo phiên bản.
+    /// Construct a path only; filesystem methods validate the identity before accessing it.
+    /// Hàm này không I/O; read/write/clear tự kiểm identity, không tin PathBuf do user ghép.
     pub fn path(spec: &ScaffoldSpec, version: &str) -> PathBuf {
         Self::cache_root()
             .join(spec.core.as_str())
@@ -26,175 +27,166 @@ impl ScaffoldCache {
             .join(version)
     }
 
-    /// Check if a specific version is cached.
     pub fn has(spec: &ScaffoldSpec, version: &str) -> bool {
-        let path = Self::path(spec, version);
-        path.is_dir() && Self::has_template_contract(&path)
+        validated_entry(&Self::cache_root(), spec, version).is_ok_and(|path| path.is_some())
     }
 
-    /// Write scaffold data to versioned cache.
-    ///
-    /// `data` is expected to be a tarball or zip that will be extracted.
+    /// Write an npm-style TAR.GZ layer with the same staged extractor as explicit fetch.
+    /// Archive phải có một prefix chứa template.toml/sources; lỗi giữ nguyên cache cũ.
     pub fn write(spec: &ScaffoldSpec, version: &str, tarball: &[u8]) -> Result<()> {
-        let target = Self::path(spec, version);
-        if target.exists() {
-            // Already cached - skip
-            return Ok(());
-        }
-
-        fs::create_dir_all(&target)?;
-
-        // Extract tarball
-        let decoder = flate2::read::GzDecoder::new(tarball);
-        let mut archive = tar::Archive::new(decoder);
-        archive.unpack(&target)?;
-
-        // Write version metadata
-        let version_file = target.join(".mgc-version");
-        fs::write(version_file, version)?;
-
-        Ok(())
+        write_at(&Self::cache_root(), spec, version, tarball)
     }
 
-    /// Read cached scaffold path (returns directory path for layer resolution).
     pub fn read(spec: &ScaffoldSpec, version: &str) -> Result<PathBuf> {
-        let path = Self::path(spec, version);
-        if !path.is_dir() {
-            bail!(
-                "Scaffold cache miss: {}/{} version {}",
+        validated_entry(&Self::cache_root(), spec, version)?.ok_or_else(|| {
+            crate::error::template_layer_missing_manifest(&format!(
+                "{}/{}/{}",
                 spec.core.as_str(),
                 spec.normalized_name,
                 version
-            );
-        }
-        Ok(path)
+            ))
+        })
     }
 
-    /// List all cached versions for a scaffold (sorted newest first).
+    /// Return valid cache entries in semantic version order; invalid/incomplete entries are excluded.
+    /// Chỉ liệt kê entry có contract và version marker khớp, không sort theo chuỗi.
     pub fn list_versions(spec: &ScaffoldSpec) -> Vec<String> {
-        let base = Self::cache_root()
-            .join(spec.core.as_str())
-            .join(&spec.normalized_name);
-
-        if !base.is_dir() {
-            return vec![];
-        }
-
-        let mut versions = vec![];
-        // let-chain edition 2024 — gộp điều kiện theo clippy 1.98.
-        if let Ok(entries) = fs::read_dir(&base) {
-            for entry in entries.flatten() {
-                if entry.path().is_dir()
-                    && let Some(name) = entry.file_name().to_str()
-                {
-                    versions.push(name.to_string());
-                }
-            }
-        }
-
-        // Sort versions (reverse semver order: newest first)
-        // Using lexicographic sort as acceptable approximation for v1.1.0
-        // (semver crate adds 50KB+ to binary; deferred to v1.2.0 if needed)
-        versions.sort_by(|a, b| b.cmp(a));
-
-        versions
+        list_versions_at(&Self::cache_root(), spec)
     }
 
-    /// Clear cache for a specific scaffold version.
     pub fn clear(spec: &ScaffoldSpec, version: &str) -> Result<()> {
-        let path = Self::path(spec, version);
-        if path.exists() {
-            fs::remove_dir_all(&path)?;
-        }
-        Ok(())
+        clear_at(&Self::cache_root(), spec, Some(version))
     }
 
-    /// Clear all cached versions for a scaffold.
     pub fn clear_all(spec: &ScaffoldSpec) -> Result<()> {
-        let base = Self::cache_root()
-            .join(spec.core.as_str())
-            .join(&spec.normalized_name);
-        if base.exists() {
-            fs::remove_dir_all(&base)?;
-        }
-        Ok(())
+        clear_at(&Self::cache_root(), spec, None)
     }
 
-    /// Root of the versioned scaffold cache; MGC_SCAFFOLDS_DIR overrides the platform default.
-    /// Gốc cache template có version; MGC_SCAFFOLDS_DIR ghi đè vị trí mặc định của hệ điều hành.
     fn cache_root() -> PathBuf {
         let default_root = mgc_platform::paths::mgc_data_dir().join("scaffolds");
         let override_root = std::env::var_os("MGC_SCAFFOLDS_DIR").map(PathBuf::from);
         cache_root_with_override(override_root, default_root)
     }
+}
 
-    /// Check if directory contains template contract (template.toml).
-    fn has_template_contract(dir: &Path) -> bool {
-        if dir.join("template.toml").is_file() {
-            return true;
+fn layer_key(spec: &ScaffoldSpec) -> String {
+    format!("{}/{}", spec.core.as_str(), spec.normalized_name)
+}
+
+fn validate_identity(spec: &ScaffoldSpec) -> Result<()> {
+    let name = &spec.normalized_name;
+    if name.is_empty()
+        || name.contains(['\\', ':'])
+        || name.chars().any(char::is_control)
+        || name
+            .split('/')
+            .any(|part| part.is_empty() || part.ends_with(['.', ' ']))
+    {
+        return Err(crate::error::template_layer_identity_invalid());
+    }
+    Ok(())
+}
+
+fn validate_existing_directory(path: &Path) -> Result<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if template_cache_is_link(&metadata) || !metadata.is_dir() => {
+            Err(crate::error::template_cache_unsafe_path(path))
         }
-        if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() && Self::has_template_contract(&path) {
-                    return true;
-                }
-            }
-        }
-        false
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn resolve_base(root: &Path, spec: &ScaffoldSpec, create: bool) -> Result<Option<PathBuf>> {
+    validate_identity(spec)?;
+    if create {
+        fs::create_dir_all(root)?;
+    }
+    if !validate_existing_directory(root)? {
+        return Ok(None);
+    }
+    let mut base = root.canonicalize()?;
+    for part in std::iter::once(spec.core.as_str()).chain(spec.normalized_name.split('/')) {
+        base.push(part);
+        validate_existing_directory(&base)?;
+    }
+    Ok(Some(base))
+}
+
+fn validated_entry(root: &Path, spec: &ScaffoldSpec, version: &str) -> Result<Option<PathBuf>> {
+    semver::Version::parse(version).map_err(|_| crate::error::template_metadata_invalid())?;
+    let Some(base) = resolve_base(root, spec, false)? else {
+        return Ok(None);
+    };
+    let target = base.join(version);
+    if !validate_existing_directory(&target)?
+        || !template_layer_has_contract(&target)?
+        || read_template_cache_version(&target)?.as_deref() != Some(version)
+    {
+        return Ok(None);
+    }
+    Ok(Some(target))
+}
+
+fn write_at(root: &Path, spec: &ScaffoldSpec, version: &str, tarball: &[u8]) -> Result<()> {
+    semver::Version::parse(version).map_err(|_| crate::error::template_metadata_invalid())?;
+    let base = resolve_base(root, spec, true)?
+        .ok_or_else(|| crate::error::template_cache_unsafe_path(root))?;
+    let canonical_root = root.canonicalize()?;
+    let _lock = lock_embedded_cache_layer(&canonical_root, &layer_key(spec))?;
+    if validated_entry(&canonical_root, spec, version)?.is_some() {
+        return Ok(());
+    }
+    fs::create_dir_all(&base)?;
+    extract_tarball_into(tarball, &base.join(version), Some(version))
+}
+
+fn list_versions_at(root: &Path, spec: &ScaffoldSpec) -> Vec<String> {
+    let Ok(Some(base)) = resolve_base(root, spec, false) else {
+        return vec![];
+    };
+    let Ok(entries) = fs::read_dir(base) else {
+        return vec![];
+    };
+    let mut versions = entries
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let name = entry.file_name().into_string().ok()?;
+            let parsed = semver::Version::parse(&name).ok()?;
+            validated_entry(root, spec, &name).ok().flatten()?;
+            Some((parsed, name))
+        })
+        .collect::<Vec<_>>();
+    versions.sort_by(|a, b| b.0.cmp(&a.0));
+    versions.into_iter().map(|(_, name)| name).collect()
+}
+
+fn clear_at(root: &Path, spec: &ScaffoldSpec, version: Option<&str>) -> Result<()> {
+    if let Some(version) = version {
+        semver::Version::parse(version).map_err(|_| crate::error::template_metadata_invalid())?;
+    }
+    let Some(base) = resolve_base(root, spec, false)? else {
+        return Ok(());
+    };
+    let target = version.map_or(base.clone(), |version| base.join(version));
+    if !validate_existing_directory(&target)? {
+        return Ok(());
+    }
+    let canonical_root = root.canonicalize()?;
+    let _lock = lock_embedded_cache_layer(&canonical_root, &layer_key(spec))?;
+    validate_existing_directory(&target)?;
+    remove_if_present(&target)
+}
+
+fn remove_if_present(path: &Path) -> Result<()> {
+    match fs::remove_dir_all(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::scaffold::spec::{CoreKind, ScaffoldRef};
-
-    #[test]
-    fn test_cache_path_structure() {
-        let spec = ScaffoldSpec {
-            core: CoreKind::Web,
-            name: "nextjs".to_string(),
-            normalized_name: "nextjs".to_string(),
-            requested_ref: ScaffoldRef::DistTag("latest".to_string()),
-        };
-
-        let path = ScaffoldCache::path(&spec, "15.5.0");
-        assert!(path.ends_with("scaffolds/web/nextjs/15.5.0"));
-    }
-
-    #[test]
-    fn test_list_versions_empty() {
-        let spec = ScaffoldSpec {
-            core: CoreKind::Web,
-            name: "nonexistent".to_string(),
-            normalized_name: "nonexistent".to_string(),
-            requested_ref: ScaffoldRef::DistTag("latest".to_string()),
-        };
-
-        let versions = ScaffoldCache::list_versions(&spec);
-        assert!(versions.is_empty());
-    }
-
-    #[test]
-    fn explicit_cache_root_overrides_the_platform_default() {
-        let explicit = tempfile::tempdir().unwrap();
-        let default = tempfile::tempdir().unwrap();
-        assert_eq!(
-            cache_root_with_override(
-                Some(explicit.path().to_path_buf()),
-                default.path().to_path_buf()
-            ),
-            explicit.path()
-        );
-    }
-
-    #[test]
-    fn missing_cache_override_keeps_the_platform_default() {
-        let default = tempfile::tempdir().unwrap();
-        assert_eq!(
-            cache_root_with_override(None, default.path().to_path_buf()),
-            default.path()
-        );
-    }
-}
+#[path = "test/cache.rs"]
+mod tests;

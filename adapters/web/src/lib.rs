@@ -425,8 +425,7 @@ impl WebAdapter {
         else {
             return Ok(None);
         };
-        let value: toml::Value = text
-            .parse()
+        let value: toml::Value = toml::from_str(&text)
             .map_err(|e| MgError::Other(format!("invalid TOML in {}: {e}", path.display())))?;
         let Some(table) = value.get("security") else {
             return Ok(None);

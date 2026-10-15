@@ -686,6 +686,8 @@ pub enum Commands {
         /// Project directory name
         #[arg(value_name = "PROJECT")]
         project_name: String,
+        #[command(flatten)]
+        container: crate::commands::core::scaffold_flags::ContainerFlags,
     },
     #[command(
         name = "create-clo",
@@ -699,6 +701,8 @@ pub enum Commands {
         /// Project directory name
         #[arg(value_name = "PROJECT")]
         project_name: String,
+        #[command(flatten)]
+        container: crate::commands::core::scaffold_flags::ContainerFlags,
     },
     #[command(
         name = "create-cicd",
@@ -738,6 +742,8 @@ pub enum Commands {
         /// Project directory name
         #[arg(value_name = "PROJECT")]
         project_name: String,
+        #[command(flatten)]
+        container: crate::commands::core::scaffold_flags::ContainerFlags,
     },
     #[command(
         name = "create-lib",
@@ -751,6 +757,8 @@ pub enum Commands {
         /// Project directory name
         #[arg(value_name = "PROJECT")]
         project_name: String,
+        #[command(flatten)]
+        container: crate::commands::core::scaffold_flags::ContainerFlags,
     },
     #[command(
         name = "create-hardware",

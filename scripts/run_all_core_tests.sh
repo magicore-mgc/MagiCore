@@ -51,13 +51,14 @@ if command -v python3 >/dev/null 2>&1 && \
    "$MGC" create-ai python-agent test-ai && \
    test -f test-ai/pyproject.toml && \
    cd test-ai && \
-   python3 -m venv .venv && \
-   .venv/bin/python -m pip install 'build==1.3.0' 'pytest==8.4.2' 'setuptools==80.9.0' && \
+   "$MGC" add-ai pytest@9.1.1 && \
+   "$MGC" add-ai build@1.6.1 && \
+   "$MGC" add-ai setuptools@84.0.0 && \
    "$MGC" install && \
    mkdir -p tests && \
-   printf 'from agent import AIAgent\n\ndef test_agent():\n    assert AIAgent().run("local")\n' > tests/test_agent.py && \
-   PATH="$PWD/.venv/bin:$PATH" PYTHONPATH=src "$MGC" test && \
-   PATH="$PWD/.venv/bin:$PATH" "$MGC" build && \
+   printf 'from pathlib import Path\nimport sys\nsys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))\nfrom agent import AIAgent\n\ndef test_agent():\n    assert AIAgent().run("local")\n' > tests/test_agent.py && \
+   "$MGC" test && \
+   "$MGC" build && \
    test -d dist && \
    cd ..; then
     echo "AI: PASS"

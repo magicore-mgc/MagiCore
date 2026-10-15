@@ -1969,9 +1969,8 @@ pub fn load_scripts_table(project_root: &std::path::Path) -> Result<Option<Scrip
     else {
         return Ok(None);
     };
-    let value: toml::Value = text
-        .parse()
-        .map_err(|e| format!("invalid TOML in {}: {e}", path.display()))?;
+    let value: toml::Value =
+        toml::from_str(&text).map_err(|e| format!("invalid TOML in {}: {e}", path.display()))?;
     let Some(table) = value.get("scripts") else {
         return Ok(None);
     };

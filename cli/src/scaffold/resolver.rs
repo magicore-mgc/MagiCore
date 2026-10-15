@@ -88,6 +88,17 @@ pub enum ScaffoldResolveError {
     Other(String),
 }
 
+impl ScaffoldResolveError {
+    /// Only missing/unavailable artifacts allow a built-in scaffold fallback.
+    /// Chỉ lỗi thiếu artifact/registry cho phép fallback; lỗi an toàn/cache phải dừng.
+    pub fn is_availability_failure(&self) -> bool {
+        matches!(
+            self,
+            Self::RequiredLayerMissing { .. } | Self::RegistryUnavailable { .. }
+        )
+    }
+}
+
 impl fmt::Display for ScaffoldResolveError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

@@ -24,6 +24,12 @@ impl AiProcessor {
                  description = \"MagiCore AI Project\"\n\
                  requires-python = \">=3.11\"\n\
                  dependencies = []\n\n\
+                 [dependency-groups]\n\
+                 dev = [\n\
+                     \"pytest==9.1.1\",\n\
+                     \"build==1.6.1\",\n\
+                     \"setuptools==84.0.0\",\n\
+                 ]\n\n\
                  [project.optional-dependencies]\n\
                  model = [\n\
                      \"torch>=2.4.0\",\n\

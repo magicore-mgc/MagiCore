@@ -1116,6 +1116,96 @@ pub fn hook_failed(event: &str, e: &dyn std::fmt::Display) -> Error {
 
 // ===== template.rs =====
 
+pub fn template_download_url_invalid() -> Error {
+    anyhow!(
+        "template downloads require credential-free HTTPS URLs, or HTTP on a loopback registry without HTTPS downgrade"
+    )
+}
+
+pub fn template_request_failed() -> Error {
+    anyhow!("template registry request failed or exceeded its timeout")
+}
+
+pub fn template_metadata_invalid() -> Error {
+    anyhow!("template registry returned invalid JSON metadata")
+}
+
+pub fn template_redirect_invalid() -> Error {
+    anyhow!("template registry returned an invalid redirect or exceeded the redirect limit")
+}
+
+#[derive(Debug)]
+pub struct TemplateHttpStatus(pub u16);
+
+impl std::fmt::Display for TemplateHttpStatus {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "template download failed with HTTP {}", self.0)
+    }
+}
+
+impl std::error::Error for TemplateHttpStatus {}
+
+#[derive(Debug)]
+pub struct TemplateTransportUnavailable;
+
+impl std::fmt::Display for TemplateTransportUnavailable {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("template registry transport is unavailable or timed out")
+    }
+}
+
+impl std::error::Error for TemplateTransportUnavailable {}
+
+pub fn template_transport_unavailable() -> Error {
+    anyhow!(TemplateTransportUnavailable)
+}
+
+pub fn template_download_status(status: u16) -> Error {
+    anyhow!(TemplateHttpStatus(status))
+}
+
+pub fn template_download_too_large(limit: usize) -> Error {
+    anyhow!("template response exceeds the {limit} byte limit")
+}
+
+pub fn template_integrity_invalid() -> Error {
+    anyhow!("template archive requires a valid SHA-256, SHA-384, or SHA-512 SRI digest")
+}
+
+pub fn template_integrity_mismatch() -> Error {
+    anyhow!("template archive integrity mismatch")
+}
+
+pub fn template_layer_identity_invalid() -> Error {
+    anyhow!(
+        "template core/name must identify a supported core and a relative layer without traversal, drive prefixes, or control characters"
+    )
+}
+
+pub fn template_cache_unsafe_path(path: &std::path::Path) -> Error {
+    anyhow!(
+        "refusing unsafe, linked, or non-directory template cache path '{}'",
+        path.display()
+    )
+}
+
+pub fn template_archive_layout_invalid() -> Error {
+    anyhow!("template archive must contain one package directory with template.toml and sources")
+}
+
+pub fn template_cache_rollback_failed(
+    target: &std::path::Path,
+    retained: &std::path::Path,
+    publish: &dyn std::fmt::Display,
+    rollback: &dyn std::fmt::Display,
+) -> Error {
+    anyhow!(
+        "cannot publish template cache '{}': {publish}; rollback failed: {rollback}; previous cache retained under '{}'",
+        target.display(),
+        retained.display()
+    )
+}
+
 pub fn registry_missing_field(field: &str) -> Error {
     anyhow!("Registry response missing {field}")
 }
@@ -1320,6 +1410,30 @@ pub fn web_scaffold_latest_tag_missing(package: &str) -> Error {
 /// latest tag trong npm metadata không phải semantic version hợp lệ.
 pub fn web_scaffold_latest_tag_invalid(package: &str) -> Error {
     anyhow!("npm latest dist-tag for '{package}' is invalid")
+}
+
+/// npm metadata does not contain a user-selected dist-tag.
+/// npm metadata không có dist-tag mà người dùng đã chọn.
+pub fn web_scaffold_dist_tag_missing(package: &str, tag: &str) -> Error {
+    anyhow!("npm metadata for '{package}' has no '{tag}' dist-tag")
+}
+
+/// The selected npm dist-tag does not point at a valid semantic version.
+/// Dist-tag được chọn không trỏ tới semantic version hợp lệ.
+pub fn web_scaffold_dist_tag_invalid(package: &str, tag: &str) -> Error {
+    anyhow!("npm '{tag}' dist-tag for '{package}' is invalid")
+}
+
+/// The selected npm dist-tag points at a version blocked by the age policy.
+/// Version của dist-tag bị policy tuổi phát hành chặn.
+pub fn web_scaffold_dist_tag_not_eligible(
+    package: &str,
+    tag: &str,
+    version: &mgc_types::Version,
+) -> Error {
+    anyhow!(
+        "npm '{tag}' dist-tag for '{package}' points to {version}, which does not satisfy the configured minimum-release-age policy"
+    )
 }
 
 /// No stable npm release satisfies the active minimum-release-age policy.
@@ -2307,4 +2421,74 @@ pub fn dlx_invalid_package_bins() -> Error {
 }
 pub fn dlx_bin_target_mismatch() -> Error {
     anyhow!("dlx: executable does not match the requested package's declared target")
+}
+
+/// Container scaffolding cannot map a split web project to one runtime image.
+/// Không thể gộp fullstack/monorepo nhiều runtime vào một image container.
+pub fn web_container_runtime_split_unsupported() -> Error {
+    anyhow!(
+        "container scaffolding currently requires one runtime per web project; split fullstack/monorepo containers are not implemented"
+    )
+}
+
+/// Container scaffolding currently has a verified Node web runtime only.
+/// Lane container hiện chỉ xác minh runtime web Node.
+pub fn web_container_node_lane_required() -> Error {
+    anyhow!(
+        "container scaffolding currently supports Node web projects only; non-Node web lanes are not implemented"
+    )
+}
+
+/// A requested container action has no implemented MGC lifecycle profile.
+/// Lệnh container chỉ được tạo khi có profile lifecycle MGC đã triển khai.
+pub fn container_profile_unsupported(core: &str, framework: &str, runtime: &str) -> Error {
+    anyhow!(
+        "container scaffolding has no MGC lifecycle profile for core '{core}', framework '{framework}', runtime '{runtime}'"
+    )
+}
+
+/// Kubernetes output is limited to the verified HTTP service lane.
+/// Kubernetes chỉ được sinh cho lane dịch vụ HTTP đã xác minh.
+pub fn k8s_profile_unsupported(core: &str) -> Error {
+    anyhow!(
+        "Kubernetes scaffolding is currently supported only for Web HTTP services; core '{core}' has no verified workload profile"
+    )
+}
+
+/// A selected framework must match a native container manifest profile.
+/// Framework phải khớp manifest container native được hỗ trợ.
+pub fn container_manifest_required(core: &str, framework: &str, manifest: &str) -> Error {
+    anyhow!(
+        "Docker scaffolding for core '{core}' framework '{framework}' requires the supported project manifest '{manifest}'"
+    )
+}
+
+/// A scaffold framework spec failed canonical parsing.
+/// Framework spec scaffold không qua được bước phân tích tên chuẩn.
+pub fn invalid_framework_spec(core: &str, framework: &str, detail: &str) -> Error {
+    anyhow!("invalid {core} framework specification '{framework}': {detail}")
+}
+
+/// Invalid manifest source/target path — đường dẫn template không được thoát root.
+pub fn template_materialization_path_invalid(path: &str) -> Error {
+    anyhow!("Unsafe template materialization path: {:?}", path)
+}
+
+/// Bound manifest parsing allocation — giới hạn bộ nhớ trước parse manifest.
+pub fn template_manifest_too_large(limit: u64) -> Error {
+    anyhow!("Template manifest exceeds the {} byte limit", limit)
+}
+
+/// Publishing errors never echo registry bodies or credential-bearing URLs.
+/// Không đưa response body hoặc URL có credential vào lỗi publish.
+pub fn template_publish_status(status: u16) -> Error {
+    if status == 409 {
+        anyhow!("Template version already exists; bump --version")
+    } else {
+        anyhow!("Template publish failed with HTTP {}", status)
+    }
+}
+
+pub fn template_publish_auth_required() -> Error {
+    anyhow!("Template registry requires authentication; set MGC_NPM_TOKEN")
 }

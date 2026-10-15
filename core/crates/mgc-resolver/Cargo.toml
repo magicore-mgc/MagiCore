@@ -53,7 +53,7 @@ zip = { workspace = true }
 # Windows atomic replacement for extracted archive files.
 # Thay file giải nén nguyên tử trên Windows.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.52", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }
 
 # Test riêng — test/ folder (RULE §5: cấm #[cfg(test)] trong src/)
 [[test]]

@@ -46,6 +46,24 @@ pub struct Database {
 const STORE_DB_SCHEMA_VERSION: i64 = 1;
 const STORE_DB_BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// Convert a non-negative Rust integer to SQLite's signed INTEGER range.
+/// Chuyển số không âm của Rust vào miền INTEGER có dấu của SQLite.
+pub(crate) fn sqlite_i64(value: u64) -> rusqlite::Result<i64> {
+    i64::try_from(value).map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
+}
+
+/// Decode SQLite INTEGER without wrapping negative or out-of-range values.
+/// Đọc INTEGER SQLite và từ chối giá trị âm hoặc vượt miền thay vì wrap.
+pub(crate) fn u64_from_sqlite(value: i64, column: usize) -> rusqlite::Result<u64> {
+    u64::try_from(value).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            column,
+            rusqlite::types::Type::Integer,
+            Box::new(error),
+        )
+    })
+}
+
 fn shared_claim_write_gate(path: &Path) -> Result<Arc<Mutex<()>>> {
     static GATES: OnceLock<Mutex<HashMap<PathBuf, Weak<Mutex<()>>>>> = OnceLock::new();
 
@@ -518,6 +536,7 @@ impl Database {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        let now = sqlite_i64(now)?;
 
         self.conn.execute(
             "INSERT OR REPLACE INTO packages (id, version, integrity, installed_at) VALUES (?1, ?2, ?3, ?4)",
@@ -547,7 +566,7 @@ impl Database {
                 id: row.get(0)?,
                 version: row.get(1)?,
                 integrity: row.get(2)?,
-                installed_at: row.get(3)?,
+                installed_at: u64_from_sqlite(row.get(3)?, 3)?,
             })
         })?;
 
@@ -579,6 +598,7 @@ impl Database {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        let now = sqlite_i64(now)?;
 
         self.conn.execute(
             "INSERT OR REPLACE INTO integrity_cache (hash, verified_at) VALUES (?1, ?2)",
@@ -1353,7 +1373,7 @@ impl Database {
                     id.version().to_string(),
                     path,
                     hash,
-                    size
+                    sqlite_i64(*size)?
                 ])?;
             }
         }
@@ -1368,7 +1388,7 @@ impl Database {
              WHERE id = ?1 AND version = ?2 ORDER BY path",
         )?;
         let rows = stmt.query_map(params![id.name_str(), id.version().to_string()], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            Ok((row.get(0)?, row.get(1)?, u64_from_sqlite(row.get(2)?, 2)?))
         })?;
         let mut result = Vec::new();
         for row in rows {
@@ -1423,6 +1443,7 @@ impl Database {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        let now = sqlite_i64(now)?;
         self.conn.execute(
             "INSERT OR REPLACE INTO trust_policy (package_id, policy, updated_at) VALUES (?1, ?2, ?3)",
             params![package_id, policy, now],
@@ -1434,7 +1455,9 @@ impl Database {
         let mut stmt = self.conn.prepare(
             "SELECT package_id, policy, updated_at FROM trust_policy ORDER BY package_id",
         )?;
-        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, u64_from_sqlite(row.get(2)?, 2)?))
+        })?;
         let mut result = Vec::new();
         for row in rows {
             result.push(row?);
@@ -1469,7 +1492,7 @@ impl Database {
         let mut stmt = self
             .conn
             .prepare("SELECT min_age_secs FROM release_policy WHERE ecosystem = ?1")?;
-        let mut rows = stmt.query_map(params![ecosystem], |row| row.get::<_, u64>(0))?;
+        let mut rows = stmt.query_map(params![ecosystem], |row| u64_from_sqlite(row.get(0)?, 0))?;
         match rows.next() {
             Some(Ok(v)) => Ok(Some(v)),
             Some(Err(e)) => Err(e.into()),
@@ -1480,7 +1503,7 @@ impl Database {
     pub fn upsert_release_policy(&self, ecosystem: &str, min_age_secs: u64) -> Result<()> {
         self.conn.execute(
             "INSERT OR REPLACE INTO release_policy (ecosystem, min_age_secs) VALUES (?1, ?2)",
-            params![ecosystem, min_age_secs],
+            params![ecosystem, sqlite_i64(min_age_secs)?],
         )?;
         Ok(())
     }

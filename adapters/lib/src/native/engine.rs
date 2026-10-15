@@ -43,11 +43,11 @@ pub async fn resolve_with_protocol(
 /// Resolve both runtime and development dependencies through a native protocol.
 /// Resolve cả dependency runtime và development qua protocol native.
 ///
-/// App ecosystems such as Flutter need dev packages in the installed graph so
-/// `flutter test --no-pub` can use SDK-provided test packages without Pub taking
-/// over resolution. Other callers retain the existing runtime-only contract.
-/// (Các ecosystem App như Flutter cần cài graph dev để `flutter test --no-pub`
-/// dùng package test của SDK mà không giao quyền resolve cho Pub.)
+/// Native Python and App/Flutter callers need dev packages in the installed
+/// graph so test/build tools stay in the MGC lock and do not resolve separately.
+/// Other callers keep the runtime-only contract unless they select this method.
+/// (Python native và App/Flutter cần graph dev để test/build tools cùng nằm
+/// trong lock MGC, không tự resolve ngoài.)
 pub async fn resolve_with_protocol_including_dev(
     protocol: &dyn RegistryProtocol,
     ecosystem: EcosystemTag,

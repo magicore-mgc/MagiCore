@@ -4,7 +4,7 @@
 use anyhow::{Context, Result};
 use axum::{
     Json, Router,
-    extract::{ConnectInfo, DefaultBodyLimit, Query, State},
+    extract::{DefaultBodyLimit, Query, State},
     http::{HeaderMap, StatusCode},
     routing::{get, post, put},
 };
@@ -13,7 +13,6 @@ use mgc_crypto::{Ed25519Signature, KeyPair};
 use mgc_oidc::OidcClaims;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
-use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
 use crate::AppState;
@@ -296,7 +295,10 @@ pub async fn sign_sigstore_attestation(
         ),
     )
     .add_subject(subject_name, digest);
-    let signer = SigningContext::production().signer(identity_token);
+    let signing_context = SigningContext::production()
+        .await
+        .context("initialize Sigstore production signing context")?;
+    let signer = signing_context.signer(identity_token);
     let bundle = tokio::time::timeout(
         std::time::Duration::from_secs(60),
         signer.sign_attestation(statement),
@@ -389,13 +391,13 @@ pub fn routes() -> Router<AppState> {
 async fn exchange_token(
     State((store, auth)): State<AppState>,
     headers: HeaderMap,
-    peer: Option<ConnectInfo<SocketAddr>>,
+    peer: crate::OptionalPeerAddress,
     Json(request): Json<TokenExchangeRequest>,
 ) -> Result<(axum::http::HeaderMap, Json<TokenExchangeResponse>), StatusCode> {
     if !auth.trusted_enabled() {
         return Err(StatusCode::NOT_FOUND);
     }
-    if !auth.trusted_transport_allowed(&headers, peer.map(|ConnectInfo(address)| address)) {
+    if !auth.trusted_transport_allowed(&headers, crate::peer_address(peer)) {
         return Err(StatusCode::FORBIDDEN);
     }
     let package = scoped_package(&request.protocol, &request.package)?;
@@ -433,13 +435,13 @@ async fn exchange_token(
 async fn set_binding(
     State((store, auth)): State<AppState>,
     headers: HeaderMap,
-    peer: Option<ConnectInfo<SocketAddr>>,
+    peer: crate::OptionalPeerAddress,
     Json(request): Json<BindingRequest>,
 ) -> Result<StatusCode, StatusCode> {
     if !auth.trusted_enabled() {
         return Err(StatusCode::NOT_FOUND);
     }
-    if !auth.trusted_transport_allowed(&headers, peer.map(|ConnectInfo(address)| address)) {
+    if !auth.trusted_transport_allowed(&headers, crate::peer_address(peer)) {
         return Err(StatusCode::FORBIDDEN);
     }
     auth.authorize_admin(&headers)?;
@@ -455,7 +457,7 @@ async fn set_binding(
 async fn get_signatures(
     State((store, auth)): State<AppState>,
     headers: HeaderMap,
-    peer: Option<ConnectInfo<SocketAddr>>,
+    peer: crate::OptionalPeerAddress,
     Query(query): Query<SignatureQuery>,
 ) -> Result<Json<AttestationBundle>, StatusCode> {
     if !auth.trusted_enabled() {
@@ -463,7 +465,7 @@ async fn get_signatures(
     }
     let package = scoped_package(&query.protocol, &query.package)?;
     if auth.admin_token.is_some() {
-        if !auth.trusted_transport_allowed(&headers, peer.map(|ConnectInfo(address)| address)) {
+        if !auth.trusted_transport_allowed(&headers, crate::peer_address(peer)) {
             return Err(StatusCode::FORBIDDEN);
         }
         let user = auth

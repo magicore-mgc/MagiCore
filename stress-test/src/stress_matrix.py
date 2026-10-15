@@ -1125,7 +1125,7 @@ def language_runtime_profile(
     if language == "C#":
         filename = ".mgc-stress-dotnet/Program.cs"
         source = f'Console.WriteLine("{marker}");\n'
-        command = "dotnet exec .mgc-stress-dotnet/bin/Debug/net10.0/MgcStressProbe.dll"
+        command = f"dotnet run --no-restore --file {filename}"
         return "dotnet", filename, source, (command,)
     if language == "Java":
         filename = "MgcStressLanguageProbe.java"
@@ -1358,23 +1358,6 @@ def _run_framework_language_probe_for_language(
                 evidence_status="unverified",
             )
 
-    if language == "C#":
-        sdks = run_command(
-            ["dotnet", "--list-sdks"],
-            cwd=project,
-            env=env,
-            timeout_seconds=30,
-        )
-        if sdks.returncode != 0 or not re.search(r"(?m)^10\.", sdks.stdout):
-            return Result(
-                "framework-language-runtime-probe",
-                subject,
-                True,
-                f"C# probe requires an installed .NET 10 SDK; framework runtime remains unverified: {sdks.stdout[-600:]}",
-                sdks.returncode,
-                "unverified",
-            )
-
     marker = f"MGC_STRESS_LANGUAGE_RUNTIME:{language}"
     try:
         fixture_root = Path(env.get("MGC_DATA_DIR", project.parent))
@@ -1408,7 +1391,7 @@ def _run_framework_language_probe_for_language(
             )
         elif language == "Go":
             (probe_project / "go.mod").write_text(
-                "module example.com/mgc-stress-language-probe\n\ngo 1.21\n",
+                "module example.com/mgc-stress-language-probe\n\ngo 1.27.0\n",
                 encoding="utf-8",
             )
         elif language == "Dart":
@@ -1431,22 +1414,6 @@ def _run_framework_language_probe_for_language(
             commands = (
                 f"TMPDIR={shlex.quote(str(compiler_temp))} {commands[0]}",
                 *commands[1:],
-            )
-        if language == "C#":
-            (probe_project / ".mgc-stress-dotnet/MgcStressProbe.csproj").write_text(
-                "<Project Sdk=\"Microsoft.NET.Sdk\">\n"
-                "  <PropertyGroup>\n"
-                "    <OutputType>Exe</OutputType>\n"
-                "    <TargetFramework>net10.0</TargetFramework>\n"
-                "    <ImplicitUsings>enable</ImplicitUsings>\n"
-                "    <Nullable>enable</Nullable>\n"
-                "  </PropertyGroup>\n"
-                "</Project>\n",
-                encoding="utf-8",
-            )
-            (probe_project / "NuGet.Config").write_text(
-                "<configuration><packageSources><clear /></packageSources></configuration>\n",
-                encoding="utf-8",
             )
         if language == "GDScript":
             (probe_project / ".mgc-stress-godot/project.godot").write_text(
@@ -1481,6 +1448,42 @@ def _run_framework_language_probe_for_language(
             probe_env.update(
                 {"GOPROXY": "off", "GOSUMDB": "off", "GOTOOLCHAIN": "local"}
             )
+            if core == "web":
+                # Qualify Go through the product install/build path, then execute its artifact.
+                # Xác minh Go qua install/build của MGC rồi chạy artifact do MGC tạo.
+                install = run_command(
+                    [str(binary), "install-web"],
+                    cwd=probe_project,
+                    env=probe_env,
+                    timeout_seconds=120,
+                )
+                if install.returncode != 0:
+                    return Result(
+                        "framework-language-runtime-probe",
+                        subject,
+                        False,
+                        f"MGC Go Web install failed: {install.stdout[-2200:]}",
+                        install.returncode,
+                        "unverified",
+                    )
+                build = run_command(
+                    [str(binary), "build", "--core", "web"],
+                    cwd=probe_project,
+                    env=probe_env,
+                    timeout_seconds=120,
+                )
+                if build.returncode != 0:
+                    return Result(
+                        "framework-language-runtime-probe",
+                        subject,
+                        False,
+                        f"MGC Go Web build failed: {build.stdout[-2200:]}",
+                        build.returncode,
+                        "unverified",
+                    )
+                output_name = "server.exe" if os.name == "nt" else "server"
+                executable_path = f"./.magicore/build/go/{output_name}"
+                commands = (f"bash -c {shlex.quote(executable_path)}",)
         if language == "Swift":
             swift_cache = probe_project / ".mgc-swift-module-cache"
             swift_sdk_cache = probe_project / ".mgc-swift-sdk-module-cache"
@@ -1488,50 +1491,6 @@ def _run_framework_language_probe_for_language(
             swift_sdk_cache.mkdir(parents=True, exist_ok=True)
             probe_env["CLANG_MODULE_CACHE_PATH"] = str(swift_cache)
             probe_env["SWIFT_MODULECACHE_PATH"] = str(swift_cache)
-        if language == "C#":
-            restore = run_command(
-                [
-                    "dotnet",
-                    "restore",
-                    ".mgc-stress-dotnet/MgcStressProbe.csproj",
-                    "--configfile",
-                    "NuGet.Config",
-                    "--ignore-failed-sources",
-                ],
-                cwd=probe_project,
-                env=probe_env,
-                timeout_seconds=120,
-            )
-            if restore.returncode != 0:
-                return Result(
-                    "framework-language-runtime-probe",
-                    subject,
-                    False,
-                    f"package-free .NET fixture restore failed: {restore.stdout[-2200:]}",
-                    restore.returncode,
-                    "unverified",
-                )
-            build = run_command(
-                [
-                    "dotnet",
-                    "build",
-                    ".mgc-stress-dotnet/MgcStressProbe.csproj",
-                    "--no-restore",
-                ],
-                cwd=probe_project,
-                env=probe_env,
-                timeout_seconds=120,
-            )
-            if build.returncode != 0:
-                return Result(
-                    "framework-language-runtime-probe",
-                    subject,
-                    False,
-                    f"offline .NET fixture build failed: {build.stdout[-2200:]}",
-                    build.returncode,
-                    "unverified",
-                )
-
         outputs: list[str] = []
         completed: subprocess.CompletedProcess[str] | None = None
         for step, command in enumerate(commands, start=1):

@@ -289,12 +289,19 @@ async fn build_ai(root: &Path) -> Result<()> {
             if tool_unavailable(python) {
                 return Err(crate::error::build_toolchain_missing(python));
             }
-            info("Building Python AI package: python -m build");
+            info("Building Python AI package with MGC-managed build backend");
             let mut env = optimizer_envs.into_iter().collect::<Vec<_>>();
+            env.retain(|(key, _)| key != "PYTHONPATH");
+            env.push(("PYTHONPATH".to_string(), String::new()));
             crate::commands::python_runtime::extend_native_python_env(&mut env, root, false)?;
             let env = (!env.is_empty()).then_some(env);
-            run_allowlisted_tool_with_env(root, python, &["-m", "build", "--no-isolation"], env)
-                .map_err(|error| crate::error::python_build_failed(&error))?;
+            run_allowlisted_tool_with_env(
+                root,
+                python,
+                &["-S", "-m", "build", "--no-isolation"],
+                env,
+            )
+            .map_err(|error| crate::error::python_build_failed(&error))?;
         }
         DetectedRuntime::RustCandle => {
             if tool_unavailable("cargo") {
@@ -409,7 +416,7 @@ fn find_local_csproj(root: &std::path::Path) -> Result<Option<std::path::PathBuf
 }
 
 /// Lib build (09 §5): rust → cargo; ts → tsc qua node_modules/.bin (npm-format,
-/// full resolver — không wrapper PM); python → python -m build (fail-closed nếu thiếu module build).
+/// full resolver — không wrapper PM); python → isolated MGC-managed build module.
 #[cfg(feature = "lib")]
 async fn build_lib(root: &Path) -> Result<()> {
     // Load optimizer env for lib runtime
@@ -430,16 +437,21 @@ async fn build_lib(root: &Path) -> Result<()> {
         if tool_unavailable(python) {
             return Err(crate::error::build_toolchain_missing(python));
         }
-        info("Building python lib: python -m build");
+        info("Building python lib with MGC-managed build backend");
 
-        // Load optimizer env for Python
-        let env: Vec<(String, String)> = optimizer_envs.clone().into_iter().collect();
+        // Import only Python packages verified through the project's MGC lock
+        // and shared store. `-S` below prevents host site-packages from
+        // satisfying a missing build backend.
+        let mut env: Vec<(String, String)> = optimizer_envs.into_iter().collect();
+        env.retain(|(key, _)| key != "PYTHONPATH");
+        env.push(("PYTHONPATH".to_string(), String::new()));
+        crate::commands::python_runtime::extend_native_python_env(&mut env, root, false)?;
         let env_opt = if env.is_empty() { None } else { Some(env) };
 
         return run_allowlisted_tool_with_env(
             root,
             python,
-            &["-m", "build", "--no-isolation"],
+            &["-S", "-m", "build", "--no-isolation"],
             env_opt,
         )
         .map_err(|e| crate::error::python_build_failed(&e));

@@ -10,6 +10,11 @@ use std::path::{Path, PathBuf};
 use tempfile;
 
 const DEFAULT_REGISTRY: &str = "https://registry.npmjs.org/";
+const TEMPLATE_FETCH_TIMEOUT_SECS: u64 = 30;
+const MAX_TEMPLATE_REDIRECTS: usize = 5;
+const MAX_TEMPLATE_METADATA_BYTES: usize = 16 * 1024 * 1024;
+const MAX_TEMPLATE_TARBALL_BYTES: usize = 64 * 1024 * 1024;
+const MAX_TEMPLATE_VERSION_BYTES: u64 = 1024;
 /// Tên package trên registry: `mgc-create-<core>-<name>` (Bun/pnpm naming, plan r3, T5).
 /// Name chứa dấu / (layer rel như backend/go/gin) được dash-hoá;
 /// nếu name đã bắt đầu "<core>/" thì core không lặp (publish-all truyền rel đầy đủ).
@@ -31,11 +36,11 @@ pub fn templates_cache_dir() -> PathBuf {
 /// lock, concurrent first-run processes can each remove/extract the same
 /// shared cache directory and observe a partially materialized layer.
 /// (Tuần tự hóa refresh layer embedded giữa các process MagiCore.)
-fn lock_embedded_cache_layer(cache_root: &Path, rel: &str) -> Result<fs::File> {
+pub(crate) fn lock_embedded_cache_layer(cache_root: &Path, rel: &str) -> Result<fs::File> {
     let lock_dir = cache_root.join(".locks");
     fs::create_dir_all(&lock_dir)?;
     let lock_dir_metadata = fs::symlink_metadata(&lock_dir)?;
-    if lock_dir_metadata.file_type().is_symlink() || !lock_dir_metadata.is_dir() {
+    if template_cache_is_link(&lock_dir_metadata) || !lock_dir_metadata.is_dir() {
         bail!("embedded template cache lock directory is not a real directory");
     }
     let key = blake3::hash(rel.as_bytes()).to_hex().to_string();
@@ -56,7 +61,7 @@ fn lock_embedded_cache_layer(cache_root: &Path, rel: &str) -> Result<fs::File> {
     }
     let file = options.open(&lock_path)?;
     let metadata = fs::symlink_metadata(&lock_path)?;
-    if !metadata.is_file() || metadata.file_type().is_symlink() || !file.metadata()?.is_file() {
+    if !metadata.is_file() || template_cache_is_link(&metadata) || !file.metadata()?.is_file() {
         bail!("embedded template cache lock is not a regular file");
     }
     fs2::FileExt::lock_exclusive(&file)?;
@@ -67,8 +72,11 @@ fn lock_embedded_cache_layer(cache_root: &Path, rel: &str) -> Result<fs::File> {
 /// hoặc full rel (backend/go/gin → giữ nguyên).
 /// Cache cũng nằm theo rel này để TemplateRoot::resolve thấy.
 pub fn layer_rel(core: &str, name: &str) -> String {
-    if name.contains('/') {
+    if name.starts_with(&format!("{core}/")) {
         return name.to_string();
+    }
+    if name.contains('/') {
+        return format!("{core}/{name}");
     }
     if core == "web" {
         format!("web/frontend/{name}")
@@ -135,7 +143,7 @@ pub async fn run(cmd: TemplateCmd) -> Result<()> {
 }
 
 /// Publish toàn bộ layer có đủ template.toml+sources, mọi core (web/lib/cicd/...).
-/// Nguồn đọc qua TemplateRoot::resolve (MAGICORE_TEMPLATE_DIR → workspace disk → cache).
+/// Nguồn đọc qua TemplateRoot::resolve (MAGICORE_TEMPLATE_DIR → registry cache).
 async fn publish_all() -> Result<()> {
     let root = crate::scaffold::template_root::TemplateRoot::resolve("");
     let root_path = root.path();
@@ -189,20 +197,19 @@ fn collect_layers_under(root: &Path, out: &mut Vec<PathBuf>) {
 /// Publish kernel template layer `templates/{core}/{name}` thành package
 /// `mgc-create-<core>-<name>` trên registry (mgc-pack tarball + npm PUT).
 async fn publish(args: TemplatePublishArgs) -> Result<()> {
+    validate_template_identity(&args.core, &args.name)?;
     let rel = layer_rel(&args.core, &args.name);
     let layer = crate::scaffold::template_root::TemplateRoot::resolve(&rel)
         .path()
         .to_path_buf();
-    if !layer.join("template.toml").is_file() || !layer.join("sources").is_dir() {
-        bail!(
-            "Template layer '{}' missing template.toml/sources",
-            layer.display()
-        );
+    if !template_layer_has_contract(&layer)? {
+        return Err(crate::error::template_layer_missing_manifest(&rel));
     }
 
     let version = args.version.unwrap_or_else(|| "0.1.0".to_string());
+    semver::Version::parse(&version).map_err(|_| crate::error::template_metadata_invalid())?;
     let name = registry_package_name(&args.core, &args.name);
-    let registry = select_registry(args.registry.as_deref())?;
+    let registry = template_registry_url(&select_registry(args.registry.as_deref())?)?.to_string();
 
     let temp_dir = tempfile::tempdir()?;
     let tarball_path = temp_dir
@@ -217,7 +224,7 @@ async fn publish(args: TemplatePublishArgs) -> Result<()> {
             .map(|u| u.host_str().unwrap_or_default().to_string())
             .unwrap_or_default();
         if host.contains("npmjs") || host.contains("npm") {
-            bail!("Registry '{}' requires auth — set MGC_NPM_TOKEN", registry);
+            return Err(crate::error::template_publish_auth_required());
         }
     }
 
@@ -242,50 +249,285 @@ async fn publish(args: TemplatePublishArgs) -> Result<()> {
 
 /// Fetch template layer về cache registry.
 pub async fn fetch(args: TemplateFetchArgs) -> Result<PathBuf> {
+    let (path, _) = fetch_layer_at(args, &templates_cache_dir(), None).await?;
+    Ok(path)
+}
+
+async fn fetch_layer_at(
+    args: TemplateFetchArgs,
+    cache_root: &Path,
+    auth_override: Option<&mgc_publish::auth::Auth>,
+) -> Result<(PathBuf, String)> {
+    validate_template_identity(&args.core, &args.name)?;
     let registry = select_registry(args.registry.as_deref())?;
     let name = registry_package_name(&args.core, &args.name);
     let tag = args.tag.unwrap_or_else(|| "latest".to_string());
 
-    let client = reqwest::Client::new();
-    let auto = register_fetch_auth(&registry).await;
-    // GET full manifest: registry server chỉ route GET /:name (không có /:name/:tag).
-    let mut req = client.get(format!("{}/{}", registry.trim_end_matches('/'), name));
-    if let Some(h) = auto.header_value() {
-        req = req.header("Authorization", h);
-    }
-    let meta_resp = req.send().await?;
-    if !meta_resp.status().is_success() {
-        return Err(crate::error::template_not_published(
-            &name,
-            meta_resp.status().as_u16(),
-        ));
-    }
-    let meta: serde_json::Value = meta_resp.json().await?;
-
-    // dist-tags[tag] → version → versions[version].dist.tarball
-    let version = meta
-        .pointer(&format!("/dist-tags/{tag}"))
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| crate::error::registry_missing_field(&format!("dist-tags/{tag}")))?;
-    let tarball_url = meta
-        .pointer(&format!("/versions/{version}/dist/tarball"))
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| crate::error::registry_missing_field("dist.tarball"))?;
-
-    let bytes = {
-        let mut treq = client.get(tarball_url);
-        if let Some(h) = auto.header_value() {
-            treq = treq.header("Authorization", h);
-        }
-        treq.send().await?.bytes().await?
+    let registry_url = template_registry_url(&registry)?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(TEMPLATE_FETCH_TIMEOUT_SECS))
+        .build()
+        .map_err(|_| crate::error::template_request_failed())?;
+    let auto = match auth_override {
+        Some(auth) => auth.clone(),
+        None => register_fetch_auth(&registry).await,
     };
+    let authorization = auto.header_value();
+    let mut metadata_url = registry_url.clone();
+    metadata_url
+        .path_segments_mut()
+        .map_err(|_| crate::error::template_download_url_invalid())?
+        .pop_if_empty()
+        .push(&name);
+    let metadata = download_template_bytes(
+        &client,
+        metadata_url,
+        &registry_url,
+        authorization.as_deref(),
+        MAX_TEMPLATE_METADATA_BYTES,
+    )
+    .await?;
+    let meta: serde_json::Value =
+        serde_json::from_slice(&metadata).map_err(|_| crate::error::template_metadata_invalid())?;
 
-    let target = cached_layer_path(&args.core, &args.name);
-    fs::create_dir_all(&target)?;
-    extract_tarball_into(&bytes, &target)?;
+    let versions = meta
+        .get("versions")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| crate::error::registry_missing_field("versions"))?;
+    let version = versions
+        .get(&tag)
+        .map(|_| tag.as_str())
+        .or_else(|| {
+            meta.get("dist-tags")
+                .and_then(|tags| tags.get(&tag))
+                .and_then(serde_json::Value::as_str)
+        })
+        .ok_or_else(|| crate::error::registry_missing_field(&format!("dist-tags/{tag}")))?;
+    semver::Version::parse(version).map_err(|_| crate::error::template_metadata_invalid())?;
+    let dist = versions
+        .get(version)
+        .and_then(|entry| entry.get("dist"))
+        .ok_or_else(|| crate::error::registry_missing_field("version.dist"))?;
+    let tarball = dist
+        .get("tarball")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| crate::error::registry_missing_field("dist.tarball"))?;
+    let integrity = dist
+        .get("integrity")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| crate::error::registry_missing_field("dist.integrity"))?;
+    let tarball_url = registry_url
+        .join(tarball)
+        .map_err(|_| crate::error::template_download_url_invalid())?;
+    let bytes = download_template_bytes(
+        &client,
+        tarball_url,
+        &registry_url,
+        authorization.as_deref(),
+        MAX_TEMPLATE_TARBALL_BYTES,
+    )
+    .await?;
+    verify_template_integrity(&bytes, integrity)?;
+
+    fs::create_dir_all(cache_root)?;
+    if template_cache_is_link(&fs::symlink_metadata(cache_root)?) {
+        return Err(crate::error::template_cache_unsafe_path(cache_root));
+    }
+    let cache_root = cache_root.canonicalize()?;
+    let rel = layer_rel(&args.core, &args.name);
+    let target = cache_root.join(&rel);
+    let _cache_lock = lock_embedded_cache_layer(&cache_root, &rel)?;
+    extract_tarball_into(&bytes, &target, Some(version))?;
 
     println!("Template '{}' fetched → {}", name, target.display());
-    Ok(target)
+    Ok((target, version.to_string()))
+}
+
+fn template_registry_url(value: &str) -> Result<url::Url> {
+    let mut url =
+        url::Url::parse(value).map_err(|_| crate::error::template_download_url_invalid())?;
+    validate_template_download_url(&url, &url)?;
+    if url.query().is_some() {
+        return Err(crate::error::template_download_url_invalid());
+    }
+    url.path_segments_mut()
+        .map_err(|_| crate::error::template_download_url_invalid())?
+        .pop_if_empty()
+        .push("");
+    Ok(url)
+}
+
+fn validate_template_download_url(url: &url::Url, registry: &url::Url) -> Result<()> {
+    let loopback = url.host_str().is_some_and(|host| {
+        host.eq_ignore_ascii_case("localhost")
+            || host
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|address| address.is_loopback())
+    });
+    if !matches!(url.scheme(), "https" | "http")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+        || (url.scheme() == "http" && (!loopback || registry.scheme() == "https"))
+    {
+        return Err(crate::error::template_download_url_invalid());
+    }
+    Ok(())
+}
+
+fn template_auth_allowed(registry: &url::Url, target: &url::Url) -> bool {
+    if registry.origin() != target.origin() {
+        return false;
+    }
+    let prefix = registry.path().trim_end_matches('/');
+    if prefix.is_empty() {
+        return true;
+    }
+    let path = target.path();
+    let lower = path.to_ascii_lowercase();
+    !["%2f", "%5c", "%2e", "%25"]
+        .iter()
+        .any(|encoded| lower.contains(encoded))
+        && (path == prefix || path.starts_with(&format!("{prefix}/")))
+}
+
+/// Re-evaluate credential scope on every hop; never let redirects forward auth implicitly.
+/// Từng redirect phải xét lại origin/path; CDN ngoài registry không nhận credential.
+async fn download_template_bytes(
+    client: &reqwest::Client,
+    mut target: url::Url,
+    registry: &url::Url,
+    authorization: Option<&str>,
+    limit: usize,
+) -> Result<Vec<u8>> {
+    let started = std::time::Instant::now();
+    let budget = std::time::Duration::from_secs(TEMPLATE_FETCH_TIMEOUT_SECS);
+    for redirect in 0..=MAX_TEMPLATE_REDIRECTS {
+        validate_template_download_url(&target, registry)?;
+        let remaining = budget.saturating_sub(started.elapsed());
+        if remaining.is_zero() {
+            return Err(crate::error::template_request_failed());
+        }
+        let mut request = client.get(target.clone()).timeout(remaining);
+        if template_auth_allowed(registry, &target)
+            && let Some(header) = authorization
+        {
+            request = request.header(reqwest::header::AUTHORIZATION, header);
+        }
+        let mut response = request.send().await.map_err(|error| {
+            if error.is_connect() || error.is_timeout() {
+                crate::error::template_transport_unavailable()
+            } else {
+                crate::error::template_request_failed()
+            }
+        })?;
+        if response.status().is_redirection() {
+            if redirect == MAX_TEMPLATE_REDIRECTS {
+                return Err(crate::error::template_redirect_invalid());
+            }
+            let location = response
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|value| value.to_str().ok())
+                .ok_or_else(crate::error::template_redirect_invalid)?;
+            target = target
+                .join(location)
+                .map_err(|_| crate::error::template_redirect_invalid())?;
+            continue;
+        }
+        if !response.status().is_success() {
+            return Err(crate::error::template_download_status(
+                response.status().as_u16(),
+            ));
+        }
+        if response
+            .content_length()
+            .is_some_and(|length| length > limit as u64)
+        {
+            return Err(crate::error::template_download_too_large(limit));
+        }
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|_| crate::error::template_request_failed())?
+        {
+            if chunk.len() > limit.saturating_sub(bytes.len()) {
+                return Err(crate::error::template_download_too_large(limit));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        return Ok(bytes);
+    }
+    Err(crate::error::template_redirect_invalid())
+}
+
+fn verify_template_integrity(bytes: &[u8], integrity: &str) -> Result<()> {
+    use base64::Engine;
+    use sha2::{Digest, Sha256, Sha384, Sha512};
+    let rank = |token: &str| {
+        let algorithm = token
+            .split_once('-')
+            .map(|(algorithm, _)| algorithm)
+            .unwrap_or("");
+        if algorithm.eq_ignore_ascii_case("sha512") {
+            3
+        } else if algorithm.eq_ignore_ascii_case("sha384") {
+            2
+        } else if algorithm.eq_ignore_ascii_case("sha256") {
+            1
+        } else {
+            0
+        }
+    };
+    let strongest = integrity
+        .split_whitespace()
+        .map(rank)
+        .max()
+        .filter(|rank| *rank > 0)
+        .ok_or_else(crate::error::template_integrity_invalid)?;
+    let actual = match strongest {
+        3 => Sha512::digest(bytes).to_vec(),
+        2 => Sha384::digest(bytes).to_vec(),
+        _ => Sha256::digest(bytes).to_vec(),
+    };
+    let mut saw_valid_digest = false;
+    for token in integrity
+        .split_whitespace()
+        .filter(|token| rank(token) == strongest)
+    {
+        let hash = token
+            .split_once('-')
+            .map(|(_, hash)| hash)
+            .unwrap_or("")
+            .split('?')
+            .next()
+            .unwrap_or("");
+        if hash.len() > actual.len().div_ceil(3) * 4 {
+            continue;
+        }
+        let Ok(expected) = base64::engine::general_purpose::STANDARD
+            .decode(hash)
+            .or_else(|_| base64::engine::general_purpose::STANDARD_NO_PAD.decode(hash))
+        else {
+            continue;
+        };
+        if expected.len() != actual.len() {
+            continue;
+        }
+        saw_valid_digest = true;
+        if expected == actual {
+            return Ok(());
+        }
+    }
+    if !saw_valid_digest {
+        return Err(crate::error::template_integrity_invalid());
+    }
+    Err(crate::error::template_integrity_mismatch())
 }
 
 /// Đảm bảo template layer có sẵn (disk / cache) — nếu thiếu và registry có config,
@@ -298,21 +540,122 @@ pub async fn ensure_layer(
     crate::scaffold::resolver::ScaffoldResolveStatus,
     crate::scaffold::resolver::ScaffoldResolveError,
 > {
+    ensure_layer_in(rel, &templates_cache_dir(), None, None).await
+}
+
+async fn ensure_layer_in(
+    requested_layer: &str,
+    configured_cache_root: &Path,
+    registry_override: Option<&str>,
+    auth_override: Option<&mgc_publish::auth::Auth>,
+) -> Result<
+    crate::scaffold::resolver::ScaffoldResolveStatus,
+    crate::scaffold::resolver::ScaffoldResolveError,
+> {
     use crate::scaffold::embedded::EmbeddedKernel;
     use crate::scaffold::resolver::{ScaffoldResolveError, ScaffoldResolveStatus};
-    use crate::scaffold::spec::{CoreKind, parse_scaffold_spec};
+    use crate::scaffold::spec::{CoreKind, ScaffoldRef, parse_scaffold_spec};
 
-    // Parse layer path để lấy core/name (web/frontend/nextjs → core=web, name=nextjs)
-    // Layer rel có thể là:
-    // - "web/frontend/nextjs" → name="nextjs"
-    // - "web/shared/partials/base" → full path
-    // - "app/flutter@stable" → name="flutter@stable" (đã có @tag)
-    let segments: Vec<&str> = rel.split('/').collect();
-    let core_str = segments.first().unwrap_or(&"web");
-    let core = CoreKind::from_str_core(core_str)
-        .ok_or_else(|| ScaffoldResolveError::Other(format!("Unknown core: {}", core_str)))?;
-
-    let name_segment = segments.last().unwrap_or(&"unknown");
+    let (prefix, leaf) = requested_layer.rsplit_once('/').ok_or_else(|| {
+        ScaffoldResolveError::Other(crate::error::template_layer_identity_invalid().to_string())
+    })?;
+    let core_str = prefix.split('/').next().unwrap_or("");
+    let core =
+        CoreKind::from_str_core(core_str).ok_or_else(|| ScaffoldResolveError::UnsupportedCore {
+            core: core_str.to_string(),
+        })?;
+    let spec = parse_scaffold_spec(core, leaf)
+        .map_err(|error| ScaffoldResolveError::Other(error.to_string()))?;
+    let canonical_layer = format!("{prefix}/{}", spec.normalized_name);
+    validate_template_identity(core_str, &canonical_layer)
+        .map_err(|error| ScaffoldResolveError::Other(error.to_string()))?;
+    let rel = canonical_layer.as_str();
+    let name_segment = spec.normalized_name.as_str();
+    fs::create_dir_all(configured_cache_root)
+        .map_err(|error| ScaffoldResolveError::Other(error.to_string()))?;
+    if template_cache_is_link(
+        &fs::symlink_metadata(configured_cache_root)
+            .map_err(|error| ScaffoldResolveError::Other(error.to_string()))?,
+    ) {
+        return Err(ScaffoldResolveError::Other(
+            crate::error::template_cache_unsafe_path(configured_cache_root).to_string(),
+        ));
+    }
+    let cache_root = configured_cache_root
+        .canonicalize()
+        .map_err(|error| ScaffoldResolveError::Other(error.to_string()))?;
+    let dev_candidate = std::env::var_os("MAGICORE_TEMPLATE_DIR")
+        .map(|root| PathBuf::from(root).join(rel))
+        .filter(|path| path.is_dir());
+    let is_dev_override = dev_candidate.is_some();
+    let visible_path = dev_candidate.unwrap_or_else(|| cache_root.join(rel));
+    // Inspect existing ancestors before reading cache markers or manifests.
+    // Không đọc xuyên symlink cha; cache chưa tồn tại không cần tạo thư mục rỗng.
+    if !is_dev_override {
+        let mut ancestor = visible_path.parent();
+        while let Some(path) = ancestor {
+            if path == cache_root {
+                break;
+            }
+            match fs::symlink_metadata(path) {
+                Ok(metadata) if template_cache_is_link(&metadata) || !metadata.is_dir() => {
+                    return Err(ScaffoldResolveError::Other(
+                        crate::error::template_cache_unsafe_path(path).to_string(),
+                    ));
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(ScaffoldResolveError::Other(error.to_string())),
+            }
+            ancestor = path.parent();
+        }
+    }
+    let has_contract = template_layer_has_contract(&visible_path)
+        .map_err(|error| ScaffoldResolveError::Other(error.to_string()))?;
+    let embedded_version = EmbeddedKernel::layer_version_path(rel)
+        .or_else(|| EmbeddedKernel::layer_version(core_str, name_segment));
+    let cached_version = read_template_cache_version(&visible_path)
+        .map_err(|error| ScaffoldResolveError::Other(error.to_string()))?;
+    if has_contract
+        && (is_dev_override
+            || (template_cache_matches_ref(&spec.requested_ref, cached_version.as_deref())
+                && (cached_version.is_some() || embedded_version.is_none())))
+    {
+        if !is_dev_override {
+            ensure_template_cache_parent(visible_path.parent().unwrap_or(&cache_root))
+                .map_err(|error| ScaffoldResolveError::Other(error.to_string()))?;
+        }
+        if cached_version.is_none() && !is_dev_override {
+            mgc_ui::warning(
+                "Using an unversioned local template cache; fetch the layer again to record its version",
+            );
+        }
+        return Ok(ScaffoldResolveStatus::CacheHit {
+            layer: rel.to_string(),
+            version: cached_version,
+            path: visible_path,
+        });
+    }
+    if is_dev_override && !has_contract {
+        return Err(ScaffoldResolveError::Other(
+            crate::error::template_layer_missing_manifest(rel).to_string(),
+        ));
+    }
+    // A compiled processor needs no extracted snapshot or unused per-layer cache.
+    // Chỉ mặc định dùng processor builtin; version/tag tường minh vẫn phải resolve registry.
+    if matches!(&spec.requested_ref, ScaffoldRef::Default)
+        && !has_contract
+        && crate::scaffold::processor::has_builtin_scaffold_processor(rel)
+    {
+        return Ok(ScaffoldResolveStatus::Embedded {
+            layer: rel.to_string(),
+        });
+    }
+    let use_embedded = match &spec.requested_ref {
+        ScaffoldRef::Default => true,
+        ScaffoldRef::Version(version) => embedded_version == Some(version.as_str()),
+        _ => false,
+    };
 
     /// Legacy embedded-cache freshness: a `.mgc-embedded-version` marker
     /// records which embedded version was extracted. Missing marker (caches
@@ -325,7 +668,9 @@ pub async fn ensure_layer(
             .ok()
             .map(|v| v.trim().to_string());
         match (cached, version) {
-            (Some(cached), Some(version)) => cached == version,
+            (Some(cached), Some(version)) => {
+                cached == version && template_layer_has_contract(cache_target).unwrap_or(false)
+            }
             _ => false,
         }
     }
@@ -352,7 +697,7 @@ pub async fn ensure_layer(
         match std::fs::symlink_metadata(cache_target) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(error) => Err(error.into()),
-            Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+            Ok(metadata) if template_cache_is_link(&metadata) || !metadata.is_dir() => {
                 anyhow::bail!(
                     "refusing to replace non-directory or linked embedded cache '{}'",
                     cache_target.display()
@@ -366,8 +711,7 @@ pub async fn ensure_layer(
     }
     // 1. Check embedded kernel first
     // Try full path first (web/shared/base), then short form (web/vanilla)
-    if EmbeddedKernel::has_layer_path(rel) {
-        let cache_root = crate::commands::template::templates_cache_dir();
+    if use_embedded && EmbeddedKernel::has_layer_path(rel) {
         // Hold a per-layer OS lock across freshness check, replacement, and
         // version stamping. The lock file lives outside the directory being
         // refreshed, so another process cannot unlink the lock inode.
@@ -399,8 +743,7 @@ pub async fn ensure_layer(
     }
 
     let base_name = name_segment.split('@').next().unwrap_or(name_segment);
-    if EmbeddedKernel::has_layer(core_str, base_name) {
-        let cache_root = crate::commands::template::templates_cache_dir();
+    if use_embedded && EmbeddedKernel::has_layer(core_str, base_name) {
         // Short-form embedded entries use the same cross-process protection.
         // (Layer embedded dạng rút gọn dùng cùng khóa liên-process.)
         let _cache_lock = lock_embedded_cache_layer(&cache_root, rel).map_err(|error| {
@@ -428,146 +771,248 @@ pub async fn ensure_layer(
         });
     }
 
-    // 2. Parse spec for registry lookup
-    // Nếu name_segment đã có @tag (flutter@stable) → dùng nguyên
-    // Nếu không có @tag (flutter) → thêm @latest
-    let spec_input = if name_segment.contains('@') {
-        name_segment.to_string()
-    } else {
-        format!("{}@latest", name_segment)
+    // Use the same npm protocol, configured registry and security boundary as explicit fetch.
+    // Tự động tải qua đúng protocol/config/guard của template fetch, vào cache processor đang đọc.
+    let tag = match &spec.requested_ref {
+        ScaffoldRef::Version(version) | ScaffoldRef::DistTag(version) => version.clone(),
+        ScaffoldRef::Default => "latest".to_string(),
+        ScaffoldRef::Range(_) => {
+            return Err(ScaffoldResolveError::Other(
+                crate::error::template_layer_identity_invalid().to_string(),
+            ));
+        }
     };
-
-    let spec = parse_scaffold_spec(core, &spec_input).map_err(|e| {
-        ScaffoldResolveError::Other(format!("Failed to parse scaffold spec: {}", e))
-    })?;
-
-    // 3. Check versioned cache (Phase 2 - NEW)
-    use crate::scaffold::cache::ScaffoldCache;
-    let cached_versions = ScaffoldCache::list_versions(&spec);
-    if let Some(version) = cached_versions.first() {
-        let path = ScaffoldCache::path(&spec, version);
-        return Ok(ScaffoldResolveStatus::CacheHit {
-            layer: rel.to_string(),
-            version: Some(version.clone()),
-            path,
-        });
-    }
-
-    // 4. Legacy cache fallback (old ~/.mgc/templates/{rel})
-    let root = crate::scaffold::template_root::TemplateRoot::resolve(rel);
-    if root.exists("") && root.exists("template.toml") && root.exists("sources") {
-        let version = extract_cached_version(&root);
-        return Ok(ScaffoldResolveStatus::CacheHit {
+    match fetch_layer_at(
+        TemplateFetchArgs {
+            core: core_str.to_string(),
+            name: rel.to_string(),
+            registry: registry_override.map(str::to_string),
+            tag: Some(tag.clone()),
+        },
+        &cache_root,
+        auth_override,
+    )
+    .await
+    {
+        Ok((path, version)) => Ok(ScaffoldResolveStatus::Fetched {
             layer: rel.to_string(),
             version,
-            path: root.path().to_path_buf(),
-        });
+            path,
+        }),
+        Err(error) => Err(template_resolution_error(
+            error,
+            rel,
+            core_str,
+            &spec.normalized_name,
+            &tag,
+        )),
     }
-
-    // 5. Registry fetch (Phase 2 - NEW)
-    use crate::scaffold::registry::ScaffoldRegistry;
-    let registry_client = ScaffoldRegistry::new().map_err(|error| {
-        crate::scaffold::resolver::ScaffoldResolveError::Other(format!(
-            "cannot reach the template registry: {error}"
-        ))
-    })?;
-
-    // Resolve version from dist-tag (latest → 15.5.0)
-    let version = match registry_client.resolve_version(&spec).await {
-        Ok(v) => v,
-        Err(e) => {
-            return Err(ScaffoldResolveError::RequiredLayerMissing {
-                layer: rel.to_string(),
-                core: core_str.to_string(),
-                template: spec.name.clone(),
-                tag: "latest".to_string(),
-                attempted_sources: format!(
-                    "- Embedded kernel: not available\n\
-                     - Versioned cache: empty\n\
-                     - Legacy cache: empty\n\
-                     - Registry fetch failed: {}",
-                    e
-                ),
-            });
-        }
-    };
-
-    // Fetch tarball
-    let tarball = match registry_client.fetch(&spec, &version).await {
-        Ok(data) => data,
-        Err(e) => {
-            return Err(ScaffoldResolveError::RequiredLayerMissing {
-                layer: rel.to_string(),
-                core: core_str.to_string(),
-                template: spec.name.clone(),
-                tag: version.clone(),
-                attempted_sources: format!(
-                    "- Registry fetch failed for version {}: {}",
-                    version, e
-                ),
-            });
-        }
-    };
-
-    // Write to versioned cache
-    ScaffoldCache::write(&spec, &version, &tarball)
-        .map_err(|e| ScaffoldResolveError::Other(format!("Failed to write cache: {}", e)))?;
-
-    let path = ScaffoldCache::path(&spec, &version);
-    Ok(ScaffoldResolveStatus::Fetched {
-        layer: rel.to_string(),
-        version: version.clone(),
-        path,
-    })
 }
 
-/// Extract version từ cache metadata file
-fn extract_cached_version(root: &crate::scaffold::template_root::TemplateRoot) -> Option<String> {
-    let metadata_path = root.path().join(".mgc-version");
-    std::fs::read_to_string(metadata_path)
-        .ok()
-        .and_then(|content| content.lines().next().map(|s| s.trim().to_string()))
+fn template_cache_matches_ref(
+    requested: &crate::scaffold::spec::ScaffoldRef,
+    cached: Option<&str>,
+) -> bool {
+    use crate::scaffold::spec::ScaffoldRef;
+    match requested {
+        ScaffoldRef::Default => true,
+        ScaffoldRef::Version(version) => cached == Some(version.as_str()),
+        ScaffoldRef::DistTag(_) | ScaffoldRef::Range(_) => false,
+    }
 }
 
-/// Write version metadata vào cache directory
-#[allow(dead_code)] // Used by legacy cache path, kept for backward compatibility
-fn write_cache_version_metadata(
-    root: &crate::scaffold::template_root::TemplateRoot,
-    version: &str,
-) -> Result<()> {
-    let metadata_path = root.path().join(".mgc-version");
-    std::fs::write(metadata_path, format!("{}\n", version))?;
-    Ok(())
+fn template_resolution_error(
+    error: anyhow::Error,
+    layer: &str,
+    core: &str,
+    name: &str,
+    tag: &str,
+) -> crate::scaffold::resolver::ScaffoldResolveError {
+    use crate::scaffold::resolver::ScaffoldResolveError;
+    if error.is::<crate::error::TemplateTransportUnavailable>() {
+        return ScaffoldResolveError::RegistryUnavailable {
+            registry: "configured template registry".to_string(),
+            offline: false,
+        };
+    }
+    if let Some(status) = error.downcast_ref::<crate::error::TemplateHttpStatus>() {
+        if matches!(status.0, 404 | 410) {
+            return ScaffoldResolveError::RequiredLayerMissing {
+                layer: layer.to_string(),
+                core: core.to_string(),
+                template: name.to_string(),
+                tag: tag.to_string(),
+                attempted_sources: error.to_string(),
+            };
+        }
+        if status.0 == 429 || status.0 >= 500 {
+            return ScaffoldResolveError::RegistryUnavailable {
+                registry: format!("configured template registry (HTTP {})", status.0),
+                offline: false,
+            };
+        }
+    }
+    ScaffoldResolveError::Other(error.to_string())
+}
+
+pub(crate) fn template_layer_has_contract(path: &Path) -> Result<bool> {
+    for (entry, directory) in [
+        (path.to_path_buf(), true),
+        (path.join("template.toml"), false),
+        (path.join("sources"), true),
+    ] {
+        let metadata = match fs::symlink_metadata(&entry) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error.into()),
+        };
+        if template_cache_is_link(&metadata)
+            || (directory && !metadata.is_dir())
+            || (!directory && !metadata.is_file())
+        {
+            return Err(crate::error::template_cache_unsafe_path(&entry));
+        }
+    }
+    crate::scaffold::processor::validate_template_manifest(path)?;
+    Ok(true)
+}
+
+pub(crate) fn read_template_cache_version(path: &Path) -> Result<Option<String>> {
+    let marker = path.join(".mgc-version");
+    let metadata = match fs::symlink_metadata(&marker) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    if template_cache_is_link(&metadata)
+        || !metadata.is_file()
+        || metadata.len() > MAX_TEMPLATE_VERSION_BYTES
+    {
+        return Err(crate::error::template_cache_unsafe_path(&marker));
+    }
+    let version = fs::read_to_string(&marker)?.trim().to_string();
+    semver::Version::parse(&version).map_err(|_| crate::error::template_metadata_invalid())?;
+    Ok(Some(version))
 }
 
 /// Extract tarball entries vào target, bỏ segment đầu của entry name
 /// (npm tarball prefix `mgc-create-.../...`).
-fn extract_tarball_into(bytes: &[u8], target: &Path) -> Result<()> {
-    let gz = flate2::read::GzDecoder::new(bytes);
-    let mut archive = tar::Archive::new(gz);
-    for entry in archive.entries()? {
-        let mut entry = entry?;
-        let path = entry.path()?.into_owned();
-        let mut components = path.components();
-        let _first = components.next(); // strip package prefix
-        let rel: PathBuf = components.as_path().to_path_buf();
-        if rel.as_os_str().is_empty() {
-            continue;
+pub(crate) fn extract_tarball_into(
+    bytes: &[u8],
+    target: &Path,
+    version: Option<&str>,
+) -> Result<()> {
+    let parent = target
+        .parent()
+        .ok_or_else(|| crate::error::template_cache_unsafe_path(target))?;
+    ensure_template_cache_parent(parent)?;
+    let previous = match fs::symlink_metadata(target) {
+        Ok(metadata) if template_cache_is_link(&metadata) || !metadata.is_dir() => {
+            return Err(crate::error::template_cache_unsafe_path(target));
         }
-        let dest = target.join(&rel);
-        if let Some(parent) = dest.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        match entry.header().entry_type() {
-            tar::EntryType::Directory => fs::create_dir_all(&dest)?,
-            _ => {
-                let mut out = fs::File::create(&dest)?;
-                std::io::copy(&mut entry, &mut out)?;
+        Ok(_) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => return Err(error.into()),
+    };
+
+    // Validate the complete archive in a private same-filesystem staging tree.
+    // Giữ cache đang dùng nguyên vẹn cho tới khi toàn archive đã qua extractor an toàn.
+    let staging = tempfile::tempdir_in(parent)?;
+    let unpacked = staging.path().join("unpacked");
+    mgc_resolver::protocols::archive::extract_tar_gz(bytes, &unpacked)?;
+    let entries = fs::read_dir(&unpacked)?.collect::<std::io::Result<Vec<_>>>()?;
+    if entries.len() != 1 || !entries[0].file_type()?.is_dir() {
+        return Err(crate::error::template_archive_layout_invalid());
+    }
+    let packaged = entries[0].path();
+    if !packaged.join("template.toml").is_file() || !packaged.join("sources").is_dir() {
+        return Err(crate::error::template_archive_layout_invalid());
+    }
+    crate::scaffold::processor::validate_template_manifest(&packaged)?;
+    if let Some(version) = version {
+        semver::Version::parse(version).map_err(|_| crate::error::template_metadata_invalid())?;
+        fs::write(packaged.join(".mgc-version"), version)?;
+    }
+
+    let backup = staging.path().join("previous");
+    if previous {
+        fs::rename(target, &backup)?;
+    }
+    if let Err(error) = fs::rename(&packaged, target) {
+        if previous {
+            // Preserve the backup if rollback itself fails; never delete the old cache.
+            // Nếu rollback lỗi, giữ backup trên đĩa thay vì để TempDir xóa cache cũ.
+            if let Err(rollback) = fs::rename(&backup, target) {
+                let retained = staging.keep();
+                return Err(crate::error::template_cache_rollback_failed(
+                    target, &retained, &error, &rollback,
+                ));
             }
+        }
+        return Err(error.into());
+    }
+    staging.close()?;
+    Ok(())
+}
+
+fn ensure_template_cache_parent(parent: &Path) -> Result<()> {
+    use std::path::Component;
+    let mut current = PathBuf::new();
+    for component in parent.components() {
+        match component {
+            Component::Prefix(_) | Component::RootDir => {
+                current.push(component.as_os_str());
+                continue;
+            }
+            Component::CurDir => continue,
+            Component::ParentDir => return Err(crate::error::template_cache_unsafe_path(parent)),
+            Component::Normal(part) => current.push(part),
+        }
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if template_cache_is_link(&metadata) || !metadata.is_dir() => {
+                return Err(crate::error::template_cache_unsafe_path(&current));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => fs::create_dir(&current)?,
+            Err(error) => return Err(error.into()),
         }
     }
     Ok(())
 }
+
+fn validate_template_identity(core: &str, name: &str) -> Result<()> {
+    if crate::scaffold::spec::CoreKind::from_str_core(core).is_none()
+        || name.is_empty()
+        || name.contains(['\\', ':'])
+        || name.chars().any(char::is_control)
+        || name
+            .split('/')
+            .any(|part| part.is_empty() || matches!(part, "." | ".."))
+    {
+        return Err(crate::error::template_layer_identity_invalid());
+    }
+    Ok(())
+}
+
+/// Reject links and Windows junction/reparse objects before cache mutation.
+/// Chặn cả junction/reparse Windows, không chỉ symlink thông thường.
+pub(crate) fn template_cache_is_link(metadata: &fs::Metadata) -> bool {
+    if metadata.file_type().is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+        metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+    }
+    #[cfg(not(windows))]
+    false
+}
+
+#[cfg(test)]
+#[path = "test/template.rs"]
+mod tests;
 
 /// Resolve registry: --registry flag → MGC_NPM_REGISTRY env → .npmrc → default.
 fn select_registry(flag: Option<&str>) -> Result<String> {
@@ -601,7 +1046,66 @@ async fn register_fetch_auth(registry: &str) -> mgc_publish::auth::Auth {
         .unwrap_or_else(|_| mgc_publish::auth::Auth::default())
 }
 
-/// PUT tarball blob (npm-format: /{name}/-/{name}-{version}.tgz).
+/// Construct upload URLs from encoded path segments and a validated registry base.
+/// Không nối chuỗi URL từ tên/version; giữ registry prefix và không cho query injection.
+fn template_publish_url(
+    registry: &url::Url,
+    name: &str,
+    version: Option<&str>,
+) -> Result<url::Url> {
+    let mut target = registry.clone();
+    let mut path = target
+        .path_segments_mut()
+        .map_err(|_| crate::error::template_download_url_invalid())?;
+    path.pop_if_empty().push(name);
+    if let Some(version) = version {
+        semver::Version::parse(version).map_err(|_| crate::error::template_metadata_invalid())?;
+        let unscoped = name.rsplit('/').next().unwrap_or(name);
+        path.push("-").push(&format!("{unscoped}-{version}.tgz"));
+    }
+    drop(path);
+    Ok(target)
+}
+
+/// Publishing never follows redirects with a write body or registry credentials.
+/// PUT chỉ tới registry đã validate; redirect bị từ chối, không đọc/log error body.
+async fn put_template_bytes(
+    registry: &url::Url,
+    target: url::Url,
+    auth: &mgc_publish::auth::Auth,
+    body: Vec<u8>,
+    json: bool,
+) -> Result<()> {
+    validate_template_download_url(&target, registry)?;
+    if !template_auth_allowed(registry, &target) {
+        return Err(crate::error::template_download_url_invalid());
+    }
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(TEMPLATE_FETCH_TIMEOUT_SECS))
+        .build()
+        .map_err(|_| crate::error::template_request_failed())?;
+    let mut request = client.put(target).body(body);
+    if json {
+        request = request.header(reqwest::header::CONTENT_TYPE, "application/json");
+    }
+    if let Some(header) = auth.header_value() {
+        request = request.header(reqwest::header::AUTHORIZATION, header);
+    }
+    let response = request
+        .send()
+        .await
+        .map_err(|_| crate::error::template_request_failed())?;
+    if !response.status().is_success() {
+        return Err(crate::error::template_publish_status(
+            response.status().as_u16(),
+        ));
+    }
+    Ok(())
+}
+
+/// PUT tarball blob to the selected registry only.
+/// Tải archive lên đúng registry, giới hạn lượng dữ liệu đọc vào RAM.
 async fn upload_tarball(
     registry_url: &str,
     auth: &mgc_publish::auth::Auth,
@@ -609,34 +1113,23 @@ async fn upload_tarball(
     version: &str,
     tarball_path: &Path,
 ) -> Result<()> {
-    let client = reqwest::Client::new();
-    let unscoped = name.rsplit('/').next().unwrap_or(name);
-    let url = format!(
-        "{}/{}/-/{}-{}.tgz",
-        registry_url.trim_end_matches('/'),
-        name,
-        unscoped,
-        version
-    );
-    let data = fs::read(tarball_path)?;
-    let req = client.put(&url).body(data);
-    let req = if let Some(h) = auth.header_value() {
-        req.header("Authorization", h)
-    } else {
-        req
-    };
-    let resp = req.send().await?;
-    if !resp.status().is_success() {
-        bail!(
-            "Tarball upload failed: {} - {}",
-            resp.status(),
-            resp.text().await?
-        );
+    use std::io::Read;
+    let registry = template_registry_url(registry_url)?;
+    let target = template_publish_url(&registry, name, Some(version))?;
+    let mut data = Vec::new();
+    fs::File::open(tarball_path)?
+        .take(MAX_TEMPLATE_TARBALL_BYTES as u64 + 1)
+        .read_to_end(&mut data)?;
+    if data.len() > MAX_TEMPLATE_TARBALL_BYTES {
+        return Err(crate::error::template_download_too_large(
+            MAX_TEMPLATE_TARBALL_BYTES,
+        ));
     }
-    Ok(())
+    put_template_bytes(&registry, target, auth, data, false).await
 }
 
 /// PUT manifest metadata (dist-tags + versions).
+/// Metadata dùng cùng origin/path policy với archive và không echo body registry.
 async fn put_manifest(
     registry_url: &str,
     auth: &mgc_publish::auth::Auth,
@@ -645,9 +1138,9 @@ async fn put_manifest(
     manifest: &serde_json::Value,
     pack_result: &mgc_pack::tarball::PackResult,
 ) -> Result<()> {
-    let client = reqwest::Client::new();
-    let url = format!("{}/{}", registry_url.trim_end_matches('/'), name);
-
+    let registry = template_registry_url(registry_url)?;
+    let target = template_publish_url(&registry, name, None)?;
+    let tarball = template_publish_url(&registry, name, Some(version))?;
     let mut body = serde_json::Map::new();
     body.insert("_id".into(), serde_json::Value::String(name.into()));
     body.insert("name".into(), serde_json::Value::String(name.into()));
@@ -660,36 +1153,26 @@ async fn put_manifest(
     body.insert("private".into(), serde_json::json!(false));
     let mut versions = serde_json::Map::new();
     let mut version_obj = manifest.clone();
-    let unscoped = name.rsplit('/').next().unwrap_or(name);
     version_obj
         .as_object_mut()
-        .expect("manifest is a JSON object")
+        .ok_or_else(crate::error::template_metadata_invalid)?
         .insert(
-        "dist".into(),
-        serde_json::json!({
-            "tarball": format!("{}/{}/-/{}-{}.tgz", registry_url.trim_end_matches('/'), name, unscoped, version),
-            "shasum": pack_result.shasum,
-            "integrity": pack_result.integrity,
-            "fileCount": pack_result.entry_count,
-            "unpackedSize": pack_result.unpacked_size,
-        }),
-    );
+            "dist".into(),
+            serde_json::json!({
+                "tarball": tarball.as_str(),
+                "shasum": pack_result.shasum,
+                "integrity": pack_result.integrity,
+                "fileCount": pack_result.entry_count,
+                "unpackedSize": pack_result.unpacked_size,
+            }),
+        );
     versions.insert(version.into(), version_obj);
     body.insert("versions".into(), serde_json::Value::Object(versions));
-
-    let req = client.put(&url).json(&body);
-    let req = if let Some(h) = auth.header_value() {
-        req.header("Authorization", h)
-    } else {
-        req
-    };
-    let resp = req.send().await?;
-    let status = resp.status();
-    if status.as_u16() == 409 {
-        bail!("Version {version} already exists — bump --version");
+    let bytes = serde_json::to_vec(&body).map_err(|_| crate::error::template_metadata_invalid())?;
+    if bytes.len() > MAX_TEMPLATE_METADATA_BYTES {
+        return Err(crate::error::template_download_too_large(
+            MAX_TEMPLATE_METADATA_BYTES,
+        ));
     }
-    if !status.is_success() {
-        bail!("Publish failed: {} - {}", status, resp.text().await?);
-    }
-    Ok(())
+    put_template_bytes(&registry, target, auth, bytes, true).await
 }

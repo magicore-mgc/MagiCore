@@ -2,9 +2,52 @@
 
 #![allow(clippy::unwrap_used)]
 
-use mgc::scaffold::resolver::{MissingLayersReport, ScaffoldResolveStatus};
+use mgc::scaffold::resolver::{MissingLayersReport, ScaffoldResolveError, ScaffoldResolveStatus};
 use mgc::scaffold::spec::{CoreKind, parse_scaffold_spec};
 use std::path::PathBuf;
+
+#[test]
+fn only_availability_errors_permit_builtin_fallback() {
+    assert!(
+        ScaffoldResolveError::RegistryUnavailable {
+            registry: "test-registry".to_string(),
+            offline: true,
+        }
+        .is_availability_failure()
+    );
+    assert!(
+        ScaffoldResolveError::RequiredLayerMissing {
+            layer: "lib/rust".to_string(),
+            core: "lib".to_string(),
+            template: "rust".to_string(),
+            tag: "latest".to_string(),
+            attempted_sources: "no available layer".to_string(),
+        }
+        .is_availability_failure()
+    );
+    for error in [
+        ScaffoldResolveError::IntegrityMismatch {
+            artifact: "template.tgz".to_string(),
+            expected: "expected".to_string(),
+            actual: "different".to_string(),
+        },
+        ScaffoldResolveError::Other("linked cache entry refused".to_string()),
+        ScaffoldResolveError::InvalidTag {
+            template: "rust".to_string(),
+            input: "laster".to_string(),
+            suggestion: Some("latest".to_string()),
+        },
+        ScaffoldResolveError::UnsupportedCore {
+            core: "unknown".to_string(),
+        },
+        ScaffoldResolveError::UnsupportedTemplate {
+            core: "lib".to_string(),
+            template: "unknown".to_string(),
+        },
+    ] {
+        assert!(!error.is_availability_failure(), "{error}");
+    }
+}
 
 #[test]
 fn test_resolve_status_embedded_is_available() {

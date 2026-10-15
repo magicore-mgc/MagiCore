@@ -17,6 +17,17 @@ pub type AppState = (
     std::sync::Arc<crate::auth::AuthService>,
 );
 
+/// Optional Axum peer metadata for transports that do not provide connect info.
+/// Metadata peer Axum không bắt buộc với transport không cung cấp địa chỉ kết nối.
+pub(crate) type OptionalPeerAddress =
+    Option<axum::Extension<axum::extract::ConnectInfo<std::net::SocketAddr>>>;
+
+/// Extract the remote address when the server transport supplied it.
+/// Lấy địa chỉ từ xa nếu transport của server đã cung cấp.
+pub(crate) fn peer_address(peer: OptionalPeerAddress) -> Option<std::net::SocketAddr> {
+    peer.map(|axum::Extension(axum::extract::ConnectInfo(address))| address)
+}
+
 #[derive(Debug, Clone)]
 pub struct RegistryServerConfig {
     pub host: String,

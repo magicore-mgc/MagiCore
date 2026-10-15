@@ -15,6 +15,47 @@ fail() {
   exit 1
 }
 
+# Stale validation runs must not consume runners after newer work arrives.
+# Mỗi workflow có group riêng để không hủy nhầm workflow kiểm chứng khác.
+for workflow in ci delegated-compatibility-matrix lifecycle-matrix nightly-audit-matrix release-binary-e2e security stress-matrix resolver-archive-security; do
+  grep -Fq "group: ${workflow}-" "$ROOT/.github/workflows/${workflow}.yml" \
+    || fail "${workflow} must isolate its concurrency group"
+  grep -Fq 'cancel-in-progress: true' "$ROOT/.github/workflows/${workflow}.yml" \
+    || fail "${workflow} must cancel superseded validation runs"
+done
+
+for required_scaffold_test in \
+  'cargo test --release --locked -p mgc --lib commands::template::tests' \
+  'cargo test --release --locked -p mgc --lib scaffold::cache::tests' \
+  'cargo test --release --locked -p mgc --lib scaffold::processor::tests' \
+  'cargo test --release --locked -p mgc --test scaffold_integration_test --test all_core_parity_test'; do
+  grep -Fq "$required_scaffold_test" "$ROOT/.github/workflows/lifecycle-matrix.yml" \
+    || fail "the three-OS lifecycle matrix must execute ${required_scaffold_test}"
+done
+
+# Container assets belong to the MGC CLI flag path, never framework templates.
+# Asset container do flag CLI MGC sinh, không nằm trong template framework.
+[[ ! -e "$ROOT/scripts/gen-backend-templates.py" ]] \
+  || fail "framework template generator must not create backend/container scaffold files"
+if grep -Fq 'gen-backend-templates.py' "$ROOT/.github/workflows/ci.yml"; then
+  fail "CI must not overlay generated backend files into framework templates"
+fi
+container_template_files="$(find "$ROOT/templates" -type f \( \
+  -name Dockerfile -o -name Containerfile -o -name .dockerignore -o -name .containerignore \
+  -o -name docker-compose.yml -o -name docker-compose.yaml -o -name compose.yml -o -name compose.yaml \
+  -o -name mgc-container-entrypoint \) -print)"
+[[ -z "$container_template_files" ]] \
+  || fail "Docker assets must be emitted by MGC flags, not framework template files"
+container_template_dirs="$(find "$ROOT/templates" -type d \( -name k8s -o -name kubernetes \) -print)"
+[[ -z "$container_template_dirs" ]] \
+  || fail "Kubernetes assets must be emitted by MGC flags, not framework template directories"
+
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test_release_lifecycle_gate.py" \
+  || fail "release publishers must require the same-commit lifecycle workflow"
+
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/tests/test_scaffold_acceptance_runner.py" \
+  || fail "scaffold acceptance runner must reject failed commands and missing output"
+
 python3 "$ROOT/scripts/test_release_script.py" || fail "release script argument handling regression tests failed"
 
 grep -q 'run: bash scripts/test_ci_workflow_contract.sh' "$ROOT/.github/workflows/ci.yml" \
@@ -22,6 +63,10 @@ grep -q 'run: bash scripts/test_ci_workflow_contract.sh' "$ROOT/.github/workflow
 seeded_ci_registry="$(sed -n '/Seed registry + cargo test/,/^  build:/p' "$ROOT/.github/workflows/ci.yml")"
 grep -Fq 'curl -sf -o /dev/null http://127.0.0.1:4315/v2/' <<<"$seeded_ci_registry" \
   || fail "seeded CI registry readiness must probe its registered OCI /v2/ ping route"
+grep -Fq 'if [[ "$registry_ready" != 1 ]]; then' <<<"$seeded_ci_registry" \
+  || fail "registry seeding must stop when the readiness budget expires"
+grep -Fq 'if (fail > 0) process.exit(1);' <<<"$seeded_ci_registry" \
+  || fail "historical fixture normalization must stop on unresolved links"
 if grep -Eq 'curl -sf -o /dev/null http://127\.0\.0\.1:4315/[[:space:]]' <<<"$seeded_ci_registry"; then
   fail "seeded CI registry readiness must not probe the unregistered root route"
 fi
@@ -55,8 +100,10 @@ grep -q '".github/workflows/security.yml"' "$SECURITY" || fail "security workflo
 grep -q '82a92a6e8fbeee089604da2575dc567ae9ddeaff' "$ROOT/.github/workflows/ci.yml" && fail "CI contains the invalid rust-cache SHA"
 grep -q '6323deb102c322ba6fcbdcafc7e3dddab59af2b6' "$ROOT/.github/workflows/ci.yml" || fail "CI rust-cache pin must resolve to v2.9.2 (latest, node24)"
 grep -q '7b1c307e0dcbda6122208f10795a713336a9b35a' "$ROOT/.github/workflows/ci.yml" && fail "CI contains the broken Rust toolchain pin"
-grep -q '6bed0761d98439e5a578e2877258200ad565ba87' "$ROOT/.github/workflows/ci.yml" || fail "CI Rust toolchain pin must resolve to stable"
-grep -q '6bed0761d98439e5a578e2877258200ad565ba87' "$ALL_CORE" || fail "delegated-compatibility Rust toolchain pin must resolve to stable"
+grep -q 'e2a55d2ffb04f378e9626c28d38b36d230d1e12f' "$ROOT/.github/workflows/ci.yml" || fail "CI Rust toolchain action must use the immutable reviewed ref"
+grep -q 'toolchain: "1.99.0"' "$ROOT/.github/workflows/ci.yml" || fail "CI Rust stable lane must use the current pinned stable version"
+grep -q 'e2a55d2ffb04f378e9626c28d38b36d230d1e12f' "$ALL_CORE" || fail "delegated-compatibility Rust toolchain action must use the immutable reviewed ref"
+grep -q 'toolchain: "1.99.0"' "$ALL_CORE" || fail "delegated-compatibility Rust lane must use the current pinned stable version"
 grep -q 'python3 scripts/test_audit_dependency_delegation.py' "$ROOT/.github/workflows/ci.yml" || fail "CI must run dependency ownership audit negative controls"
 grep -q 'python3 scripts/test_audit_capability_matrix.py' "$ROOT/.github/workflows/ci.yml" || fail "CI must test audit-matrix source provenance"
 grep -q 'working_tree_clean.*is not True' "$RELEASE" || fail "release audit gate must reject dirty-tree matrices"
@@ -98,7 +145,7 @@ grep -Fq 'cargo test --locked -p mgc --test native_ownership_matrix_e2e framewor
 grep -A5 -F 'Run Web, App scaffold, and Lib lifecycle tests on release binary' "$ROOT/.github/workflows/ci.yml" \
   | grep -Fq 'MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc' \
   || fail "Web/App scaffold/Lib lifecycle E2E must invoke the release product binary"
-grep -A4 -F 'Run AI lifecycle test with pytest on release binary' "$ROOT/.github/workflows/ci.yml" \
+grep -A4 -F 'Run AI lifecycle test with MGC-installed pytest on release binary' "$ROOT/.github/workflows/ci.yml" \
   | grep -Fq 'MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc' \
   || fail "AI lifecycle E2E must invoke the release product binary"
 grep -Fq 'cargo test --locked -p mgc --test audit_cli_e2e audit_ai_cli_scans_checkpoint_weights_after_models_directory -- --exact --nocapture' "$ROOT/.github/workflows/lifecycle-matrix.yml" \
@@ -252,32 +299,34 @@ linux_arm_smoke_blocks="$(grep -A3 '^          - os: ubuntu-24.04-arm$' <<<"$rel
 
 # Verify GitHub Actions SHA pins (real commit refs)
 checkout_sha='3d3c42e5aac5ba805825da76410c181273ba90b1' # v7.0.1 real
-setup_node_sha='820762786026740c76f36085b0efc47a31fe5020' # v7.0.0 real
+setup_node_sha='949feb2413d6458794dcd2491c4babbbce0c15c1' # v7.1.0 real
 setup_python_sha='5fda3b95a4ea91299a34e894583c3862153e4b97' # v7.0.0 real
 setup_go_sha='b7ad1dad31e06c5925ef5d2fc7ad053ef454303e' # v7.0.0 real
-setup_java_sha='de7274f081f381c8f8158605e0321c36c376e2e6' # v6.0.1 real
+setup_java_sha='b843ebf9b913146b38da2eaa7aeddf76074ae1ad' # v6.1.0 real
 setup_dotnet_sha='a98b56852c35b8e3190ac28c8c2271da59106c68' # v6.0.0 real
 
 grep -q "actions/checkout@${checkout_sha}" "$ALL_CORE" || fail "delegated-compatibility checkout SHA must be v7.0.1 real commit"
-grep -q "actions/setup-node@${setup_node_sha}" "$ALL_CORE" || fail "delegated-compatibility setup-node SHA must be v7.0.0 real commit"
+grep -q "actions/setup-node@${setup_node_sha}" "$ALL_CORE" || fail "delegated-compatibility setup-node SHA must be v7.1.0 real commit"
 grep -q "actions/setup-python@${setup_python_sha}" "$ALL_CORE" || fail "delegated-compatibility setup-python SHA must be v7.0.0 real commit"
 grep -q "actions/setup-go@${setup_go_sha}" "$ALL_CORE" || fail "delegated-compatibility setup-go SHA must be v7.0.0 real commit"
 
 source "$ROOT/scripts/verify_github_action_pin.sh"
 if command -v git >/dev/null 2>&1; then
     verify_pin actions/checkout v7.0.1 "$checkout_sha"
-    verify_pin actions/setup-node v7.0.0 "$setup_node_sha"
+    verify_pin actions/setup-node v7.1.0 "$setup_node_sha"
     verify_pin actions/setup-python v7.0.0 "$setup_python_sha"
     verify_pin actions/setup-go v7.0.0 "$setup_go_sha"
-    verify_pin actions/setup-java v6.0.1 "$setup_java_sha"
+    verify_pin actions/setup-java v6.1.0 "$setup_java_sha"
     verify_pin actions/setup-dotnet v6.0.0 "$setup_dotnet_sha"
     verify_pin Swatinem/rust-cache v2.9.2 '6323deb102c322ba6fcbdcafc7e3dddab59af2b6'
-    verify_pin actions/upload-artifact v7.0.1 '043fb46d1a93c77aae656e7c1c64a875d1fc6a0a'
-    verify_pin actions/download-artifact v8.0.1 '3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c'
-    verify_pin astral-sh/setup-uv v10.0.1 '20cfd1bf945f4377ade1205e4dbc17946fc9a30d'
+    verify_pin actions/upload-artifact v7.0.2 'cf430e030ddbb5b0abf93d22962f4752f3646cd9'
+    verify_pin actions/download-artifact v8.0.2 '9000827ccba6bdab643e8b6fd33ac0654aef8333'
+    verify_pin astral-sh/setup-uv v10.3.0 '1c37ad07a6a961277cf70c0d37d6f313000f5884'
     verify_pin softprops/action-gh-release v3.0.3 'efb35369e0ad2afab669f228072c1b0d510eae64'
     verify_pin actions/attest-build-provenance v4.2.2 '4d101475d8b20a2381f78447822ac1eab6504dd8'
-    verify_pin subosito/flutter-action v2.16.0 '44ac965b96f18d999802d4b807e3256d5a3f9fa1'
+    verify_pin subosito/flutter-action v2.23.0 '1a449444c387b1966244ae4d4f8c696479add0b2'
+    verify_pin oven-sh/setup-bun v2.2.0 '0c5077e51419868618aeaa5fe8019c62421857d6'
+    verify_pin denoland/setup-deno v2.0.5 '22d081ff2d3a40755e97629de92e3bcbfa7cf2ed'
 else
     if [[ "${CI:-}" == "true" || "${CI:-}" == "1" || "${GITHUB_ACTIONS:-}" == "true" ]]; then
         fail "CI cannot verify upstream action pins without git"
@@ -288,16 +337,16 @@ fi
 
 setup_go_count="$(grep -c "actions/setup-go@${setup_go_sha}" "$ALL_CORE")"
 [[ "$setup_go_count" -eq 4 ]] || fail "delegated-compatibility matrix must provision pinned Go for all four core jobs"
-go_version_count="$(grep -c 'go-version: "1.27.1"' "$ALL_CORE")"
-[[ "$go_version_count" -eq 4 ]] || fail "delegated-compatibility matrix must pin Go 1.27.1 for all four core jobs"
+go_version_count="$(grep -c 'go-version: "1.27.2"' "$ALL_CORE")"
+[[ "$go_version_count" -eq 4 ]] || fail "delegated-compatibility matrix must pin Go 1.27.2 for all four core jobs"
 grep -q "actions/setup-go@${setup_go_sha}" "$RELEASE" || fail "release builds must provision pinned Go for esbuild-rs"
-grep -q 'go-version: "1.27.1"' "$RELEASE" || fail "release builds must pin Go 1.27.1"
+grep -q 'go-version: "1.27.2"' "$RELEASE" || fail "release builds must pin Go 1.27.2"
 go_version_values=$(grep -rhoE 'go-version: "[^"]+"' "$ROOT/.github/workflows" | sort -u)
-[[ "$go_version_values" == 'go-version: "1.27.1"' ]] || fail "all workflow Go toolchains must use the canonical Go 1.27.1 pin; found: ${go_version_values//$'\n'/, }"
+[[ "$go_version_values" == 'go-version: "1.27.2"' ]] || fail "all workflow Go toolchains must use the canonical Go 1.27.2 pin; found: ${go_version_values//$'\n'/, }"
 go_archive_values=$(grep -oE 'go[0-9]+\.[0-9]+\.[0-9]+\.linux-amd64\.tar\.gz' "$RELEASE" | sort -u)
-[[ "$go_archive_values" == 'go1.27.1.linux-amd64.tar.gz' ]] || fail "release scanner archive must match canonical Go 1.27.1; found: ${go_archive_values//$'\n'/, }"
-grep -q 'GO_SHA256="63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445"' "$RELEASE" \
-  || fail "release scanner must pin the official Go 1.27.1 Linux AMD64 archive checksum"
+[[ "$go_archive_values" == 'go1.27.2.linux-amd64.tar.gz' ]] || fail "release scanner archive must match canonical Go 1.27.2; found: ${go_archive_values//$'\n'/, }"
+grep -q 'GO_SHA256="ecbadb99091a3f46e31f5f934b068b1864eafa7995211b39eaddf76996045fe5"' "$RELEASE" \
+  || fail "release scanner must pin the official Go 1.27.2 Linux AMD64 archive checksum"
 go_sha_check_line=$(grep -n -m1 'sha256sum --check --strict -' "$RELEASE" | cut -d: -f1 || true)
 go_extract_line=$(grep -n -m1 'sudo tar -C /usr/local -xzf /tmp/go.tgz' "$RELEASE" | cut -d: -f1 || true)
 [[ -n "$go_sha_check_line" && -n "$go_extract_line" && "$go_sha_check_line" -lt "$go_extract_line" ]] \
@@ -309,6 +358,10 @@ fi
 
 grep -q 'App: SKIP' "$LOCAL_RUNNER" && fail "local all-core runner must not convert App failures into skips"
 grep -q 'ALL CORES LIFECYCLE VERIFIED' "$LOCAL_RUNNER" || fail "local runner summary missing"
+grep -q 'add-ai pytest@9.1.1' "$LOCAL_RUNNER" || fail "local AI lifecycle must install pytest through MGC"
+if grep -Eq 'python[^[:cntrl:]]*-m pip|pip[0-9]* install.*(pytest|build|setuptools)' "$LOCAL_RUNNER"; then
+  fail "local AI lifecycle must not install project packages outside MGC"
+fi
 grep -q 'publish=true' "$RELEASE" && fail "release instructions reference the removed publish input"
 
 release_dry_run=$(sed -n '/^  dry-run-summary:/,$p' "$RELEASE")
@@ -316,11 +369,14 @@ grep -q 'Ready to publish: YES' <<<"$release_dry_run" && fail "release dry-run m
 grep -q 'Publish readiness: NOT ASSESSED (dry-run does not authorize publishing)' <<<"$release_dry_run" \
   || fail "release dry-run must state that it does not authorize publishing"
 
-grep -q 'node-version: "24"' "$ALL_CORE" || fail "Node.js lifecycle pin must be 24 (latest T9-2026)"
-grep -q 'python-version: "3.14"' "$ALL_CORE" || fail "Python lifecycle pin is stale"
-grep -q 'flutter-version: "3.47.4"' "$ALL_CORE" || fail "Flutter lifecycle pin is stale"
+grep -q 'node-version: "26.12.0"' "$ALL_CORE" || fail "Node.js lifecycle pin is stale"
+grep -q 'python-version: "3.15.0"' "$ALL_CORE" || fail "Python lifecycle pin is stale"
+grep -q 'flutter-version: "3.47.7"' "$ALL_CORE" || fail "Flutter lifecycle pin is stale"
 grep -Eq 'cargo test --locked -p mgc --test full_lifecycle_e2e test_ai_full_lifecycle -- .*--ignored --exact' "$ROOT/.github/workflows/ci.yml" \
-  || fail "CI provisions pytest but does not execute the ignored AI release-binary lifecycle test"
+  || fail "CI does not execute the ignored AI release-binary lifecycle test using MGC-installed pytest"
+if grep -Eq 'pip install.*(pytest|build|setuptools)|pytest --version' "$ROOT/.github/workflows/ci.yml" "$ROOT/.github/workflows/release-binary-e2e.yml"; then
+  fail "Python project test/build packages must be installed and verified through MGC"
+fi
 grep -Eq 'cargo test --locked -p mgc --test full_lifecycle_e2e test_web_full_lifecycle -- .*--ignored --exact' "$ROOT/.github/workflows/ci.yml" \
   || fail "CI provisions Node.js but does not execute the ignored Web release-binary lifecycle test"
 if grep -vE '^[[:space:]]*#' "$ALL_CORE" | grep -Eq 'setup-uv|(^|[[:space:]])uv([[:space:]]|$)'; then
@@ -374,7 +430,22 @@ grep -q '10 SBOMs' "$RELEASE" || fail "release summary must require all ten SBOM
 grep -q 'Windows doesn.t generate SBOM' "$RELEASE" && fail "Windows SBOM must not be silently excluded"
 
 grep -q 'cargo-audit --version 0.22.2' "$SECURITY" || fail "cargo-audit pin is stale"
-grep -q 'OSV_VERSION="2.5.1"' "$SECURITY" || fail "OSV-Scanner pin is stale"
+grep -q 'OSV_VERSION="2.6.0"' "$SECURITY" || fail "OSV-Scanner pin is stale"
+
+stress_workflow="$ROOT/.github/workflows/stress-matrix.yml"
+for package_manager_version in 'npm@12.2.0' 'pnpm@12.11.2' '@yarnpkg/cli-dist@4.18.1'; do
+  grep -Fq "$package_manager_version" "$stress_workflow" \
+    || fail "stress matrix must provision and verify latest package manager: $package_manager_version"
+done
+for package_manager_check in \
+  'test "$(npm --version)" = "12.2.0"' \
+  'test "$(pnpm --version)" = "12.11.2"' \
+  'test "$(yarn --version)" = "4.18.1"' \
+  'test "$(bun --version)" = "1.4.3"' \
+  'deno --version | head -1 | grep -F "deno 2.9.7"'; do
+  grep -Fq "$package_manager_check" "$stress_workflow" \
+    || fail "stress matrix must verify installed package manager version: $package_manager_check"
+done
 
 # T0.5 installer freshness: the embedded SHA-256 in dev/cicd.rs must be
 # non-empty AND must match scripts/install-from-gh.sh at the pinned

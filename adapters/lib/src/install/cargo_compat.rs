@@ -126,7 +126,7 @@ pub fn validate_build_for_core(
     project_root: &Path,
     expected_core: &str,
 ) -> MgResult<Option<PathBuf>> {
-    if !matches!(expected_core, "lib" | "iot") {
+    if !matches!(expected_core, "lib" | "iot" | "web") {
         return Err(MgError::Other(format!(
             "Cargo managed build is unsupported for core '{expected_core}'"
         )));

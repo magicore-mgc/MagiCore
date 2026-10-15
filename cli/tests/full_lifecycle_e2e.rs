@@ -328,33 +328,18 @@ fn test_lib_full_lifecycle() {
 }
 
 #[test]
-#[ignore = "Requires pytest - run with: cargo test -- --ignored"]
+#[ignore = "Requires Python runtime; pytest is installed through MGC in this E2E"]
 fn test_ai_full_lifecycle() {
     // REAL E2E: ai core - MUST call mgc create-ai
     // MUST verify dependencies installed and pytest runs
-    // REQUIRES: python3, pip/uv, pytest
+    // REQUIRES: Python runtime only; project packages are installed by MGC.
 
-    if Command::new("python3").arg("--version").output().is_err() {
+    if Command::new("python").arg("--version").output().is_err()
+        && Command::new("python3").arg("--version").output().is_err()
+    {
         panic!(
-            "UNVERIFIED: python3 not available\n\
+            "UNVERIFIED: Python runtime not available\n\
             Status: IMPLEMENTED-UNVERIFIED"
-        );
-    }
-
-    // pip/pip3 check
-    let has_pip = Command::new("pip3").arg("--version").output().is_ok()
-        || Command::new("pip").arg("--version").output().is_ok();
-    if !has_pip {
-        panic!(
-            "UNVERIFIED: pip not available\n\
-            Status: IMPLEMENTED-UNVERIFIED"
-        );
-    }
-
-    // pytest REQUIRED for test step
-    if Command::new("pytest").arg("--version").output().is_err() {
-        panic!(
-            "TEST FAILED: pytest not available (required for AI full lifecycle test). Install: pip install pytest"
         );
     }
 
@@ -394,14 +379,14 @@ fn test_ai_full_lifecycle() {
     // === STEP 2: Add dependency to create lockfile ===
     println!("\n=== STEP 2: mgc add (create lockfile) ===");
 
-    // AI PEP 621 dependencies must use MagiCore's native resolver.
-    // Dependency PEP 621 của AI phải qua resolver native MagiCore.
+    // AI PEP 621 dependencies and pytest must use MagiCore's native resolver.
+    // Dependency PEP 621 và pytest của AI phải qua resolver native MagiCore.
 
     // AI scaffold has pyproject.toml but no initial deps
     // Run `mgc add` to create lockfile before `mgc install`
     let add_output = Command::new(&mgc)
         .arg("add")
-        .arg("pytest") // Add pytest as a dev dependency
+        .arg("pytest@9.1.1")
         .current_dir(&project_path)
         .env_remove("MGC_COMPAT_RUNTIME")
         .output()
@@ -417,6 +402,13 @@ fn test_ai_full_lifecycle() {
     }
 
     println!("ADD verified: lockfile created");
+
+    let lock_content = std::fs::read_to_string(project_path.join("mgc.lock"))
+        .expect("mgc add must create mgc.lock");
+    assert!(
+        lock_content.to_ascii_lowercase().contains("pytest"),
+        "mgc.lock must own pytest; a system pytest must not satisfy this E2E"
+    );
 
     // === STEP 3: INSTALL from lockfile ===
     println!("\n=== STEP 3: mgc install ===");
@@ -452,7 +444,14 @@ fn test_ai_full_lifecycle() {
 
     println!("INSTALL verified");
 
-    // === STEP 4: TEST - Run pytest ===
+    std::fs::create_dir_all(project_path.join("tests")).unwrap();
+    std::fs::write(
+        project_path.join("tests/test_mgc_lifecycle.py"),
+        "def test_python_runtime_is_available():\n    import sys\n    assert sys.version_info >= (3, 12)\n",
+    )
+    .unwrap();
+
+    // === STEP 4: TEST - Run MGC-installed pytest ===
     println!("\n=== STEP 4: mgc test ===");
     let test_output = Command::new(&mgc)
         .arg("test")
@@ -466,14 +465,10 @@ fn test_ai_full_lifecycle() {
         String::from_utf8_lossy(&test_output.stderr)
     );
 
-    // pytest exit code 5 = no tests collected (expected for minimal scaffold)
-    if !test_output.status.success() {
-        if test_output.status.code() == Some(5) || test_combined.contains("no tests ran") {
-            eprintln!("WARN: No tests in scaffold (expected for minimal python-agent)");
-        } else {
-            panic!("TEST FAILED unexpectedly:\n{}", test_combined);
-        }
-    }
+    assert!(
+        test_output.status.success(),
+        "TEST FAILED: mgc test must run the MGC-installed pytest successfully:\n{test_combined}"
+    );
 
     // MUST invoke pytest
     assert!(
@@ -482,7 +477,11 @@ fn test_ai_full_lifecycle() {
         test_combined
     );
 
-    println!("TEST verified: pytest ran");
+    assert!(
+        test_combined.contains("1 passed"),
+        "TEST did not execute the lifecycle test:\n{test_combined}"
+    );
+    println!("TEST verified: MGC-installed pytest ran one project test");
     println!("AI FULL LIFECYCLE VERIFIED: create → install → test");
 }
 

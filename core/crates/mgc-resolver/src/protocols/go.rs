@@ -684,8 +684,8 @@ pub fn dirhash_zip(entries: &[zip_reader::ZipEntry]) -> MgResult<String> {
                 "Go dirhash does not support filenames containing newlines".to_owned(),
             ));
         }
-        let file_hash = Sha256::digest(&entry.data);
-        hasher.update(format!("{:x}  {}\n", file_hash, entry.name).as_bytes());
+        let file_hash = hex::encode(Sha256::digest(&entry.data));
+        hasher.update(format!("{file_hash}  {}\n", entry.name).as_bytes());
     }
     let digest = hasher.finalize();
     Ok(format!(

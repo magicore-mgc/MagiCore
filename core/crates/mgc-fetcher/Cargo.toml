@@ -11,7 +11,7 @@ description = "Download and extraction helpers for MagiCore"
 anyhow = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true }
-tokio-util = { version = "0.7", features = ["io"] }
+tokio-util = { version = "0.7.20", features = ["io"] }
 futures-util = { workspace = true }
 tar = { workspace = true }
 flate2 = { workspace = true }

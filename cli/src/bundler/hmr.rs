@@ -133,7 +133,7 @@ async fn handle_socket(mut socket: WebSocket, manager: Arc<HmrManager>) {
     // không bao giờ lỡ event.)
     {
         let greeting = serde_json::json!({ "type": "connected" }).to_string();
-        if socket.send(Message::Text(greeting)).await.is_err() {
+        if socket.send(Message::Text(greeting.into())).await.is_err() {
             return; // Client disconnected before the barrier.
         }
     }
@@ -144,13 +144,13 @@ async fn handle_socket(mut socket: WebSocket, manager: Arc<HmrManager>) {
                 match event {
                     Ok(HmrEvent::Reload) => {
                         let msg = serde_json::json!({ "type": "reload" }).to_string();
-                        if socket.send(Message::Text(msg)).await.is_err() {
+                        if socket.send(Message::Text(msg.into())).await.is_err() {
                             break; // Client disconnected
                         }
                     }
                     Ok(HmrEvent::Update(path)) => {
                         let msg = serde_json::json!({ "type": "update", "path": path }).to_string();
-                        if socket.send(Message::Text(msg)).await.is_err() {
+                        if socket.send(Message::Text(msg.into())).await.is_err() {
                             break;
                         }
                     }

@@ -723,7 +723,7 @@ async fn digest_of(path: &Path) -> Result<String> {
         }
         h.update(&buffer[..read]);
     }
-    Ok(format!("sha256:{:x}", h.finalize()))
+    Ok(format!("sha256:{}", hex::encode(h.finalize())))
 }
 
 async fn pull(

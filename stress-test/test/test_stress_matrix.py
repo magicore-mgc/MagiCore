@@ -537,12 +537,12 @@ Options:
         }
 
         self.assertIn("os: [ubuntu-24.04, macos-latest, windows-latest]", workflow)
-        self.assertIn('MGC_PYTHON_VERSION: "3.12"', workflow)
-        self.assertIn('python-version: "3.12"', workflow)
+        self.assertIn('MGC_PYTHON_VERSION: "3.15.0"', workflow)
+        self.assertIn('python-version: "3.15.0"', workflow)
         self.assertEqual(workflow.count('".github/workflows/release.yml"'), 2)
         self.assertIn("actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e", workflow)
-        self.assertIn("actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6", workflow)
-        self.assertIn('java-version: "25.0.4"', workflow)
+        self.assertIn("actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad", workflow)
+        self.assertIn('java-version: "27.0.0+35"', workflow)
         self.assertIn(
             "Set up Kotlin compiler for Kotlin runtime probes (Linux/macOS)", workflow
         )
@@ -554,16 +554,16 @@ Options:
             workflow,
         )
         self.assertIn(
-            "shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240",
+            "shivammathur/setup-php@4424c9aab975b57bd706ee5a39c6b4334d6e4f60",
             workflow,
         )
-        self.assertIn('php-version: "8.5"', workflow)
+        self.assertIn('php-version: "8.5.11"', workflow)
         self.assertIn("tools: none", workflow)
         self.assertIn("actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68", workflow)
-        self.assertIn('dotnet-version: "10.0.401"', workflow)
-        self.assertIn("subosito/flutter-action@44ac965b96f18d999802d4b807e3256d5a3f9fa1", workflow)
+        self.assertIn('dotnet-version: "10.0.402"', workflow)
+        self.assertIn("subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2", workflow)
         self.assertIn("swift-actions/setup-swift@7ca6abe6b3b0e8b5421b88be48feee39cbf52c6a", workflow)
-        self.assertIn('swift-version: "6.2.1"', workflow)
+        self.assertIn('swift-version: "6.4.1"', workflow)
         self.assertIn("Set up Swift toolchain (Windows)", workflow)
         self.assertIn("Set up Zig for Zig runtime probes", workflow)
         self.assertIn('version: "0.17.0"', workflow)
@@ -575,10 +575,10 @@ Options:
         self.assertIn("9aa00f7a605200940bce3027a567b782f49bd8e940dd06ae9e987bd65aee1b1467edd56ed84fcdcbdd44354bf613bdbb4e5d2913e925850368e150c59ed54c65", workflow)
         self.assertIn("38aa16e5bba2083941fc5b3e54be0089bd4cc35e32415f5b9fd9a8a6a7b9818255d44532ea8ef94b5aef56c4b407c2d634fa4f657e4ebe681ebbf59b7bac69ca", workflow)
         self.assertIn("83decd58fdf67b9d657958a1ae6bf1929c20785315a81effe245874cdc57acb709bf868e00778a96984338c1b29dafdb453c6847747694621c6ecf5da2259993", workflow)
-        self.assertIn("71fc43d92ea09907be5d416d2405a6a9c2d1ceaed633f5e175c0af26e8c4b365", workflow)
-        self.assertIn("8362e7284b38a1194884963deed83481696d468b42dab88052775f4280383584", workflow)
-        self.assertIn("5ef8e19091106b1921af26db5bcee3cd84a475eae2fd190fc02b1049b320d042", workflow)
-        self.assertIn("e75a97238f2dc43ab90fca1af554c18f995b16a4b06a4ec27bcdbab52c1d2dc8", workflow)
+        self.assertIn("38034b38d03096399a7a1264a14561a8029b2b496fd1f169452656e53968f1b7", workflow)
+        self.assertIn("85e1bc78ab45bdc5f82a7bac3929e37d072834a584d22583a2498dc67bb624cd", workflow)
+        self.assertIn("794a36c3f7ebf6c58f2089c226068a539d1705ba358a5679b51671c8dc7ebc7b", workflow)
+        self.assertIn("6ea2c186e0e76a113af30fbcdcf7a4b4c70756317994a04929e5c90b9e94b1df", workflow)
         preflight = workflow.split(
             "- name: Verify language probe toolchains", maxsplit=1
         )[1].split("- name:", maxsplit=1)[0]
@@ -1084,6 +1084,45 @@ Options:
         self.assertFalse(filename.startswith((".", "_")))
         self.assertEqual(profile[3], (f"GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local go run -mod=readonly {filename}",))
 
+    def test_web_go_probe_uses_mgc_install_build_and_artifact_run(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="mgc web go probe ") as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            project.mkdir()
+            (project / "mgc.toml").write_text(
+                'name = "probe"\necosystem = "web"\nmode = "backend"\nframeworks = ["go", "echo"]\n'
+            )
+            (project / ".mgc.core").write_text("web\n")
+            env = {"MGC_DATA_DIR": str(root / "data"), "MGC_CACHE_DIR": str(root / "cache"), "PATH": "test-path"}
+            calls: list[list[str]] = []
+            marker = "MGC_STRESS_LANGUAGE_RUNTIME:Go"
+
+            def fake_run(argv, *, cwd, env, timeout_seconds, input_text=""):
+                calls.append([str(arg) for arg in argv])
+                output = marker if len(calls) == 3 else "MagiCore stage completed\n"
+                return subprocess.CompletedProcess(argv, 0, output)
+
+            with patch.object(stress_matrix.shutil, "which", return_value="go"), patch.object(
+                stress_matrix, "run_command", side_effect=fake_run
+            ):
+                result = stress_matrix._run_framework_language_probe_for_language(
+                    Path("mgc"), "web", "echo", project, env, "Go"
+                )
+
+            self.assertTrue(result.passed, result.detail)
+            self.assertEqual(calls[0], ["mgc", "install-web"])
+            self.assertEqual(calls[1], ["mgc", "build", "--core", "web"])
+            self.assertEqual(
+                calls[2], ["mgc", "run", "--core", "web", "mgc_language_runtime_probe_1"]
+            )
+            probe = root / "data/language-probes/web/echo/go"
+            config = tomllib.loads((probe / "mgc.toml").read_text())
+            script = config["scripts"]["mgc_language_runtime_probe_1"]
+            expected_binary = "server.exe" if stress_matrix.os.name == "nt" else "server"
+            self.assertIn(f"./.magicore/build/go/{expected_binary}", script)
+            self.assertNotIn("go run", script)
+            self.assertIn("go 1.27.0", (probe / "go.mod").read_text())
+
     def test_language_runtime_profiles_use_native_interpreters_without_package_managers(self) -> None:
         c_compiler = "clang" if stress_matrix.sys.platform == "darwin" else "gcc"
         cpp_compiler = "clang++" if stress_matrix.sys.platform == "darwin" else "g++"
@@ -1103,7 +1142,7 @@ Options:
             ),),
             "C": (f"{c_compiler} .mgc-stress-language.c -o {c_output}", f"./{c_output}"),
             "C++": (f"{cpp_compiler} .mgc-stress-language.cpp -o {cpp_output}", f"./{cpp_output}"),
-            "C#": ("dotnet exec .mgc-stress-dotnet/bin/Debug/net10.0/MgcStressProbe.dll",),
+            "C#": ("dotnet run --no-restore --file .mgc-stress-dotnet/Program.cs",),
             "Java": ((
                 "java -XX:-UsePerfData -Djava.io.tmpdir=.mgc-java-tmp "
                 "MgcStressLanguageProbe.java"
@@ -1275,7 +1314,7 @@ Options:
                 ],
             )
 
-    def test_dotnet_probe_builds_offline_before_running_only_the_compiled_assembly(self) -> None:
+    def test_dotnet_probe_runs_source_only_through_mgc_without_restore(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             project = root / "projects/web/dotnet"
@@ -1292,22 +1331,19 @@ Options:
                 command = [str(part) for part in argv]
                 calls.append(command)
                 probe_project = Path(kwargs["cwd"])
-                if command[:2] == ["dotnet", "--list-sdks"]:
-                    return subprocess.CompletedProcess(argv, 0, "10.0.401 [/sdk]\n")
-                if command[:2] == ["dotnet", "restore"]:
-                    config = (probe_project / "NuGet.Config").read_text(encoding="utf-8")
-                    self.assertIn("<clear />", config)
-                    return subprocess.CompletedProcess(argv, 0, "restored offline\n")
-                if command[:2] == ["dotnet", "build"]:
-                    self.assertIn("--no-restore", command)
-                    return subprocess.CompletedProcess(argv, 0, "built offline\n")
-                self.assertEqual(command[-1], "mgc_language_runtime_probe_1")
+                self.assertEqual(
+                    command,
+                    ["mgc", "run", "--core", "web", "mgc_language_runtime_probe_1"],
+                )
                 manifest = (probe_project / "mgc.toml").read_text(encoding="utf-8")
                 self.assertIn(
-                    'mgc_language_runtime_probe_1 = "dotnet exec .mgc-stress-dotnet/bin/Debug/net10.0/MgcStressProbe.dll"',
+                    'mgc_language_runtime_probe_1 = "dotnet run --no-restore --file .mgc-stress-dotnet/Program.cs"',
                     manifest,
                 )
-                self.assertNotIn("dotnet run", manifest)
+                self.assertFalse(
+                    (probe_project / ".mgc-stress-dotnet/MgcStressProbe.csproj").exists()
+                )
+                self.assertFalse((probe_project / "NuGet.Config").exists())
                 return subprocess.CompletedProcess(
                     argv, 0, "MGC_STRESS_LANGUAGE_RUNTIME:C#\n"
                 )
@@ -1323,7 +1359,8 @@ Options:
             self.assertEqual(len(results), 1)
             self.assertTrue(results[0].passed, results[0].detail)
             self.assertEqual(
-                [call[1] for call in calls], ["--list-sdks", "restore", "build", "run"]
+                calls,
+                [["mgc", "run", "--core", "web", "mgc_language_runtime_probe_1"]],
             )
 
     def test_java_launcher_without_a_runtime_is_unverified_not_a_probe_failure(self) -> None:

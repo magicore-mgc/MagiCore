@@ -171,7 +171,7 @@ LANES = [
         # lib/python cần pytest (mgc test) và build (python -m build)
         # được provision trước khi chạy các bước lifecycle.
         "pre_steps": [
-            "provision_py_build_tools",
+            "mgc_add_python_test_build_tools",
         ],
         "steps": [
             ("install", ["install"]),
@@ -472,13 +472,12 @@ LANES = [
         },
         "pre_steps": [
             "mgc_add_real_dependency",
-            # pytest runs `mgc test`; `build` runs `python -m build`.
-            # Both are provisioned BEFORE the lifecycle so the lane
-            # never skips on a missing tool.
-            # pytest chạy `mgc test`; `build` chạy `python -m build`.
-            # Cả hai được provision TRƯỚC lifecycle để lane không bao
-            # giờ skip vì thiếu tool.
-            "provision_py_build_tools",
+            # Test/build frontends are declared through MGC before the
+            # lifecycle. The Python runtime is provisioned as a toolchain;
+            # packages must come from mgc.lock and the MGC store.
+            # Khai báo pytest/build qua MGC trước lifecycle; Python là
+            # runtime hệ thống, package phải thuộc mgc.lock và MGC store.
+            "mgc_add_python_test_build_tools",
         ],
         "steps": [
             ("install", ["install"]),
@@ -3181,64 +3180,24 @@ def recovery_environment(sandbox: str, project_path: str) -> dict[str, str]:
     return env
 
 
-def python_venv_environment(environment: dict[str, str], venv_root: str) -> dict[str, str]:
-    """Activate a lane-local Python venv without mutating the caller env.
-    (Kích hoạt venv riêng của lane, không sửa env của tiến trình gọi.)"""
-    env = environment.copy()
-    scripts_dir = "Scripts" if os.name == "nt" else "bin"
-    venv_bin = os.path.join(venv_root, scripts_dir)
-    env["VIRTUAL_ENV"] = venv_root
-    env["PIP_REQUIRE_VIRTUALENV"] = "true"
-    env["PATH"] = venv_bin + os.pathsep + env.get("PATH", "")
-    return env
-
-
-def provision_python_build_tools(
-    sandbox: str, project_path: str, environment: dict[str, str], timeout_s: int
+def mgc_add_python_test_build_tools(
+    mgc_bin: str, project_path: str, environment: dict[str, str], timeout_s: int
 ) -> tuple[subprocess.CompletedProcess, dict[str, str]]:
-    """Install pinned test/build tools only into a lane-owned virtualenv.
-    (Cài tool test/build đã pin vào virtualenv riêng, không đụng Python host.)"""
-    launcher = shutil.which("python", path=environment.get("PATH")) or shutil.which(
-        "python3", path=environment.get("PATH")
-    )
-    if launcher is None:
-        raise FileNotFoundError("python launcher not found on PATH")
-
-    venv_root = os.path.join(sandbox, ".mgc-lifecycle-python")
-    created = run_text_capture(
-        [launcher, "-m", "venv", venv_root],
-        capture_output=True,
-        text=True,
-        cwd=project_path,
-        env=environment,
-        timeout=timeout_s,
-    )
-    if created.returncode != 0:
-        return created, environment
-
-    scripts_dir = "Scripts" if os.name == "nt" else "bin"
-    python_bin = os.path.join(
-        venv_root, scripts_dir, "python.exe" if os.name == "nt" else "python"
-    )
-    venv_env = python_venv_environment(environment, venv_root)
-    installed = run_text_capture(
-        [
-            python_bin,
-            "-m",
-            "pip",
-            "install",
-            "-q",
-            "build==1.3.0",
-            "pytest==8.4.2",
-            "setuptools==80.9.0",
-        ],
-        capture_output=True,
-        text=True,
-        cwd=project_path,
-        env=venv_env,
-        timeout=timeout_s,
-    )
-    return installed, venv_env
+    """Declare pinned Python test/build packages through the MGC CLI.
+    (Khai báo package test/build Python đã pin qua CLI MGC.)"""
+    result = subprocess.CompletedProcess(args=[mgc_bin, "add"], returncode=0, stdout="", stderr="")
+    for package in ("pytest@9.1.1", "build@1.6.1", "setuptools@84.0.0"):
+        result = run_text_capture(
+            [mgc_bin, "add", package],
+            capture_output=True,
+            text=True,
+            cwd=project_path,
+            env=environment,
+            timeout=timeout_s,
+        )
+        if result.returncode != 0:
+            return result, environment
+    return result, environment
 
 
 def run_lane(mgc_bin: str, lane: dict) -> dict:
@@ -3466,35 +3425,28 @@ def run_lane(mgc_bin: str, lane: dict) -> dict:
                 detail["add_output"] = (
                     f"MagiCore added dependency fixture {package}"
                 )
-        elif step == "provision_py_build_tools":
-            # `python -m build` needs the build module; `mgc test`
-            # needs pytest. Install with the LAUNCHER the lanes will
-            # use (python if present, else python3 — the same
-            # resolution mgc's build lane applies), so the module and
-            # the launcher cannot drift apart across mixed-python
-            # machines.
-            # `python -m build` cần module build; `mgc test` cần
-            # pytest. Cài bằng LAUNCHER mà lane sẽ dùng (python nếu
-            # có, không thì python3 — đúng cách resolve của lane build
-            # mgc), để module và launcher không lệch nhau trên máy
-            # nhiều python.
+        elif step == "mgc_add_python_test_build_tools":
+            # Dependency declarations themselves must pass through MGC;
+            # installation is the explicit lifecycle step below.
+            # Khai báo dependency cũng phải qua MGC; bước install lifecycle
+            # phía dưới mới là nơi cài package.
             try:
-                proc, lane_env = provision_python_build_tools(
-                    sandbox, project_path, lane_env, timeout_s
+                proc, lane_env = mgc_add_python_test_build_tools(
+                    mgc_bin, project_path, lane_env, timeout_s
                 )
             except (FileNotFoundError, OSError):
-                _fail("pre_step 'provision_py_build_tools' requires a python launcher on PATH")
+                _fail("pre_step 'mgc_add_python_test_build_tools' requires the mgc binary")
             except subprocess.TimeoutExpired:
-                _fail(f"py build tools install timed out after {timeout_s}s")
+                _fail(f"MGC Python tool dependency add timed out after {timeout_s}s")
             if proc.returncode != 0:
                 detail["toolchain_setup_output"] = (
-                    "provision_py_build_tools failed: "
+                    "mgc_add_python_test_build_tools failed: "
                     + (proc.stdout or "") + (proc.stderr or "")
                 )[-2000:]
                 for lifecycle_step in ("test", "build"):
                     if any(name == lifecycle_step for name, _ in lane["steps"]):
                         blocked_lifecycle_steps[lifecycle_step] = (
-                            "lane-local test/build tool provisioning failed; "
+                            "MGC Python test/build dependency add failed; "
                             "the step was not run without its prerequisite"
                         )
         elif step == "initialize_local_pulumi_stack":

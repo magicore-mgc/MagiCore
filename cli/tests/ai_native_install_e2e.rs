@@ -503,6 +503,42 @@ fn ai_add_runs_inside_mgc_without_spawning_uv_or_pip() {
     );
 }
 
+#[test]
+fn ai_dev_add_is_persisted_resolved_and_reinstalled_from_frozen_lock() {
+    let project = TempDir::new().unwrap();
+    ai_empty_project(project.path());
+    let pypi = LocalPyPi::new();
+    let sandbox =
+        NoSpawnSandbox::multi(&["uv", "pip", "pip3", "python", "python3"], &pypi.index_url);
+
+    let (code, stdout, stderr) = sandbox.run_mgc(&["add-ai", "-D", "six"], project.path());
+    let output = format!("{stdout}{stderr}");
+    assert_eq!(code, Some(0), "mgc add-ai -D six failed:\n{output}");
+    let pyproject = std::fs::read_to_string(project.path().join("pyproject.toml")).unwrap();
+    assert!(
+        pyproject.contains("[dependency-groups]") && pyproject.contains("six==1.17.0"),
+        "dev add must be persisted in PEP 735, not dropped from pyproject.toml:\n{pyproject}"
+    );
+
+    let (code, stdout, stderr) = sandbox.run_mgc(&["install-ai", "--frozen"], project.path());
+    let output = format!("{stdout}{stderr}");
+    assert_eq!(
+        code,
+        Some(0),
+        "mgc install-ai --frozen must replay the dev dependency from the MGC lock:\n{output}"
+    );
+    let lock = std::fs::read_to_string(project.path().join("mgc.lock")).unwrap_or_default();
+    assert!(
+        lock.contains("six") && lock.contains("1.17.0"),
+        "frozen lock must retain the dev-only package:\n{lock}"
+    );
+    assert!(
+        sandbox.marker_text().is_empty(),
+        "MGC add/install must not delegate Python dependency work:\n{}",
+        sandbox.marker_text()
+    );
+}
+
 // Replay a verified wheel with no registry listener or metadata fetch.
 // Replay wheel đã khóa từ cache, không cần listener hay metadata registry.
 #[test]
