@@ -2133,17 +2133,122 @@ async fn npm_latest_eligible_major(
     name: &str,
 ) -> Result<Option<u64>, String> {
     let url = format!("https://registry.npmjs.org/{}", name.replace('/', "%2f"));
-    let metadata: serde_json::Value = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|error| format!("cannot read npm metadata for {name}: {error}"))?
-        .error_for_status()
-        .map_err(|error| format!("npm metadata request failed for {name}: {error}"))?
-        .json()
-        .await
-        .map_err(|error| format!("cannot parse npm metadata for {name}: {error}"))?;
-    latest_eligible_major(&metadata, time::OffsetDateTime::now_utc())
+    npm_latest_eligible_major_from_url(client, name, &url).await
+}
+
+async fn npm_latest_eligible_major_from_url(
+    client: &reqwest::Client,
+    name: &str,
+    url: &str,
+) -> Result<Option<u64>, String> {
+    const MAX_ATTEMPTS: u8 = 3;
+    for attempt in 1..=MAX_ATTEMPTS {
+        let response = match client.get(url).send().await {
+            Ok(response) => response,
+            Err(error) if retryable_npm_request_error(&error) && attempt < MAX_ATTEMPTS => {
+                tokio::time::sleep(std::time::Duration::from_millis(u64::from(attempt) * 250))
+                    .await;
+                continue;
+            }
+            Err(error) => {
+                return Err(format!(
+                    "cannot read npm metadata for {name} after {attempt}/{MAX_ATTEMPTS} attempts: {error}"
+                ));
+            }
+        };
+        let response = match response.error_for_status() {
+            Ok(response) => response,
+            Err(error) if retryable_npm_request_error(&error) && attempt < MAX_ATTEMPTS => {
+                tokio::time::sleep(std::time::Duration::from_millis(u64::from(attempt) * 250))
+                    .await;
+                continue;
+            }
+            Err(error) => {
+                return Err(format!(
+                    "npm metadata request failed for {name} after {attempt}/{MAX_ATTEMPTS} attempts: {error}"
+                ));
+            }
+        };
+        let metadata: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|error| format!("cannot parse npm metadata for {name}: {error}"))?;
+        return latest_eligible_major(&metadata, time::OffsetDateTime::now_utc());
+    }
+    unreachable!("bounded npm metadata retry loop must return")
+}
+
+fn retryable_npm_request_error(error: &reqwest::Error) -> bool {
+    error.is_connect()
+        || error.is_timeout()
+        || error
+            .status()
+            .is_some_and(|status| status.as_u16() == 429 || status.is_server_error())
+}
+
+#[cfg(test)]
+mod npm_freshness_retry_tests {
+    use super::npm_latest_eligible_major_from_url;
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::time::{Duration, Instant};
+
+    fn reply(stream: &mut TcpStream, status: &str, body: &str) {
+        write!(
+            stream,
+            "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+            body.len()
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn npm_freshness_retries_transient_registry_503_without_faking_success() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(4);
+            for attempt in 0..2 {
+                let (mut stream, _) = loop {
+                    match listener.accept() {
+                        Ok(connection) => break connection,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(Instant::now() < deadline, "registry retry was not sent");
+                            std::thread::sleep(Duration::from_millis(10));
+                        }
+                        Err(error) => panic!("test registry accept failed: {error}"),
+                    }
+                };
+                let mut request = [0_u8; 2048];
+                let _ = stream.read(&mut request).unwrap();
+                if attempt == 0 {
+                    reply(&mut stream, "503 Service Unavailable", "");
+                } else {
+                    reply(
+                        &mut stream,
+                        "200 OK",
+                        r#"{"dist-tags":{"latest":"2.0.0"},"versions":{"2.0.0":{}},"time":{"2.0.0":"2000-01-01T00:00:00Z"}}"#,
+                    );
+                }
+            }
+        });
+        let client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(1))
+            .timeout(Duration::from_secs(2))
+            .build()
+            .unwrap();
+
+        let result = npm_latest_eligible_major_from_url(
+            &client,
+            "retry-probe",
+            &format!("http://{address}/retry-probe"),
+        )
+        .await;
+        server.join().unwrap();
+        let major = result.unwrap();
+        assert_eq!(major, Some(2));
+    }
 }
 
 #[cfg(test)]
