@@ -33,9 +33,9 @@ pub fn detect_type(root: &Path) -> Option<CloudType> {
             .and_then(|t| t.as_str())
     {
         return match t {
-            "cdk" => Some(CloudType::Cdk),
+            "cdk" | "cdk-typescript" => Some(CloudType::Cdk),
             "pulumi" => Some(CloudType::Pulumi),
-            "terraform" => Some(CloudType::Terraform),
+            "terraform" | "terraform-gcp" => Some(CloudType::Terraform),
             "cloudflare" => Some(CloudType::Cloudflare),
             _ => None,
         };

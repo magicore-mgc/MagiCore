@@ -124,6 +124,20 @@ fn detect_cloudflare_via_mgc_toml() {
 }
 
 #[test]
+fn mgc_toml_recognizes_cdk_typescript_framework_alias() {
+    let dir = tmp("mgc-cdk-typescript");
+    std::fs::write(dir.join("mgc.toml"), "[cloud]\ntype = \"cdk-typescript\"\n").unwrap();
+    assert_eq!(detect_type(&dir), Some(CloudType::Cdk));
+}
+
+#[test]
+fn mgc_toml_recognizes_terraform_gcp_framework_alias() {
+    let dir = tmp("mgc-terraform-gcp");
+    std::fs::write(dir.join("mgc.toml"), "[cloud]\ntype = \"terraform-gcp\"\n").unwrap();
+    assert_eq!(detect_type(&dir), Some(CloudType::Terraform));
+}
+
+#[test]
 fn detect_returns_none_for_empty_dir() {
     let dir = tmp("empty");
     assert!(detect_type(&dir).is_none());
