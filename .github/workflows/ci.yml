@@ -270,7 +270,7 @@ jobs:
           docker run --rm magicore-ai-python-container:local
           MGC_IMAGE_NAME=magicore-ai-python-container:local \
             MGC_DATA_VOLUME=magicore-ai-python-e2e-data \
-            docker compose --file "${project}/docker-compose.yml" run --no-build --rm app
+            docker compose --file "${project}/docker-compose.yml" run --rm app
       - name: Build and run the CDK validation container through MGC
         run: |
           set -euo pipefail

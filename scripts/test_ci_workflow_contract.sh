@@ -76,6 +76,20 @@ grep -Fq 'test "$(cat "${project}/.mgc.core")" = "web"' <<<"$generated_web_conta
 grep -Fq 'test -r "${project}/mgc.toml"' <<<"$generated_web_container" \
   || fail "Docker E2E must verify MGC project config is readable before building the generated image"
 
+# `docker compose run` has no `--no-build` option. Reuse the explicitly built
+# image by setting the generated Compose image name, then invoke the valid `run`
+# command. (Compose `run` không có `--no-build`; dùng image đã build theo tên.)
+generated_ai_container="$(sed -n '/Build and run the AI Python container with MGC-owned packages/,/Build and run the CDK validation container through MGC/p' "$ci_workflow")"
+grep -Fq -- '--tag magicore-ai-python-container:local' <<<"$generated_ai_container" \
+  || fail "AI container E2E must build the image that the Compose run reuses"
+grep -Fq 'MGC_IMAGE_NAME=magicore-ai-python-container:local' <<<"$generated_ai_container" \
+  || fail "AI container Compose E2E must run the image built by the preceding MGC Docker step"
+grep -Fq 'docker compose --file "${project}/docker-compose.yml" run --rm app' <<<"$generated_ai_container" \
+  || fail "AI container E2E must use the supported Docker Compose run syntax"
+if grep -Fq 'run --no-build' <<<"$generated_ai_container"; then
+  fail "Docker Compose run does not support --no-build"
+fi
+
 PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test_release_lifecycle_gate.py" \
   || fail "release publishers must require the same-commit lifecycle workflow"
 
