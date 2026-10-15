@@ -6,7 +6,7 @@
 
 #![allow(clippy::unwrap_used)]
 
-use criterion::{BatchSize, BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use mgc_types::capabilities::ContentStoreProvider;
@@ -14,6 +14,7 @@ use mgc_types::{
     PackageId, PackageName, ResolvedGraph, ResolvedPackage, Version, adapter::InstallOptions,
 };
 use mgc_web_adapter::WebAdapter;
+use std::hint::black_box;
 use std::path::Path;
 use tar::{Builder, Header};
 

@@ -1,11 +1,12 @@
 //! Performance benchmarks for crypto operations
 //! Benchmark hiệu năng cho các thao tác crypto
 
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use mgc_crypto::blake3_signer::Blake3Hasher;
 use mgc_crypto::ed25519_signer::{Ed25519Signer, verify_signature};
 use ring::rand::SystemRandom;
 use ring::signature::Ed25519KeyPair;
+use std::hint::black_box;
 
 fn bench_blake3_hash(c: &mut Criterion) {
     let mut group = c.benchmark_group("blake3_hash");

@@ -3,9 +3,10 @@
 //!
 //! Usage: cargo bench --package mgc-resolver
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 use mgc_resolver::{DependencyError, DependencyProvider, ResolvedDep, Resolver};
 use mgc_types::{PackageId, PackageName, Version, VersionRange};
+use std::hint::black_box;
 use std::sync::Arc;
 
 fn make_pkg(name: &str) -> PackageName {
