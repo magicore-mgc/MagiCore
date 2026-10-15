@@ -442,6 +442,8 @@ jobs:
           done
       - name: Deploy the CLI-scaffolded image to Kubernetes with kind
         uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
+        with:
+          cluster_name: kind
       - name: Exercise the generated Kubernetes Deployment and Service
         run: |
           set -euo pipefail

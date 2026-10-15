@@ -397,15 +397,19 @@ async fn redirected_tarball_never_receives_registry_authorization() {
     .await
     .unwrap();
     assert_eq!(result, b"artifact");
+    let registry_requests = registry.requests.lock().unwrap().clone();
     assert!(
-        registry.requests.lock().unwrap()[0]
+        registry_requests.first().is_some_and(|request| request
             .to_ascii_lowercase()
-            .contains("authorization: bearer fixture-token")
+            .contains("authorization: bearer fixture-token")),
+        "expected registry authorization on the first request, got: {registry_requests:#?}"
     );
+    let cdn_requests = cdn.requests.lock().unwrap().clone();
     assert!(
-        !cdn.requests.lock().unwrap()[0]
-            .to_ascii_lowercase()
-            .contains("authorization:")
+        cdn_requests
+            .first()
+            .is_some_and(|request| !request.to_ascii_lowercase().contains("authorization:")),
+        "expected an unauthenticated CDN request, got: {cdn_requests:#?}"
     );
 }
 
@@ -530,7 +534,13 @@ async fn automatic_fetch_uses_visible_cache_and_honors_versions_for_four_cores()
             let requested = format!("{rel}{suffix}");
             let result = ensure_layer_in(&requested, &cache, Some(&server.url), Some(&auth))
                 .await
-                .unwrap();
+                .unwrap_or_else(|error| {
+                    let requests = server.requests.lock().unwrap().clone();
+                    panic!(
+                        "ensure_layer_in({requested:?}) failed: {error:#}; fixture recorded {} requests: {requests:#?}",
+                        requests.len()
+                    );
+                });
             match result {
                 ScaffoldResolveStatus::Fetched {
                     path,
@@ -748,7 +758,13 @@ async fn publish_success_requires_a_successful_status_and_scoped_target() {
     put_template_bytes(&registry, target, &auth, b"{}".to_vec(), true)
         .await
         .unwrap();
-    assert!(server.requests.lock().unwrap()[0].starts_with("PUT /private/mgc-create-app-probe "));
+    let requests = server.requests.lock().unwrap().clone();
+    assert!(
+        requests
+            .first()
+            .is_some_and(|request| request.starts_with("PUT /private/mgc-create-app-probe ")),
+        "expected PUT to the scoped package path, got: {requests:#?}"
+    );
     let outside = registry.join("/outside").unwrap();
     assert!(
         put_template_bytes(&registry, outside, &auth, vec![], false)
