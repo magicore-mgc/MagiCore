@@ -4,6 +4,33 @@
 use std::path::Path;
 use std::process::Command;
 
+use serde::Deserialize;
+
+fn assert_valid_k8s_manifest(manifest: &str, probe_path: &str) {
+    let documents = serde_yaml::Deserializer::from_str(manifest)
+        .map(serde_yaml::Value::deserialize)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap_or_else(|error| panic!("invalid generated Kubernetes YAML: {error}"));
+    assert_eq!(
+        documents.len(),
+        2,
+        "manifest must contain Deployment and Service"
+    );
+
+    let deployment = &documents[0];
+    assert_eq!(deployment["apiVersion"], "apps/v1");
+    assert_eq!(deployment["kind"], "Deployment");
+    assert_eq!(
+        deployment["spec"]["template"]["spec"]["containers"][0]["startupProbe"]["httpGet"]["path"],
+        probe_path
+    );
+
+    let service = &documents[1];
+    assert_eq!(service["apiVersion"], "v1");
+    assert_eq!(service["kind"], "Service");
+    assert_eq!(service["spec"]["ports"][0]["targetPort"], "http");
+}
+
 fn assert_project_roots_owned_before_switching_user(dockerfile: &str) {
     let ownership = dockerfile
         .find("RUN chown 65532:65532 /app /mgc-data")
@@ -235,6 +262,7 @@ fn create_web_k8s_implies_docker_and_generates_local_cluster_assets() {
 
     let manifest = std::fs::read_to_string(project.join("k8s/deployment.yaml"))
         .expect("--k8s must emit a Kubernetes deployment");
+    assert_valid_k8s_manifest(&manifest, "/");
     let deployment_name = manifest
         .lines()
         .find_map(|line| line.trim().strip_prefix("name: "))
@@ -353,6 +381,7 @@ fn create_web_native_backend_docker_profiles_keep_dependencies_under_mgc() {
             .join("container-web-python-k8s/k8s/deployment.yaml"),
     )
     .expect("native Web Kubernetes profile must generate deployment manifest");
+    assert_valid_k8s_manifest(&manifest, "/api/health");
     assert!(manifest.contains("path: /api/health"));
     let dockerfile =
         std::fs::read_to_string(temp.path().join("container-web-python-k8s/Dockerfile"))

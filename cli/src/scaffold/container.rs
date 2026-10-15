@@ -427,72 +427,73 @@ fn write_web_k8s_assets(target: &Path, config: &ScaffoldConfig) -> Result<()> {
         "/api/health"
     };
     let manifest = format!(
-        "apiVersion: apps/v1\n\
-         kind: Deployment\n\
-         metadata:\n\
-         \x20 name: {name}\n\
-         \x20 labels:\n\
-         \x20\x20 app.kubernetes.io/name: {name}\n\
-         spec:\n\
-         \x20 replicas: 1\n\
-         \x20 selector:\n\
-         \x20\x20 matchLabels:\n\
-         \x20\x20\x20 app.kubernetes.io/name: {name}\n\
-         \x20 template:\n\
-         \x20\x20 metadata:\n\
-         \x20\x20\x20 labels:\n\
-         \x20\x20\x20\x20 app.kubernetes.io/name: {name}\n\
-         \x20\x20 spec:\n\
-         \x20\x20\x20 automountServiceAccountToken: false\n\
-         \x20\x20\x20 securityContext:\n\
-         \x20\x20\x20\x20 runAsNonRoot: true\n\
-         \x20\x20\x20\x20 runAsUser: {WEB_CONTAINER_UID}\n\
-         \x20\x20\x20\x20 runAsGroup: {WEB_CONTAINER_GID}\n\
-         \x20\x20\x20\x20 fsGroup: {WEB_CONTAINER_GID}\n\
-         \x20\x20\x20\x20 seccompProfile:\n\
-         \x20\x20\x20\x20\x20 type: RuntimeDefault\n\
-         \x20\x20\x20 containers:\n\
-         \x20\x20\x20 - name: web\n\
-         \x20\x20\x20\x20 image: {image}\n\
-         \x20\x20\x20\x20 imagePullPolicy: IfNotPresent\n\
-         \x20\x20\x20\x20 ports:\n\
-         \x20\x20\x20\x20 - name: http\n\
-         \x20\x20\x20\x20\x20 containerPort: {DEFAULT_WEB_CONTAINER_PORT}\n\
-         \x20\x20\x20\x20 env:\n\
-         \x20\x20\x20\x20 - name: MGC_DATA_DIR\n\
-         \x20\x20\x20\x20\x20 value: {DEFAULT_CONTAINER_DATA_DIR}\n\
-         \x20\x20\x20\x20 startupProbe:\n\
-         \x20\x20\x20\x20\x20 httpGet:\n\
-         \x20\x20\x20\x20\x20\x20 path: {probe_path}\n\
-         \x20\x20\x20\x20\x20\x20 port: http\n\
-         \x20\x20\x20\x20\x20 periodSeconds: 5\n\
-         \x20\x20\x20\x20\x20 failureThreshold: 36\n\
-         \x20\x20\x20\x20 readinessProbe:\n\
-         \x20\x20\x20\x20\x20 httpGet:\n\
-         \x20\x20\x20\x20\x20\x20 path: {probe_path}\n\
-         \x20\x20\x20\x20\x20\x20 port: http\n\
-         \x20\x20\x20\x20 livenessProbe:\n\
-         \x20\x20\x20\x20\x20 httpGet:\n\
-         \x20\x20\x20\x20\x20\x20 path: {probe_path}\n\
-         \x20\x20\x20\x20\x20\x20 port: http\n\
-         \x20\x20\x20\x20 securityContext:\n\
-         \x20\x20\x20\x20\x20 allowPrivilegeEscalation: false\n\
-         \x20\x20\x20\x20\x20 capabilities:\n\
-         \x20\x20\x20\x20\x20\x20 drop: [ALL]\n\
-         ---\n\
-         apiVersion: v1\n\
-         kind: Service\n\
-         metadata:\n\
-         \x20 name: {name}\n\
-         spec:\n\
-         \x20 selector:\n\
-         \x20\x20 app.kubernetes.io/name: {name}\n\
-         \x20 ports:\n\
-         \x20 - name: http\n\
-         \x20\x20 protocol: TCP\n\
-         \x20\x20 port: {DEFAULT_WEB_CONTAINER_PORT}\n\
-         \x20\x20 targetPort: http\n\
-         \x20 type: ClusterIP\n"
+        r#"apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {name}
+  labels:
+    app.kubernetes.io/name: {name}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {name}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {name}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {WEB_CONTAINER_UID}
+        runAsGroup: {WEB_CONTAINER_GID}
+        fsGroup: {WEB_CONTAINER_GID}
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: {image}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: {DEFAULT_WEB_CONTAINER_PORT}
+          env:
+            - name: MGC_DATA_DIR
+              value: {DEFAULT_CONTAINER_DATA_DIR}
+          startupProbe:
+            httpGet:
+              path: {probe_path}
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: {probe_path}
+              port: http
+          livenessProbe:
+            httpGet:
+              path: {probe_path}
+              port: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {name}
+spec:
+  selector:
+    app.kubernetes.io/name: {name}
+  ports:
+    - name: http
+      protocol: TCP
+      port: {DEFAULT_WEB_CONTAINER_PORT}
+      targetPort: http
+  type: ClusterIP
+"#
     );
     let readme = format!(
         "# Kubernetes development lane\n\nThis manifest runs `mgc dev` in a local cluster for development and E2E validation. It is not a production deployment profile.\n\nRun `mgc install` in the project first to create the lockfile consumed by the image. Build and load the image into kind, then apply the manifest:\n\n```sh\ndocker build -t {image} .\nkind load docker-image {image}\nkubectl apply -f k8s/deployment.yaml\n```\n\nThe generated image copies the project lock and runs `mgc install-web --frozen` before `mgc dev`. The pod runs as UID/GID 65532 with dropped Linux capabilities. Runtime MGC writes live in the pod's writable layer and are discarded when the pod is replaced.\n"
