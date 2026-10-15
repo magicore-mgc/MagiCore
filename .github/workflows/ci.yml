@@ -161,6 +161,12 @@ jobs:
             magicore-cli-smoke \
             install-web
           test -s "${project}/mgc.lock"
+          # The CLI image writes project metadata as UID 65532:65532. The
+          # runner's Docker client must be able to read this build context.
+          # (CLI image ghi metadata dưới UID 65532:65532; Docker client runner cần đọc được build context.)
+          sudo chown -R "$(id -u):$(id -g)" "${project}"
+          test "$(cat "${project}/.mgc.core")" = "web"
+          test -r "${project}/mgc.toml"
           grep -F 'RUN mgc install-web --frozen' "${project}/Dockerfile"
           grep -F 'RUN mgc test' "${project}/Dockerfile"
           grep -F 'ENTRYPOINT ["/usr/local/bin/mgc-container-entrypoint"]' "${project}/Dockerfile"
@@ -207,6 +213,8 @@ jobs:
             magicore-cli-smoke \
             install-web
           test -s "${project}/mgc.lock"
+          sudo chown -R "$(id -u):$(id -g)" "${project}"
+          test "$(cat "${project}/.mgc.core")" = "web"
           grep -F "app.listen(port, '0.0.0.0'" "${project}/src/server.ts"
           grep -F 'RUN mgc install-web --frozen' "${project}/Dockerfile"
           grep -F 'RUN mgc test' "${project}/Dockerfile"
@@ -248,6 +256,8 @@ jobs:
             magicore-cli-smoke \
             install-ai
           test -s "${project}/mgc.lock"
+          sudo chown -R "$(id -u):$(id -g)" "${project}"
+          test "$(cat "${project}/.mgc.core")" = "ai"
           grep -F 'COPY --from=mgc-cli /usr/local/bin/mgc' "${project}/Dockerfile"
           grep -F 'pytest==9.1.1' "${project}/pyproject.toml"
           grep -F 'RUN mgc install --frozen' "${project}/Dockerfile"
@@ -279,6 +289,8 @@ jobs:
             magicore-cli-smoke \
             install
           test -s "${project}/mgc.lock"
+          sudo chown -R "$(id -u):$(id -g)" "${project}"
+          test "$(cat "${project}/.mgc.core")" = "clo"
           grep -F 'COPY --from=mgc-cli /usr/local/bin/mgc' "${project}/Dockerfile"
           grep -F 'RUN mgc install --frozen' "${project}/Dockerfile"
           grep -F 'RUN mgc test' "${project}/Dockerfile"
@@ -311,6 +323,8 @@ jobs:
             magicore-cli-smoke \
             install
           test -s "${project}/mgc.lock"
+          sudo chown -R "$(id -u):$(id -g)" "${project}"
+          test "$(cat "${project}/.mgc.core")" = "lib"
           grep -F 'COPY --from=mgc-cli /usr/local/bin/mgc' "${project}/Dockerfile"
           grep -F 'RUN mgc install --frozen' "${project}/Dockerfile"
           grep -F 'RUN mgc test' "${project}/Dockerfile"
@@ -345,6 +359,8 @@ jobs:
               magicore-cli-smoke \
               install
             test -s "${project}/mgc.lock"
+            sudo chown -R "$(id -u):$(id -g)" "${project}"
+            test "$(cat "${project}/.mgc.core")" = "lib"
             docker compose --file "${project}/docker-compose.yml" config --quiet
             grep -F 'COPY --from=mgc-cli /usr/local/bin/mgc' "${project}/Dockerfile"
             grep -F 'RUN mgc test' "${project}/Dockerfile"
@@ -382,6 +398,7 @@ jobs:
               "${RUNNER_TEMP}/mgc" install
           )
           test -s "${project}/mgc.lock"
+          test "$(cat "${project}/.mgc.core")" = "app"
           grep -F 'COPY --from=mgc-cli /usr/local/bin/mgc' "${project}/Dockerfile"
           grep -F 'FLUTTER_VERSION=3.47.7' "${project}/Dockerfile"
           grep -F 'sha256sum --check --strict' "${project}/Dockerfile"

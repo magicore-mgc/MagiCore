@@ -58,6 +58,19 @@ container_template_dirs="$(find "$ROOT/templates" -type d \( -name k8s -o -name 
 [[ -z "$container_template_dirs" ]] \
   || fail "Kubernetes assets must be emitted by MGC flags, not framework template directories"
 
+# Docker E2E scaffolds projects as the non-root CLI image user, then builds
+# from the host runner. Return ownership before the runner reads private MGC
+# identity/config files, and check the web marker before entering Docker COPY.
+# (E2E Docker scaffold bằng user không-root; trả ownership trước khi runner đọc
+# file MGC riêng tư và kiểm tra core marker trước bước Docker COPY.)
+generated_web_container="$(sed -n '/Scaffold and build a real web container through the MGC CLI/,/Run and reach the CLI-scaffolded container/p' "$ROOT/.github/workflows/ci.yml")"
+grep -Fq 'sudo chown -R "$(id -u):$(id -g)" "${project}"' <<<"$generated_web_container" \
+  || fail "Docker E2E must make the generated web build context readable to the host Docker client"
+grep -Fq 'test "$(cat "${project}/.mgc.core")" = "web"' <<<"$generated_web_container" \
+  || fail "Docker E2E must verify the web core marker before building the generated image"
+grep -Fq 'test -r "${project}/mgc.toml"' <<<"$generated_web_container" \
+  || fail "Docker E2E must verify MGC project config is readable before building the generated image"
+
 PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test_release_lifecycle_gate.py" \
   || fail "release publishers must require the same-commit lifecycle workflow"
 
