@@ -95,6 +95,28 @@ fn is_manifest_root_package(manifest: &Manifest, package_id: &PackageId) -> bool
     })
 }
 
+/// Prefer a compatible project root when binding a package dependency edge.
+/// (Ưu tiên phiên bản gốc của project nếu nó thỏa range để dùng chung an toàn.)
+fn select_resolved_candidate<'a>(
+    candidates: &'a [&'a mgc_resolver::solver::Resolution],
+    constraint: &VersionRange,
+    manifest: &Manifest,
+) -> Option<&'a mgc_resolver::solver::Resolution> {
+    candidates
+        .iter()
+        .copied()
+        .filter(|candidate| constraint.matches(candidate.package_id.version()))
+        .filter(|candidate| is_manifest_root_package(manifest, &candidate.package_id))
+        .max_by(|left, right| left.package_id.version().cmp(right.package_id.version()))
+        .or_else(|| {
+            candidates
+                .iter()
+                .copied()
+                .filter(|candidate| constraint.matches(candidate.package_id.version()))
+                .max_by(|left, right| left.package_id.version().cmp(right.package_id.version()))
+        })
+}
+
 /// v4 resolve short-circuit: reuse a satisfying v4 lock graph instead of
 /// re-solving. Returns `None` (miss) for missing/non-v4 locks, closure
 /// mismatches, and lossy-but-valid v4 shapes — all fall through to fresh
@@ -945,6 +967,50 @@ impl WebAdapter {
             },
         );
         profile.mark("build_resolution_index", index_started_at);
+        for resolution in &result.resolutions {
+            let Some(version_metadata) =
+                metadata
+                    .get(resolution.package_id.name_str())
+                    .and_then(|package| {
+                        package
+                            .versions
+                            .get(&resolution.package_id.version().to_string())
+                    })
+            else {
+                continue;
+            };
+            let Some(peers) = version_metadata.peer_dependencies.as_ref() else {
+                continue;
+            };
+            for (peer_name, peer_range) in peers {
+                if version_metadata
+                    .peer_dependencies_meta
+                    .get(peer_name.as_str())
+                    .is_some_and(|metadata| metadata.optional)
+                {
+                    continue;
+                }
+                let constraint = VersionRange::parse(peer_range).map_err(|_| {
+                    MgError::DependencyConflict(format!(
+                        "invalid peer dependency range '{}' for '{}' required by '{}'",
+                        peer_range, peer_name, resolution.package_id
+                    ))
+                })?;
+                if !resolution_index
+                    .get(peer_name.as_str())
+                    .is_some_and(|candidates| {
+                        candidates
+                            .iter()
+                            .any(|candidate| constraint.matches(candidate.package_id.version()))
+                    })
+                {
+                    return Err(MgError::DependencyConflict(format!(
+                        "no resolved version of peer dependency '{}' satisfies '{}' required by '{}'",
+                        peer_name, peer_range, resolution.package_id
+                    )));
+                }
+            }
+        }
         let package_started_at = std::time::Instant::now();
         let packages: Vec<ResolvedPackage> = result
             .resolutions
@@ -982,6 +1048,13 @@ impl WebAdapter {
                         .dep_specs
                         .iter()
                         .filter_map(|(name, spec)| {
+                            // Peer edges are materialized in their own nested
+                            // lookup scope below; do not also treat them as
+                            // regular dependencies.
+                            // (Peer được nối riêng bên dưới, tránh cài/nối hai lần.)
+                            if r.peer_deps.iter().any(|peer| peer == name) {
+                                return None;
+                            }
                             let constraint = VersionRange::parse(spec).ok()?;
                             let dep_name = PackageName::new(name.as_str()).ok()?;
                             let source = self.provider.source_package_name(&dep_name);
@@ -991,10 +1064,7 @@ impl WebAdapter {
                                 .get(dep_name.as_str())
                                 .or_else(|| resolution_index.get(source.as_str()))
                                 .and_then(|candidates| {
-                                    candidates
-                                        .iter()
-                                        .filter(|candidate| constraint.matches(&candidate.version))
-                                        .max_by(|left, right| left.version.cmp(&right.version))
+                                    select_resolved_candidate(candidates, &constraint, manifest)
                                 })
                                 .map(|candidate| candidate.package_id.clone())
                         })
@@ -1004,44 +1074,35 @@ impl WebAdapter {
                         .and_then(|pkg_meta| {
                             pkg_meta.versions.get(&r.package_id.version().to_string())
                         })
-                        .and_then(|ver_meta| ver_meta.peer_dependencies.as_ref())
-                        .map(|peers| {
-                            peers
-                                .iter()
-                                .filter_map(|(peer_name, peer_range)| {
-                                    // Peer edges carry ranges too — an
-                                    // unfiltered max here picks versions
-                                    // the peer never allowed (same family
-                                    // as the 0.x-caret bug: constrain, then
-                                    // max). Unparsable ranges fall back to
-                                    // max (never fail a peer on syntax).
-                                    // (Peer cũng lọc theo range rồi mới max.)
-                                    let constraint =
-                                        mgc_types::VersionRange::parse(peer_range).ok()?;
-                                    resolution_index.get(peer_name.as_str()).and_then(
-                                        |candidates| {
-                                            candidates
-                                                .iter()
-                                                .filter(|c| {
-                                                    constraint.matches(c.package_id.version())
-                                                })
-                                                .max_by(|a, b| {
-                                                    a.package_id
-                                                        .version()
-                                                        .cmp(b.package_id.version())
-                                                })
-                                                .or_else(|| {
-                                                    candidates.iter().max_by(|a, b| {
-                                                        a.package_id
-                                                            .version()
-                                                            .cmp(b.package_id.version())
-                                                    })
-                                                })
-                                        },
-                                    )
-                                })
-                                .map(|candidate| candidate.package_id.clone())
-                                .collect()
+                        .and_then(|ver_meta| {
+                            ver_meta.peer_dependencies.as_ref().map(|peers| {
+                                peers
+                                    .iter()
+                                    .filter(|(peer_name, _)| {
+                                        !ver_meta
+                                            .peer_dependencies_meta
+                                            .get(peer_name.as_str())
+                                            .is_some_and(|metadata| metadata.optional)
+                                    })
+                                    .filter_map(|(peer_name, peer_range)| {
+                                        // A satisfying project root takes precedence over
+                                        // a newer transitive instance; an incompatible
+                                        // candidate is never selected as a fallback.
+                                        // (Ưu tiên root thỏa range; không chọn bản lệch range.)
+                                        let constraint = VersionRange::parse(peer_range).ok()?;
+                                        resolution_index
+                                            .get(peer_name.as_str())
+                                            .and_then(|candidates| {
+                                                select_resolved_candidate(
+                                                    candidates,
+                                                    &constraint,
+                                                    manifest,
+                                                )
+                                            })
+                                            .map(|candidate| candidate.package_id.clone())
+                                    })
+                                    .collect()
+                            })
                         })
                         .unwrap_or_default(),
                     direct: is_direct,

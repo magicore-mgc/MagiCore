@@ -136,10 +136,10 @@ export default defineConfig({
     "vue": "^3.5.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^5.2.1",
-    "typescript": "^5.7.2",
-    "vite": "^6.0.0",
-    "vue-tsc": "^2.2.0"
+    "@vitejs/plugin-vue": "^6.0.10",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.5",
+    "vue-tsc": "^3.3.13"
   }
 }"#,
             },
