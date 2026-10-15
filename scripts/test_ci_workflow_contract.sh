@@ -24,11 +24,16 @@ for workflow in ci delegated-compatibility-matrix lifecycle-matrix nightly-audit
     || fail "${workflow} must cancel superseded validation runs"
 done
 
-# Keep benchmark PMs isolated from runner-owned shims and use current Swift setup.
-# Cô lập PM so sánh khỏi shim hệ thống; dùng cùng action Swift với lifecycle.
+# Product workflows must not use an external package manager for bootstrap.
+# Workflow sản phẩm không dùng package manager ngoài để bootstrap dependency.
 stress_workflow="$ROOT/.github/workflows/stress-matrix.yml"
-grep -Fq 'npm install --global --prefix "$pm_prefix"' "$stress_workflow" \
-  || fail "stress PM setup must use an isolated prefix"
+ci_workflow="$ROOT/.github/workflows/ci.yml"
+if grep -Eiq '^[[:space:]]*(run:[[:space:]]*)?(npm|npx|pnpm|yarn|bun|bunx)(\.cmd)?[[:space:]]+(install|i|ci|add|run|exec|dlx|x|update|remove|uninstall|publish|pack|prune|audit|list|outdated)([[:space:]]|$)' "$stress_workflow" "$ci_workflow"; then
+  fail "CI must not install project or package-manager dependencies outside MGC"
+fi
+if grep -Eiq '^[[:space:]]*(run:[[:space:]]*)?(npm|npx|pnpm|yarn|bun|bunx)(\.cmd)?[[:space:]]+(--version|version)([[:space:]]|$)' "$ci_workflow" "$stress_workflow"; then
+  fail "CI must not invoke package-manager version commands outside MGC"
+fi
 grep -Fq 'swift-actions/setup-swift@364295d9c23900ce04d4e5cc708387921b4e50f9' "$stress_workflow" \
   || fail "stress Swift setup must use the current lifecycle installer"
 
@@ -469,18 +474,9 @@ grep -q 'cargo-audit --version 0.22.2' "$SECURITY" || fail "cargo-audit pin is s
 grep -q 'OSV_VERSION="2.6.0"' "$SECURITY" || fail "OSV-Scanner pin is stale"
 
 stress_workflow="$ROOT/.github/workflows/stress-matrix.yml"
-for package_manager_version in 'npm@12.2.0' 'pnpm@12.11.2' '@yarnpkg/cli-dist@4.18.1'; do
-  grep -Fq "$package_manager_version" "$stress_workflow" \
-    || fail "stress matrix must provision and verify latest package manager: $package_manager_version"
-done
-for package_manager_check in \
-  'test "$(npm --version)" = "12.2.0"' \
-  'test "$(pnpm --version)" = "12.11.2"' \
-  'test "$(yarn --version)" = "4.18.1"' \
-  'test "$(bun --version)" = "1.4.3"' \
-  'deno --version | head -1 | grep -F "deno 2.9.7"'; do
-  grep -Fq "$package_manager_check" "$stress_workflow" \
-    || fail "stress matrix must verify installed package manager version: $package_manager_check"
+for runtime_check in 'deno --version | head -1 | grep -F "deno 2.9.7"'; do
+  grep -Fq "$runtime_check" "$stress_workflow" \
+    || fail "stress matrix must verify installed runtime version: $runtime_check"
 done
 
 # T0.5 installer freshness: the embedded SHA-256 in dev/cicd.rs must be

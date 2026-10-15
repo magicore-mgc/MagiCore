@@ -70,18 +70,6 @@ jobs:
         with:
           deno-version: "2.9.7"
 
-      - name: Set up current Node package managers
-        shell: bash
-        run: |
-          set -euo pipefail
-          pm_prefix="${RUNNER_TEMP}/mgc-node-package-managers"
-          npm install --global --prefix "$pm_prefix" npm@12.2.0 pnpm@12.11.2 @yarnpkg/cli-dist@4.18.1
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            cygpath -w "$pm_prefix" >> "$GITHUB_PATH"
-          else
-            echo "$pm_prefix/bin" >> "$GITHUB_PATH"
-          fi
-
       - name: Set up Java for Java and Kotlin runtime probes
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
@@ -391,7 +379,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          runtime_tools=(bash node npm pnpm yarn bun deno python go dart rustc cargo swift java dotnet php kotlinc terraform godot zig)
+          runtime_tools=(bash node bun deno python go dart rustc cargo swift java dotnet php kotlinc terraform godot zig)
           case "${RUNNER_OS}" in
             macOS)
               runtime_tools+=(clang clang++)
@@ -411,10 +399,6 @@ jobs:
             fi
           done
           test "$(node --version)" = "v26.12.0"
-          test "$(npm --version)" = "12.2.0"
-          test "$(pnpm --version)" = "12.11.2"
-          test "$(yarn --version)" = "4.18.1"
-          test "$(bun --version)" = "1.4.3"
           deno --version | head -1 | grep -F "deno 2.9.7"
           rustc --version | grep -F "rustc 1.99.0"
           go version | grep -F "go1.27.2"

@@ -722,8 +722,6 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "26.12.0"
-      - name: Install the latest npm CLI
-        run: npm install --global npm@12.2.0
       - name: Cache cargo
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2 (latest)
 
@@ -753,7 +751,6 @@ jobs:
         run: |
           python3 --version
           node --version
-          npm --version
           flutter --version
           flutter doctor -v
           go version || echo "Go not available"
@@ -796,7 +793,7 @@ jobs:
         if: always()
         run: |
           echo "=== Test Summary ==="
-          echo "Runtimes provisioned: Python3, Node, npm, Flutter; Python project test dependencies are installed through MGC"
+          echo "Runtimes provisioned: Python3, Node, Flutter; project dependencies are installed through MGC"
           echo "Full-core lifecycle and global-tool E2Es invoke the optimized release mgc binary"
           echo "Install smoke tests: structure verified"
 
