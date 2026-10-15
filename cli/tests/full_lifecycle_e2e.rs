@@ -478,7 +478,8 @@ fn test_ai_full_lifecycle() {
     );
 
     assert!(
-        test_combined.contains("1 passed"),
+        test_combined
+            .contains("tests/test_mgc_lifecycle.py::test_python_runtime_is_available PASSED"),
         "TEST did not execute the lifecycle test:\n{test_combined}"
     );
     println!("TEST verified: MGC-installed pytest ran one project test");
