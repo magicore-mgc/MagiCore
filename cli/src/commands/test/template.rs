@@ -325,6 +325,11 @@ impl HttpFixture {
                     }
                     Err(_) => break,
                 };
+                // The listener is nonblocking for the accept loop. Explicitly
+                // restore blocking mode on each accepted socket: some OSes
+                // propagate O_NONBLOCK, which would make the first read return
+                // WouldBlock before the HTTP client has written its request.
+                stream.set_nonblocking(false).unwrap();
                 stream
                     .set_read_timeout(Some(std::time::Duration::from_secs(2)))
                     .unwrap();
@@ -343,6 +348,9 @@ impl HttpFixture {
                 }
                 if let Some(end) = request.windows(4).position(|part| part == b"\r\n\r\n") {
                     request.truncate(end + 4);
+                }
+                if request.is_empty() {
+                    continue;
                 }
                 let request = String::from_utf8(request).unwrap();
                 captured.lock().unwrap().push(request.clone());
@@ -420,7 +428,10 @@ async fn body_without_content_length_is_still_bounded() {
     let error = download_template_bytes(&fixture_client(), registry.clone(), &registry, None, 8)
         .await
         .unwrap_err();
-    assert!(error.to_string().contains("8 byte limit"));
+    assert!(
+        error.to_string().contains("8 byte limit"),
+        "expected response-size limit error, got: {error:#}"
+    );
 }
 
 #[tokio::test]
