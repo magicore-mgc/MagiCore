@@ -72,7 +72,15 @@ jobs:
 
       - name: Set up current Node package managers
         shell: bash
-        run: npm install --global npm@12.2.0 pnpm@12.11.2 @yarnpkg/cli-dist@4.18.1
+        run: |
+          set -euo pipefail
+          pm_prefix="${RUNNER_TEMP}/mgc-node-package-managers"
+          npm install --global --prefix "$pm_prefix" npm@12.2.0 pnpm@12.11.2 @yarnpkg/cli-dist@4.18.1
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            cygpath -w "$pm_prefix" >> "$GITHUB_PATH"
+          else
+            echo "$pm_prefix/bin" >> "$GITHUB_PATH"
+          fi
 
       - name: Set up Java for Java and Kotlin runtime probes
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
@@ -343,7 +351,7 @@ jobs:
 
       - name: Set up Swift toolchain (Linux/macOS)
         if: runner.os != 'Windows'
-        uses: swift-actions/setup-swift@7ca6abe6b3b0e8b5421b88be48feee39cbf52c6a # v2.4.0
+        uses: swift-actions/setup-swift@364295d9c23900ce04d4e5cc708387921b4e50f9 # v3.0.0-beta.1
         with:
           swift-version: "6.4.1"
 

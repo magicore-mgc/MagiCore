@@ -1582,9 +1582,22 @@ fn windows_sha256_file(path: &Path) -> Result<[u8; 32]> {
 
     let mut file = std::fs::File::open(path)
         .with_context(|| format!("open executable for identity check '{}'", path.display()))?;
+    use std::io::Read;
+
     let mut digest = Sha256::new();
-    std::io::copy(&mut file, &mut digest)
-        .with_context(|| format!("hash executable identity '{}'", path.display()))?;
+    // Bound identity hashing memory independently of executable size.
+    // Đọc theo khối cố định, không nạp toàn bộ executable vào RAM.
+    const HASH_BUFFER_BYTES: usize = 64 * 1024;
+    let mut buffer = [0_u8; HASH_BUFFER_BYTES];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .with_context(|| format!("hash executable identity '{}'", path.display()))?;
+        if read == 0 {
+            break;
+        }
+        digest.update(&buffer[..read]);
+    }
     Ok(digest.finalize().into())
 }
 

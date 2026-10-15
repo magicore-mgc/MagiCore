@@ -24,6 +24,14 @@ for workflow in ci delegated-compatibility-matrix lifecycle-matrix nightly-audit
     || fail "${workflow} must cancel superseded validation runs"
 done
 
+# Keep benchmark PMs isolated from runner-owned shims and use current Swift setup.
+# Cô lập PM so sánh khỏi shim hệ thống; dùng cùng action Swift với lifecycle.
+stress_workflow="$ROOT/.github/workflows/stress-matrix.yml"
+grep -Fq 'npm install --global --prefix "$pm_prefix"' "$stress_workflow" \
+  || fail "stress PM setup must use an isolated prefix"
+grep -Fq 'swift-actions/setup-swift@364295d9c23900ce04d4e5cc708387921b4e50f9' "$stress_workflow" \
+  || fail "stress Swift setup must use the current lifecycle installer"
+
 for required_scaffold_test in \
   'cargo test --release --locked -p mgc --lib commands::template::tests' \
   'cargo test --release --locked -p mgc --lib scaffold::cache::tests' \
