@@ -210,6 +210,336 @@ export default defineConfig({
 }"#,
             },
         ]),
+        ("web", "fastify") => Some(vec![
+            EmbeddedFile {
+                path: "package.json",
+                content: r#"{
+  "name": "{{PROJECT_NAME}}",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc --project tsconfig.json",
+    "test": "tsx --test test/app.test.ts"
+  },
+  "dependencies": {
+    "fastify": "^5.12.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}"#,
+            },
+            EmbeddedFile {
+                path: "src/app.ts",
+                content: r#"import fastify from 'fastify'
+
+export function buildApp() {
+  const app = fastify()
+  app.get('/', async () => ({ message: 'Hello from MagiCore Fastify' }))
+  return app
+}
+"#,
+            },
+            EmbeddedFile {
+                path: "src/server.ts",
+                content: r#"import { buildApp } from './app.js'
+
+const app = buildApp()
+await app.listen({
+  port: Number(process.env.PORT ?? 4315),
+  host: process.env.HOST ?? '0.0.0.0',
+})
+"#,
+            },
+            EmbeddedFile {
+                path: "test/app.test.ts",
+                content: r#"import assert from 'node:assert/strict'
+import test from 'node:test'
+import { buildApp } from '../src/app.js'
+
+test('GET / returns the Fastify health payload', async (t) => {
+  const app = buildApp()
+  t.after(() => app.close())
+  const response = await app.inject({ method: 'GET', url: '/' })
+  assert.equal(response.statusCode, 200)
+  assert.deepEqual(response.json(), { message: 'Hello from MagiCore Fastify' })
+})
+"#,
+            },
+            EmbeddedFile {
+                path: "tsconfig.json",
+                content: r#"{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": ".",
+    "outDir": "dist",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}"#,
+            },
+        ]),
+        ("web", "hono") => Some(vec![
+            EmbeddedFile {
+                path: "package.json",
+                content: r#"{
+  "name": "{{PROJECT_NAME}}",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc --project tsconfig.json",
+    "test": "tsx --test test/app.test.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.5",
+    "hono": "^4.13.13"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}"#,
+            },
+            EmbeddedFile {
+                path: "src/app.ts",
+                content: r#"import { Hono } from 'hono'
+
+const app = new Hono()
+app.get('/', (context) => context.json({ message: 'Hello from MagiCore Hono' }))
+
+export default app
+"#,
+            },
+            EmbeddedFile {
+                path: "src/server.ts",
+                content: r#"import { serve } from '@hono/node-server'
+import app from './app.js'
+
+serve({
+  fetch: app.fetch,
+  hostname: process.env.HOST ?? '0.0.0.0',
+  port: Number(process.env.PORT ?? 4315),
+})
+"#,
+            },
+            EmbeddedFile {
+                path: "test/app.test.ts",
+                content: r#"import assert from 'node:assert/strict'
+import test from 'node:test'
+import app from '../src/app.js'
+
+test('GET / returns the Hono health payload', async () => {
+  const response = await app.request('/')
+  assert.equal(response.status, 200)
+  assert.deepEqual(await response.json(), { message: 'Hello from MagiCore Hono' })
+})
+"#,
+            },
+            EmbeddedFile {
+                path: "tsconfig.json",
+                content: r#"{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": ".",
+    "outDir": "dist",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}"#,
+            },
+        ]),
+        ("web", "nestjs") => Some(vec![
+            EmbeddedFile {
+                path: "package.json",
+                content: r#"{
+  "name": "{{PROJECT_NAME}}",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc --project tsconfig.json",
+    "test": "tsx --test test/app.test.ts"
+  },
+  "dependencies": {
+    "@nestjs/common": "^12.1.3",
+    "@nestjs/core": "^12.1.3",
+    "@nestjs/platform-express": "^12.1.3",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}"#,
+            },
+            EmbeddedFile {
+                path: "src/app.controller.ts",
+                content: r#"import { Controller, Get } from '@nestjs/common'
+
+@Controller()
+export class AppController {
+  @Get()
+  getRoot() {
+    return { message: 'Hello from MagiCore NestJS' }
+  }
+}
+"#,
+            },
+            EmbeddedFile {
+                path: "src/app.module.ts",
+                content: r#"import { Module } from '@nestjs/common'
+import { AppController } from './app.controller.js'
+
+@Module({ controllers: [AppController] })
+export class AppModule {}
+"#,
+            },
+            EmbeddedFile {
+                path: "src/main.ts",
+                content: r#"import 'reflect-metadata'
+import { NestFactory } from '@nestjs/core'
+import { AppModule } from './app.module.js'
+
+const app = await NestFactory.create(AppModule)
+await app.listen(Number(process.env.PORT ?? 4315), process.env.HOST ?? '0.0.0.0')
+"#,
+            },
+            EmbeddedFile {
+                path: "test/app.test.ts",
+                content: r#"import assert from 'node:assert/strict'
+import test from 'node:test'
+import { AppController } from '../src/app.controller.js'
+
+test('NestJS controller exposes the health payload', () => {
+  assert.deepEqual(new AppController().getRoot(), { message: 'Hello from MagiCore NestJS' })
+})
+"#,
+            },
+            EmbeddedFile {
+                path: "tsconfig.json",
+                content: r#"{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": ".",
+    "outDir": "dist",
+    "strict": true,
+    "esModuleInterop": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}"#,
+            },
+        ]),
+        ("web", "trpc") => Some(vec![
+            EmbeddedFile {
+                path: "package.json",
+                content: r#"{
+  "name": "{{PROJECT_NAME}}",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc --project tsconfig.json",
+    "test": "tsx --test test/router.test.ts"
+  },
+  "dependencies": {
+    "@trpc/server": "^11.19.0",
+    "express": "^5.3.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}"#,
+            },
+            EmbeddedFile {
+                path: "src/router.ts",
+                content: r#"import { initTRPC } from '@trpc/server'
+import { z } from 'zod'
+
+const t = initTRPC.create()
+
+export const appRouter = t.router({
+  greeting: t.procedure
+    .input(z.object({ name: z.string().optional() }))
+    .query(({ input }) => ({ message: `Hello ${input.name ?? 'MagiCore'} from tRPC` })),
+})
+
+export type AppRouter = typeof appRouter
+"#,
+            },
+            EmbeddedFile {
+                path: "src/server.ts",
+                content: r#"import express from 'express'
+import { createExpressMiddleware } from '@trpc/server/adapters/express'
+import { appRouter } from './router.js'
+
+const app = express()
+app.get('/', (_request, response) => response.json({ message: 'Hello from MagiCore tRPC' }))
+app.use('/trpc', createExpressMiddleware({ router: appRouter }))
+
+app.listen(Number(process.env.PORT ?? 4315), process.env.HOST ?? '0.0.0.0')
+"#,
+            },
+            EmbeddedFile {
+                path: "test/router.test.ts",
+                content: r#"import assert from 'node:assert/strict'
+import test from 'node:test'
+import { appRouter } from '../src/router.js'
+
+test('tRPC greeting returns the health payload', async () => {
+  const caller = appRouter.createCaller({})
+  assert.deepEqual(await caller.greeting({}), { message: 'Hello MagiCore from tRPC' })
+})
+"#,
+            },
+            EmbeddedFile {
+                path: "tsconfig.json",
+                content: r#"{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": ".",
+    "outDir": "dist",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}"#,
+            },
+        ]),
         ("web", "express") => Some(vec![
             EmbeddedFile {
                 path: "package.json",
@@ -260,6 +590,7 @@ app.listen(port, '0.0.0.0', () => {
     "strict": true,
     "esModuleInterop": true,
     "outDir": "dist",
+    "rootDir": "src",
     "skipLibCheck": true
   },
   "include": ["src"]

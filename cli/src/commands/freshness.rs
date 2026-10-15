@@ -313,8 +313,8 @@ fn pep508_name(requirement: &str) -> String {
     bare[..end].trim().replace('_', "-").to_ascii_lowercase()
 }
 
-/// Declared Python dependencies from `pyproject.toml [project]`.
-/// Dependency Python khai báo từ `pyproject.toml [project]`.
+/// Declared Python runtime and MGC-managed dev dependencies from `pyproject.toml`.
+/// Dependency runtime và nhóm dev do MGC quản lý trong `pyproject.toml`.
 pub fn declared_python_deps(pyproject_toml: &str) -> Vec<String> {
     let Ok(table) = pyproject_toml.parse::<toml::Table>() else {
         return Vec::new();
@@ -325,6 +325,18 @@ pub fn declared_python_deps(pyproject_toml: &str) -> Vec<String> {
     if let Some(deps) = table
         .get("project")
         .and_then(|v| v.get("dependencies"))
+        .and_then(|v| v.as_array())
+    {
+        names.extend(
+            deps.iter()
+                .filter_map(|v| v.as_str())
+                .map(pep508_name)
+                .filter(|n| !n.is_empty()),
+        );
+    }
+    if let Some(deps) = table
+        .get("dependency-groups")
+        .and_then(|v| v.get("dev"))
         .and_then(|v| v.as_array())
     {
         names.extend(

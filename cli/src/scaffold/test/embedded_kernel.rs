@@ -37,6 +37,43 @@ fn test_get_embedded_template_returns_files_for_react_axum_fastapi() {
 }
 
 #[test]
+fn native_node_backend_fallbacks_include_lifecycle_sources_and_current_tooling() {
+    for (framework, entrypoint, test_file) in [
+        ("fastify", "src/server.ts", "test/app.test.ts"),
+        ("hono", "src/server.ts", "test/app.test.ts"),
+        ("nestjs", "src/main.ts", "test/app.test.ts"),
+        ("trpc", "src/server.ts", "test/router.test.ts"),
+    ] {
+        let files = get_embedded_template("web", framework)
+            .unwrap_or_else(|| panic!("missing embedded fallback for {framework}"));
+        let package_file = files
+            .iter()
+            .find(|file| file.path == "package.json")
+            .expect("backend fallback should include package.json");
+        let package: serde_json::Value =
+            serde_json::from_str(package_file.content).expect("package.json should be valid JSON");
+        for script in ["dev", "build", "test"] {
+            assert!(
+                package["scripts"][script].is_string(),
+                "{framework} must define a {script} lifecycle script"
+            );
+        }
+        assert!(files.iter().any(|file| file.path == entrypoint));
+        assert!(files.iter().any(|file| file.path == test_file));
+        assert!(files.iter().any(|file| file.path == "tsconfig.json"));
+    }
+
+    let express = get_embedded_template("web", "express").unwrap();
+    let tsconfig = express
+        .iter()
+        .find(|file| file.path == "tsconfig.json")
+        .expect("Express fallback should include tsconfig.json");
+    let config: serde_json::Value =
+        serde_json::from_str(tsconfig.content).expect("Express tsconfig should be valid JSON");
+    assert_eq!(config["compilerOptions"]["rootDir"], "src");
+}
+
+#[test]
 fn test_angular_dev_server_references_its_build_target() {
     let angular = get_embedded_template("web", "angular").unwrap();
     let angular_json = angular

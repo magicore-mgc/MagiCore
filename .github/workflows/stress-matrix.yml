@@ -153,6 +153,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          brew update
           brew install php
           php_bin="$(brew --prefix php)/bin"
           echo "${php_bin}" >> "${GITHUB_PATH}"

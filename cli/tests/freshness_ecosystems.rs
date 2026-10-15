@@ -94,11 +94,51 @@ fn polyglot_lock() -> String {
 #[test]
 fn python_projection() {
     let deps = declared_python_deps(
-        "[project]\nname = \"a\"\ndependencies = [\"Foo_Bar>=1.0\", \"requests\", \"uvicorn[standard]>=0.20; python_version >= '3.11'\"]\n",
+        "[project]\nname = \"a\"\ndependencies = [\"Foo_Bar>=1.0\", \"requests\", \"uvicorn[standard]>=0.20; python_version >= '3.11'\"]\n[dependency-groups]\ndev = [\"Build>=1.2\", \"setuptools\"]\n",
     );
-    assert_eq!(deps, vec!["foo-bar", "requests", "uvicorn"]);
+    assert_eq!(
+        deps,
+        vec!["build", "foo-bar", "requests", "setuptools", "uvicorn"]
+    );
     let broken = declared_python_deps("[[[invalid");
     assert!(broken.is_empty());
+}
+
+#[test]
+fn python_freshness_tracks_mgc_managed_dev_group_roots() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::write(
+        dir.path().join("pyproject.toml"),
+        "[project]\nname = 'agent'\ndependencies = ['six']\n[dependency-groups]\ndev = ['build', 'setuptools']\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("mgc.lock"),
+        lock_with_owner(
+            &[
+                ("six", "1.17.0"),
+                ("build", "1.2.2"),
+                ("setuptools", "80.9.0"),
+            ],
+            "ai",
+            mgc_lockfile::EcosystemTag::Python,
+        ),
+    )
+    .unwrap();
+
+    check_python_freshness(dir.path()).unwrap();
+
+    std::fs::write(
+        dir.path().join("pyproject.toml"),
+        "[project]\nname = 'agent'\ndependencies = ['six']\n[dependency-groups]\ndev = ['setuptools']\n",
+    )
+    .unwrap();
+    assert!(
+        check_python_freshness(dir.path())
+            .unwrap_err()
+            .to_string()
+            .contains("build")
+    );
 }
 
 // Unselected model extras must not invalidate the default Python lock graph.

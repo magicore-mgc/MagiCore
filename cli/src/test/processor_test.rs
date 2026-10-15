@@ -711,10 +711,11 @@ fn unknown_app_framework_does_not_silently_generate_flutter() {
 }
 
 #[test]
-fn embedded_flutter_scaffold_has_test_and_web_lifecycle_files() {
+fn flutter_scaffold_has_test_and_web_lifecycle_files() {
     let root = tempfile::tempdir().unwrap();
-    let target = root.path().join("embedded-flutter");
-    crate::scaffold::embedded::EmbeddedKernel::extract_layer("app", "flutter", &target).unwrap();
+    let target = root.path().join("flutter-app");
+    crate::scaffold::processors::app::AppProcessor::files(&target, "flutter-app", "flutter")
+        .unwrap();
 
     let pubspec = std::fs::read_to_string(target.join("pubspec.yaml")).unwrap();
     assert!(pubspec.contains("environment:"));
