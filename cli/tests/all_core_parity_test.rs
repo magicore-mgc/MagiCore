@@ -29,17 +29,18 @@ fn hermetic_command(home: &std::path::Path) -> Command {
         .env("MGC_CACHE_DIR", home.join("cache"))
         .env("MGC_TEMPLATES_DIR", home.join("templates"))
         .env("MAGICORE_STORE_ROOT", home.join("store"))
-        .env_remove("MAGICORE_TEMPLATE_DIR");
+        .env_remove("MAGICORE_TEMPLATE_DIR")
+        .env_remove("MGC_NPM_REGISTRY");
     command
 }
 
 #[test]
-fn test_all_core_parity_embedded() {
+fn test_all_core_parity_online_web_and_native_core_processors() {
     let _temp_home = setup_hermetic_home();
     let temp_workspace = TempDir::new().unwrap();
     let workspace_path = temp_workspace.path();
 
-    // 1. Web vanilla (embedded kernel)
+    // 1. Web vanilla uses the official online creator through MGC dlx.
     let web_output = hermetic_command(_temp_home.path())
         .args(&["create-web", "vanilla", "test-web", "--ts"])
         .current_dir(workspace_path)
@@ -51,6 +52,20 @@ fn test_all_core_parity_embedded() {
         "create-web vanilla failed: {}",
         String::from_utf8_lossy(&web_output.stderr)
     );
+    let web_output_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&web_output.stdout),
+        String::from_utf8_lossy(&web_output.stderr)
+    );
+    assert!(
+        web_output_text.contains("create: installing initializer create-vite@latest through MagiCore"),
+        "web/vanilla did not run the creator through the MagiCore create flow: {web_output_text}"
+    );
+    let provenance = fs::read_to_string(workspace_path.join("test-web/.mgc-provenance.json"))
+        .expect("web generator provenance");
+    assert!(provenance.contains("npm:create-vite@"));
+    assert!(provenance.contains("#template=vanilla-ts"));
+    assert!(!provenance.contains("npm:create-vite@latest"));
     assert!(
         workspace_path.join("test-web/index.html").exists(),
         "web/vanilla: index.html not created"
@@ -60,7 +75,7 @@ fn test_all_core_parity_embedded() {
         "web: .mgc.core marker not created"
     );
 
-    // 2. AI python-agent (embedded kernel)
+    // 2. AI python-agent uses its native MGC processor.
     let ai_output = hermetic_command(_temp_home.path())
         .args(&["create-ai", "python-agent", "test-ai"])
         .current_dir(workspace_path)
@@ -81,7 +96,7 @@ fn test_all_core_parity_embedded() {
         "ai: .mgc.core marker not created"
     );
 
-    // 3. App flutter (embedded kernel)
+    // 3. App flutter uses its native MGC processor.
     let app_output = hermetic_command(_temp_home.path())
         .args(&["create-app", "flutter", "test-app"])
         .current_dir(workspace_path)

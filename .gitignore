@@ -61,7 +61,6 @@ logs/
 # Build artifacts
 *.tgz
 *.tar.gz
-!cli/embedded/*.tar.gz
 
 # Coverage
 coverage/

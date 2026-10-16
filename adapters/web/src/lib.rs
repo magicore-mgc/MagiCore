@@ -95,6 +95,47 @@ fn is_manifest_root_package(manifest: &Manifest, package_id: &PackageId) -> bool
     })
 }
 
+/// Build the resolver's view of a manifest using the exact specs it solved.
+/// Mutable registry dist-tags (for example `latest`) and npm aliases are not
+/// semver ranges themselves, so using the raw manifest after resolution would
+/// incorrectly prune every resolved root from the graph.
+/// Tạo manifest cho resolver theo đúng spec đã solve. Dist-tag thay đổi được
+/// (`latest`) và npm alias không phải semver; dùng manifest thô sẽ loại root.
+fn manifest_with_resolved_specs(
+    manifest: &Manifest,
+    resolved_specs: &[(PackageName, String)],
+) -> MgResult<Manifest> {
+    let mut resolved_manifest = manifest.clone();
+    let mut specs = resolved_specs.iter();
+    for dependency in resolved_manifest
+        .dependencies
+        .iter_mut()
+        .chain(resolved_manifest.dev_dependencies.iter_mut())
+        .chain(resolved_manifest.peer_dependencies.iter_mut())
+        .chain(resolved_manifest.optional_dependencies.iter_mut())
+    {
+        let Some((name, spec)) = specs.next() else {
+            return Err(MgError::Other(
+                "resolved dependency count does not match the project manifest".to_string(),
+            ));
+        };
+        if dependency.name != *name {
+            return Err(MgError::Other(format!(
+                "resolved dependency '{}' does not match manifest dependency '{}'",
+                name.as_str(),
+                dependency.name.as_str()
+            )));
+        }
+        dependency.range = VersionRange::parse(spec)?;
+    }
+    if specs.next().is_some() {
+        return Err(MgError::Other(
+            "resolved dependency count does not match the project manifest".to_string(),
+        ));
+    }
+    Ok(resolved_manifest)
+}
+
 /// Prefer a compatible project root when binding a package dependency edge.
 /// (Ưu tiên phiên bản gốc của project nếu nó thỏa range để dùng chung an toàn.)
 fn select_resolved_candidate<'a>(
@@ -845,6 +886,7 @@ impl WebAdapter {
             .collect();
         profile.mark("collect_wanted", started_at);
         let wanted = self.pin_dist_tags(wanted).await?;
+        let resolved_manifest = manifest_with_resolved_specs(manifest, &wanted)?;
         if wanted.is_empty() {
             return Ok(ResolvedGraph::empty());
         }
@@ -870,9 +912,9 @@ impl WebAdapter {
         // before the adapter ever runs inside install).
         if allow_shortcircuit
             && !age_gate_active
-            && let Some(graph) = try_v4_short_circuit(manifest)?
+            && let Some(graph) = try_v4_short_circuit(&resolved_manifest)?
         {
-            let graph = normalize_resolved_graph(manifest, graph);
+            let graph = normalize_resolved_graph(&resolved_manifest, graph);
             profile.mark("lockfile_short_circuit_v4", started_at);
             profile.flush(started_at.elapsed().as_millis() as u64);
             return Ok(graph);
@@ -888,14 +930,14 @@ impl WebAdapter {
             && !age_gate_active
             && legacy_readable
             && let Some(lockfile) = read_web_lockfile_checked(Path::new("."))?
-            && lockfile_satisfies_manifest(&lockfile, manifest)
+            && lockfile_satisfies_manifest(&lockfile, &resolved_manifest)
             && let Ok(Some(graph)) = build_graph_from_lockfile(
                 &lockfile,
-                manifest,
+                &resolved_manifest,
                 &crate::lockfile::web_lock_owner_core(Path::new("."))?,
             )
         {
-            let graph = normalize_resolved_graph(manifest, graph);
+            let graph = normalize_resolved_graph(&resolved_manifest, graph);
             profile.mark("lockfile_short_circuit", started_at);
             profile.flush(started_at.elapsed().as_millis() as u64);
             return Ok(graph);
@@ -905,14 +947,14 @@ impl WebAdapter {
         let resolution_cache_key = self
             .shared_cache
             .as_ref()
-            .map(|_| manifest_resolution_cache_key(manifest, &self.registry_url));
+            .map(|_| manifest_resolution_cache_key(&resolved_manifest, &self.registry_url));
         // let-chain edition 2024 — gộp điều kiện theo clippy 1.98.
         if !age_gate_active
             && let (Some(shared_cache), Some(key)) =
                 (self.shared_cache.as_ref(), resolution_cache_key.as_deref())
             && let Some(graph) = shared_cache.read_resolution(key, &self.registry_url)?
         {
-            let graph = normalize_resolved_graph(manifest, graph);
+            let graph = normalize_resolved_graph(&resolved_manifest, graph);
             profile.mark("shared_resolution_cache_hit", started_at);
             profile.flush(started_at.elapsed().as_millis() as u64);
             return Ok(graph);
@@ -1024,8 +1066,8 @@ impl WebAdapter {
                 // range, not merely share its name.
                 // (Không chỉ so tên: peer instance khác version không phải
                 // root nếu không thỏa range manifest.)
-                let is_direct = is_manifest_root_package(manifest, &r.package_id);
-                let is_dev = manifest
+                let is_direct = is_manifest_root_package(&resolved_manifest, &r.package_id);
+                let is_dev = resolved_manifest
                     .dev_dependencies
                     .iter()
                     .any(|d| d.name == *r.package_id.name());
@@ -1064,7 +1106,11 @@ impl WebAdapter {
                                 .get(dep_name.as_str())
                                 .or_else(|| resolution_index.get(source.as_str()))
                                 .and_then(|candidates| {
-                                    select_resolved_candidate(candidates, &constraint, manifest)
+                                    select_resolved_candidate(
+                                        candidates,
+                                        &constraint,
+                                        &resolved_manifest,
+                                    )
                                 })
                                 .map(|candidate| candidate.package_id.clone())
                         })
@@ -1096,7 +1142,7 @@ impl WebAdapter {
                                                 select_resolved_candidate(
                                                     candidates,
                                                     &constraint,
-                                                    manifest,
+                                                    &resolved_manifest,
                                                 )
                                             })
                                             .map(|candidate| candidate.package_id.clone())
@@ -1112,7 +1158,7 @@ impl WebAdapter {
             .collect();
         profile.mark("assemble_resolved_packages", package_started_at);
 
-        enforce_resolution_supply_chain_guards(&result.resolutions, &metadata, manifest)?;
+        enforce_resolution_supply_chain_guards(&result.resolutions, &metadata, &resolved_manifest)?;
 
         // let-chain edition 2024 — gộp điều kiện theo clippy 1.98.
         if resolve_prefetch_enabled()
@@ -1125,7 +1171,7 @@ impl WebAdapter {
                 registry_url,
             ));
         }
-        let graph = normalize_resolved_graph(manifest, ResolvedGraph { packages });
+        let graph = normalize_resolved_graph(&resolved_manifest, ResolvedGraph { packages });
         if let (Some(shared_cache), Some(key)) =
             (self.shared_cache.as_ref(), resolution_cache_key.as_deref())
         {

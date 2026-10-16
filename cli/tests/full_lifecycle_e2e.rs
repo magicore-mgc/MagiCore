@@ -50,7 +50,7 @@ fn find_mgc_binary() -> PathBuf {
 fn test_web_full_lifecycle() {
     // REAL E2E: web core - MUST call mgc create-web
     // NO manual package.json creation allowed
-    // REQUIRES: Node.js and templates provisioned; install itself is native.
+    // REQUIRES: Node.js and public registry access; package install is native.
 
     if Command::new("node").arg("--version").output().is_err() {
         panic!(
@@ -63,16 +63,28 @@ fn test_web_full_lifecycle() {
     let temp = TempDir::new().unwrap();
     let project_name = "test-web-full";
     let project_path = temp.path().join(project_name);
+    let mgc_data = temp.path().join(".mgc-data");
+    let mgc_cache = temp.path().join(".mgc-cache");
+    let mgc_templates = temp.path().join(".mgc-templates");
+    let mgc_store = temp.path().join(".mgc-store");
+    for path in [&mgc_data, &mgc_cache, &mgc_templates, &mgc_store] {
+        std::fs::create_dir_all(path).unwrap();
+    }
     let mgc = find_mgc_binary();
 
     // === STEP 1: CREATE (REAL mgc create-web call) ===
     // Bước 1: TẠO (gọi mgc create-web thật)
-    println!("\n=== STEP 1: mgc create-web vanilla (embedded) ===");
+    println!("\n=== STEP 1: mgc create-web vanilla (create-vite via MGC dlx) ===");
     let create_output = Command::new(&mgc)
         .arg("create-web")
         .arg("vanilla")
         .arg(project_name)
         .current_dir(temp.path())
+        .env("MGC_DATA_DIR", &mgc_data)
+        .env("MGC_CACHE_DIR", &mgc_cache)
+        .env("MGC_TEMPLATES_DIR", &mgc_templates)
+        .env("MAGICORE_STORE_ROOT", &mgc_store)
+        .env_remove("MGC_NPM_REGISTRY")
         .output()
         .expect("mgc create-web failed to execute");
 
@@ -81,16 +93,30 @@ fn test_web_full_lifecycle() {
         let stderr = String::from_utf8_lossy(&create_output.stderr);
         panic!(
             "CREATE FAILED - test blocked:\n{}\n\
-            Templates must be provisioned in CI or test registry.\n\
+            This lane requires Node.js and public registry access.\n\
             This test MUST call mgc create-web, not create files manually.",
             stderr
         );
     }
 
     assert!(project_path.exists(), "Project not created");
+    let create_output_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&create_output.stdout),
+        String::from_utf8_lossy(&create_output.stderr)
+    );
+    assert!(
+        create_output_text.contains("create: installing initializer create-vite@latest through MagiCore"),
+        "vanilla generator must execute through the MagiCore create flow: {create_output_text}"
+    );
+    let provenance = std::fs::read_to_string(project_path.join(".mgc-provenance.json"))
+        .expect("online generator provenance");
+    assert!(provenance.contains("npm:create-vite@"));
+    assert!(provenance.contains("#template=vanilla-ts"));
+    assert!(!provenance.contains("npm:create-vite@latest"));
 
-    // Vanilla creates index.html and mgc.toml (no package.json - it's pure HTML/JS)
-    // Vanilla tạo index.html và mgc.toml (không có package.json - thuần HTML/JS)
+    // The online TypeScript starter creates a package manifest and HTML entry.
+    // Starter TypeScript online tạo manifest package và entry HTML.
     assert!(
         project_path.join("index.html").exists(),
         "index.html not created by scaffold"
@@ -98,6 +124,10 @@ fn test_web_full_lifecycle() {
     assert!(
         project_path.join("mgc.toml").exists(),
         "mgc.toml not created by scaffold"
+    );
+    assert!(
+        project_path.join("package.json").exists(),
+        "package.json not created by the online framework generator"
     );
     assert!(
         project_path.join(".mgc.core").exists(),
@@ -138,6 +168,10 @@ fn test_web_full_lifecycle() {
     let install_output = Command::new(&mgc)
         .arg("install")
         .current_dir(&project_path)
+        .env("MGC_DATA_DIR", &mgc_data)
+        .env("MGC_CACHE_DIR", &mgc_cache)
+        .env("MGC_TEMPLATES_DIR", &mgc_templates)
+        .env("MAGICORE_STORE_ROOT", &mgc_store)
         .output()
         .expect("Failed to run mgc install");
 
@@ -168,6 +202,10 @@ fn test_web_full_lifecycle() {
     let test_output = Command::new(&mgc)
         .arg("test")
         .current_dir(&project_path)
+        .env("MGC_DATA_DIR", &mgc_data)
+        .env("MGC_CACHE_DIR", &mgc_cache)
+        .env("MGC_TEMPLATES_DIR", &mgc_templates)
+        .env("MAGICORE_STORE_ROOT", &mgc_store)
         .output()
         .expect("Failed to run mgc test");
 

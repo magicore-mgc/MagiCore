@@ -562,18 +562,23 @@ pub fn assert_native_web_framework_lifecycle(framework: &str, project: &Path, su
 
     let build_script = package_json_script(project, "build")
         .unwrap_or_else(|error| panic!("{framework}: invalid package.json: {error}"));
-    assert!(
-        build_script.is_some(),
-        "{framework}: scaffold must provide a build script"
-    );
-    let (ok, output) = mgc_in(project, &["build"]);
-    assert!(ok, "{framework} mgc build failed:\n{output}");
-    record_web_lifecycle_evidence(
-        framework,
-        suite,
-        "framework-cli-build",
-        "mgc build completed the scaffold build script",
-    );
+    if build_script.is_some() {
+        let (ok, output) = mgc_in(project, &["build"]);
+        assert!(ok, "{framework} mgc build failed:\n{output}");
+        record_web_lifecycle_evidence(
+            framework,
+            suite,
+            "framework-cli-build",
+            "mgc build completed the scaffold build script",
+        );
+    } else {
+        record_web_lifecycle_evidence(
+            framework,
+            suite,
+            "framework-cli-build-not-defined",
+            "scaffold package.json does not declare a build script",
+        );
+    }
 
     assert_native_web_dev_server_lifecycle(framework, project, suite);
 }

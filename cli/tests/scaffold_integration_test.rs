@@ -5,7 +5,7 @@
 use mgc::scaffold::spec::{CoreKind, parse_scaffold_spec};
 
 #[test]
-fn corrupted_embedded_cache_is_not_silently_replaced_by_core_fallbacks() {
+fn all_core_scaffold_rejects_corrupted_cache_without_fallback() {
     for (command, framework, layer, enabled) in [
         (
             "create-web",

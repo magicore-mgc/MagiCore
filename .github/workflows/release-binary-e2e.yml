@@ -218,8 +218,20 @@ jobs:
           if [[ "$RUNNER_OS" == "Windows" ]]; then MGCBIN="$HOME/.magicore-test/bin/mgc.exe"; else MGCBIN="$HOME/.magicore-test/bin/mgc"; fi
           WORK="$(mktemp -d)"
           cd "$WORK"
-          "$MGCBIN" create-web react test-web
+          CREATE_OUTPUT="$("$MGCBIN" create-web react test-web 2>&1)" || {
+            printf '%s\n' "$CREATE_OUTPUT"
+            exit 1
+          }
+          printf '%s\n' "$CREATE_OUTPUT"
+          if ! grep -q 'dlx: installing create-vite@latest' <<<"$CREATE_OUTPUT"; then
+            echo "release E2E did not observe the official framework creator running through MGC dlx" >&2
+            exit 1
+          fi
           cd test-web
+          if ! grep -Eq 'npm:create-vite@[0-9]+\.[0-9]+\.[0-9]+#template=react-ts' .mgc-provenance.json; then
+            echo "release E2E scaffold provenance does not identify its online generator" >&2
+            exit 1
+          fi
           "$MGCBIN" install
           # A missing test command must fail this release gate; recording
           # absence and continuing would be a false-green.

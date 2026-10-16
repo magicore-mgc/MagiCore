@@ -1,18 +1,79 @@
-//! Registry request and temporary-workspace containment regressions.
-//! Khóa request hợp lệ và chặn traversal/symlink trong môi trường dlx.
+//! Registry request and package-runtime containment regressions.
+//! Khóa request hợp lệ và chặn traversal/symlink trong package runner MGC.
 
 use super::*;
 
 #[test]
 fn lifecycle_scripts_are_opt_in_for_dlx_installs() {
     assert_eq!(
-        dlx_install_args(false),
+        registry_install_args(false),
         ["install", "--core", "web", "--ignore-scripts"]
     );
     assert_eq!(
-        dlx_install_args(true),
+        registry_install_args(true),
         ["install", "--core", "web", "--allow-scripts"]
     );
+}
+
+#[test]
+fn javascript_bin_targets_are_detected_for_node_runtime_invocation() {
+    for file in ["nest.js", "create-nuxt.mjs", "legacy.cjs"] {
+        assert!(
+            is_node_script(Path::new(file)),
+            "{file} is a Node entrypoint"
+        );
+    }
+    for file in ["native-tool", "tool.exe", "tool.sh", "tool.ts"] {
+        assert!(
+            !is_node_script(Path::new(file)),
+            "{file} is not a JS entrypoint"
+        );
+    }
+}
+
+#[test]
+fn node_runtime_is_resolved_from_absolute_host_path_entries() {
+    let host_bin = tempfile::tempdir().expect("host runtime fixture");
+    #[cfg(windows)]
+    let executable = host_bin.path().join("node.exe");
+    #[cfg(not(windows))]
+    let executable = host_bin.path().join("node");
+    std::fs::write(&executable, b"node runtime fixture").expect("write runtime fixture");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = std::fs::metadata(&executable)
+            .expect("runtime metadata")
+            .permissions();
+        permissions.set_mode(0o700);
+        std::fs::set_permissions(&executable, permissions).expect("mark runtime executable");
+    }
+
+    let host_path = std::env::join_paths([host_bin.path()]).expect("host PATH");
+    assert_eq!(
+        resolve_host_node_binary(&host_path).expect("resolve host Node"),
+        executable.canonicalize().expect("canonical runtime")
+    );
+
+    assert!(resolve_host_node_binary(std::ffi::OsStr::new("relative-runtime-dir")).is_err());
+}
+
+#[test]
+fn node_launcher_keeps_the_installed_initializer_path_inside_quoted_source() {
+    let execution = tempfile::tempdir().expect("initializer execution workspace");
+    let entrypoint = execution
+        .path()
+        .join("node_modules/@scope/create-kit/bin/entry'; process.exit(9);.mjs");
+    let launcher = create_node_launcher(execution.path(), &entrypoint)
+        .expect("create contained Node launcher");
+    let source = std::fs::read_to_string(launcher.path()).expect("read Node launcher");
+    let serialized = serde_json::to_string(entrypoint.to_string_lossy().as_ref())
+        .expect("serialize initializer path");
+
+    assert!(launcher.path().starts_with(execution.path()));
+    assert!(source.contains(&format!("const entry = {serialized};")));
+    assert!(source.contains("process.argv[1] = entry;"));
+    assert!(!source.contains("process.exit(9);"));
 }
 
 #[test]
@@ -59,13 +120,17 @@ fn rejects_traversal_urls_controls_and_malformed_names() {
         );
     }
     assert!(parse_request(&"a".repeat(MAX_NPM_PACKAGE_NAME_BYTES + 1)).is_err());
-    assert!(parse_request(&format!("pkg@{}", "a".repeat(MAX_DLX_REQUEST_BYTES))).is_err());
+    assert!(parse_request(&format!(
+        "pkg@{}",
+        "a".repeat(MAX_REGISTRY_PACKAGE_REQUEST_BYTES)
+    ))
+    .is_err());
 }
 
 #[test]
 fn creates_workspace_under_configured_data_root() {
     let data = tempfile::tempdir().expect("isolated data root");
-    let root = work_root_at(data.path()).expect("safe dlx root");
+    let root = work_root_at(data.path(), PackageRunPurpose::Dlx).expect("safe dlx root");
     assert_eq!(
         root,
         data.path()
@@ -81,10 +146,24 @@ fn creates_workspace_under_configured_data_root() {
 }
 
 #[test]
+fn create_initializers_use_a_separate_mgc_managed_work_root() {
+    let data = tempfile::tempdir().expect("isolated data root");
+    let root = work_root_at(data.path(), PackageRunPurpose::CreateInitializer)
+        .expect("safe create initializer root");
+    assert_eq!(
+        root,
+        data.path()
+            .canonicalize()
+            .expect("canonical data root")
+            .join("cache/web/create-initializers")
+    );
+}
+
+#[test]
 fn refuses_file_in_cache_directory_chain() {
     let data = tempfile::tempdir().expect("isolated data root");
     std::fs::write(data.path().join("cache"), "not a directory").expect("write obstruction");
-    assert!(work_root_at(data.path()).is_err());
+    assert!(work_root_at(data.path(), PackageRunPurpose::Dlx).is_err());
 }
 
 #[cfg(unix)]
@@ -101,7 +180,7 @@ fn refuses_symlinks_at_every_cache_directory_level() {
         path.push(DLX_WORK_DIRECTORY_COMPONENTS[position]);
         std::os::unix::fs::symlink(outside.path(), &path).expect("plant redirected cache");
         assert!(
-            work_root_at(data.path()).is_err(),
+            work_root_at(data.path(), PackageRunPurpose::Dlx).is_err(),
             "cache symlink must be rejected"
         );
         assert_eq!(
@@ -211,6 +290,28 @@ fn requested_package_bin_metadata_is_owned_and_typed() {
     }
 }
 
+#[test]
+fn requested_package_version_requires_an_owned_semver_identity() {
+    let root = tempfile::tempdir().expect("isolated installed package");
+    std::fs::write(
+        root.path().join("package.json"),
+        r#"{"name":"create-vite","version":"9.2.1"}"#,
+    )
+    .expect("write package identity");
+    assert_eq!(
+        requested_package_version(root.path(), "create-vite").unwrap(),
+        "9.2.1"
+    );
+    assert!(requested_package_version(root.path(), "other-package").is_err());
+
+    std::fs::write(
+        root.path().join("package.json"),
+        r#"{"name":"create-vite","version":"latest"}"#,
+    )
+    .expect("write invalid package version");
+    assert!(requested_package_version(root.path(), "create-vite").is_err());
+}
+
 #[cfg(unix)]
 #[test]
 fn requested_package_metadata_symlink_is_rejected() {
@@ -255,9 +356,9 @@ fn owned_project_inherits_install_policy_without_execution_compat() {
         toml::to_string(&caller).expect("serialize caller"),
     )
     .expect("write caller config");
-    let owned = dlx_project_config(root.path()).expect("inherit caller policy");
-    assert_eq!(owned.name, DLX_PROJECT_NAME);
-    assert_eq!(owned.version, DLX_PROJECT_VERSION);
+    let owned = registry_project_config(root.path()).expect("inherit caller policy");
+    assert_eq!(owned.name, PACKAGE_RUNNER_PROJECT_NAME);
+    assert_eq!(owned.version, PACKAGE_RUNNER_PROJECT_VERSION);
     assert_eq!(owned.ecosystem, "web");
     assert_eq!(owned.security, caller.security);
     assert_eq!(owned.lock, caller.lock);
@@ -282,7 +383,7 @@ fn malformed_caller_policy_fails_without_echoing_configuration() {
         "name = \"fixture-config-value\n",
     )
     .expect("write malformed policy");
-    let message = dlx_project_config(root.path())
+    let message = registry_project_config(root.path())
         .expect_err("malformed policy must fail")
         .to_string();
     assert!(message.contains("fix mgc.toml"));
@@ -290,9 +391,9 @@ fn malformed_caller_policy_fails_without_echoing_configuration() {
 }
 
 #[test]
-fn standalone_dlx_has_native_defaults() {
+fn standalone_package_runner_has_native_defaults() {
     let root = tempfile::tempdir().expect("isolated standalone caller");
-    let config = dlx_project_config(root.path()).expect("standalone defaults");
+    let config = registry_project_config(root.path()).expect("standalone defaults");
     assert_eq!(config.ecosystem, "web");
     assert!(config.registries.is_empty());
     assert!(config.security.is_none());

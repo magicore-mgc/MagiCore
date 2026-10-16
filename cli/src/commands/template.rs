@@ -32,18 +32,18 @@ pub fn templates_cache_dir() -> PathBuf {
     mgc_platform::paths::mgc_data_dir().join("templates")
 }
 
-/// Serialize embedded-layer refreshes across MagiCore processes. Without this
-/// lock, concurrent first-run processes can each remove/extract the same
-/// shared cache directory and observe a partially materialized layer.
-/// (Tuần tự hóa refresh layer embedded giữa các process MagiCore.)
-pub(crate) fn lock_embedded_cache_layer(cache_root: &Path, rel: &str) -> Result<fs::File> {
+/// Serialize template cache updates across MagiCore processes.
+/// Tuần tự hóa cập nhật cache template giữa các process MagiCore.
+pub(crate) fn lock_template_cache_layer(cache_root: &Path, rel: &str) -> Result<fs::File> {
     let lock_dir = cache_root.join(".locks");
     fs::create_dir_all(&lock_dir)?;
     let lock_dir_metadata = fs::symlink_metadata(&lock_dir)?;
     if template_cache_is_link(&lock_dir_metadata) || !lock_dir_metadata.is_dir() {
-        bail!("embedded template cache lock directory is not a real directory");
+        bail!("template cache lock directory is not a real directory");
     }
     let key = blake3::hash(rel.as_bytes()).to_hex().to_string();
+    // Keep the historical prefix so older and newer MGC processes share the same lock.
+    // Giữ prefix cũ để process MGC phiên bản cũ và mới khóa chung một file.
     let lock_path = lock_dir.join(format!("embedded-{key}.lock"));
     let mut options = fs::OpenOptions::new();
     options.read(true).write(true).create(true).truncate(false);
@@ -62,7 +62,7 @@ pub(crate) fn lock_embedded_cache_layer(cache_root: &Path, rel: &str) -> Result<
     let file = options.open(&lock_path)?;
     let metadata = fs::symlink_metadata(&lock_path)?;
     if !metadata.is_file() || template_cache_is_link(&metadata) || !file.metadata()?.is_file() {
-        bail!("embedded template cache lock is not a regular file");
+        bail!("template cache lock is not a regular file");
     }
     fs2::FileExt::lock_exclusive(&file)?;
     Ok(file)
@@ -289,6 +289,18 @@ async fn fetch_layer_at(
     cache_root: &Path,
     auth_override: Option<&mgc_publish::auth::Auth>,
 ) -> Result<(PathBuf, String)> {
+    let name = registry_package_name(&args.core, &args.name);
+    let (path, version, _) = resolve_layer_at(args, cache_root, auth_override, false).await?;
+    println!("Template '{}' fetched → {}", name, path.display());
+    Ok((path, version))
+}
+
+async fn resolve_layer_at(
+    args: TemplateFetchArgs,
+    cache_root: &Path,
+    auth_override: Option<&mgc_publish::auth::Auth>,
+    reuse_current_version: bool,
+) -> Result<(PathBuf, String, bool)> {
     validate_template_identity(&args.core, &args.name)?;
     let registry = select_registry(args.registry.as_deref())?;
     let name = registry_package_name(&args.core, &args.name);
@@ -348,6 +360,20 @@ async fn fetch_layer_at(
         .get("integrity")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| crate::error::registry_missing_field("dist.integrity"))?;
+    fs::create_dir_all(cache_root)?;
+    if template_cache_is_link(&fs::symlink_metadata(cache_root)?) {
+        return Err(crate::error::template_cache_unsafe_path(cache_root));
+    }
+    let cache_root = cache_root.canonicalize()?;
+    let rel = layer_rel(&args.core, &args.name);
+    let target = cache_root.join(&rel);
+    let _cache_lock = lock_template_cache_layer(&cache_root, &rel)?;
+    if reuse_current_version
+        && template_layer_has_contract(&target)?
+        && read_template_cache_version(&target)?.as_deref() == Some(version)
+    {
+        return Ok((target, version.to_string(), true));
+    }
     let tarball_url = registry_url
         .join(tarball)
         .map_err(|_| crate::error::template_download_url_invalid())?;
@@ -361,18 +387,8 @@ async fn fetch_layer_at(
     .await?;
     verify_template_integrity(&bytes, integrity)?;
 
-    fs::create_dir_all(cache_root)?;
-    if template_cache_is_link(&fs::symlink_metadata(cache_root)?) {
-        return Err(crate::error::template_cache_unsafe_path(cache_root));
-    }
-    let cache_root = cache_root.canonicalize()?;
-    let rel = layer_rel(&args.core, &args.name);
-    let target = cache_root.join(&rel);
-    let _cache_lock = lock_embedded_cache_layer(&cache_root, &rel)?;
     extract_tarball_into(&bytes, &target, Some(version))?;
-
-    println!("Template '{}' fetched → {}", name, target.display());
-    Ok((target, version.to_string()))
+    Ok((target, version.to_string(), false))
 }
 
 fn template_registry_url(value: &str) -> Result<url::Url> {
@@ -583,7 +599,6 @@ async fn ensure_layer_in(
     crate::scaffold::resolver::ScaffoldResolveStatus,
     crate::scaffold::resolver::ScaffoldResolveError,
 > {
-    use crate::scaffold::embedded::EmbeddedKernel;
     use crate::scaffold::resolver::{ScaffoldResolveError, ScaffoldResolveStatus};
     use crate::scaffold::spec::{CoreKind, ScaffoldRef, parse_scaffold_spec};
 
@@ -601,7 +616,6 @@ async fn ensure_layer_in(
     validate_template_identity(core_str, &canonical_layer)
         .map_err(|error| ScaffoldResolveError::Other(error.to_string()))?;
     let rel = canonical_layer.as_str();
-    let name_segment = spec.normalized_name.as_str();
     fs::create_dir_all(configured_cache_root)
         .map_err(|error| ScaffoldResolveError::Other(error.to_string()))?;
     if template_cache_is_link(
@@ -643,29 +657,28 @@ async fn ensure_layer_in(
     }
     let has_contract = template_layer_has_contract(&visible_path)
         .map_err(|error| ScaffoldResolveError::Other(error.to_string()))?;
-    let embedded_version = EmbeddedKernel::layer_version_path(rel)
-        .or_else(|| EmbeddedKernel::layer_version(core_str, name_segment));
     let cached_version = read_template_cache_version(&visible_path)
         .map_err(|error| ScaffoldResolveError::Other(error.to_string()))?;
     if has_contract
         && (is_dev_override
-            || (template_cache_matches_ref(&spec.requested_ref, cached_version.as_deref())
-                && (cached_version.is_some() || embedded_version.is_none())))
+            || (matches!(&spec.requested_ref, ScaffoldRef::Version(_))
+                && cached_version.is_some()
+                && template_cache_matches_ref(&spec.requested_ref, cached_version.as_deref())))
     {
         if !is_dev_override {
             ensure_template_cache_parent(visible_path.parent().unwrap_or(&cache_root))
                 .map_err(|error| ScaffoldResolveError::Other(error.to_string()))?;
-        }
-        if cached_version.is_none() && !is_dev_override {
-            mgc_ui::warning(
-                "Using an unversioned local template cache; fetch the layer again to record its version",
-            );
         }
         return Ok(ScaffoldResolveStatus::CacheHit {
             layer: rel.to_string(),
             version: cached_version,
             path: visible_path,
         });
+    }
+    if has_contract && cached_version.is_none() && !is_dev_override {
+        mgc_ui::warning(
+            "Ignoring an unversioned local template cache; fetching and verifying the registry artifact",
+        );
     }
     if is_dev_override && !has_contract {
         return Err(ScaffoldResolveError::Other(
@@ -682,126 +695,8 @@ async fn ensure_layer_in(
             layer: rel.to_string(),
         });
     }
-    let use_embedded = match &spec.requested_ref {
-        ScaffoldRef::Default => true,
-        ScaffoldRef::Version(version) => embedded_version == Some(version.as_str()),
-        _ => false,
-    };
-
-    /// Legacy embedded-cache freshness: a `.mgc-embedded-version` marker
-    /// records which embedded version was extracted. Missing marker (caches
-    /// from before versioning) or version mismatch → re-extract, so template
-    /// updates are never shadowed by stale caches.
-    /// (Tươi cache embedded: marker version, lệch thì giải nén lại.)
-    fn embedded_cache_fresh(cache_target: &std::path::Path, version: Option<&str>) -> bool {
-        let marker = cache_target.join(".mgc-embedded-version");
-        let cached = std::fs::read_to_string(&marker)
-            .ok()
-            .map(|v| v.trim().to_string());
-        match (cached, version) {
-            (Some(cached), Some(version)) => {
-                cached == version && template_layer_has_contract(cache_target).unwrap_or(false)
-            }
-            _ => false,
-        }
-    }
-
-    /// Record the extracted embedded version in the cache (best-effort —
-    /// a missing marker just re-extracts next time).
-    /// (Ghi marker version embedded vào cache.)
-    fn stamp_embedded_cache(
-        cache_target: &std::path::Path,
-        version: Option<&str>,
-    ) -> anyhow::Result<()> {
-        if let Some(version) = version {
-            std::fs::create_dir_all(cache_target)?;
-            std::fs::write(cache_target.join(".mgc-embedded-version"), version)?;
-        }
-        Ok(())
-    }
-
-    /// Remove only a stale real directory. A symlink or non-directory cache
-    /// entry is an error; cleanup failures must not be followed by overlaying
-    /// new embedded files and stamping the result as fresh.
-    /// (Chỉ xóa thư mục cache cũ thật; lỗi dọn phải dừng, không ghi đè chồng.)
-    fn remove_stale_embedded_cache(cache_target: &std::path::Path) -> anyhow::Result<()> {
-        match std::fs::symlink_metadata(cache_target) {
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error.into()),
-            Ok(metadata) if template_cache_is_link(&metadata) || !metadata.is_dir() => {
-                anyhow::bail!(
-                    "refusing to replace non-directory or linked embedded cache '{}'",
-                    cache_target.display()
-                )
-            }
-            Ok(_) => {
-                std::fs::remove_dir_all(cache_target)?;
-                Ok(())
-            }
-        }
-    }
-    // 1. Check embedded kernel first
-    // Try full path first (web/shared/base), then short form (web/vanilla)
-    if use_embedded && EmbeddedKernel::has_layer_path(rel) {
-        // Hold a per-layer OS lock across freshness check, replacement, and
-        // version stamping. The lock file lives outside the directory being
-        // refreshed, so another process cannot unlink the lock inode.
-        // (Giữ OS lock xuyên kiểm tra, thay cache và ghi version marker.)
-        let _cache_lock = lock_embedded_cache_layer(&cache_root, rel).map_err(|error| {
-            ScaffoldResolveError::Other(format!("Failed to lock embedded template cache: {error}"))
-        })?;
-        // Extract embedded to legacy cache location so processor can find it.
-        let cache_target = cache_root.join(rel);
-        let version = EmbeddedKernel::layer_version_path(rel);
-        if !embedded_cache_fresh(&cache_target, version) {
-            remove_stale_embedded_cache(&cache_target).map_err(|error| {
-                ScaffoldResolveError::Other(format!(
-                    "Failed to replace stale embedded template cache: {error}"
-                ))
-            })?;
-            EmbeddedKernel::extract_layer_path(rel, &cache_target).map_err(|e| {
-                ScaffoldResolveError::Other(format!("Failed to extract embedded kernel: {}", e))
-            })?;
-            stamp_embedded_cache(&cache_target, version).map_err(|error| {
-                ScaffoldResolveError::Other(format!(
-                    "Failed to stamp embedded template cache: {error}"
-                ))
-            })?;
-        }
-        return Ok(ScaffoldResolveStatus::Embedded {
-            layer: rel.to_string(),
-        });
-    }
-
-    let base_name = name_segment.split('@').next().unwrap_or(name_segment);
-    if use_embedded && EmbeddedKernel::has_layer(core_str, base_name) {
-        // Short-form embedded entries use the same cross-process protection.
-        // (Layer embedded dạng rút gọn dùng cùng khóa liên-process.)
-        let _cache_lock = lock_embedded_cache_layer(&cache_root, rel).map_err(|error| {
-            ScaffoldResolveError::Other(format!("Failed to lock embedded template cache: {error}"))
-        })?;
-        let cache_target = cache_root.join(rel);
-        let version = EmbeddedKernel::layer_version(core_str, base_name);
-        if !embedded_cache_fresh(&cache_target, version) {
-            remove_stale_embedded_cache(&cache_target).map_err(|error| {
-                ScaffoldResolveError::Other(format!(
-                    "Failed to replace stale embedded template cache: {error}"
-                ))
-            })?;
-            EmbeddedKernel::extract_layer(core_str, base_name, &cache_target).map_err(|e| {
-                ScaffoldResolveError::Other(format!("Failed to extract embedded kernel: {}", e))
-            })?;
-            stamp_embedded_cache(&cache_target, version).map_err(|error| {
-                ScaffoldResolveError::Other(format!(
-                    "Failed to stamp embedded template cache: {error}"
-                ))
-            })?;
-        }
-        return Ok(ScaffoldResolveStatus::Embedded {
-            layer: rel.to_string(),
-        });
-    }
-
+    // Resolve absent layers from the configured registry only.
+    // Layer chưa có chỉ được resolve từ registry đã cấu hình.
     // Use the same npm protocol, configured registry and security boundary as explicit fetch.
     // Tự động tải qua đúng protocol/config/guard của template fetch, vào cache processor đang đọc.
     let tag = match &spec.requested_ref {
@@ -813,7 +708,7 @@ async fn ensure_layer_in(
             ));
         }
     };
-    match fetch_layer_at(
+    match resolve_layer_at(
         TemplateFetchArgs {
             core: core_str.to_string(),
             name: rel.to_string(),
@@ -822,10 +717,16 @@ async fn ensure_layer_in(
         },
         &cache_root,
         auth_override,
+        true,
     )
     .await
     {
-        Ok((path, version)) => Ok(ScaffoldResolveStatus::Fetched {
+        Ok((path, version, true)) => Ok(ScaffoldResolveStatus::CacheHit {
+            layer: rel.to_string(),
+            version: Some(version),
+            path,
+        }),
+        Ok((path, version, false)) => Ok(ScaffoldResolveStatus::Fetched {
             layer: rel.to_string(),
             version,
             path,
@@ -846,7 +747,7 @@ fn template_cache_matches_ref(
 ) -> bool {
     use crate::scaffold::spec::ScaffoldRef;
     match requested {
-        ScaffoldRef::Default => true,
+        ScaffoldRef::Default => false,
         ScaffoldRef::Version(version) => cached == Some(version.as_str()),
         ScaffoldRef::DistTag(_) | ScaffoldRef::Range(_) => false,
     }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # All-Core Scaffold Stress Test — Phase 2
-# Verify web/ai/app/lib create runtime + embedded/cache/registry/fallback order
+# Verify Web uses MGC dlx online while AI/app/lib use their native MGC processors.
 
 set -euo pipefail
 
@@ -110,7 +110,7 @@ verify_content() {
     local pattern="$3"
     TOTAL=$((TOTAL + 1))
     echo "Test $TOTAL: $name"
-    if [ -f "$file" ] && grep -q "$pattern" "$file"; then
+    if [ -f "$file" ] && grep -Eq "$pattern" "$file"; then
         echo "✓ PASS (content match: $pattern)"
         PASSED=$((PASSED + 1))
         return 0
@@ -129,9 +129,10 @@ run_test "web: create vanilla with TypeScript" \
 
 verify_file "web/vanilla: index.html" "test-web-vanilla/index.html"
 verify_file "web/vanilla: mgc.toml" "test-web-vanilla/mgc.toml"
+verify_file "web/vanilla: package.json" "test-web-vanilla/package.json"
 verify_file "web/vanilla: .mgc.core marker" "test-web-vanilla/.mgc.core"
 verify_content "web/vanilla: .mgc.core = web" "test-web-vanilla/.mgc.core" "^web$"
-verify_content "web/vanilla: index.html contains project name" "test-web-vanilla/index.html" "test-web-vanilla"
+verify_content "web/vanilla: generated package identity" "test-web-vanilla/package.json" '"name".*test-web-vanilla'
 
 # Test typo detection — kiểm tra typo detection
 run_test_expect_output "web: typo detection (nextjs@laster)" "Did you mean" \
@@ -199,10 +200,18 @@ run_test "lib: create ts (fallback)" \
 verify_file "lib/ts: mgc.toml" "test-lib-ts/mgc.toml"
 verify_file "lib/ts: .mgc.core marker" "test-lib-ts/.mgc.core"
 
-# Verify cache content actually produced by the web runs, not manually written markers.
-# Chỉ kiểm cache do CLI tạo; không cộng PASS cho biến env hay archive nằm trong source.
-verify_file "web: real embedded template cache manifest" "$MGC_TEMPLATES_DIR/web/frontend/vanilla/template.toml"
-verify_file "web: real embedded template cache source" "$MGC_TEMPLATES_DIR/web/frontend/vanilla/sources/index.html"
+# Verify the online creator and provenance, and ensure no embedded framework leaf was cached.
+# Xác minh generator online cùng provenance; bảo đảm framework leaf không bị cache từ binary.
+verify_content "web/vanilla: MGC dlx provenance" "test-web-vanilla/.mgc-provenance.json" 'npm:create-vite@[0-9]+\.[0-9]+\.[0-9]+#template=vanilla-ts'
+TOTAL=$((TOTAL + 1))
+echo "Test $TOTAL: web/vanilla framework leaf is not embedded in the template cache"
+if [ ! -e "$MGC_TEMPLATES_DIR/web/frontend/vanilla" ]; then
+    echo "✓ PASS (no embedded framework leaf cache)"
+    PASSED=$((PASSED + 1))
+else
+    echo "✗ FAIL (unexpected framework leaf cache exists)"
+    exit 1
+fi
 
 echo "=== Results ==="
 echo "Passed: $PASSED/$TOTAL"
@@ -211,7 +220,7 @@ if [ "$PASSED" -eq "$TOTAL" ]; then
     echo "✓ ALL SCAFFOLD STRESS TESTS PASSED"
     echo
     echo "Summary:"
-    echo "  web/vanilla: embedded kernel → project created"
+    echo "  web/vanilla: official create-vite via MGC dlx → project created"
     echo "  ai/python-agent: compiled processor → project created"
     echo "  app/flutter: compiled processor → project created"
     echo "  lib/rust: compiled processor → project created"

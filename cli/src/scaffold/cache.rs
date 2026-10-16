@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use super::spec::ScaffoldSpec;
 use crate::commands::template::{
-    extract_tarball_into, lock_embedded_cache_layer, read_template_cache_version,
+    extract_tarball_into, lock_template_cache_layer, read_template_cache_version,
     template_cache_is_link, template_layer_has_contract,
 };
 
@@ -134,7 +134,7 @@ fn write_at(root: &Path, spec: &ScaffoldSpec, version: &str, tarball: &[u8]) -> 
     let base = resolve_base(root, spec, true)?
         .ok_or_else(|| crate::error::template_cache_unsafe_path(root))?;
     let canonical_root = root.canonicalize()?;
-    let _lock = lock_embedded_cache_layer(&canonical_root, &layer_key(spec))?;
+    let _lock = lock_template_cache_layer(&canonical_root, &layer_key(spec))?;
     if validated_entry(&canonical_root, spec, version)?.is_some() {
         return Ok(());
     }
@@ -174,7 +174,7 @@ fn clear_at(root: &Path, spec: &ScaffoldSpec, version: Option<&str>) -> Result<(
         return Ok(());
     }
     let canonical_root = root.canonicalize()?;
-    let _lock = lock_embedded_cache_layer(&canonical_root, &layer_key(spec))?;
+    let _lock = lock_template_cache_layer(&canonical_root, &layer_key(spec))?;
     validate_existing_directory(&target)?;
     remove_if_present(&target)
 }

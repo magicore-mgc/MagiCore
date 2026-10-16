@@ -1,5 +1,5 @@
 //! Scaffold resolver — typed resolution thay vì bool
-//! Resolver với kết quả rõ ràng: embedded/cache hit/fetched/missing
+//! Resolver với kết quả rõ ràng: native processor/cache hit/fetched/missing
 
 use std::fmt;
 use std::path::PathBuf;
@@ -9,7 +9,8 @@ use crate::scaffold::spec::{CoreKind, ScaffoldSpec};
 /// Kết quả resolve scaffold - typed thay vì bool
 #[derive(Debug, Clone)]
 pub enum ScaffoldResolveStatus {
-    /// Có trong embedded kernel
+    /// Built by an MGC native processor; this is not a bundled framework archive.
+    /// Được dựng bởi processor native MGC, không phải archive framework nhúng.
     Embedded { layer: String },
     /// Cache hit (đã fetch trước)
     CacheHit {
@@ -28,7 +29,8 @@ pub enum ScaffoldResolveStatus {
 }
 
 impl ScaffoldResolveStatus {
-    /// Check if resolved successfully (embedded/cache/fetched)
+    /// Check if resolved successfully (native processor/cache/fetched).
+    /// Kiểm tra layer đã được xử lý bằng processor, cache hoặc registry.
     pub fn is_available(&self) -> bool {
         matches!(
             self,

@@ -42,11 +42,67 @@ fn template_layers_cannot_emit_cli_owned_container_assets() {
     assert!(!framework_source.is_cli_generated_container_asset());
 }
 
+#[test]
+fn online_generator_copy_omits_package_cache_and_git_metadata() {
+    let source = tempfile::tempdir().unwrap();
+    let target = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(source.path().join("src")).unwrap();
+    std::fs::create_dir_all(source.path().join("node_modules/unused")).unwrap();
+    std::fs::create_dir_all(source.path().join(".git/objects")).unwrap();
+    std::fs::write(source.path().join("src/main.ts"), "export {};\n").unwrap();
+    std::fs::write(
+        source.path().join("node_modules/unused/package.json"),
+        "{}\n",
+    )
+    .unwrap();
+    std::fs::write(source.path().join(".git/objects/data"), "private\n").unwrap();
+
+    Scaffolder::copy_online_generated_template(source.path(), target.path()).unwrap();
+
+    assert!(target.path().join("src/main.ts").is_file());
+    assert!(!target.path().join("node_modules").exists());
+    assert!(!target.path().join(".git").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn online_generator_copy_rejects_symlinks() {
+    let source = tempfile::tempdir().unwrap();
+    let target = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("secret"), "must not copy\n").unwrap();
+    std::os::unix::fs::symlink(outside.path(), source.path().join("linked"))
+        .expect("create symlink fixture");
+
+    let error = Scaffolder::copy_online_generated_template(source.path(), target.path())
+        .expect_err("generator symlinks must be rejected");
+
+    assert!(error.to_string().contains("linked or special path"));
+    assert!(!target.path().join("secret").exists());
+}
+
 /// Registry-first: template layer cần fetch/cache sẵn (~/.mgc/templates hoặc
 /// MGC_TEMPLATES_DIR). Máy sạch offline → skip test materialize.
 fn template_layer_ready(rel: &str) -> bool {
     let root = crate::scaffold::template_root::TemplateRoot::resolve(rel);
     root.exists("template.toml") && root.exists("sources")
+}
+
+fn online_web_template_fixture() -> tempfile::TempDir {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("package.json"),
+        "{\"name\":\"web-fixture\",\"private\":true,\"version\":\"0.1.0\"}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.path().join("index.html"),
+        "<!doctype html><html></html>\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.path().join("src")).unwrap();
+    std::fs::write(root.path().join("src/main.ts"), "export {};\n").unwrap();
+    root
 }
 
 #[test]
@@ -1650,28 +1706,15 @@ fn test_scaffold_rename_conflict_fails_closed() {
     // Nếu target xuất hiện trong cửa sổ race, scaffold phải fail-closed và
     // không đụng project đã thắng.
     let root = tempfile::tempdir().unwrap();
+    let template = online_web_template_fixture();
     let target = root.path().join("race-target");
-    // Hermetic guard (CI fix 2026-09-11): this test drives the CONFLICT
-    // logic, not template content — but scaffold still needs the vanilla
-    // layer present. CI seeds an empty template cache (registry-first),
-    // so the layer is absent there → skip honestly instead of failing.
-    // Chốt hermetic: test này đo logic XUNG ĐỘT, không đo nội dung
-    // template — nhưng scaffold vẫn cần layer vanilla. CI seed cache
-    // template rỗng (registry-first) nên layer vắng → skip trung thực
-    // thay vì fail.
-    if !template_layer_ready("web/frontend/vanilla") {
-        eprintln!(
-            "SKIP (environment-unverified) test=test_scaffold_rename_conflict_fails_closed: web/frontend/vanilla template layer not available offline (registry-first)"
-        );
-        return;
-    }
     let first = ScaffoldConfig {
         core: "web".to_string(),
         sub_type: "frontend".to_string(),
         frameworks: vec!["vanilla".to_string()],
         project_name: target.to_string_lossy().to_string(),
         features: vec![],
-        template_dir: PathBuf::new(),
+        template_dir: template.path().to_path_buf(),
     };
     assert!(Scaffolder::scaffold(&first).is_ok());
     let before: Vec<String> = std::fs::read_dir(&target)
@@ -1702,18 +1745,7 @@ fn test_scaffold_success_leaves_no_staging_sibling() {
     // next to the target — only the project itself.
     // Scaffold thành công không để staging rác cạnh target.
     let root = tempfile::tempdir().unwrap();
-    // Hermetic guard (CI fix 2026-09-11): see rename-conflict test —
-    // CI seeds an empty template cache; without the layer this test
-    // cannot drive the scaffold at all → skip honestly.
-    // Chốt hermetic: xem test rename-conflict — CI seed cache template
-    // rỗng; thiếu layer thì test không chạy được scaffold → skip
-    // trung thực.
-    if !template_layer_ready("web/frontend/vanilla") {
-        eprintln!(
-            "SKIP (environment-unverified) test=test_scaffold_success_leaves_no_staging_sibling: web/frontend/vanilla template layer not available offline (registry-first)"
-        );
-        return;
-    }
+    let template = online_web_template_fixture();
     let target = root.path().join("clean-project");
     let config = ScaffoldConfig {
         core: "web".to_string(),
@@ -1721,7 +1753,7 @@ fn test_scaffold_success_leaves_no_staging_sibling() {
         frameworks: vec!["vanilla".to_string()],
         project_name: target.to_string_lossy().to_string(),
         features: vec![],
-        template_dir: PathBuf::new(),
+        template_dir: template.path().to_path_buf(),
     };
     let out = Scaffolder::scaffold(&config).unwrap();
     assert!(out.exists());

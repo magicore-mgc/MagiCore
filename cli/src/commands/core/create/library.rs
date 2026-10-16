@@ -41,7 +41,8 @@ pub async fn run(
         template_dir: std::path::PathBuf::new(),
     };
 
-    // Resolve layer: embedded → cache → registry → fallback — giải quyết layer: embedded → cache → registry → fallback
+    // Resolve through a native MGC processor, a verified cache, or the configured registry.
+    // Resolve bằng processor native MGC, cache đã xác thực hoặc registry được cấu hình.
     let request = parsed_framework
         .as_ref()
         .map(|spec| spec.template_request())

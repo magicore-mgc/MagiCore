@@ -5,7 +5,7 @@
 
 ## Purpose
 
-Detects Flutter, Kotlin, Swift, React Native, Objective-C, and multi-platform projects, then routes manifest parsing/writing and audit/cache/install helpers. Resolver capability is language-specific; detected languages are not a blanket claim of complete dependency lifecycle support.
+Detects Flutter, Kotlin, Swift, React Native, Objective-C, MAUI, Tauri, and multi-platform projects, then routes manifest parsing/writing and audit/cache/install helpers. Native dependency resolution is currently available only for Flutter and Swift. MAUI and Tauri detection prevents them from falling through to Flutter; their dependency parsing, install, managed-cache, dev, and audit lanes remain explicitly unsupported until MagiCore owns those lifecycles. Detection alone is not a claim that a framework can run through MagiCore.
 
 ## Source map
 

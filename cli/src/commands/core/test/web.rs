@@ -1,4 +1,181 @@
 #[test]
+fn online_web_generator_maps_supported_frontend_and_node_backend_initializers() {
+    let cases = [
+        (
+            "frontend",
+            "vanilla",
+            "create-vite",
+            "create-vite",
+            "vite:vanilla-ts",
+        ),
+        (
+            "frontend",
+            "react-vite",
+            "create-vite",
+            "create-vite",
+            "vite:react-ts",
+        ),
+        (
+            "frontend",
+            "vue-vite",
+            "create-vite",
+            "create-vite",
+            "vite:vue-ts",
+        ),
+        (
+            "frontend",
+            "solidjs",
+            "create-vite",
+            "create-vite",
+            "vite:solid-ts",
+        ),
+        (
+            "frontend",
+            "qwik",
+            "create-vite",
+            "create-vite",
+            "vite:qwik-ts",
+        ),
+        (
+            "frontend",
+            "nextjs",
+            "create-next-app",
+            "create-next-app",
+            "create-next-app:default",
+        ),
+        ("frontend", "sveltekit", "sv", "sv", "sv:minimal-ts"),
+        (
+            "frontend",
+            "nuxt",
+            "create-nuxt",
+            "create-nuxt",
+            "create-nuxt:default",
+        ),
+        (
+            "frontend",
+            "angular",
+            "@angular/cli",
+            "ng",
+            "angular:ng-new-defaults",
+        ),
+        (
+            "frontend",
+            "astro",
+            "create-astro",
+            "create-astro",
+            "create-astro:minimal",
+        ),
+        (
+            "frontend",
+            "remix",
+            "create-react-router",
+            "create-react-router",
+            "create-react-router:default",
+        ),
+        (
+            "backend",
+            "express",
+            "express-generator",
+            "express",
+            "express-generator:no-view",
+        ),
+        (
+            "backend",
+            "fastify",
+            "fastify-cli",
+            "fastify",
+            "fastify-cli:generate-ts",
+        ),
+        (
+            "backend",
+            "hono",
+            "create-hono",
+            "create-hono",
+            "create-hono:nodejs",
+        ),
+        (
+            "backend",
+            "nestjs",
+            "@nestjs/cli",
+            "nest",
+            "nestjs:typescript",
+        ),
+    ];
+
+    for (mode, framework, package, binary, identity) in cases {
+        let generator = super::online_web_generator(mode, framework)
+            .unwrap_or_else(|| panic!("missing generator mapping for {mode}/{framework}"));
+        assert_eq!(generator.package, package, "{mode}/{framework} package");
+        assert_eq!(generator.binary, binary, "{mode}/{framework} binary");
+        assert_eq!(generator.identity, identity, "{mode}/{framework} identity");
+        assert!(
+            generator
+                .args
+                .iter()
+                .any(|argument| matches!(argument, super::OnlineGeneratorArgument::Project)),
+            "{mode}/{framework} must receive a project name"
+        );
+    }
+
+    assert_eq!(
+        super::online_web_generator("frontend", "not-a-framework"),
+        None
+    );
+    assert_eq!(super::online_web_generator("backend", "laravel"), None);
+    assert_eq!(super::online_web_generator("fullstack", "react-axum"), None);
+
+    let nuxt = super::online_web_generator("frontend", "nuxt").unwrap();
+    let nuxt_args = nuxt
+        .args
+        .iter()
+        .filter_map(|argument| match argument {
+            super::OnlineGeneratorArgument::Project => None,
+            super::OnlineGeneratorArgument::Literal(value) => Some(*value),
+        })
+        .collect::<Vec<_>>();
+    for required in [
+        "--template",
+        "minimal",
+        "--packageManager",
+        "npm",
+        "--no-gitInit",
+        "--no-install",
+    ] {
+        assert!(
+            nuxt_args.contains(&required),
+            "Nuxt generator must pass {required}"
+        );
+    }
+
+    let hono = super::online_web_generator("backend", "hono").unwrap();
+    let hono_args = hono
+        .args
+        .iter()
+        .filter_map(|argument| match argument {
+            super::OnlineGeneratorArgument::Project => None,
+            super::OnlineGeneratorArgument::Literal(value) => Some(*value),
+        })
+        .collect::<Vec<_>>();
+    assert!(hono_args.contains(&"--pm"));
+    assert!(hono_args.contains(&"npm"));
+}
+
+#[tokio::test]
+async fn online_vite_generator_rejects_path_traversal_before_running_dlx() {
+    let mut config = crate::scaffold::Scaffolder::infer_web_create_config("react-vite", "safe")
+        .expect("valid web scaffold config");
+    let error = super::run_online_web_generator(
+        &mut config,
+        "../outside-project",
+        super::online_web_generator("frontend", "react-vite").unwrap(),
+    )
+    .await
+    .expect_err("generator must reject path traversal before launching dlx");
+
+    assert!(error.to_string().contains("path traversal rejected"));
+}
+
+#[test]
 fn native_astro_dev_disables_external_update_check_only() {
     use crate::commands::compat::CompatMode;
     use std::path::Path;
@@ -378,10 +555,6 @@ fn nuxt_scaffold_seeds_unplugin_at_project_root_for_builder_resolution() {
             && package.package == "unplugin"
             && package.version.is_none()
     }));
-    assert_eq!(
-        super::versions::scaffold_baseline_version("unplugin"),
-        Some("^3.4.0")
-    );
 }
 
 #[test]
@@ -674,7 +847,7 @@ fn scaffold_age_gate_fails_closed_when_every_release_is_too_new() {
 
 #[test]
 #[cfg(feature = "web")]
-fn scaffold_age_gate_does_not_fallback_to_an_unverified_baseline() {
+fn scaffold_age_gate_fails_closed_when_registry_metadata_is_unavailable() {
     let error = super::versions::fallback_scaffold_version(
         "react",
         anyhow::anyhow!("registry is offline"),
@@ -688,6 +861,22 @@ fn scaffold_age_gate_does_not_fallback_to_an_unverified_baseline() {
     let message = error.to_string();
     assert!(message.contains("minimum-release-age"));
     assert!(message.contains("react"));
+}
+
+#[test]
+#[cfg(feature = "web")]
+fn scaffold_version_resolution_never_uses_a_stale_static_fallback() {
+    let error = super::versions::fallback_scaffold_version(
+        "react",
+        anyhow::anyhow!("registry is offline"),
+        None,
+    )
+    .expect_err("scaffolding must not substitute a pinned historical version");
+
+    let message = error.to_string();
+    assert!(message.contains("current registry version"));
+    assert!(message.contains("react"));
+    assert!(message.contains("registry is offline"));
 }
 
 #[test]

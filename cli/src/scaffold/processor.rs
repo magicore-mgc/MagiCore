@@ -6,6 +6,10 @@ use std::path::{Path, PathBuf};
 use crate::scaffold::template_root::TemplateRoot;
 use crate::wizard::engine::ScaffoldConfig;
 
+const MAX_GENERATED_TEMPLATE_FILES: usize = 20_000;
+const MAX_GENERATED_TEMPLATE_BYTES: u64 = 256 * 1024 * 1024;
+const MAX_GENERATED_TEMPLATE_DEPTH: usize = 128;
+
 struct WebFrameworkConfig {
     name: &'static str,
     sub_type: &'static str,
@@ -635,6 +639,11 @@ impl Scaffolder {
         name: &str,
         framework: &str,
     ) -> Result<()> {
+        if !config.template_dir.as_os_str().is_empty() {
+            Self::copy_online_generated_template(&config.template_dir, target)?;
+            return Self::ensure_web_test_runner(target, name);
+        }
+
         let layers = Self::resolve_web_template_layers(config)?;
         Self::materialize_web_templates(target, config, &layers)?;
         if effective_web_mode(config) == "monorepo" {
@@ -648,6 +657,111 @@ impl Scaffolder {
         } else {
             Self::ensure_web_test_runner(target, name)
         }
+    }
+
+    fn copy_online_generated_template(source: &Path, target: &Path) -> Result<()> {
+        fn copy_directory(
+            source_root: &Path,
+            source: &Path,
+            target_root: &Path,
+            relative: &Path,
+            depth: usize,
+            file_count: &mut usize,
+            total_bytes: &mut u64,
+        ) -> Result<()> {
+            if depth > MAX_GENERATED_TEMPLATE_DEPTH {
+                return Err(crate::error::web_generator_output_too_large());
+            }
+            for entry in std::fs::read_dir(source)? {
+                let entry = entry?;
+                let name = entry.file_name();
+                let Some(name) = name.to_str() else {
+                    return Err(crate::error::template_materialization_path_invalid(
+                        &entry.path().display().to_string(),
+                    ));
+                };
+                if matches!(name, ".git" | "node_modules") {
+                    continue;
+                }
+                let child_relative = relative.join(name);
+                let child_relative_text = child_relative
+                    .to_str()
+                    .ok_or_else(|| {
+                        crate::error::template_materialization_path_invalid(
+                            &entry.path().display().to_string(),
+                        )
+                    })?
+                    .replace(std::path::MAIN_SEPARATOR, "/");
+                let destination = checked_template_path(target_root, &child_relative_text)?;
+                let metadata = std::fs::symlink_metadata(entry.path())?;
+                let linked = metadata.file_type().is_symlink();
+                #[cfg(windows)]
+                let linked = {
+                    use std::os::windows::fs::MetadataExt;
+                    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+                    linked || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+                };
+                if linked {
+                    return Err(crate::error::web_generator_output_unsafe(&entry.path()));
+                }
+                if metadata.is_dir() {
+                    std::fs::create_dir_all(&destination)?;
+                    copy_directory(
+                        source_root,
+                        &entry.path(),
+                        target_root,
+                        &child_relative,
+                        depth + 1,
+                        file_count,
+                        total_bytes,
+                    )?;
+                } else if metadata.is_file() {
+                    *file_count = file_count.saturating_add(1);
+                    *total_bytes = total_bytes.saturating_add(metadata.len());
+                    if *file_count > MAX_GENERATED_TEMPLATE_FILES
+                        || *total_bytes > MAX_GENERATED_TEMPLATE_BYTES
+                    {
+                        return Err(crate::error::web_generator_output_too_large());
+                    }
+                    if let Some(parent) = destination.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                    std::fs::copy(entry.path(), destination)?;
+                } else {
+                    return Err(crate::error::web_generator_output_unsafe(&entry.path()));
+                }
+            }
+            let canonical = source.canonicalize()?;
+            if !canonical.starts_with(source_root) {
+                return Err(crate::error::web_generator_output_unsafe(source));
+            }
+            Ok(())
+        }
+
+        let metadata = std::fs::symlink_metadata(source)?;
+        let linked = metadata.file_type().is_symlink();
+        #[cfg(windows)]
+        let linked = {
+            use std::os::windows::fs::MetadataExt;
+            const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+            linked || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+        };
+        if linked || !metadata.is_dir() {
+            return Err(crate::error::web_generator_output_unsafe(source));
+        }
+        let canonical_source = source.canonicalize()?;
+        std::fs::create_dir_all(target)?;
+        let mut file_count = 0;
+        let mut total_bytes = 0;
+        copy_directory(
+            &canonical_source,
+            &canonical_source,
+            target,
+            Path::new(""),
+            0,
+            &mut file_count,
+            &mut total_bytes,
+        )
     }
 
     fn ensure_web_test_runner(target: &Path, name: &str) -> Result<()> {

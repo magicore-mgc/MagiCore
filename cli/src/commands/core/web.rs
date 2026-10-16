@@ -2358,6 +2358,240 @@ pub(crate) struct FrameworkRequest {
     pub dist_tag: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OnlineGeneratorArgument {
+    Project,
+    Literal(&'static str),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct OnlineWebGenerator {
+    package: &'static str,
+    binary: &'static str,
+    identity: &'static str,
+    args: &'static [OnlineGeneratorArgument],
+}
+
+fn online_web_generator(mode: &str, framework: &str) -> Option<OnlineWebGenerator> {
+    use OnlineGeneratorArgument::{Literal as L, Project as P};
+
+    let (package, binary, identity, args) = match (mode, framework) {
+        ("frontend", "vanilla") => (
+            "create-vite",
+            "create-vite",
+            "vite:vanilla-ts",
+            &[P, L("--template"), L("vanilla-ts")][..],
+        ),
+        ("frontend", "react-vite") => (
+            "create-vite",
+            "create-vite",
+            "vite:react-ts",
+            &[P, L("--template"), L("react-ts")][..],
+        ),
+        ("frontend", "vue-vite") => (
+            "create-vite",
+            "create-vite",
+            "vite:vue-ts",
+            &[P, L("--template"), L("vue-ts")][..],
+        ),
+        ("frontend", "solidjs") => (
+            "create-vite",
+            "create-vite",
+            "vite:solid-ts",
+            &[P, L("--template"), L("solid-ts")][..],
+        ),
+        ("frontend", "qwik") => (
+            "create-vite",
+            "create-vite",
+            "vite:qwik-ts",
+            &[P, L("--template"), L("qwik-ts")][..],
+        ),
+        ("frontend", "nextjs") => (
+            "create-next-app",
+            "create-next-app",
+            "create-next-app:default",
+            &[P, L("--yes"), L("--skip-install"), L("--disable-git")][..],
+        ),
+        ("frontend", "sveltekit") => (
+            "sv",
+            "sv",
+            "sv:minimal-ts",
+            &[
+                L("create"),
+                L("--template"),
+                L("minimal"),
+                L("--types"),
+                L("ts"),
+                L("--no-add-ons"),
+                L("--no-install"),
+                P,
+            ][..],
+        ),
+        ("frontend", "nuxt") => (
+            "create-nuxt",
+            "create-nuxt",
+            "create-nuxt:default",
+            &[
+                P,
+                L("--template"),
+                L("minimal"),
+                L("--packageManager"),
+                L("npm"),
+                L("--no-gitInit"),
+                L("--no-install"),
+                L("--no-modules"),
+            ][..],
+        ),
+        ("frontend", "angular") => (
+            "@angular/cli",
+            "ng",
+            "angular:ng-new-defaults",
+            &[
+                L("new"),
+                P,
+                L("--defaults"),
+                L("--skip-install"),
+                L("--skip-git"),
+                L("--interactive=false"),
+                L("--package-manager"),
+                L("npm"),
+            ][..],
+        ),
+        ("frontend", "astro") => (
+            "create-astro",
+            "create-astro",
+            "create-astro:minimal",
+            &[
+                P,
+                L("--template"),
+                L("minimal"),
+                L("--yes"),
+                L("--no-install"),
+                L("--no-git"),
+            ][..],
+        ),
+        ("frontend", "remix") => (
+            "create-react-router",
+            "create-react-router",
+            "create-react-router:default",
+            &[P][..],
+        ),
+        ("backend", "express") => (
+            "express-generator",
+            "express",
+            "express-generator:no-view",
+            &[L("--no-view"), P][..],
+        ),
+        ("backend", "fastify") => (
+            "fastify-cli",
+            "fastify",
+            "fastify-cli:generate-ts",
+            &[L("generate"), P, L("--lang=ts")][..],
+        ),
+        ("backend", "hono") => (
+            "create-hono",
+            "create-hono",
+            "create-hono:nodejs",
+            &[P, L("--template"), L("nodejs"), L("--pm"), L("npm")][..],
+        ),
+        ("backend", "nestjs") => (
+            "@nestjs/cli",
+            "nest",
+            "nestjs:typescript",
+            &[
+                L("new"),
+                P,
+                L("--skip-install"),
+                L("--skip-git"),
+                L("--package-manager"),
+                L("npm"),
+                L("--language"),
+                L("TS"),
+                L("--no-observe"),
+            ][..],
+        ),
+        _ => return None,
+    };
+
+    Some(OnlineWebGenerator {
+        package,
+        binary,
+        identity,
+        args,
+    })
+}
+
+async fn run_create_initializer(
+    config: &mut crate::wizard::engine::ScaffoldConfig,
+    project_name: &str,
+    generator: OnlineWebGenerator,
+) -> Result<(tempfile::TempDir, String)> {
+    crate::commands::core::create::validate_project_name(project_name)?;
+    let target = Path::new(project_name);
+    if target.try_exists()? {
+        return Err(crate::error::dir_already_exists(target));
+    }
+
+    let workspace = tempfile::Builder::new()
+        .prefix("mgc-online-scaffold-")
+        .tempdir()?;
+    let generated_project = workspace.path().join(project_name);
+    let package_request = format!("{}@latest", generator.package);
+    let generator_args = generator
+        .args
+        .iter()
+        .map(|argument| match argument {
+            OnlineGeneratorArgument::Project => project_name.to_string(),
+            OnlineGeneratorArgument::Literal(value) => (*value).to_string(),
+        })
+        .collect();
+    let report = crate::commands::package_runtime::run_registry_package_in(
+        package_request.clone(),
+        Some(generator.binary.to_string()),
+        false,
+        generator_args,
+        workspace.path(),
+        crate::commands::package_runtime::PackageRunPurpose::CreateInitializer,
+    )
+    .await
+    .with_context(|| {
+        format!(
+            "create the '{}' project with '{}' through the MagiCore create initializer",
+            project_name, package_request
+        )
+    })?;
+
+    let workspace_root = workspace.path().canonicalize()?;
+    let generated_metadata = std::fs::symlink_metadata(&generated_project)
+        .map_err(|_| crate::error::web_generator_output_invalid(&generated_project))?;
+    if generated_metadata.file_type().is_symlink() || !generated_metadata.is_dir() {
+        return Err(crate::error::web_generator_output_unsafe(
+            &generated_project,
+        ));
+    }
+    let generated_project = generated_project.canonicalize()?;
+    if !generated_project.starts_with(&workspace_root) {
+        return Err(crate::error::web_generator_output_unsafe(
+            &generated_project,
+        ));
+    }
+    let package_json = generated_project.join("package.json");
+    let package_metadata = std::fs::symlink_metadata(&package_json)
+        .map_err(|_| crate::error::web_generator_output_invalid(&generated_project))?;
+    if package_metadata.file_type().is_symlink() || !package_metadata.is_file() {
+        return Err(crate::error::web_generator_output_unsafe(&package_json));
+    }
+
+    config.template_dir = generated_project;
+    Ok((
+        workspace,
+        format!(
+            "npm:{}@{}#generator={}",
+            report.package, report.version, generator.identity
+        ),
+    ))
+}
+
 pub async fn run_create_with_options(
     framework: &str,
     project_name: &str,
@@ -2386,33 +2620,90 @@ pub async fn run_create_with_options(
         project_name, fe_framework
     ));
 
-    let config = build_web_config(&fe_framework, project_name, &flags)?;
+    let mut config = build_web_config(&fe_framework, project_name, &flags)?;
 
-    // Registry-first preflight — ensure only layers this scaffold mode uses.
-    // Kiểm đúng layer theo mode, không bắt backend/monorepo partials cho frontend.
+    // Resolve the leaf before shared layers; a known online creator needs no
+    // embedded shared archive when the first-party leaf is not published.
+    // Kiểm leaf trước để generator chính thức không cần bung partial nhúng khi thiếu gói MGC.
     let frontend = framework_request_from_spec(&fe_framework, &spec.requested_ref);
     let rels = required_web_layers_for_config(&config, &frontend);
+    let scaffold_framework = match config.sub_type.as_str() {
+        "frontend" => config.frameworks.first(),
+        "backend" => config.frameworks.last(),
+        _ => None,
+    };
+    let online_generator =
+        scaffold_framework.and_then(|framework| online_web_generator(&config.sub_type, framework));
+    let mut generator_workspace = None;
+    let mut provenance_layers = rels.clone();
+    let mut used_online_generator = false;
 
-    // Phase 3: Typed resolution với MissingLayersReport thay vì warning spam
-    use crate::scaffold::resolver::MissingLayersReport;
-    let mut report = MissingLayersReport::new();
-
-    for rel in &rels {
-        match crate::commands::template::ensure_layer(rel).await {
-            Ok(status) => {
-                if !status.is_available() {
-                    report.add_required_failure(rel, format!("{status:?}"));
-                }
+    if let (Some(generator), Some(primary_layer)) = (online_generator, rels.last()) {
+        match crate::commands::template::ensure_layer(primary_layer).await {
+            Ok(status) if status.is_available() => {}
+            Err(crate::scaffold::resolver::ScaffoldResolveError::RequiredLayerMissing {
+                ..
+            }) => {
+                mgc_ui::warning(&format!(
+                    "MGC scaffold layer '{primary_layer}' is unpublished; creating from the official '{}' initializer through MagiCore",
+                    generator.package
+                ));
+                let (workspace, source) =
+                    run_create_initializer(&mut config, project_name, generator).await?;
+                generator_workspace = Some(workspace);
+                provenance_layers = vec![source];
+                used_online_generator = true;
             }
-            Err(error) => report.add_required_failure(rel, error),
+            Ok(_) => {}
+            Err(error) => return Err(error.into()),
         }
     }
 
-    // Fail early nếu có required layers missing
-    if report.has_required_missing() {
-        bail!(report.format_error("web", &frontend.normalized));
+    if !used_online_generator {
+        // Registry-first preflight — ensure only layers this scaffold mode uses.
+        // Kiểm đúng layer theo mode, không bắt backend/monorepo partials cho frontend.
+        use crate::scaffold::resolver::MissingLayersReport;
+        let mut report = MissingLayersReport::new();
+        let mut missing_layer_for_generator = None;
+
+        for rel in &rels {
+            match crate::commands::template::ensure_layer(rel).await {
+                Ok(status) => {
+                    if !status.is_available() {
+                        report.add_required_failure(rel, format!("{status:?}"));
+                    }
+                }
+                Err(crate::scaffold::resolver::ScaffoldResolveError::RequiredLayerMissing {
+                    layer,
+                    ..
+                }) if online_generator.is_some() => {
+                    missing_layer_for_generator.get_or_insert(layer);
+                }
+                Err(error) => report.add_required_failure(rel, error),
+            }
+        }
+
+        if report.has_required_missing() {
+            bail!(report.format_error("web", &frontend.normalized));
+        }
+        if let (Some(generator), Some(missing_layer)) =
+            (online_generator, missing_layer_for_generator)
+        {
+            mgc_ui::warning(&format!(
+                "MGC scaffold layer '{missing_layer}' is unpublished; creating from the official '{}' initializer through MagiCore",
+                generator.package
+            ));
+            let (workspace, source) =
+                run_create_initializer(&mut config, project_name, generator).await?;
+            generator_workspace = Some(workspace);
+            provenance_layers = vec![source];
+        }
     }
+
     let project_dir = crate::scaffold::Scaffolder::scaffold(&config)?;
+    // The generated source path is ephemeral and must not be written into mgc.toml.
+    // Đường dẫn nguồn chỉ tồn tại tạm; không ghi nó vào mgc.toml của người dùng.
+    config.template_dir = std::path::PathBuf::new();
 
     let proj_config = mgc_config::project::ProjectConfig::from_scaffold(
         crate::scaffold::Scaffolder::display_name(&project_dir),
@@ -2434,7 +2725,7 @@ pub async fn run_create_with_options(
             _ => "default".to_string(),
         },
         None, // Registry URL would come from ensure_layer results
-        rels.clone(),
+        provenance_layers,
     );
     if let Err(e) = provenance.write(&project_dir) {
         mgc_ui::warning(&format!("Failed to write provenance: {}", e));
@@ -2453,6 +2744,8 @@ pub async fn run_create_with_options(
         project_name,
         install_hint_command()
     ));
+
+    drop(generator_workspace);
 
     Ok(())
 }

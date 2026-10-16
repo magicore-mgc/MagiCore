@@ -8,9 +8,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::commands::definitions::ToolCmd;
-use crate::commands::dlx::{
-    dlx_install_args, dlx_project_config, parse_request, requested_package_bins, select_bin_name,
-    valid_bin_name,
+use crate::commands::package_runtime::{
+    parse_request, registry_install_args, registry_project_config, requested_package_bins,
+    select_bin_name, valid_bin_name,
 };
 
 const TOOL_MANIFEST: &str = ".mgc-tool.json";
@@ -67,7 +67,7 @@ fn install(request: &str, selected_bin: Option<&str>, allow_scripts: bool) -> Re
     };
     let (package, selector) = parse_request(request)?;
     if selected_bin.is_some_and(|binary| !valid_bin_name(binary)) {
-        return Err(crate::error::dlx_invalid_bin());
+        return Err(crate::error::registry_package_invalid_bin());
     }
 
     let (data_root, tools_root, bin_root) = managed_roots(true)?;
@@ -188,7 +188,7 @@ fn install_into_project(
     let cwd = std::env::current_dir()?;
     let caller_root =
         mgc_config::project::ProjectConfig::find_project_root(&cwd).unwrap_or_else(|| cwd.clone());
-    let mut config = dlx_project_config(&caller_root)?;
+    let mut config = registry_project_config(&caller_root)?;
     config.name = tool_project_name(package);
     config.version = "1.0.0".to_string();
     for registry in &mut config.registries {
@@ -231,7 +231,7 @@ fn install_into_project(
         .iter()
         .find(|(name, _)| name == &binary)
         .map(|(_, target)| target.clone())
-        .ok_or_else(crate::error::dlx_undeclared_bin)?;
+        .ok_or_else(crate::error::registry_package_undeclared_bin)?;
     let target = normalize_tool_target(&target_relative)?;
     let canonical_target = package_root.join(&target).canonicalize()?;
     if !canonical_target.starts_with(&package_root) || !canonical_target.is_file() {
@@ -261,7 +261,7 @@ fn install_into_project(
 fn update(binary: &str, selector_override: Option<&str>, allow_scripts: bool) -> Result<()> {
     require_web_lane()?;
     if !valid_bin_name(binary) {
-        return Err(crate::error::dlx_invalid_bin());
+        return Err(crate::error::registry_package_invalid_bin());
     }
     let (_data_root, tools_root, bin_root) = managed_roots(false)?;
     let (project_root, mut record) = find_record_by_binary(&tools_root, binary)?
@@ -316,7 +316,7 @@ fn update(binary: &str, selector_override: Option<&str>, allow_scripts: bool) ->
             .iter()
             .find(|(name, _)| name == binary)
             .map(|(_, target)| target.clone())
-            .ok_or_else(crate::error::dlx_undeclared_bin)?;
+            .ok_or_else(crate::error::registry_package_undeclared_bin)?;
         let target = normalize_tool_target(&target)?;
         let canonical_target = package_root.join(&target).canonicalize()?;
         if !canonical_target.starts_with(&package_root) || !canonical_target.is_file() {
@@ -371,7 +371,7 @@ fn update(binary: &str, selector_override: Option<&str>, allow_scripts: bool) ->
 
 fn remove(binary: &str) -> Result<()> {
     if !valid_bin_name(binary) {
-        return Err(crate::error::dlx_invalid_bin());
+        return Err(crate::error::registry_package_invalid_bin());
     }
     let (_data_root, tools_root, bin_root) = managed_roots(false)?;
     let Some((project_root, record)) = find_record_by_binary(&tools_root, binary)? else {
@@ -443,7 +443,7 @@ fn list() -> Result<()> {
 }
 
 fn run_native_install(project_root: &Path, allow_scripts: bool) -> Result<()> {
-    let args = dlx_install_args(allow_scripts);
+    let args = registry_install_args(allow_scripts);
     let executable = std::env::current_exe()?;
     let options = mgc_exec::prelude::ExecOptions {
         cwd: Some(project_root.to_path_buf()),
@@ -840,21 +840,21 @@ fn normalize_tool_target(target: &Path) -> Result<String> {
     // kiểu dấu phân cách trước khi kiểm tra để record nhất quán mọi OS.
     let portable = target.to_string_lossy().replace('\\', "/");
     if portable.is_empty() || portable.starts_with('/') {
-        return Err(crate::error::dlx_invalid_package_bins());
+        return Err(crate::error::registry_package_invalid_bins());
     }
     let mut components = Vec::new();
     for component in portable.split('/') {
         match component {
             "" | "." => {}
-            ".." => return Err(crate::error::dlx_invalid_package_bins()),
+            ".." => return Err(crate::error::registry_package_invalid_bins()),
             component if component.contains(':') || component.chars().any(char::is_control) => {
-                return Err(crate::error::dlx_invalid_package_bins());
+                return Err(crate::error::registry_package_invalid_bins());
             }
             component => components.push(component),
         }
     }
     if components.is_empty() {
-        return Err(crate::error::dlx_invalid_package_bins());
+        return Err(crate::error::registry_package_invalid_bins());
     }
     Ok(components.join("/"))
 }

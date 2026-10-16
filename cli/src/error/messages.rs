@@ -1077,35 +1077,35 @@ pub fn publish_lifecycle_policy_invalid() -> Error {
     anyhow!("package.json publish lifecycle scripts must be an object of string commands")
 }
 
-// ===== dlx.rs =====
+// ===== package_runtime.rs =====
 
-pub fn dlx_no_binary(bin: &str, pkg: &str) -> Error {
-    anyhow!("dlx: no binary '{bin}' found for package '{pkg}'. Is it an executable package?")
+pub fn registry_package_no_binary(bin: &str, pkg: &str) -> Error {
+    anyhow!("package runner: no binary '{bin}' found for package '{pkg}'. Is it an executable package?")
 }
 
 /// Reject malformed registry requests before creating dlx work directories.
 /// Chặn request sai trước khi tạo project tạm, không lặp lại input nhạy cảm.
-pub fn dlx_invalid_request(reason: &str) -> Error {
-    anyhow!("dlx: invalid registry package request: {reason}")
+pub fn registry_package_invalid_request(reason: &str) -> Error {
+    anyhow!("package runner: invalid registry package request: {reason}")
 }
 
 /// Refuse unreadable caller policy without exposing configuration credential values.
 /// Không in dòng TOML có thể chứa credential khi policy caller hỏng.
-pub fn dlx_invalid_caller_policy() -> Error {
-    anyhow!("dlx: cannot read caller project policy; fix mgc.toml before running dlx")
+pub fn registry_package_invalid_caller_policy() -> Error {
+    anyhow!("package runner: cannot read caller project policy; fix mgc.toml before running the package")
 }
 
 /// Refuse redirected cache directories and unexpected executable targets.
 /// Không cho cache symlink hoặc executable thoát project tạm được chạy.
-pub fn dlx_cache_path_unsafe(path: &std::path::Path) -> Error {
+pub fn registry_package_cache_path_unsafe(path: &std::path::Path) -> Error {
     anyhow!(
-        "dlx: cache directory '{}' must be a real directory without symlinks",
+        "package runner: cache directory '{}' must be a real directory without symlinks",
         path.display()
     )
 }
 
-pub fn dlx_binary_outside_project() -> Error {
-    anyhow!("dlx: executable resolves outside the verified temporary project")
+pub fn registry_package_binary_outside_project() -> Error {
+    anyhow!("package runner: executable resolves outside the verified temporary project")
 }
 
 // ===== hooks.rs =====
@@ -1367,6 +1367,15 @@ pub fn web_scaffold_age_metadata_unavailable(
 ) -> Error {
     anyhow!(
         "cannot enforce minimum-release-age for scaffold package '{package}': registry metadata is unavailable: {cause}"
+    )
+}
+
+pub fn web_scaffold_registry_version_unavailable(
+    package: &str,
+    cause: &dyn std::fmt::Display,
+) -> Error {
+    anyhow!(
+        "cannot resolve the current registry version for scaffold package '{package}': {cause}; retry when registry access is available"
     )
 }
 
@@ -1715,6 +1724,24 @@ pub fn scaffold_staging_failed(target: &std::path::Path, cause: Error) -> Error 
          behind. Cause: {cause}",
         target.display()
     )
+}
+
+pub fn web_generator_output_invalid(path: &std::path::Path) -> Error {
+    anyhow!(
+        "online framework generator did not produce a valid project at '{}'",
+        path.display()
+    )
+}
+
+pub fn web_generator_output_unsafe(path: &std::path::Path) -> Error {
+    anyhow!(
+        "online framework generator output '{}' contains a linked or special path",
+        path.display()
+    )
+}
+
+pub fn web_generator_output_too_large() -> Error {
+    anyhow!("online framework generator output exceeds MagiCore safety limits")
 }
 
 pub fn create_claim_conflict(claim: &std::path::Path) -> Error {
@@ -2407,20 +2434,20 @@ pub fn invalid_spawn_profile(detail: &str) -> Error {
 
 /// Reject executable selection that cannot be attributed to the requested package.
 /// Từ chối bin sai tên, mơ hồ hoặc target không thuộc package được yêu cầu.
-pub fn dlx_invalid_bin() -> Error {
-    anyhow!("dlx: invalid executable name; use a simple declared bin name")
+pub fn registry_package_invalid_bin() -> Error {
+    anyhow!("package runner: invalid executable name; use a simple declared bin name")
 }
-pub fn dlx_undeclared_bin() -> Error {
-    anyhow!("dlx: selected executable is not declared by the requested package")
+pub fn registry_package_undeclared_bin() -> Error {
+    anyhow!("package runner: selected executable is not declared by the requested package")
 }
-pub fn dlx_ambiguous_bin() -> Error {
-    anyhow!("dlx: package declares multiple executables; select one with --bin NAME")
+pub fn registry_package_ambiguous_bin() -> Error {
+    anyhow!("package runner: package declares multiple executables; select one with --bin NAME")
 }
-pub fn dlx_invalid_package_bins() -> Error {
-    anyhow!("dlx: installed package identity or executable metadata is invalid")
+pub fn registry_package_invalid_bins() -> Error {
+    anyhow!("package runner: installed package identity or executable metadata is invalid")
 }
-pub fn dlx_bin_target_mismatch() -> Error {
-    anyhow!("dlx: executable does not match the requested package's declared target")
+pub fn registry_package_bin_target_mismatch() -> Error {
+    anyhow!("package runner: executable does not match the requested package's declared target")
 }
 
 /// Container scaffolding cannot map a split web project to one runtime image.

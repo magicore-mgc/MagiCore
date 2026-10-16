@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/logo-full.svg" alt="MagiCore" width="240" />
+  <img src="assets/logo-full.svg" alt="MagiCore" width="full" />
   <h1>MagiCore</h1>
   <p><strong>A Rust CLI for project and dependency workflows across multiple cores</strong></p>
   <p><a href="https://github.com/mingd-153/MagiCore/actions/workflows/ci.yml">CI</a> · <a href="https://github.com/mingd-153/MagiCore/pulls">Pull requests</a> · <a href="LICENSE">MIT license</a></p>

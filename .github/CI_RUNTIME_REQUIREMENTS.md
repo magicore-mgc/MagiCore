@@ -12,10 +12,10 @@ For tests to become VERIFIED, CI must provision these runtimes:
 ### 1. Optimizer Tests (`cli/tests/optimizer_lifecycle_e2e.rs`)
 
 **AI (Python) Optimizer:**
-- Runtime: `python3` + `pytest`
-- Installation: `pip install pytest` or `apt-get install python3-pytest`
+- Runtime: Python 3 only; optimizer regression uses an isolated fake Python runner
+- Installation: no global pytest install. AI lifecycle E2E declares `pytest` through `mgc add`, then `mgc install`.
 - Test: `test_ai_python_mgc_test_with_optimizer`
-- Evidence needed: OPTIMIZER_STATUS marker in pytest child process
+- Evidence needed: MGC invokes `python -S -m pytest`, strips ambient `PYTHONPATH`, and forwards the optimizer marker
 
 **App (Flutter) Optimizer:**
 - Runtime: Flutter SDK
@@ -32,7 +32,7 @@ For tests to become VERIFIED, CI must provision these runtimes:
 - Evidence needed: Full create → install → test → build cycle
 
 **AI Lifecycle:**
-- Runtime: `python3`
+- Runtime: Python 3; pytest is a project dependency resolved, locked, and installed through MGC
 - Test: Currently only tests create (needs expansion)
 - TODO: Add full install → test cycle
 
@@ -58,6 +58,10 @@ For tests to become VERIFIED, CI must provision these runtimes:
 
 **STATUS: Flutter now provisioned in CI via official GitHub Action** ✅
 
+Python is provisioned as a runtime only. Do not install pytest/build packages
+with `pip` in the host or CI environment; Python project dependencies must be
+declared and materialized through `mgc add`/`mgc install`.
+
 ```yaml
 strategy:
   matrix:
@@ -66,19 +70,17 @@ strategy:
       - os: ubuntu-latest
         setup: |
           sudo apt-get update
-          sudo apt-get install -y python3 python3-pip nodejs npm
-          pip3 install pytest
+          sudo apt-get install -y python3 nodejs npm
 
       - os: macos-latest
         setup: |
           brew install python3 node
-          pip3 install pytest
 
 # Flutter installed via subosito/flutter-action@v2 (separate step)
 ```
 
 **Implementation**: See `.github/workflows/ci.yml` - test-with-runtimes job now includes:
-- Python3 + pytest ✅
+- Python 3 runtime; pytest is resolved and installed through MGC ✅
 - Node + npm ✅
 - Flutter 3.24.0 ✅ (via subosito/flutter-action@v2)
 
@@ -105,17 +107,14 @@ Developers can install runtimes locally:
 ```bash
 # macOS
 brew install python3 node
-pip3 install pytest
 # Flutter: https://docs.flutter.dev/get-started/install/macos
 
 # Linux
-sudo apt-get install python3 python3-pip nodejs npm
-pip3 install pytest
+sudo apt-get install python3 nodejs npm
 # Flutter: see official docs
 
 # Windows
 choco install python3 nodejs npm
-pip install pytest
 # Flutter: see official docs
 ```
 
