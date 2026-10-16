@@ -401,6 +401,22 @@ fn angular_scaffold_keeps_typescript_inside_the_compiler_supported_minor() {
 }
 
 #[test]
+fn vue_vite_scaffold_keeps_typescript_inside_the_language_tools_api_range() {
+    let seed = super::FRAMEWORK_SEEDS
+        .iter()
+        .find(|seed| seed.name == "vue-vite")
+        .expect("Vue Vite framework seed should exist");
+
+    let typescript = seed
+        .toolchain
+        .iter()
+        .find(|package| package.package == "typescript")
+        .expect("Vue Vite must declare its TypeScript compiler peer");
+
+    assert_eq!(typescript.version, Some("~6.0.3"));
+}
+
+#[test]
 fn monorepo_alias_selects_a_frontend_and_backend() {
     let mut flags = crate::commands::core::scaffold_flags::ScaffoldFlags::default();
     super::apply_framework_alias_defaults("monorepo", &mut flags);

@@ -3343,7 +3343,11 @@ const FRAMEWORK_SEEDS: &[WebFrameworkSeed] = &[
                 section: "devDependencies",
                 package: "typescript",
                 typescript_only: true,
-                version: None,
+                // Vue Language Tools still needs the TypeScript 6 compiler API;
+                // TypeScript 7 no longer exports the ./lib/tsc entry it loads.
+                // (Vue Language Tools vẫn cần compiler API TypeScript 6;
+                // TypeScript 7 không còn export entry ./lib/tsc mà nó nạp.)
+                version: Some("~6.0.3"),
             },
         ],
     },
