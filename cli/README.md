@@ -23,7 +23,7 @@ cli/src/
 │   ├── bare.rs           # Bare command handling (auto-detect core)
 │   └── types.rs          # CommonCommand and CoreCommand enums
 ├── context.rs            # ProjectContext: reads .mgc.core, mgc.toml, detects ecosystem
-└── scaffold/             # Template scaffolding engine (embedded kernel, processors)
+└── scaffold/             # Registry-backed templates, embedded shared layers, native processors
 ```
 
 ## How to Add a New Command

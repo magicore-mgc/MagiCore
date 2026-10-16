@@ -1,7 +1,6 @@
 pub mod cache;
 mod container;
 pub mod embedded;
-pub mod embedded_kernel;
 pub mod processor;
 pub mod processors;
 pub mod provenance;

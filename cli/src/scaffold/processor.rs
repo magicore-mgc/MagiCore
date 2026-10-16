@@ -635,24 +635,8 @@ impl Scaffolder {
         name: &str,
         framework: &str,
     ) -> Result<()> {
-        let write_result = match Self::resolve_web_template_layers(config) {
-            Ok(layers) => Self::materialize_web_templates(target, config, &layers),
-            Err(err) => {
-                if config.sub_type != "monorepo"
-                    && let Some(files) =
-                        crate::scaffold::embedded_kernel::get_embedded_template("web", framework)
-                {
-                    Self::ensure_web_fallback_common_files(target, name, framework)?;
-                    crate::scaffold::embedded_kernel::materialize_embedded(target, name, &files)
-                } else if framework == "vanilla" {
-                    Self::ensure_web_fallback_common_files(target, name, framework)?;
-                    Self::write_vanilla_web_fallback(target, name)
-                } else {
-                    return Err(err);
-                }
-            }
-        };
-        write_result?;
+        let layers = Self::resolve_web_template_layers(config)?;
+        Self::materialize_web_templates(target, config, &layers)?;
         if effective_web_mode(config) == "monorepo" {
             return Ok(());
         }
@@ -707,55 +691,6 @@ impl Scaffolder {
             )?;
         }
         Ok(())
-    }
-
-    fn ensure_web_fallback_common_files(target: &Path, name: &str, framework: &str) -> Result<()> {
-        if !target.join(".gitignore").exists() {
-            Self::write_file(
-                &target.join(".gitignore"),
-                &common_gitignore("web", framework),
-            )?;
-        }
-        if !target.join("README.md").exists() {
-            Self::write_file(
-                &target.join("README.md"),
-                &common_readme(name, "web", framework, &[]),
-            )?;
-        }
-        Ok(())
-    }
-
-    /// Write a small static HTML/JavaScript project when the optional
-    /// vanilla registry layer is unavailable.
-    /// Sinh project HTML/JavaScript tĩnh khi thiếu layer vanilla tùy chọn.
-    fn write_vanilla_web_fallback(target: &Path, name: &str) -> Result<()> {
-        let html_name = name
-            .replace('&', "&amp;")
-            .replace('<', "&lt;")
-            .replace('>', "&gt;")
-            .replace('"', "&quot;")
-            .replace('\'', "&#39;");
-        Self::write_file(
-            &target.join("package.json"),
-            &format!(
-                "{{\n  \"name\": \"{}\",\n  \"private\": true,\n  \"version\": \"0.1.0\",\n  \"type\": \"module\",\n  \"scripts\": {{\n    \"dev\": \"vite --host 0.0.0.0\",\n    \"build\": \"vite build\",\n    \"preview\": \"vite preview --port 4315 --strictPort\"\n  }}\n}}\n",
-                slugify(name)
-            ),
-        )?;
-        Self::write_file(
-            &target.join("index.html"),
-            &format!(
-                "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>{html_name}</title>\n    <link rel=\"stylesheet\" href=\"/src/style.css\" />\n  </head>\n  <body>\n    <main id=\"app\"></main>\n    <script type=\"module\" src=\"/src/main.js\"></script>\n  </body>\n</html>\n"
-            ),
-        )?;
-        Self::write_file(
-            &target.join("src/main.js"),
-            "document.querySelector('#app').innerHTML = '<h1>Welcome to MagiCore</h1><p>Your vanilla web project is ready.</p>';\n",
-        )?;
-        Self::write_file(
-            &target.join("src/style.css"),
-            "body { margin: 0; min-height: 100vh; display: grid; place-items: center; font: 16px system-ui, sans-serif; }\nmain { padding: 2rem; }\n",
-        )
     }
 
     /// C9 — multi-platform: shared Kotlin (KMP) + android/ios (swift+objc)/react-native/flutter.

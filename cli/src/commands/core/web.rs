@@ -2401,21 +2401,10 @@ pub async fn run_create_with_options(
         match crate::commands::template::ensure_layer(rel).await {
             Ok(status) => {
                 if !status.is_available() {
-                    if web_layer_has_scaffold_fallback(&config, rel) {
-                        report.add_optional(rel.clone());
-                    } else {
-                        report.add_required_failure(rel, format!("{status:?}"));
-                    }
+                    report.add_required_failure(rel, format!("{status:?}"));
                 }
             }
-            Err(error) => {
-                if error.is_availability_failure() && web_layer_has_scaffold_fallback(&config, rel)
-                {
-                    report.add_optional(rel.clone());
-                } else {
-                    report.add_required_failure(rel, error);
-                }
-            }
+            Err(error) => report.add_required_failure(rel, error),
         }
     }
 
@@ -2423,13 +2412,6 @@ pub async fn run_create_with_options(
     if report.has_required_missing() {
         bail!(report.format_error("web", &frontend.normalized));
     }
-    if !report.optional.is_empty() {
-        mgc_ui::warning(&format!(
-            "Using the built-in scaffold because template layers are unavailable: {}",
-            report.optional.join(", ")
-        ));
-    }
-
     let project_dir = crate::scaffold::Scaffolder::scaffold(&config)?;
 
     let proj_config = mgc_config::project::ProjectConfig::from_scaffold(
@@ -2527,23 +2509,6 @@ fn required_web_layers_for_config(
     }
 
     rels
-}
-
-fn web_layer_has_scaffold_fallback(
-    config: &crate::wizard::engine::ScaffoldConfig,
-    _rel: &str,
-) -> bool {
-    if config.sub_type == "monorepo" {
-        return false;
-    }
-    let framework = match config.sub_type.as_str() {
-        "backend" => config.frameworks.last(),
-        _ => config.frameworks.first(),
-    }
-    .map(String::as_str)
-    .unwrap_or("");
-    framework == "vanilla"
-        || crate::scaffold::embedded_kernel::get_embedded_template("web", framework).is_some()
 }
 
 fn resolve_framework(pos: Option<&str>, flags: &ScaffoldFlags) -> Result<String> {
