@@ -2,15 +2,16 @@
 name = "mgc-platform"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "L0 OS layer: os, symlink, shell, paths, perms (MagiCore)"
-
 [dependencies]
 dirs = { workspace = true }
 anyhow = { workspace = true }
-libc = "0.2"
+blake3 = { workspace = true }
+libc = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 
 [dev-dependencies]

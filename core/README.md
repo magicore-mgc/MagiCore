@@ -10,7 +10,7 @@ All foundational Rust library crates. None of these crates contain CLI logic —
 | `mgc-platform` | OS abstraction: reflink/hardlink, `FsSemaphore` (APFS concurrency tuning) |
 | `mgc-crypto` | BLAKE3 content hashing, SHA-256/SHA-512, SRI integrity strings |
 | `mgc-http` | Resilient async HTTP client with retries, rate-limiting, ETags |
-| `mgc-store` | Content-Addressable Storage (CAS) `~/.magicore/store/v3` — import, claim, prune |
+| `mgc-store` | Content-Addressable Storage (CAS) `$MGC_DATA_DIR/store/v3` (default `~/MagiCore-SystemData/store/v3`) — import, claim, prune |
 | `mgc-fetcher` | Streaming tarball download (zero-buffer) + secure extraction into CAS |
 | `mgc-resolver` | Dependency graph SAT solver: range resolution, alias handling, deduplication |
 | `mgc-lockfile` | `mgc.lock` read/write, BLAKE3 checksum, 3-way Git conflict auto-resolution |

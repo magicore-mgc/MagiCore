@@ -172,6 +172,69 @@ packages:
 }
 
 #[test]
+fn pnpm_two_documents_uses_project_graph_not_env() {
+    // Rival-grounded (pnpm ≥10 two-doc files; Deno documents the trap):
+    // a single-doc parse silently returns the FIRST (env) document. mgc
+    // parses every document and imports the LAST (project graph); the env
+    // document is reported, never silently merged.
+    // (File hai document: parse đơn-doc âm thầm trả document ĐẦU (env).
+    // mgc parse mọi document và nhập CUỐI (graph project).)
+    let tmp = TempDir::new().unwrap();
+    let path = write_lock(
+        tmp.path(),
+        "pnpm-lock.yaml",
+        r#"---
+lockfileVersion: '9.0'
+importers:
+  .:
+    configDependencies: {}
+    packageManagerDependencies:
+      pnpm:
+        specifier: 11.26.0
+        version: 11.26.0
+packages:
+  /pnpm@11.26.0:
+    resolution: {integrity: sha512-envpnpm}
+    name: pnpm
+    version: 11.26.0
+snapshots: {}
+---
+lockfileVersion: '9.0'
+settings:
+  autoInstallPeers: true
+importers:
+  .:
+    dependencies:
+      react:
+        specifier: ^19.0.0
+        version: 19.0.0
+packages:
+  /react@19.0.0:
+    resolution: {integrity: sha512-react190}
+snapshots: {}
+"#,
+    );
+    let (lock, report) = import_file(&path).unwrap();
+    assert!(
+        lock.packages.iter().any(|p| p.name == "react"),
+        "project graph must be imported: {:?}",
+        lock.packages.iter().map(|p| &p.name).collect::<Vec<_>>()
+    );
+    assert!(
+        !lock.packages.iter().any(|p| p.name == "pnpm"),
+        "env document must NOT leak into the project graph"
+    );
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|w| w.contains("LAST (project graph)")),
+        "env document must be reported: {:?}",
+        report.warnings
+    );
+}
+
+#[test]
 fn pnpm_missing_packages_map_rejected() {
     let tmp = TempDir::new().unwrap();
     let path = write_lock(
@@ -267,14 +330,49 @@ fn bun_json_imports_array_entries() {
 
 #[test]
 fn bun_comments_rejected_with_clear_error() {
+    // P0-3 (2026-09-10): bun writer emits JSONC — comments are now
+    // STRIPPED before parsing; only genuinely broken payloads error out.
+    // Writer bun ghi JSONC — comment giờ được cắt trước parse; chỉ
+    // payload thật sự hỏng mới báo lỗi.
     let tmp = TempDir::new().unwrap();
     let path = write_lock(
         tmp.path(),
         "bun.lock",
-        "{\n  // comment\n  \"packages\": {}\n}",
+        "{\n  // comment\n  \"packages\": {}\n,}",
     );
+
     let err = import_file(&path).unwrap_err();
-    assert!(err.to_string().contains("not valid JSON"), "{err}");
+    assert!(err.to_string().contains("not valid"), "{err}");
+}
+
+#[test]
+fn bun_jsonc_trailing_commas_and_comments_import() {
+    // Real bun writer shape: JSONC trailing comma + line comment —
+    // import phải chấp nhận (P0-3: fixture migration bun thật).
+    let tmp = TempDir::new().unwrap();
+    let path = write_lock(
+        tmp.path(),
+        "bun.lock",
+        "{\n  \"lockfileVersion\": 1,\n  // writer comment\n  \"packages\": {\n    \"lodash\": [\"lodash@4.17.20\", \"\", {}, \"sha512-x\"],\n  }\n}",
+    );
+
+    let (lock, report) = import_file(&path).unwrap();
+    assert_eq!(report.packages, 1);
+    assert_eq!(lock.packages[0].name, "lodash");
+    assert_eq!(lock.packages[0].version, "4.17.20");
+}
+
+#[test]
+fn bun_rejects_unknown_lockfile_version() {
+    let tmp = TempDir::new().unwrap();
+    let path = write_lock(
+        tmp.path(),
+        "bun.lock",
+        r#"{"lockfileVersion":3,"packages":{"x":["x@1.0.0"]}}"#,
+    );
+
+    let err = import_file(&path).unwrap_err();
+    assert!(err.to_string().contains("lockfileVersion 3"), "{err}");
 }
 
 // ---------------------------------------------------------------- detect + priority + e2e
@@ -312,7 +410,8 @@ fn imported_output_is_deterministic_sorted() {
         a.packages, b.packages,
         "import 2 lần phải ra cùng danh sách package"
     );
-    assert_eq!(a.version, "2");
+    // importer ghi lock v3 (schema mới nhất) — export of record
+    assert_eq!(a.version, "3");
 }
 
 // --------------------------------------------- audit round: adversarial cases
@@ -370,4 +469,329 @@ fn yarn_multi_spec_header_uses_first() {
     assert_eq!(report.packages, 1);
     assert_eq!(lock.packages[0].name, "multi");
     assert_eq!(lock.packages[0].version, "1.5.0");
+}
+
+// ---------------------------------------------------------------- deno.lock (P0-3 2026-09-10)
+
+const DENO_V5: &str = r#"{
+  "version": "5",
+  "specifiers": {},
+  "npm": {
+    "lodash@4.17.20": { "integrity": "sha512-denoldash" },
+    "@scope/kit@0.2.0": { "integrity": "sha512-denokit" }
+  },
+  "jsr": {
+    "@std/bytes@0.224.0": { "integrity": "sha512-jstd" }
+  }
+}"#;
+
+#[test]
+fn deno_lock_imports_npm_pins_with_integrity() {
+    // P0-3: `mgc import deno` — npm map vào Package chuẩn (name, version,
+    // integrity), JSR giữ tiền tố "jsr:" để audit báo skipped trung thực.
+    let tmp = TempDir::new().unwrap();
+    let path = write_lock(tmp.path(), "deno.lock", DENO_V5);
+
+    let (lock, report) = import_file(&path).unwrap();
+    assert_eq!(report.packages, 3);
+
+    let lodash = lock.packages.iter().find(|p| p.name == "lodash").unwrap();
+    assert_eq!(lodash.version, "4.17.20");
+    assert_eq!(lodash.integrity, "sha512-denoldash");
+
+    let kit = lock
+        .packages
+        .iter()
+        .find(|p| p.name == "@scope/kit")
+        .unwrap();
+    assert_eq!(kit.version, "0.2.0");
+
+    let jsr = lock
+        .packages
+        .iter()
+        .find(|p| p.name == "jsr:@std/bytes")
+        .expect("JSR pin phải được import với tiền tố jsr: (báo skipped trung thực)");
+    assert_eq!(jsr.version, "0.224.0");
+}
+
+#[test]
+fn deno_lock_missing_npm_map_rejected_by_structure() {
+    // Fail-closed: deno.lock thiếu map "npm" (schema lạ) → từ chối đoán.
+    let tmp = TempDir::new().unwrap();
+    let path = write_lock(tmp.path(), "deno.lock", r#"{"version": "5", "jsr": {}}"#);
+
+    let err = import_file(&path).unwrap_err();
+    assert!(err.to_string().contains("no 'npm' map"), "{err}");
+}
+
+#[test]
+fn deno_lock_invalid_json_rejected() {
+    let tmp = TempDir::new().unwrap();
+    let path = write_lock(tmp.path(), "deno.lock", "{ not json");
+
+    let err = import_file(&path).unwrap_err();
+    assert!(err.to_string().contains("not valid JSON"), "{err}");
+}
+
+// ---------------------------------------------------------------- P0-5 lossless (bun/deno)
+
+/// Bun INFO production dependency names are imported as graph edges;
+/// peer/platform metadata must never be misread as package dependencies.
+#[test]
+fn bun_import_preserves_dependency_edges_and_records_skips() {
+    let tmp = TempDir::new().unwrap();
+    let path = write_lock(
+        tmp.path(),
+        "bun.lock",
+        r#"{
+          "lockfileVersion": 2,
+          "packages": {
+            "lodash": ["lodash@4.17.20", "https://registry.npmjs.org/lodash/-/lodash-4.17.20.tgz", {
+              "dependencies": {"dep-a": "^1.0.0", "dep-b": "^2.0.0"},
+              "peerDependencies": {"peer-a": "*"},
+              "optionalPeers": ["peer-a"],
+              "os": ["linux"]
+            }, "sha512-LD"],
+            "workspace-root": ["workspace:root"],
+            "bad-shape": "not-an-array"
+          }
+        }"#,
+    );
+
+    let (lock, report) = import_file(&path).unwrap();
+    // Only the valid npm pin became a package.
+    // Chỉ pin npm hợp lệ thành package.
+    assert_eq!(report.packages, 1);
+    let lodash = &lock.packages[0];
+    assert_eq!(lodash.name, "lodash");
+    assert_eq!(lodash.version, "4.17.20");
+    // Only production dependency names become edges; peer/platform keys do not.
+    assert_eq!(
+        lodash.dependencies,
+        vec!["dep-a".to_string(), "dep-b".to_string()]
+    );
+
+    // Refused records are EXPLICIT — no silent data loss.
+    // Record bị từ chối đều TƯỜNG MINH — không mất dữ liệu âm thầm.
+    let skipped_keys: Vec<&str> = report.skipped.iter().map(|s| s.key.as_str()).collect();
+    assert!(
+        skipped_keys.contains(&"workspace-root"),
+        "skipped: {skipped_keys:?}"
+    );
+    assert!(
+        skipped_keys.contains(&"bad-shape"),
+        "skipped: {skipped_keys:?}"
+    );
+    for s in &report.skipped {
+        assert!(!s.reason.is_empty(), "every skip carries a reason");
+    }
+}
+
+/// P0 finding #6: deno v5 workspace.dependencies are the ROOT GRAPH —
+/// they land in lockfile.root_dependencies (root → dep edges), NEVER as
+/// a self-edge on the resolved package ("lodash depends on lodash" was
+/// the old lie). JSR pins survive (jsr: prefix) AND are listed as
+/// skipped with the no-npm-mapping reason.
+/// P0 finding #6: workspace.dependencies của deno v5 là GRAPH ROOT —
+/// ghi vào lockfile.root_dependencies (cạnh root → dep), KHÔNG BAO GIỜ
+/// là self-edge trên package được resolve ("lodash phụ thuộc lodash"
+/// là câu sai cũ). Pin JSR sống sót (tiền tố jsr:) VÀ được liệt kê
+/// skipped kèm lý do không-map-được-npm.
+#[test]
+fn deno_import_preserves_root_edges_and_lists_jsr_skips() {
+    let tmp = TempDir::new().unwrap();
+    let path = write_lock(
+        tmp.path(),
+        "deno.lock",
+        r#"{
+  "version": "5",
+  "specifiers": { "npm:lodash@4.17.20": "4.17.20" },
+  "jsr": { "@std/bytes@0.224.0": { "integrity": "a225..." } },
+  "npm": { "lodash@4.17.20": { "integrity": "sha512-LD" } },
+  "workspace": { "dependencies": ["npm:lodash@4.17.20", "jsr:@std/bytes@0.224.0"] }
+}"#,
+    );
+
+    let (lock, report) = import_file(&path).unwrap();
+    assert_eq!(report.packages, 2); // lodash (npm) + jsr:@std/bytes
+
+    let lodash = lock.packages.iter().find(|p| p.name == "lodash").unwrap();
+    // Root pins are the ROOT GRAPH — the package itself must carry NO
+    // self-edge (the old bug turned "root depends on lodash" into
+    // "lodash depends on npm:lodash@4.17.20").
+    // Pin root là GRAPH ROOT — chính package KHÔNG được có self-edge
+    // (bug cũ biến "root phụ thuộc lodash" thành "lodash phụ thuộc
+    // npm:lodash@4.17.20").
+    assert!(
+        lodash.dependencies.is_empty(),
+        "self-edge found: {:?}",
+        lodash.dependencies
+    );
+    assert_eq!(lodash.integrity, "sha512-LD");
+
+    // The root graph lives in lockfile.root_dependencies, pins verbatim
+    // (runtime prefixes preserved — no information loss).
+    // Graph root nằm trong lockfile.root_dependencies, giữ nguyên pin
+    // (tiền tố runtime được bảo toàn — không mất thông tin).
+    assert_eq!(
+        lock.root_dependencies,
+        vec![
+            "npm:lodash@4.17.20".to_string(),
+            "jsr:@std/bytes@0.224.0".to_string()
+        ]
+    );
+
+    let jsr = lock
+        .packages
+        .iter()
+        .find(|p| p.name == "jsr:@std/bytes")
+        .unwrap();
+    assert_eq!(jsr.version, "0.224.0");
+
+    // JSR mapped-but-unauditable is EXPLICITLY skipped with a reason.
+    // JSR ánh-xạ-nhưng-không-audit-được bị skip TƯỜNG MINH kèm lý do.
+    let jsr_skips: Vec<_> = report
+        .skipped
+        .iter()
+        .filter(|s| s.key.starts_with("jsr:"))
+        .collect();
+    assert_eq!(jsr_skips.len(), 1, "jsr skips: {jsr_skips:?}");
+    assert!(jsr_skips[0].reason.contains("no npm registry"));
+}
+
+/// P0-5 deterministic roundtrip: importing the SAME bun.lock twice
+/// yields byte-identical package sets (order + fields) — no drift.
+/// P0-5 roundtrip tất định: import CÙNG bun.lock hai lần cho tập
+/// package giống hệt nhau (thứ tự + trường) — không trôi.
+#[test]
+fn bun_import_is_deterministic() {
+    let payload = "{\n  \"packages\": {\n    \"b\": [\"b@2.0.0\", \"\", {\"a\": \"a@^1\"}, \"sha512-B\"],\n    \"a\": [\"a@1.0.0\", \"https://r/a.tgz\", {}, \"sha512-A\"],\n  }\n}";
+    let tmp = TempDir::new().unwrap();
+    let p1 = write_lock(tmp.path(), "bun.lock", payload);
+    let (lock1, _) = import_file(&p1).unwrap();
+    let tmp2 = TempDir::new().unwrap();
+    let p2 = write_lock(tmp2.path(), "bun.lock", payload);
+    let (lock2, _) = import_file(&p2).unwrap();
+    assert_eq!(lock1.packages, lock2.packages);
+}
+
+// ------------------------------------------------ real-writer fixtures
+// P0 finding #9 (2026-09-12): hand-written fixtures pass even when the
+// importer drifts from what real writers emit. The fixtures below are
+// generated by PINNED tools (bun 1.3.14 + 1.4.3, pnpm 12.12.0, deno 2.9.7) via
+// scripts/gen-real-lockfile-fixtures.sh and committed; the tests
+// assert the importer against REAL writer output — shape drift in
+// either the tools or the importer breaks here, not in production.
+// P0 finding #9: fixture viết tay pass ngay cả khi importer trôi khỏi
+// output thật của writer. Fixture bên dưới do CÔNG CỤ GHIM (bun 1.3.14 + 1.4.3,
+// pnpm 12.12.0, deno 2.9.7) sinh qua scripts/gen-real-lockfile-fixtures.sh
+// và được commit; test đối chiếu importer với output writer THẬT —
+// trôi shape ở tool hay importer đều vỡ ở đây, không vỡ ở production.
+
+#[test]
+fn real_bun_lockfile_imports() {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/bun.lock");
+    let (lock, report) = import_file(&path).unwrap();
+
+    // The pinned packages (debug, ms, left-pad) must import with the REAL
+    // integrities the writer recorded — verbatim, never synthesized.
+    // Tất cả package ghim phải giữ nguyên integrity writer đã ghi.
+    assert_eq!(report.packages, 3);
+    let debug = lock.get_package("debug").unwrap();
+    assert_eq!(debug.version, "4.4.3");
+    assert_eq!(debug.dependencies, vec!["ms"]);
+    assert!(debug.integrity.starts_with("sha512-"));
+    let ms = lock.get_package("ms").unwrap();
+    assert_eq!(ms.version, "2.1.3");
+    assert!(
+        ms.integrity.starts_with("sha512-"),
+        "real integrity missing: {}",
+        ms.integrity
+    );
+    let left_pad = lock.get_package("left-pad").unwrap();
+    assert_eq!(left_pad.version, "1.3.0");
+    assert!(left_pad.integrity.starts_with("sha512-"));
+}
+
+#[test]
+fn real_bun_v1_lockfile_imports() {
+    let tmp = TempDir::new().unwrap();
+    let fixture = include_str!("fixtures/bun-v1.lock.fixture");
+    let path = write_lock(tmp.path(), "bun.lock", fixture);
+    let (lock, report) = import_file(&path).unwrap();
+
+    assert_eq!(report.packages, 2);
+    assert_eq!(lock.get_package("ms").unwrap().version, "2.1.3");
+    assert_eq!(lock.get_package("left-pad").unwrap().version, "1.3.0");
+}
+
+#[test]
+fn real_pnpm_12_lockfile_imports_packages_and_integrity() {
+    let tmp = TempDir::new().unwrap();
+    let fixture = include_str!("fixtures/pnpm-lock.yaml.fixture");
+    let path = write_lock(tmp.path(), "pnpm-lock.yaml", fixture);
+    let (lock, report) = import_file(&path).unwrap();
+
+    assert_eq!(report.packages, 2);
+    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+    let ms = lock.get_package("ms").unwrap();
+    assert_eq!(ms.version, "2.1.3");
+    assert_eq!(
+        ms.integrity,
+        "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA=="
+    );
+    let left_pad = lock.get_package("left-pad").unwrap();
+    assert_eq!(left_pad.version, "1.3.0");
+    assert_eq!(
+        left_pad.integrity,
+        "sha512-XI5MPzVNApjAyhQzphX8BkmKsKUxD4LdyK24iZeQGinBN9yTQT3bFlCBy/aVx2HrNcqQGsdot8ghrjyrvMCoEA=="
+    );
+}
+
+#[test]
+fn real_deno_lockfile_imports_root_graph() {
+    let path =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/deno.lock");
+    let (lock, report) = import_file(&path).unwrap();
+
+    // npm pin imports with the REAL integrity; jsr pin survives with
+    // its prefix and is listed as skipped (no npm advisory mapping).
+    // Pin npm import với integrity THẬT; pin jsr sống sót với tiền tố
+    // và được liệt kê skipped (không map được advisory npm).
+    assert_eq!(report.packages, 2); // lodash (npm) + jsr:@std/bytes
+    let lodash = lock.get_package("lodash").unwrap();
+    assert_eq!(lodash.version, "4.17.20");
+    assert!(
+        lodash.integrity.starts_with("sha512-"),
+        "real integrity missing: {}",
+        lodash.integrity
+    );
+    // Real writer shape: NO self-edge on the package (P0 finding #6) —
+    // root pins live in lockfile.root_dependencies.
+    // Shape writer thật: KHÔNG self-edge trên package (P0 finding #6)
+    // — pin root nằm trong lockfile.root_dependencies.
+    assert!(lodash.dependencies.is_empty());
+
+    assert_eq!(
+        lock.root_dependencies,
+        vec![
+            "jsr:@std/bytes@0.224.0".to_string(),
+            "npm:lodash@4.17.20".to_string(),
+        ],
+        "root graph must carry both real pins verbatim"
+    );
+
+    let jsr = lock
+        .packages
+        .iter()
+        .find(|p| p.name == "jsr:@std/bytes")
+        .expect("jsr pin must survive with prefix");
+    assert_eq!(jsr.version, "0.224.0");
+
+    let jsr_skips: Vec<_> = report
+        .skipped
+        .iter()
+        .filter(|s| s.key.starts_with("jsr:"))
+        .collect();
+    assert_eq!(jsr_skips.len(), 1, "jsr skips: {jsr_skips:?}");
 }

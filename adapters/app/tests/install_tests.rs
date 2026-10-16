@@ -5,6 +5,11 @@
 
 use mgc_app_adapter::install::fetch::*;
 use mgc_app_adapter::install::verify::*;
+#[cfg(windows)]
+use mgc_types::ResolvedGraph;
+#[cfg(windows)]
+use mgc_types::adapter::InstallOptions;
+use mgc_types::{PackageId, PackageName, Version};
 
 #[test]
 fn pub_dev_package_url_format() {
@@ -18,6 +23,21 @@ fn maven_central_url_format() {
     assert_eq!(
         url,
         "https://repo1.maven.org/maven2/com/google/android/material/1.0.0/material-1.0.0.jar"
+    );
+}
+
+#[test]
+fn kotlin_package_fetch_refuses_external_gradle_cache() {
+    let project = tempfile::tempdir().unwrap();
+    let package = PackageId::new(
+        PackageName::new("sample").unwrap(),
+        Version::parse("1.0.0").unwrap(),
+    );
+    let error = fetch_kotlin_package(project.path(), &package).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("does not own a native Gradle resolver")
     );
 }
 
@@ -81,4 +101,82 @@ fn verify_package_file_with_hash() {
     assert!(result.is_ok());
 
     std::fs::remove_dir_all(&tmp).unwrap();
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn windows_path_form(path: &std::path::Path, short: bool) -> std::path::PathBuf {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    use windows_sys::Win32::Storage::FileSystem::{GetLongPathNameW, GetShortPathNameW};
+
+    let encoded = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let convert = if short {
+        GetShortPathNameW
+    } else {
+        GetLongPathNameW
+    };
+    // The input is NUL-terminated; a null output and zero length request the required capacity.
+    // Đầu vào có NUL kết thúc; output null và độ dài 0 yêu cầu dung lượng cần thiết.
+    let required = unsafe { convert(encoded.as_ptr(), std::ptr::null_mut(), 0) };
+    assert_ne!(required, 0, "Windows path conversion query failed");
+    let mut buffer = vec![0_u16; required as usize];
+    // The output slice provides exactly the capacity returned by the query above.
+    // Slice output có đúng dung lượng trả về từ truy vấn ở trên.
+    let written = unsafe { convert(encoded.as_ptr(), buffer.as_mut_ptr(), required) };
+    assert!(
+        written > 0 && written < required,
+        "Windows path conversion failed"
+    );
+    std::path::PathBuf::from(OsString::from_wide(&buffer[..written as usize]))
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn flutter_package_config_expands_windows_short_project_path() {
+    let parent = tempfile::tempdir().unwrap();
+    let long_project = parent
+        .path()
+        .join("flutter_project_directory_long_enough_for_83_names");
+    std::fs::create_dir(&long_project).unwrap();
+    std::fs::write(long_project.join("pubspec.yaml"), "name: sample\n").unwrap();
+    let short_project = windows_path_form(&long_project, true);
+    let expected_project = windows_path_form(&short_project, false);
+
+    mgc_app_adapter::install::run_install(
+        mgc_app_adapter::AppLanguage::Flutter,
+        &ResolvedGraph::empty(),
+        &short_project,
+        InstallOptions {
+            offline: true,
+            ..InstallOptions::default()
+        },
+        None,
+        Vec::new(),
+    )
+    .await
+    .unwrap();
+
+    let config: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(short_project.join(".dart_tool/package_config.json")).unwrap(),
+    )
+    .unwrap();
+    let package_root = config["packages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["name"] == "sample")
+        .unwrap()["rootUri"]
+        .as_str()
+        .unwrap();
+    assert_eq!(
+        package_root,
+        url::Url::from_directory_path(expected_project)
+            .unwrap()
+            .as_str()
+    );
 }

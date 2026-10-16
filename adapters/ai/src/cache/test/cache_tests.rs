@@ -12,6 +12,7 @@ fn tmp() -> TempDir {
 fn test_cache_dir_huggingface() {
     let dir = cache_dir(&Registry::HuggingFace).unwrap();
     assert!(dir.to_string_lossy().contains("huggingface"));
+    assert!(dir.starts_with(mgc_platform::paths::mgc_data_dir().join("cache/ai")));
 }
 
 #[test]

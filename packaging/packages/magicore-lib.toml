@@ -5,4 +5,4 @@ mode = "single-core"
 primary_core = "lib"
 no_default_features = true
 features = ["lib"]
-install_hint = "curl -fsSL https://raw.githubusercontent.com/mingd-153/MagiCore/main/scripts/install-from-gh.sh | bash -s -- --package magicore-lib"
+install_hint = "Build locally from source: cargo run -p mgc-dist -- build magicore-lib --profile release (no prebuilt GitHub release archive is published)"

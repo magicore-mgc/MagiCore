@@ -31,7 +31,7 @@ pub enum Cause {
         package: PackageName,
         version: Version,
         dep_package: PackageName,
-        dep_version_set: VersionSet,
+        dep_version_set: Box<VersionSet>,
     },
     Conflict {
         incompatibility1: Box<Incompatibility>,
@@ -49,7 +49,7 @@ pub struct PubGrubSolver {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Decision {
-    Assigned(PackageName, Version, VersionSet),
+    Assigned(PackageName, Version, Box<VersionSet>),
     Backtracked(PackageName),
 }
 
@@ -97,11 +97,13 @@ impl PubGrubSolver {
             let mut new_decisions = Vec::new();
 
             for inc in &self.incompatibilities {
-                if let Some(decision) = self.find_unit_propagation(inc) {
-                    if !propagated.contains(&decision) && !new_decisions.contains(&decision) {
-                        new_decisions.push(decision.clone());
-                        changed = true;
-                    }
+                // let-chain edition 2024 — gộp điều kiện theo clippy 1.98.
+                if let Some(decision) = self.find_unit_propagation(inc)
+                    && !propagated.contains(&decision)
+                    && !new_decisions.contains(&decision)
+                {
+                    new_decisions.push(decision.clone());
+                    changed = true;
                 }
             }
 
@@ -134,7 +136,7 @@ impl PubGrubSolver {
                     name.clone(),
                     vs.satisfying_version()
                         .unwrap_or_else(|| Version::new(0, 0, 0)),
-                    vs.clone(),
+                    Box::new(vs.clone()),
                 )),
                 Term::Negative(name, _vs) => Some(Decision::Backtracked(name.clone())),
             }
@@ -148,7 +150,7 @@ impl PubGrubSolver {
             Decision::Assigned(name, version, vs) => {
                 self.decisions.insert(name.clone(), version.clone());
                 self.assignment
-                    .push((name.clone(), version.clone(), vs.clone()));
+                    .push((name.clone(), version.clone(), vs.as_ref().clone()));
                 self.decision_level += 1;
             }
             Decision::Backtracked(name) => {
@@ -185,7 +187,7 @@ impl PubGrubSolver {
                 Ok(_) => continue,
                 Err(conflict) => {
                     if !self.backtrack(&conflict)? {
-                        return Err(SolveError::Unsatisfiable(conflict));
+                        return Err(SolveError::Unsatisfiable(Box::new(conflict)));
                     }
                 }
             }
@@ -201,21 +203,30 @@ impl PubGrubSolver {
     #[allow(clippy::result_large_err)]
     fn choose_package(&self, wanted: &[(PackageName, VersionSet)]) -> Result<Decision, SolveError> {
         for (name, vs) in wanted {
-            if !self.decisions.contains_key(name) {
-                if let Some(version) = vs.satisfying_version() {
-                    return Ok(Decision::Assigned(name.clone(), version, vs.clone()));
-                }
+            // let-chain edition 2024 — gộp điều kiện theo clippy 1.98.
+            if !self.decisions.contains_key(name)
+                && let Some(version) = vs.satisfying_version()
+            {
+                return Ok(Decision::Assigned(
+                    name.clone(),
+                    version,
+                    Box::new(vs.clone()),
+                ));
             }
         }
 
         for inc in &self.incompatibilities {
             for term in &inc.terms {
-                if let Term::Positive(name, vs) = term {
-                    if !self.decisions.contains_key(name) {
-                        if let Some(version) = vs.satisfying_version() {
-                            return Ok(Decision::Assigned(name.clone(), version, vs.clone()));
-                        }
-                    }
+                // let-chain edition 2024 — gộp điều kiện theo clippy 1.98.
+                if let Term::Positive(name, vs) = term
+                    && !self.decisions.contains_key(name)
+                    && let Some(version) = vs.satisfying_version()
+                {
+                    return Ok(Decision::Assigned(
+                        name.clone(),
+                        version,
+                        Box::new(vs.clone()),
+                    ));
                 }
             }
         }
@@ -283,14 +294,17 @@ impl std::fmt::Display for DerivationTree {
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum SolveError {
+    // Boxed: the incompatibility graph dwarfs the unit variant, and the
+    // Version payload grew for PEP 440 post/dev segments — keep the enum
+    // under the workspace large-enum-variant gate without weakening it.
     #[error("unsatisfiable constraints")]
-    Unsatisfiable(Incompatibility),
+    Unsatisfiable(Box<Incompatibility>),
     #[error("no package found to satisfy constraints")]
     NoPackageFound,
 }
 
 impl From<Incompatibility> for SolveError {
     fn from(inc: Incompatibility) -> Self {
-        SolveError::Unsatisfiable(inc)
+        SolveError::Unsatisfiable(Box::new(inc))
     }
 }

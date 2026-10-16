@@ -8,11 +8,10 @@ use mgc_store::{ContentStore, Layout, PackageCache};
 use mgc_types::adapter::ResolvedPackage;
 use mgc_types::{MgError, MgResult, PackageId};
 
-use crate::cache::{download_concurrency_limit, SharedWebCache};
+use crate::cache::{SharedWebCache, download_concurrency_limit};
 use crate::install::extract::{
     ensure_extracted_package_root, ensure_extracted_package_root_from_bytes, tarball_prefetch_lock,
 };
-use crate::lockfile::compute_tarball_integrity;
 use crate::native;
 use crate::profile::{PipelineProfile, TarballPayload};
 
@@ -25,6 +24,10 @@ pub use crate::install::integrity::{
 
 // Re-export fetch helpers để caller/test cũ không đổi import
 // Re-export fetch helpers so old callers/tests don't need to change imports
+use crate::install::fetch::get_tarball_bytes_with_registry;
+use crate::install::fetch::{
+    DownloadStagingGuard, publish_downloaded_tarball, unique_tarball_staging_path,
+};
 pub use crate::install::fetch::{get_tarball_bytes, package_tarball_url};
 
 pub fn pipeline_task_concurrency_limit(extract_concurrency: usize) -> usize {
@@ -42,14 +45,12 @@ pub async fn prefetch_tarballs(
     shared_cache: Option<&SharedWebCache>,
     registry: &native::npm_registry::NpmRegistry,
 ) -> MgResult<u64> {
-    use native::npm_registry::LARGE_PKG_THRESHOLD_BYTES;
-
     enum PrefetchOutcome {
         CacheHit(u64),
         Downloaded(ResolvedPackage, Vec<u8>),
         StreamedToTemp {
             pkg: ResolvedPackage,
-            temp_path: std::path::PathBuf,
+            staging: DownloadStagingGuard,
             computed_integrity: String,
         },
     }
@@ -70,10 +71,7 @@ pub async fn prefetch_tarballs(
         let local_cache = cache.clone();
         let shared_package_cache = shared_package_cache.clone();
         let download_semaphore = Arc::clone(&download_semaphore);
-        let registry = native::npm_registry::NpmRegistry::new_with_token(
-            registry.registry_url(),
-            registry.auth_token().map(str::to_string),
-        );
+        let registry = registry.clone_for_downloads();
         downloads.spawn(async move {
             let prefetch_lock = tarball_prefetch_lock(&pkg_clone.id);
             let _guard = prefetch_lock.lock().await;
@@ -88,22 +86,22 @@ pub async fn prefetch_tarballs(
                 let _ = std::fs::remove_file(local_cache.tarball_path(&pkg_clone.id));
             }
 
-            if let Some(shared_package_cache) = shared_package_cache.as_ref() {
-                if let Some(bytes) = shared_package_cache
+            // let-chain edition 2024 — gộp điều kiện theo clippy 1.98.
+            if let Some(shared_package_cache) = shared_package_cache.as_ref()
+                && let Some(bytes) = shared_package_cache
                     .get_tarball(&pkg_clone.id)
                     .map_err(|e| MgError::Store(e.to_string()))?
-                {
-                    if verify_tarball_integrity(&pkg_clone, &bytes).is_ok() {
-                        local_cache
-                            .cache_tarball_from_path(
-                                &pkg_clone.id,
-                                &shared_package_cache.tarball_path(&pkg_clone.id),
-                            )
-                            .map_err(|e| MgError::Store(e.to_string()))?;
-                        return Ok::<_, MgError>(PrefetchOutcome::CacheHit(bytes.len() as u64));
-                    }
-                    let _ = std::fs::remove_file(shared_package_cache.tarball_path(&pkg_clone.id));
+            {
+                if verify_tarball_integrity(&pkg_clone, &bytes).is_ok() {
+                    local_cache
+                        .cache_tarball_from_path(
+                            &pkg_clone.id,
+                            &shared_package_cache.tarball_path(&pkg_clone.id),
+                        )
+                        .map_err(|e| MgError::Store(e.to_string()))?;
+                    return Ok::<_, MgError>(PrefetchOutcome::CacheHit(bytes.len() as u64));
                 }
+                let _ = std::fs::remove_file(shared_package_cache.tarball_path(&pkg_clone.id));
             }
 
             let url = package_tarball_url(registry.registry_url(), &pkg_clone);
@@ -112,50 +110,31 @@ pub async fn prefetch_tarballs(
                 .await
                 .map_err(|e| MgError::Other(format!("download semaphore closed: {e}")))?;
 
-            let content_length = {
-                let client = native::npm_registry::batch_http_client();
-                client
-                    .head(&url)
-                    .send()
-                    .await
-                    .ok()
-                    .and_then(|r| {
-                        r.headers()
-                            .get(reqwest::header::CONTENT_LENGTH)
-                            .and_then(|v| v.to_str().ok())
-                            .and_then(|s| s.parse::<u64>().ok())
-                    })
-                    .unwrap_or(0)
-            };
-
-            if content_length > LARGE_PKG_THRESHOLD_BYTES {
-                let temp_path = local_cache
-                    .tarball_path(&pkg_clone.id)
-                    .with_extension("tmp");
-                let computed_integrity = registry
-                    .download_tarball_to_file(&url, &temp_path)
-                    .await
-                    .map_err(|e| {
-                        MgError::Network(format!(
-                            "stream download failed for '{}': {}",
-                            pkg_clone.id.name_str(),
-                            e
-                        ))
-                    })?;
-                Ok::<_, MgError>(PrefetchOutcome::StreamedToTemp {
-                    pkg: pkg_clone,
-                    temp_path,
-                    computed_integrity,
-                })
-            } else {
-                let bytes = registry.download_tarball(&url).await.map_err(|e| {
+            // Use the authenticated GET response to select buffer or stream.
+            // Bỏ HEAD không có scope; một GET giữ policy và biết kích thước thật.
+            let temp_path = unique_tarball_staging_path(&local_cache.tarball_path(&pkg_clone.id));
+            let staging = DownloadStagingGuard::new(temp_path);
+            let downloaded = registry
+                .download_tarball_auto(&url, staging.path())
+                .await
+                .map_err(|error| {
                     MgError::Network(format!(
                         "download failed for '{}': {}",
                         pkg_clone.id.name_str(),
-                        e
+                        error
                     ))
                 })?;
-                Ok::<_, MgError>(PrefetchOutcome::Downloaded(pkg_clone, bytes))
+            match downloaded {
+                native::npm_registry::DownloadedTarball::Bytes(bytes) => {
+                    Ok::<_, MgError>(PrefetchOutcome::Downloaded(pkg_clone, bytes))
+                }
+                native::npm_registry::DownloadedTarball::Streamed {
+                    computed_integrity, ..
+                } => Ok::<_, MgError>(PrefetchOutcome::StreamedToTemp {
+                    pkg: pkg_clone,
+                    staging,
+                    computed_integrity,
+                }),
             }
         });
     }
@@ -166,10 +145,7 @@ pub async fn prefetch_tarballs(
                 bytes_from_cache += bytes;
             }
             PrefetchOutcome::Downloaded(mut pkg, bytes) => {
-                if pkg.integrity.is_empty() {
-                    pkg.integrity = compute_tarball_integrity(&bytes);
-                }
-                verify_tarball_integrity(&pkg, &bytes)?;
+                prepare_verified_tarball_for_cache(&mut pkg, &bytes)?;
                 cache
                     .cache_tarball(&pkg.id, &bytes)
                     .map_err(|e| MgError::Store(e.to_string()))?;
@@ -180,32 +156,16 @@ pub async fn prefetch_tarballs(
             }
             PrefetchOutcome::StreamedToTemp {
                 mut pkg,
-                temp_path,
+                staging,
                 computed_integrity,
             } => {
-                if !pkg.integrity.is_empty() && pkg.integrity != computed_integrity {
-                    let _ = std::fs::remove_file(&temp_path);
-                    return Err(MgError::Other(format!(
-                        "integrity mismatch for '{}': expected '{}', got '{}'",
-                        pkg.id.name_str(),
-                        pkg.integrity,
-                        computed_integrity
-                    )));
-                }
+                crate::install::integrity::verify_tarball_file_integrity(&pkg, staging.path())?;
+
                 if pkg.integrity.is_empty() {
-                    pkg.integrity = computed_integrity;
+                    pkg.integrity = computed_integrity.clone();
                 }
                 let final_path = cache.tarball_path(&pkg.id);
-                if let Some(parent) = final_path.parent() {
-                    std::fs::create_dir_all(parent).map_err(|e| MgError::Store(e.to_string()))?;
-                }
-                std::fs::rename(&temp_path, &final_path).map_err(|e| {
-                    MgError::Store(format!(
-                        "failed to promote streamed tarball for '{}': {}",
-                        pkg.id.name_str(),
-                        e
-                    ))
-                })?;
+                publish_downloaded_tarball(staging.path(), &final_path, &computed_integrity)?;
                 if let Some(shared_package_cache) = shared_package_cache.as_ref() {
                     let _ = shared_package_cache.cache_tarball_from_path(&pkg.id, &final_path);
                 }
@@ -216,6 +176,7 @@ pub async fn prefetch_tarballs(
     Ok(bytes_from_cache)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn pipeline_download_and_extract(
     graph: &mgc_types::adapter::ResolvedGraph,
     skip: &std::collections::HashSet<PackageId>,
@@ -224,6 +185,7 @@ pub async fn pipeline_download_and_extract(
     registry: Option<&native::npm_registry::NpmRegistry>,
     layout: &Layout,
     store: &ContentStore,
+    generation: i64,
 ) -> MgResult<(
     u64,
     std::collections::HashMap<PackageId, std::path::PathBuf>,
@@ -257,8 +219,7 @@ pub async fn pipeline_download_and_extract(
         let cache = cache.clone();
         let shared_cache = shared_cache.cloned();
         let shared_package_cache = shared_package_cache.clone();
-        let registry_url = registry.map(|r| r.registry_url().to_string());
-        let registry_token = registry.and_then(|r| r.auth_token().map(str::to_string));
+        let registry = registry.map(|registry| registry.clone_for_downloads());
         let layout = layout.clone();
         let store = store.clone();
         let download_sem = Arc::clone(&download_sem);
@@ -270,15 +231,21 @@ pub async fn pipeline_download_and_extract(
             let _guard = lock.lock().await;
 
             let download_started_at = std::time::Instant::now();
-            let fetch = get_tarball_bytes(
+            let fetch = get_tarball_bytes_with_registry(
                 &pkg,
                 &cache,
                 shared_package_cache.as_ref(),
-                registry_url.as_deref(),
-                registry_token.as_deref(),
+                registry.as_ref(),
                 &download_sem,
             )
             .await?;
+            // Test-only failpoint (Gate 11-B.2): park after the first
+            // package's tarball is obtained (cache or network) but before
+            // extract — the staging generation still has zero claims.
+            // (Failpoint chỉ-cho-test: đỗ sau khi lấy được tarball của gói
+            // đầu tiên (cache hoặc network) nhưng trước khi extract — staging
+            // generation vẫn chưa có claim.)
+            mgc_store::failpoint::hit("after-fetch");
             pipeline_profile.record_download(
                 &pkg.id,
                 fetch.payload.len(),
@@ -323,6 +290,7 @@ pub async fn pipeline_download_and_extract(
                     shared_cache.as_ref(),
                     &pkg,
                     bytes.as_ref(),
+                    generation,
                 ),
                 TarballPayload::CachedPath(path, _) => ensure_extracted_package_root(
                     &layout,
@@ -330,6 +298,7 @@ pub async fn pipeline_download_and_extract(
                     shared_cache.as_ref(),
                     &pkg,
                     &path,
+                    generation,
                 ),
             })
             .await

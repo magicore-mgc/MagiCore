@@ -109,6 +109,16 @@ const WEB_FRAMEWORKS: &[WebFrameworkConfig] = &[
         base: Some("java"),
     },
     WebFrameworkConfig {
+        name: "dotnet-minimal",
+        sub_type: "backend",
+        base: Some("dotnet"),
+    },
+    WebFrameworkConfig {
+        name: "dotnet-webapi",
+        sub_type: "backend",
+        base: Some("dotnet"),
+    },
+    WebFrameworkConfig {
         name: "gin",
         sub_type: "backend",
         base: Some("go"),
@@ -370,13 +380,55 @@ impl Scaffolder {
 
     pub fn scaffold(config: &ScaffoldConfig) -> Result<PathBuf> {
         let target = Self::target_dir(config);
-        if target.exists() {
-            return Err(crate::error::dir_already_exists(&target));
+        let claim = Self::claim_target(&target)?;
+
+        // Atomic scaffold: build in a hidden temp dir on the SAME filesystem,
+        // rename into place only when fully written. A crash mid-write can
+        // never leave a partial project visible at the target path.
+        // Scaffold nguyên tử: ghi trong temp dir ẩn CÙNG filesystem, chỉ
+        // rename sang target khi hoàn tất — crash giữa chừng không để lại
+        // project partial ở vị trí cuối.
+        let parent = target.parent().map(Path::to_path_buf).unwrap_or_default();
+        let staging = tempfile::tempdir_in(&parent).map_err(|e| {
+            let _ = std::fs::remove_file(&claim);
+            crate::error::scaffold_staging_failed(&target, anyhow::anyhow!(e))
+        })?;
+        let staging_path = staging.path().to_path_buf();
+
+        let write_result = (|| -> Result<()> {
+            std::fs::create_dir_all(&staging_path)?;
+            Self::write_common_files(&staging_path, config)?;
+            Self::write_core_files(&staging_path, config)?;
+            super::container::generate_assets(&staging_path, config)?;
+            Ok(())
+        })();
+
+        if let Err(err) = write_result {
+            // Fail atomically — staging dir is removed by TempDir drop and
+            // the claim slot is released; the target was never touched.
+            // Fail nguyên tử — staging dọn bởi TempDir drop, claim được giải
+            // phóng; target chưa từng bị chạm nên không có phần dư.
+            let _ = std::fs::remove_file(&claim);
+            return Err(crate::error::scaffold_staging_failed(&target, err));
         }
 
-        std::fs::create_dir_all(&target)?;
-        Self::write_common_files(&target, config)?;
-        Self::write_core_files(&target, config)?;
+        // Rename is atomic within one filesystem. The claim slot guarantees
+        // no other process renamed a directory over our target meanwhile.
+        // Rename nguyên tử trong cùng filesystem. Claim-slot bảo đảm không
+        // process nào khác rename directory đè lên target trong lúc đó.
+        if let Err(e) = std::fs::rename(&staging_path, &target) {
+            let _ = std::fs::remove_file(&claim);
+            return Err(crate::error::scaffold_staging_failed(
+                &target,
+                anyhow::anyhow!(e),
+            ));
+        }
+        // Keep the TempDir handle from cleaning the now-renamed path, then
+        // release the claim so future creates for this name are possible.
+        // Giữ TempDir không dọn path vừa rename, rồi giải phóng claim để
+        // lần create sau cho tên này vẫn khả dụng.
+        std::mem::forget(staging);
+        let _ = std::fs::remove_file(&claim);
 
         mgc_ui::success(&format!(
             "Created {} project: {}",
@@ -386,8 +438,83 @@ impl Scaffolder {
         Ok(target)
     }
 
+    /// Hidden claim-slot path next to the target (same parent, dot-prefixed).
+    /// Đường dẫn claim-slot ẩn cạnh target (cùng parent, tiền tố dot).
+    fn claim_slot_path(target: &Path) -> PathBuf {
+        let name = target
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "project".to_string());
+        let claim_name = format!(".mgc-create-{name}.lock");
+        match target.parent() {
+            Some(parent) => parent.join(claim_name),
+            None => PathBuf::from(claim_name),
+        }
+    }
+
+    /// Atomically claim a target name, then check it while holding the claim.
+    /// Claim tên target nguyên tử, rồi kiểm tra khi vẫn đang giữ claim.
+    fn claim_target(target: &Path) -> Result<PathBuf> {
+        // The exclusive claim must precede the target check: checking first lets
+        // a loser acquire the claim after the winner publishes and releases it.
+        // Phải lấy claim độc quyền trước khi kiểm tra target: nếu kiểm tra trước,
+        // process thua có thể lấy claim sau khi process thắng đã tạo target và nhả khóa.
+        let claim = Self::claim_slot_path(target);
+        let claim_file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&claim)
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::AlreadyExists {
+                    crate::error::create_claim_conflict(&claim)
+                } else {
+                    crate::error::scaffold_staging_failed(target, anyhow::anyhow!(e))
+                }
+            })?;
+        // Release the handle early; the claim is guarded by its file's existence.
+        // Nhả handle sớm; claim được giữ bằng sự tồn tại của file khóa.
+        drop(claim_file);
+
+        let target_exists = match target.try_exists() {
+            Ok(exists) => exists,
+            Err(error) => {
+                let _ = std::fs::remove_file(&claim);
+                return Err(crate::error::scaffold_staging_failed(
+                    target,
+                    anyhow::anyhow!(error),
+                ));
+            }
+        };
+        if target_exists {
+            let conflict = crate::error::dir_already_exists(target);
+            if let Err(cleanup_error) = std::fs::remove_file(&claim) {
+                return Err(crate::error::scaffold_staging_failed(
+                    target,
+                    anyhow::anyhow!(
+                        "{conflict}; failed to release claim slot '{}': {cleanup_error}",
+                        claim.display()
+                    ),
+                ));
+            }
+            return Err(conflict);
+        }
+
+        Ok(claim)
+    }
+
     pub fn display_name(project_dir: &Path) -> String {
         project_dir
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "project".to_string())
+    }
+
+    /// Display name derived from the configured project name rather than
+    /// the (possibly staging temp) target path.
+    /// Tên hiển thị lấy từ project name trong config, không phải từ target
+    /// path (có thể là temp dir của staging nguyên tử).
+    pub(super) fn config_display_name(config: &ScaffoldConfig) -> String {
+        Path::new(&config.project_name)
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "project".to_string())
@@ -413,7 +540,7 @@ impl Scaffolder {
         root
     }
 
-    fn framework(config: &ScaffoldConfig) -> String {
+    pub(super) fn framework(config: &ScaffoldConfig) -> String {
         config
             .frameworks
             .last()
@@ -440,7 +567,11 @@ impl Scaffolder {
             return Ok(());
         }
 
-        let name = Self::display_name(target);
+        // Derive the display name from the config, NOT from the target path —
+        // during atomic staging the target is a random temp dir name.
+        // Lấy tên hiển thị từ config, KHÔNG từ target path — trong staging
+        // nguyên tử, target là temp dir với tên random.
+        let name = Self::config_display_name(config);
         let framework = Self::framework(config);
 
         Self::write_file(
@@ -456,13 +587,18 @@ impl Scaffolder {
     }
 
     fn write_core_files(target: &Path, config: &ScaffoldConfig) -> Result<()> {
-        let name = Self::display_name(target);
+        // Same as write_common_files: name must come from the config because
+        // the target path during staging has a random temp name.
+        // Giống write_common_files: tên phải lấy từ config vì target trong
+        // staging nguyên tử mang tên temp random.
+        let name = Self::config_display_name(config);
         let framework = Self::framework(config);
+        let context = CoreTemplateContext::try_new(config, &name, &framework)?;
 
         if config.core != "web" {
             let layer = Self::core_template_layer(&config.core, &framework);
             if Self::layer_has_contract(&layer) {
-                return Self::materialize_core_template(target, &layer, config, &name, &framework);
+                return Self::materialize_core_template(target, &layer, &context);
             }
         }
 
@@ -472,7 +608,12 @@ impl Scaffolder {
             "ai" => super::processors::ai::AiProcessor::files(target, &name, &framework),
             "clo" => super::processors::clo::CloProcessor::files(target, &name, &framework),
             "cicd" => super::processors::cicd::CicdProcessor::files(target, &name, &framework),
-            "iot" => super::processors::iot::IotProcessor::files(target, &name, &framework),
+            "iot" => super::processors::iot::IotProcessor::files(
+                target,
+                &name,
+                &framework,
+                &context.board,
+            ),
             "app" => {
                 if framework == "multi" {
                     super::processors::app::AppProcessor::files_multi(target, &name)
@@ -481,6 +622,9 @@ impl Scaffolder {
                 }
             }
             "lib" => super::processors::lib::LibProcessor::files(target, &name, &framework),
+            "hardware" => {
+                super::processors::hardware::HardwareProcessor::files(target, &name, &framework)
+            }
             other => Err(crate::error::unsupported_scaffold_core(other)),
         }
     }
@@ -491,144 +635,66 @@ impl Scaffolder {
         name: &str,
         framework: &str,
     ) -> Result<()> {
-        match Self::resolve_web_template_layers(config) {
-            Ok(layers) => Self::materialize_web_templates(target, config, &layers),
-            Err(err) => {
-                if let Some(files) =
-                    crate::scaffold::embedded_kernel::get_embedded_template("web", framework)
-                {
-                    Self::ensure_web_fallback_common_files(target, name, framework)?;
-                    return crate::scaffold::embedded_kernel::materialize_embedded(
-                        target, name, &files,
-                    );
-                }
-                if effective_web_mode(config) == "backend" {
-                    if let Some(language) = infer_backend_language(framework) {
-                        Self::ensure_web_fallback_common_files(target, name, framework)?;
-                        return Self::write_minimal_backend_fallback(
-                            target, name, framework, language,
-                        );
-                    }
-                }
-                Err(err)
-            }
+        let layers = Self::resolve_web_template_layers(config)?;
+        Self::materialize_web_templates(target, config, &layers)?;
+        if effective_web_mode(config) == "monorepo" {
+            return Ok(());
+        }
+        let backend_without_js_manifest = effective_web_mode(config) == "backend"
+            && infer_backend_language(framework).is_some_and(|language| language != "node")
+            && !target.join("package.json").is_file();
+        if backend_without_js_manifest {
+            Ok(())
+        } else {
+            Self::ensure_web_test_runner(target, name)
         }
     }
 
-    fn ensure_web_fallback_common_files(target: &Path, name: &str, framework: &str) -> Result<()> {
-        if !target.join(".gitignore").exists() {
-            Self::write_file(
-                &target.join(".gitignore"),
-                &common_gitignore("web", framework),
-            )?;
+    fn ensure_web_test_runner(target: &Path, name: &str) -> Result<()> {
+        let package_path = target.join("package.json");
+        let mut manifest = if package_path.is_file() {
+            serde_json::from_slice::<serde_json::Value>(&std::fs::read(&package_path)?)?
+        } else {
+            serde_json::json!({
+                "name": slugify(name),
+                "private": true,
+                "version": "0.1.0"
+            })
+        };
+        let Some(package) = manifest.as_object_mut() else {
+            return Err(crate::error::package_json_root_object());
+        };
+        let scripts = package
+            .entry("scripts")
+            .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+        let Some(scripts) = scripts.as_object_mut() else {
+            return Err(crate::error::package_json_scripts_object());
+        };
+        match scripts.get("test") {
+            Some(serde_json::Value::String(_)) => return Ok(()),
+            Some(_) => return Err(crate::error::package_json_scripts_object()),
+            None => {}
         }
-        if !target.join("README.md").exists() {
+        scripts.insert(
+            "test".to_string(),
+            serde_json::Value::String("node --test test/scaffold.test.cjs".to_string()),
+        );
+        // This file stays in the claimed staging tree until atomic publication.
+        // File này ở trong cây staging đã claim cho tới khi publish nguyên tử.
+        std::fs::write(&package_path, serde_json::to_vec_pretty(&manifest)?)?;
+
+        let smoke_test = target.join("test/scaffold.test.cjs");
+        if !smoke_test.exists() {
             Self::write_file(
-                &target.join("README.md"),
-                &common_readme(name, "web", framework, &[]),
+                &smoke_test,
+                "const test = require('node:test');\nconst assert = require('node:assert/strict');\nconst fs = require('node:fs');\nconst path = require('node:path');\n\nconst root = path.resolve(__dirname, '..');\nconst htmlPath = path.join(root, 'index.html');\nif (fs.existsSync(htmlPath)) {\n  test('HTML document has valid local script entries', () => {\n    const html = fs.readFileSync(htmlPath, 'utf8');\n    assert.match(html, /<html\\b/i);\n    for (const [, entry] of html.matchAll(/<script[^>]+src=[\\\"']([^\\\"']+)[\\\"']/gi)) {\n      const url = new URL(entry, 'http://magicore.local');\n      if (url.origin !== 'http://magicore.local') continue;\n      const relative = decodeURIComponent(url.pathname).replace(/^\\/+/, '');\n      const localPath = path.resolve(root, relative);\n      assert.ok(localPath === root || localPath.startsWith(root + path.sep), 'script entry escapes project: ' + entry);\n      assert.ok(fs.existsSync(localPath), 'missing local script entry: ' + entry);\n    }\n  });\n} else {\n  const frameworkEntries = ['app.vue', 'pages/index.vue', 'src/pages/index.astro', 'src/routes/+page.svelte', 'src/root.tsx', 'app/page.tsx', 'app/page.jsx', 'src/app/page.jsx', 'app/routes/_index.tsx'];\n  const sourceEntries = ['src/server', 'src/index', 'src/main', 'src/app', 'server', 'index', 'main', 'app'].flatMap((base) => ['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts'].map((extension) => base + extension));\n  const entry = frameworkEntries.concat(sourceEntries).map((file) => path.join(root, file)).find((file) => fs.existsSync(file));\n  test('web project contains a source entrypoint', () => {\n    assert.ok(entry, 'no framework source entrypoint found');\n    assert.ok(fs.readFileSync(entry, 'utf8').trim().length > 0, 'framework source entrypoint is empty');\n  });\n}\n",
             )?;
         }
         Ok(())
     }
 
-    fn write_minimal_backend_fallback(
-        target: &Path,
-        name: &str,
-        framework: &str,
-        language: &str,
-    ) -> Result<()> {
-        match language {
-            "rust" => {
-                Self::write_file(
-                    &target.join("Cargo.toml"),
-                    &format!(
-                        "[package]\nname = \"{}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\n",
-                        slugify(name)
-                    ),
-                )?;
-                Self::write_file(
-                    &target.join("src/main.rs"),
-                    &format!(
-                        "fn main() {{\n    println!(\"MagiCore {framework} service ready on 127.0.0.1:4315\");\n}}\n"
-                    ),
-                )
-            }
-            "go" => {
-                Self::write_file(
-                    &target.join("go.mod"),
-                    &format!("module {}\n\ngo 1.22\n", slugify(name)),
-                )?;
-                Self::write_file(
-                    &target.join("main.go"),
-                    &format!(
-                        "package main\n\nimport \"fmt\"\n\nfunc main() {{\n\tfmt.Println(\"MagiCore {framework} service ready on 127.0.0.1:4315\")\n}}\n"
-                    ),
-                )
-            }
-            "python" => {
-                Self::write_file(
-                    &target.join("pyproject.toml"),
-                    &format!(
-                        "[project]\nname = \"{}\"\nversion = \"0.1.0\"\ndependencies = []\n",
-                        slugify(name)
-                    ),
-                )?;
-                Self::write_file(
-                    &target.join("main.py"),
-                    &format!("print('MagiCore {framework} service ready on 127.0.0.1:4315')\n"),
-                )
-            }
-            "php" => {
-                Self::write_file(
-                    &target.join("composer.json"),
-                    &format!(
-                        "{{\n  \"name\": \"magicore/{}\",\n  \"type\": \"project\",\n  \"require\": {{}}\n}}\n",
-                        slugify(name)
-                    ),
-                )?;
-                Self::write_file(
-                    &target.join("public/index.php"),
-                    &format!(
-                        "<?php\necho 'MagiCore {framework} service ready on 127.0.0.1:4315';\n"
-                    ),
-                )
-            }
-            "java" => {
-                Self::write_file(
-                    &target.join("pom.xml"),
-                    &format!(
-                        "<project><modelVersion>4.0.0</modelVersion><groupId>dev.magicore</groupId><artifactId>{}</artifactId><version>0.1.0</version></project>\n",
-                        slugify(name)
-                    ),
-                )?;
-                Self::write_file(
-                    &target.join("src/main/java/App.java"),
-                    &format!(
-                        "public class App {{\n  public static void main(String[] args) {{\n    System.out.println(\"MagiCore {framework} service ready on 127.0.0.1:4315\");\n  }}\n}}\n"
-                    ),
-                )
-            }
-            "node" => {
-                Self::write_file(
-                    &target.join("package.json"),
-                    &format!(
-                        "{{\n  \"name\": \"{}\",\n  \"private\": true,\n  \"version\": \"0.1.0\",\n  \"type\": \"module\",\n  \"scripts\": {{ \"dev\": \"node src/server.js\" }}\n}}\n",
-                        slugify(name)
-                    ),
-                )?;
-                Self::write_file(
-                    &target.join("src/server.js"),
-                    &format!(
-                        "console.log('MagiCore {framework} service ready on 127.0.0.1:4315')\n"
-                    ),
-                )
-            }
-            _ => Err(crate::error::unsupported_scaffold_framework(framework)),
-        }
-    }
-
     /// C9 — multi-platform: shared Kotlin (KMP) + android/ios (swift+objc)/react-native/flutter.
-    fn write_file(path: &Path, content: &str) -> Result<()> {
+    pub(super) fn write_file(path: &Path, content: &str) -> Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -870,7 +936,10 @@ impl Scaffolder {
 
     /// Layer scaffold của core non-web: `templates/{core}/{framework}` (Q13).
     fn core_template_layer(core: &str, framework: &str) -> TemplateRoot {
-        TemplateRoot::resolve(&format!("{core}/{framework}"))
+        // The CLI alias must resolve the same namespace that preflight fetched.
+        // Alias clo phải đọc cloud/, đúng nơi ensure_layer đã publish cache.
+        let namespace = if core == "clo" { "cloud" } else { core };
+        TemplateRoot::resolve(&format!("{namespace}/{framework}"))
     }
 
     /// Materialize template đơn layer cho core non-web (chung cho game/iot/cloud/cicd/app/ai/lib).
@@ -878,26 +947,26 @@ impl Scaffolder {
     fn materialize_core_template(
         target: &Path,
         layer: &TemplateRoot,
-        config: &ScaffoldConfig,
-        name: &str,
-        framework: &str,
+        context: &CoreTemplateContext,
     ) -> Result<()> {
         let Some(manifest) = TemplateManifest::load(layer)? else {
             return Err(crate::error::template_layer_missing_manifest(
                 &layer.logical_rel(),
             ));
         };
-        let context = CoreTemplateContext::new(config, name, framework);
         let active_features: HashSet<&str> = config_feature_set(&context.features);
         let active_files = manifest
             .files
             .iter()
+            .filter(|file| !file.is_cli_generated_container_asset())
             .filter(|file| file.is_enabled(&active_features))
             .collect::<Vec<_>>();
 
         let mut seen_targets = HashSet::new();
         for file in &active_files {
-            let target_path = render_core_target_path(&file.target, &context);
+            let target_path = render_core_target_path(&file.target, context);
+            checked_template_path(target, &target_path)?;
+            checked_template_path(layer.path(), &format!("sources/{}", file.source))?;
             if !seen_targets.insert(target_path.clone()) {
                 return Err(crate::error::duplicate_template_target(
                     &file.target,
@@ -914,7 +983,7 @@ impl Scaffolder {
                     &layer.logical_rel(),
                 ));
             }
-            let target_path = render_core_target_path(&file.target, &context);
+            let target_path = render_core_target_path(&file.target, context);
             let bytes = layer.read(&source_rel)?;
             match std::str::from_utf8(&bytes) {
                 Ok(contents) => {
@@ -963,12 +1032,15 @@ impl Scaffolder {
         let active_files = manifest
             .files
             .iter()
+            .filter(|file| !file.is_cli_generated_container_asset())
             .filter(|file| file.is_enabled(&active_features))
             .collect::<Vec<_>>();
 
         let mut seen_targets = HashSet::new();
         for file in &active_files {
             let target_path = render_target_path(&file.target, context);
+            checked_template_path(target, &target_path)?;
+            checked_template_path(layer.path(), &format!("sources/{}", file.source))?;
             if !seen_targets.insert(target_path.clone()) {
                 return Err(crate::error::duplicate_template_target(
                     &file.target,
@@ -1010,6 +1082,47 @@ impl Scaffolder {
 
         Ok(())
     }
+}
+
+/// Validate portable manifest paths and reject existing link/reparse descendants.
+/// Chặn đường dẫn thoát root trên mọi OS trước khi đọc source hoặc ghi project.
+fn checked_template_path(root: &Path, relative: &str) -> Result<PathBuf> {
+    if relative.is_empty()
+        || relative.contains(['\\', ':'])
+        || relative.chars().any(char::is_control)
+        || relative
+            .split('/')
+            .any(|part| part.is_empty() || part.ends_with(['.', ' ']))
+    {
+        return Err(crate::error::template_materialization_path_invalid(
+            relative,
+        ));
+    }
+    let mut current = root.to_path_buf();
+    for part in std::iter::once(None).chain(relative.split('/').map(Some)) {
+        if let Some(part) = part {
+            current.push(part);
+        }
+        match std::fs::symlink_metadata(&current) {
+            Ok(metadata) => {
+                let linked = metadata.file_type().is_symlink();
+                #[cfg(windows)]
+                let linked = {
+                    use std::os::windows::fs::MetadataExt;
+                    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+                    linked || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+                };
+                if linked {
+                    return Err(crate::error::template_materialization_path_invalid(
+                        relative,
+                    ));
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(current)
 }
 
 fn render_target_path(target: &str, context: &WebTemplateContext) -> String {
@@ -1294,12 +1407,37 @@ struct CoreTemplateContext {
 }
 
 impl CoreTemplateContext {
-    fn new(config: &ScaffoldConfig, name: &str, framework: &str) -> Self {
+    /// Build template context and reject IoT boards outside the selected framework.
+    /// Dựng context template và từ chối board IoT không thuộc framework đã chọn.
+    fn try_new(config: &ScaffoldConfig, name: &str, framework: &str) -> Result<Self> {
         let project_name = Scaffolder::display_name(Path::new(name));
         let project_slug = slugify(&project_name);
         let board = config.features.first().cloned().unwrap_or_default();
-        let target = iot_target_for_board(&board);
-        Self {
+        let target = if config.core == "iot" {
+            #[cfg(feature = "iot")]
+            {
+                let supported = mgc_iot_adapter::boards_for_framework(framework);
+                mgc_iot_adapter::board_target_for_framework(framework, &board).ok_or_else(|| {
+                    let choices = supported
+                        .iter()
+                        .map(|entry| entry.id.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    if board.is_empty() {
+                        crate::error::no_board_specified(&choices)
+                    } else {
+                        crate::error::unsupported_board(&board, &choices)
+                    }
+                })?
+            }
+            #[cfg(not(feature = "iot"))]
+            {
+                anyhow::bail!("the iot core is not included in this MagiCore build")
+            }
+        } else {
+            legacy_template_target(&board)
+        };
+        Ok(Self {
             project_name,
             project_slug: project_slug.clone(),
             project_package: project_slug.replace('-', "_"),
@@ -1308,7 +1446,7 @@ impl CoreTemplateContext {
             features: quoted_list(&config.features),
             board,
             target,
-        }
+        })
     }
 
     fn value(&self, key: &str) -> Option<&str> {
@@ -1379,7 +1517,39 @@ fn render_core_target_path(target: &str, context: &CoreTemplateContext) -> Strin
 
 #[derive(Debug, Deserialize)]
 struct TemplateManifest {
+    #[serde(default)]
+    tokens: Vec<TemplateToken>,
     files: Vec<TemplateFile>,
+}
+
+/// These defaults are generated by compiled processors, not cached template archives.
+/// Các mặc định này chạy processor thật; archive snapshot cũ không phải template layer.
+pub(crate) fn has_builtin_scaffold_processor(layer: &str) -> bool {
+    matches!(layer, "ai/python-agent" | "app/flutter" | "lib/rust")
+}
+
+const MAX_TEMPLATE_MANIFEST_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Validate the exact manifest schema consumed by the materializer.
+/// Fetch/cache phải nhận cùng contract với processor, không chỉ TOML hợp cú pháp.
+pub(crate) fn validate_template_manifest(root: &Path) -> Result<()> {
+    let _: TemplateManifest = toml::from_str(&read_template_manifest(root)?)?;
+    Ok(())
+}
+
+fn read_template_manifest(root: &Path) -> Result<String> {
+    use std::io::Read;
+    let path = checked_template_path(root, "template.toml")?;
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)?
+        .take(MAX_TEMPLATE_MANIFEST_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_TEMPLATE_MANIFEST_BYTES {
+        return Err(crate::error::template_manifest_too_large(
+            MAX_TEMPLATE_MANIFEST_BYTES,
+        ));
+    }
+    Ok(String::from_utf8(bytes)?)
 }
 
 impl TemplateManifest {
@@ -1393,9 +1563,34 @@ impl TemplateManifest {
             ));
         }
 
-        let contents = String::from_utf8(layer.read("template.toml")?)?;
-        Ok(Some(toml::from_str(&contents)?))
+        let contents = read_template_manifest(layer.path())?;
+        let mut manifest: Self = toml::from_str(&contents)?;
+        manifest.apply_root_token_contracts();
+        Ok(Some(manifest))
     }
+
+    fn apply_root_token_contracts(&mut self) {
+        if self.tokens.is_empty() {
+            return;
+        }
+
+        let root_tokens = self
+            .tokens
+            .iter()
+            .map(|token| token.name.clone())
+            .collect::<Vec<_>>();
+
+        for file in &mut self.files {
+            if file.required_context.is_empty() {
+                file.required_context = root_tokens.clone();
+            }
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct TemplateToken {
+    name: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1411,6 +1606,34 @@ struct TemplateFile {
 }
 
 impl TemplateFile {
+    fn is_cli_generated_container_asset(&self) -> bool {
+        let target = self.target.replace('\\', "/");
+        let normalized = target.trim_start_matches("./");
+        let file_name = normalized
+            .rsplit('/')
+            .next()
+            .unwrap_or(normalized)
+            .to_ascii_lowercase();
+
+        self.include_features.iter().any(|feature| {
+            feature.eq_ignore_ascii_case("docker") || feature.eq_ignore_ascii_case("k8s")
+        }) || matches!(
+            file_name.as_str(),
+            "dockerfile"
+                | "containerfile"
+                | ".dockerignore"
+                | ".containerignore"
+                | "docker-compose.yml"
+                | "docker-compose.yaml"
+                | "compose.yml"
+                | "compose.yaml"
+                | "mgc-container-entrypoint"
+        ) || normalized == "k8s"
+            || normalized.starts_with("k8s/")
+            || normalized == "kubernetes"
+            || normalized.starts_with("kubernetes/")
+    }
+
     fn is_enabled(&self, active_features: &HashSet<&str>) -> bool {
         self.include_features
             .iter()
@@ -1430,7 +1653,11 @@ fn common_readme(name: &str, core: &str, framework: &str, features: &[String]) -
     if !features.is_empty() {
         out.push_str(&format!("- Features: `{}`\n", features.join("`, `")));
     }
-    let next_step = "Run `mgc install` in this directory; MagiCore detects the core from `mgc.toml` and `.mgc.core`.";
+    let next_step = if features.iter().any(|feature| feature == "docker") {
+        "Run `mgc install` in this directory to create the project lockfile, then run `docker compose up --build`. The image copies that same lock and uses `mgc install --frozen`; dependency resolution and lifecycle remain identical between the host project and container."
+    } else {
+        "Run `mgc install` in this directory; MagiCore detects the core from `mgc.toml` and `.mgc.core`."
+    };
     out.push_str(&format!("\n## Next\n\n{next_step}\n"));
     out
 }
@@ -1503,7 +1730,7 @@ fn common_gitignore(core: &str, framework: &str) -> String {
     lines.join("\n") + "\n"
 }
 
-fn slugify(name: &str) -> String {
+pub(super) fn slugify(name: &str) -> String {
     let mut slug = String::with_capacity(name.len());
     for ch in name.chars() {
         if ch.is_ascii_alphanumeric() {
@@ -1521,13 +1748,13 @@ fn slugify(name: &str) -> String {
     }
 }
 
-/// ponytail: board registry tĩnh P1 — add board vào đây; P2 chuyển assets/boards/*.json
-fn iot_target_for_board(board: &str) -> String {
+/// Preserve the target context emitted to existing non-IoT template layers.
+/// Giữ nguyên target context đã cấp cho các template layer không thuộc IoT.
+fn legacy_template_target(board: &str) -> String {
     match board {
         "esp32" => "xtensa-esp32-none-elf".to_string(),
         "esp32s3" => "xtensa-esp32s3-none-elf".to_string(),
-        "nrf52dk_nrf52832" => "thumbv7em-none-eabihf".to_string(),
-        "stm32f4_disc" => "thumbv7em-none-eabihf".to_string(),
+        "nrf52dk_nrf52832" | "stm32f4_disc" => "thumbv7em-none-eabihf".to_string(),
         _ => "riscv32imac-unknown-none-elf".to_string(),
     }
 }
@@ -1536,6 +1763,15 @@ fn iot_target_for_board(board: &str) -> String {
 fn normalize_web_framework(framework: &str) -> String {
     match framework {
         "next" | "next-app" => "nextjs".to_string(),
+        "ts" | "frontend" | "custom" => "vanilla".to_string(),
+        "node" | "backend" => "express".to_string(),
+        "fullstack" => "remix".to_string(),
+        "go" => "gin".to_string(),
+        "java" => "spring-boot".to_string(),
+        "php" => "laravel".to_string(),
+        "python" => "fastapi".to_string(),
+        "rust" => "axum".to_string(),
+        "dotnet" => "dotnet-minimal".to_string(),
         "react-express" | "react-hono" | "react-nestjs" | "react-trpc" => framework.to_string(),
         "vue-express" | "vue-hono" | "vue-nestjs" => framework.to_string(),
         "svelte-express" | "svelte-hono" => framework.to_string(),

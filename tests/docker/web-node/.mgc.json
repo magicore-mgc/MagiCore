@@ -1,0 +1,8 @@
+{
+  "name": "mgc-docker-node-e2e",
+  "version": "0.1.0",
+  "ecosystem": "web",
+  "mode": "backend",
+  "frameworks": ["node", "express"],
+  "features": []
+}

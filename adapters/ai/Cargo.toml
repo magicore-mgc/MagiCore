@@ -2,12 +2,14 @@
 name = "mgc-ai-adapter"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "AI ecosystem adapter for MagiCore"
-
 [dependencies]
+futures-util = { workspace = true }
+mgc-audit = { workspace = true }
 # Core crates (W1-W6 support)
 mgc-types = { path = "../../core/crates/mgc-types" }
 mgc-crypto = { workspace = true }
@@ -15,7 +17,9 @@ mgc-lockfile = { workspace = true }
 mgc-sbom = { workspace = true }
 mgc-cache = { workspace = true }
 mgc-config = { workspace = true }
+mgc-platform = { workspace = true }
 mgc-adapter-base = { workspace = true }
+mgc-lib-adapter = { path = "../lib" }
 
 # Async
 async-trait.workspace = true
@@ -31,13 +35,14 @@ hex.workspace = true
 sha2.workspace = true
 
 # Utils
-dirs.workspace = true
+uuid.workspace = true
 
 # HTTP
 reqwest = { workspace = true, features = ["stream"] }
 
 [dev-dependencies]
 criterion = { workspace = true }
+mockito = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 

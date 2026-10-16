@@ -1,199 +1,1250 @@
 //! `install/mod.rs` — App adapter install orchestrator.
-//! Orchestrates install across Flutter (pub get), Kotlin (gradle), Swift (spm), React Native (npm).
+//! Installs only ecosystems whose dependency lifecycle is implemented natively.
 
 pub mod fetch;
+mod pub_archive_cache;
 pub mod verify;
 
+use mgc_resolver::protocols::{
+    PubProtocol, RegistryProtocol, ResolvedEntry, SwiftRegistryProtocol,
+};
 use mgc_store::ContentStore;
-use mgc_types::adapter::{InstallOptions, InstallSummary};
-use mgc_types::{MgError, MgResult, ResolvedGraph};
-use std::path::Path;
+use mgc_types::adapter::{InstallCacheMode, InstallOptions, InstallSummary};
+use mgc_types::{MgError, MgResult, ResolvedGraph, ResolvedPackage};
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 use crate::language::AppLanguage;
 
-/// Install orchestrator for app adapter.
-/// Điều phối install cho Flutter/Kotlin/Swift/ReactNative app projects.
+/// Install orchestrator for natively supported Flutter and Swift app projects.
+/// Điều phối install cho project Flutter và Swift được hỗ trợ native.
 pub async fn run_install(
     language: AppLanguage,
     graph: &ResolvedGraph,
     project_root: &Path,
     opts: InstallOptions,
     _store: Option<&ContentStore>,
+    lock_packages: Vec<mgc_lockfile::Package>,
 ) -> MgResult<InstallSummary> {
+    if !matches!(
+        language,
+        AppLanguage::Flutter | AppLanguage::Swift | AppLanguage::ReactNative
+    ) {
+        return Err(MgError::Unsupported {
+            core: "app",
+            capability: "install",
+            guidance: "MagiCore has no complete native dependency engine for this app ecosystem"
+                .to_string(),
+        });
+    }
+
+    // Only Flutter has verified cache-only archive replay; other lanes stay closed.
+    // Chỉ Flutter có replay archive không mạng; lane khác vẫn từ chối offline.
+    if opts.offline && language != AppLanguage::Flutter {
+        return Err(MgError::Unsupported {
+            core: "app",
+            capability: "offline install",
+            guidance: "offline install is unsupported for this app ecosystem until cache-only frozen reinstall is implemented; no files were changed".to_string(),
+        });
+    }
+
     match language {
-        // Flutter: pub get/upgrade
-        AppLanguage::Flutter => install_flutter(project_root, opts).await,
+        // Flutter: native pub.dev engine (Phase 2) — no `flutter pub get`
+        // spawn for resolve/fetch/install.
+        AppLanguage::Flutter => {
+            let summary = install_flutter_native(graph, project_root, opts.offline).await?;
+            if !opts.offline && !opts.replay_from_lock {
+                write_canonical_lock_with_roots(
+                    project_root,
+                    &[mgc_lockfile::EcosystemTag::Dart],
+                    lock_packages,
+                    direct_package_ids(graph),
+                )?;
+            }
+            Ok(summary)
+        }
 
-        // Kotlin/Android: gradle sync
-        AppLanguage::Kotlin => install_kotlin(project_root, opts).await,
+        AppLanguage::Kotlin => Err(MgError::Unsupported {
+            core: "app",
+            capability: "native Kotlin dependency install",
+            guidance: "MagiCore does not yet implement native Kotlin dependency resolution and materialization".to_string(),
+        }),
 
-        // Swift/iOS: swift package resolve
-        AppLanguage::Swift => install_swift(project_root, opts).await,
+        // Swift registry archives are verified and materialized by MGC;
+        // Git-source dependencies are rejected by the resolver.
+        // (MGC xác minh và materialize archive Swift registry; dependency Git
+        // bị resolver từ chối.)
+        AppLanguage::Swift => {
+            let summary = install_swift_native(graph, &lock_packages, project_root).await?;
+            if !opts.replay_from_lock {
+                write_canonical_lock_with_roots(
+                project_root,
+                &[mgc_lockfile::EcosystemTag::Swift],
+                lock_packages,
+                direct_package_ids(graph),
+                )?;
+            }
+            Ok(summary)
+        }
 
-        // React Native: delegate to web adapter (npm)
-        AppLanguage::ReactNative => Err(MgError::Other(
-            "React Native should delegate to web adapter for npm dependencies".to_string(),
-        )),
+        // RN spans JS, Android, and iOS package graphs. Until all three
+        // graphs are owned and committed atomically, fail instead of
+        // reporting a partially installed project as successful.
+        AppLanguage::ReactNative => Err(MgError::Unsupported {
+            core: "app",
+            capability: "complete native React Native dependency install",
+            guidance: "MagiCore requires native JS, Maven, and CocoaPods engines plus one atomic cross-ecosystem transaction".to_string(),
+        }),
 
-        // ObjC: CocoaPods pod install
-        AppLanguage::ObjC => install_objc(project_root, opts).await,
-
-        // Multi-platform: detect primary and install
-        AppLanguage::Multi => install_multi(project_root, opts, graph).await,
+        AppLanguage::ObjC
+        | AppLanguage::Multi
+        | AppLanguage::Maui
+        | AppLanguage::Tauri => Err(MgError::Unsupported {
+            core: "app",
+            capability: "native dependency install",
+            guidance: "MagiCore does not yet implement a native dependency engine for this app ecosystem".to_string(),
+        }),
     }
 }
 
-/// Install Flutter dependencies via `flutter pub get`.
-async fn install_flutter(project_root: &Path, opts: InstallOptions) -> MgResult<InstallSummary> {
-    let mut args = vec!["pub".to_string(), "get".to_string()];
-
-    if opts.frozen {
-        args.push("--offline".to_string());
-    }
-
-    let exec_opts = mgc_exec::run::ExecOptions {
-        cwd: Some(project_root.to_path_buf()),
-        ..Default::default()
-    };
-
-    let result = mgc_exec::run::run("flutter", &args, &exec_opts)
-        .map_err(|e| MgError::Other(format!("flutter pub get failed: {}", e)))?;
-
-    if result.exit_code != 0 {
-        return Err(MgError::Other(format!(
-            "flutter pub get exited with code {}",
-            result.exit_code
-        )));
-    }
-
-    // TODO: parse pubspec.lock to build InstallSummary
-    Ok(InstallSummary {
-        added: vec![],
-        bytes_from_cache: 0,
-        duration_ms: result.duration_ms,
-    })
-}
-
-/// Install Kotlin/Android dependencies via `gradle`.
-async fn install_kotlin(project_root: &Path, opts: InstallOptions) -> MgResult<InstallSummary> {
-    // Use gradlew if available, fallback to gradle
-    let tool = if project_root.join("gradlew").exists() {
-        "./gradlew"
-    } else {
-        "gradle"
-    };
-
-    let mut args = vec!["dependencies".to_string()];
-
-    if opts.frozen {
-        args.push("--offline".to_string());
-    }
-
-    let exec_opts = mgc_exec::run::ExecOptions {
-        cwd: Some(project_root.to_path_buf()),
-        ..Default::default()
-    };
-
-    let result = mgc_exec::run::run(tool, &args, &exec_opts)
-        .map_err(|e| MgError::Other(format!("gradle dependencies failed: {}", e)))?;
-
-    if result.exit_code != 0 {
-        return Err(MgError::Other(format!(
-            "gradle exited with code {}",
-            result.exit_code
-        )));
-    }
-
-    // TODO: parse gradle.lockfile / build.gradle
-    Ok(InstallSummary {
-        added: vec![],
-        bytes_from_cache: 0,
-        duration_ms: result.duration_ms,
-    })
-}
-
-/// Install Swift dependencies via `swift package resolve`.
-async fn install_swift(project_root: &Path, _opts: InstallOptions) -> MgResult<InstallSummary> {
-    let args = vec!["package".to_string(), "resolve".to_string()];
-
-    let exec_opts = mgc_exec::run::ExecOptions {
-        cwd: Some(project_root.to_path_buf()),
-        ..Default::default()
-    };
-
-    let result = mgc_exec::run::run("swift", &args, &exec_opts)
-        .map_err(|e| MgError::Other(format!("swift package resolve failed: {}", e)))?;
-
-    if result.exit_code != 0 {
-        return Err(MgError::Other(format!(
-            "swift package resolve exited with code {}",
-            result.exit_code
-        )));
-    }
-
-    // TODO: parse Package.resolved
-    Ok(InstallSummary {
-        added: vec![],
-        bytes_from_cache: 0,
-        duration_ms: result.duration_ms,
-    })
-}
-
-/// Install ObjC dependencies via `pod install`.
-async fn install_objc(project_root: &Path, opts: InstallOptions) -> MgResult<InstallSummary> {
-    let mut args = vec!["install".to_string()];
-
-    if opts.frozen {
-        // CocoaPods uses Podfile.lock
-        args.push("--deployment".to_string());
-    }
-
-    let exec_opts = mgc_exec::run::ExecOptions {
-        cwd: Some(project_root.to_path_buf()),
-        ..Default::default()
-    };
-
-    let result = mgc_exec::run::run("pod", &args, &exec_opts)
-        .map_err(|e| MgError::Other(format!("pod install failed: {}", e)))?;
-
-    if result.exit_code != 0 {
-        return Err(MgError::Other(format!(
-            "pod install exited with code {}",
-            result.exit_code
-        )));
-    }
-
-    // TODO: parse Podfile.lock
-    Ok(InstallSummary {
-        added: vec![],
-        bytes_from_cache: 0,
-        duration_ms: result.duration_ms,
-    })
-}
-
-/// Install multi-platform dependencies (detect primary platform).
-async fn install_multi(
+/// Native Flutter install: download each package archive → verify sha256 →
+/// import to the mgc CAS (blake3) → extract into the pub cache layout
+/// `{store}/pub/hosted/pub.dev/{name}-{version}/` (usable by
+/// `dart pub get --offline`). No `flutter pub get` spawn — mgc owns
+/// resolve/fetch/install (Phase 2).
+/// Install Flutter native: tải archive từng package → verify sha256 → import
+/// vào CAS mgc (blake3) → giải nén vào layout pub cache
+/// `{store}/pub/hosted/pub.dev/{name}-{version}/` (dùng được bởi
+/// `dart pub get --offline`). Không spawn `flutter pub get` — mgc giữ
+/// resolve/fetch/install (Phase 2).
+async fn install_flutter_native(
+    graph: &ResolvedGraph,
     project_root: &Path,
-    opts: InstallOptions,
-    _graph: &ResolvedGraph,
+    offline: bool,
 ) -> MgResult<InstallSummary> {
-    // Try Flutter first (common multi-platform framework)
-    if project_root.join("pubspec.yaml").exists() {
-        return install_flutter(project_root, opts).await;
+    let started = std::time::Instant::now();
+    let protocol = PubProtocol::from_env();
+    let pub_cache = pub_cache_root(!offline)?;
+    if offline {
+        preflight_flutter_archives(graph, &pub_cache)?;
+    }
+    // An empty resolved graph has no artifacts to fetch or persist. Avoid
+    // opening/creating the global CAS in that no-op case (which can fail on
+    // read-only or sandboxed home directories despite there being no work).
+    // (Graph rỗng không có artifact; không mở CAS toàn cục vô ích.)
+    let store = if graph.packages.is_empty() {
+        None
+    } else {
+        Some(content_store()?)
+    };
+    let mut added = Vec::with_capacity(graph.packages.len());
+    let mut bytes_from_cache = 0_u64;
+
+    for pkg in &graph.packages {
+        let entry = entry_from_package(pkg);
+        let bytes = match pub_archive_cache::load_verified(&pub_cache, &entry.sha256)? {
+            Some(bytes) => {
+                bytes_from_cache = bytes_from_cache.saturating_add(bytes.len() as u64);
+                bytes
+            }
+            None => {
+                if offline {
+                    return Err(MgError::Other(format!(
+                        "offline Flutter archive disappeared after preflight for '{}'@{}",
+                        entry.name, entry.version
+                    )));
+                }
+                let bytes = protocol.download(&entry).await?;
+                protocol.verify(&entry, &bytes)?;
+                pub_archive_cache::save_verified(&pub_cache, &entry.sha256, &bytes)?;
+                bytes
+            }
+        };
+        let store = store.as_ref().ok_or_else(|| {
+            MgError::Store("non-empty Flutter graph has no initialized content store".to_string())
+        })?;
+        store
+            .import_bytes(&bytes)
+            .map_err(|e| MgError::Store(e.to_string()))?;
+        protocol.materialize(&entry, &bytes, &pub_cache)?;
+        added.push(pkg.id.clone());
     }
 
-    // Try Kotlin (Android)
-    if project_root.join("build.gradle").exists() || project_root.join("build.gradle.kts").exists()
-    {
-        return install_kotlin(project_root, opts).await;
-    }
+    // Flutter commands are invoked with --no-pub, so MGC must provide the
+    // package configuration normally generated by `pub get`. Without it,
+    // install could report success while build/test/dev cannot resolve
+    // `package:` imports.
+    write_flutter_package_config(graph, project_root, &pub_cache)?;
 
-    // Try Swift (iOS)
-    if project_root.join("Package.swift").exists() {
-        return install_swift(project_root, opts).await;
-    }
-
-    Err(MgError::Other(
-        "multi-platform project: no recognized manifest found".to_string(),
-    ))
+    Ok(InstallSummary {
+        added,
+        bytes_from_cache,
+        duration_ms: started.elapsed().as_millis() as u64,
+        cache_mode: InstallCacheMode::MgCStore,
+    })
 }
+
+/// Verify the complete cache before creating CAS or materializing any package.
+/// Xác minh toàn cache trước tạo CAS/bung package để missing artifact không gây partial install.
+fn preflight_flutter_archives(graph: &ResolvedGraph, cache_root: &Path) -> MgResult<()> {
+    for package in &graph.packages {
+        let entry = entry_from_package(package);
+        if pub_archive_cache::load_verified(cache_root, &entry.sha256)?.is_none() {
+            return Err(MgError::Other(format!(
+                "offline Flutter archive cache miss for '{}'@{}; run `mgc install` online first",
+                entry.name, entry.version
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FlutterPackageConfig {
+    config_version: u8,
+    generator: &'static str,
+    generator_version: &'static str,
+    packages: Vec<FlutterPackageConfigEntry>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FlutterPackageConfigEntry {
+    name: String,
+    root_uri: String,
+    package_uri: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    language_version: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FlutterPackageGraph {
+    roots: Vec<String>,
+    packages: Vec<FlutterPackageGraphEntry>,
+    config_version: u8,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FlutterPackageGraphEntry {
+    name: String,
+    version: String,
+    dependencies: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dev_dependencies: Option<Vec<String>>,
+}
+
+fn flutter_project_root_uri(project_root: &Path, current_dir: Option<&Path>) -> MgResult<String> {
+    let absolute_root = if project_root.is_absolute() {
+        project_root.to_path_buf()
+    } else {
+        current_dir
+            .ok_or_else(|| {
+                MgError::Other(
+                    "cannot resolve relative Flutter project root without a current directory"
+                        .to_string(),
+                )
+            })?
+            .join(project_root)
+    };
+    #[cfg(windows)]
+    let absolute_root = expand_windows_short_path(&absolute_root)?;
+    url::Url::from_directory_path(absolute_root)
+        .map(|uri| uri.to_string())
+        .map_err(|_| MgError::Other("cannot encode Flutter project root URI".to_string()))
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn expand_windows_short_path(path: &Path) -> MgResult<PathBuf> {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    use windows_sys::Win32::Storage::FileSystem::GetLongPathNameW;
+
+    // Expand DOS 8.3 aliases before Flutter compares the package root URI.
+    // Bung tên DOS 8.3 trước khi Flutter so khớp URI root của package.
+    let encoded = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    // The input is NUL-terminated, and a null output with zero length is the documented size query.
+    // Đầu vào có NUL kết thúc; output null với độ dài 0 là truy vấn kích thước theo API.
+    let required = unsafe { GetLongPathNameW(encoded.as_ptr(), std::ptr::null_mut(), 0) };
+    if required == 0 {
+        return Err(MgError::Other(format!(
+            "expand Windows Flutter project path: {}",
+            std::io::Error::last_os_error()
+        )));
+    }
+    let mut buffer = vec![0_u16; required as usize];
+    // The buffer has `required` writable UTF-16 slots from the size query above.
+    // Buffer có `required` ô UTF-16 có thể ghi, lấy từ truy vấn kích thước ở trên.
+    let written = unsafe { GetLongPathNameW(encoded.as_ptr(), buffer.as_mut_ptr(), required) };
+    if written == 0 || written >= required {
+        return Err(MgError::Other(format!(
+            "read expanded Windows Flutter project path: {}",
+            std::io::Error::last_os_error()
+        )));
+    }
+    Ok(PathBuf::from(OsString::from_wide(
+        &buffer[..written as usize],
+    )))
+}
+
+fn write_flutter_package_config(
+    graph: &ResolvedGraph,
+    project_root: &Path,
+    pub_cache: &Path,
+) -> MgResult<()> {
+    let (sdk_root, _) = crate::manifest::flutter::flutter_sdk_packages(project_root)?;
+    write_flutter_package_config_with_sdk_root(graph, project_root, pub_cache, sdk_root.as_deref())
+}
+
+fn write_flutter_package_config_with_sdk_root(
+    graph: &ResolvedGraph,
+    project_root: &Path,
+    pub_cache: &Path,
+    sdk_root: Option<&Path>,
+) -> MgResult<()> {
+    let config_dir = project_root.join(".dart_tool");
+    match std::fs::symlink_metadata(&config_dir) {
+        Ok(meta) if meta.file_type().is_symlink() || !meta.is_dir() => {
+            return Err(MgError::Integrity(
+                "refusing to write Flutter package config through a linked or non-directory .dart_tool".to_string(),
+            ));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(MgError::Other(format!(
+                "inspect .dart_tool directory: {error}"
+            )));
+        }
+    }
+    let sdk_packages = match sdk_root {
+        Some(root) => crate::manifest::flutter::flutter_sdk_package_names(project_root, root)?,
+        None => Vec::new(),
+    };
+    let package_graph = build_flutter_package_graph(graph, project_root, sdk_root, &sdk_packages)?;
+    let root_name = package_graph.roots.first().cloned().ok_or_else(|| {
+        MgError::Integrity("Flutter package graph has no root package".to_string())
+    })?;
+    let mut entries = Vec::with_capacity(graph.packages.len() + sdk_packages.len() + 1);
+    let mut seen = std::collections::BTreeSet::new();
+    if !seen.insert(root_name.clone()) {
+        return Err(MgError::Integrity(format!(
+            "Flutter package config contains duplicate package name '{root_name}'"
+        )));
+    }
+    // Match the directory identity Flutter exposes, including Windows 8.3 expansion above.
+    // Khớp danh tính thư mục Flutter thấy, gồm bước bung tên 8.3 ở Windows bên trên.
+    let current_dir = if project_root.is_absolute() {
+        None
+    } else {
+        Some(
+            std::env::current_dir()
+                .map_err(|error| MgError::Other(format!("read current directory: {error}")))?,
+        )
+    };
+    let root_uri = flutter_project_root_uri(project_root, current_dir.as_deref())?;
+    entries.push(FlutterPackageConfigEntry {
+        name: root_name,
+        root_uri,
+        package_uri: "lib/",
+        language_version: None,
+    });
+    for package in &graph.packages {
+        let name = package.id.name_str();
+        if !seen.insert(name.to_string()) {
+            return Err(MgError::Integrity(format!(
+                "Flutter graph contains duplicate package name '{name}'"
+            )));
+        }
+        let package_root = pub_cache.join("hosted").join("pub.dev").join(format!(
+            "{}-{}",
+            name,
+            package.id.version()
+        ));
+        let manifest_path = package_root.join("pubspec.yaml");
+        let manifest_text = std::fs::read_to_string(&manifest_path).map_err(|error| {
+            MgError::Other(format!(
+                "read materialized Flutter package manifest '{}': {error}",
+                manifest_path.display()
+            ))
+        })?;
+        let manifest: serde_yaml::Value =
+            serde_yaml::from_str(&manifest_text).map_err(|error| {
+                MgError::Other(format!(
+                    "parse materialized Flutter package manifest '{}': {error}",
+                    manifest_path.display()
+                ))
+            })?;
+        let actual_name = manifest
+            .get("name")
+            .and_then(serde_yaml::Value::as_str)
+            .ok_or_else(|| {
+                MgError::Integrity(format!(
+                    "materialized Flutter package '{}' has no valid pubspec name",
+                    package_root.display()
+                ))
+            })?;
+        if actual_name != name {
+            return Err(MgError::Integrity(format!(
+                "Flutter archive identity mismatch: graph says '{name}', archive says '{actual_name}'"
+            )));
+        }
+        let language_version = manifest
+            .get("environment")
+            .and_then(|value| value.get("sdk"))
+            .and_then(serde_yaml::Value::as_str)
+            .and_then(dart_language_version_floor);
+        let canonical_root = package_root.canonicalize().map_err(|error| {
+            MgError::Other(format!("canonicalize Flutter package root: {error}"))
+        })?;
+        let root_uri = url::Url::from_directory_path(&canonical_root)
+            .map_err(|_| MgError::Other("cannot encode Flutter package root URI".to_string()))?
+            .to_string();
+        entries.push(FlutterPackageConfigEntry {
+            name: name.to_string(),
+            root_uri,
+            package_uri: "lib/",
+            language_version,
+        });
+    }
+
+    if !sdk_packages.is_empty() {
+        let sdk_root = sdk_root.ok_or_else(|| {
+            MgError::Other(
+                "Flutter SDK dependencies are declared but no Flutter SDK root was found; set FLUTTER_ROOT or install flutter on PATH".to_string(),
+            )
+        })?;
+        for name in &sdk_packages {
+            if !seen.insert(name.clone()) {
+                return Err(MgError::Integrity(format!(
+                    "Flutter SDK package '{name}' conflicts with a registry package in the resolved graph"
+                )));
+            }
+            let canonical_package_root =
+                crate::manifest::flutter::flutter_sdk_package_root(sdk_root, name)?;
+            let package_manifest_path = canonical_package_root.join("pubspec.yaml");
+            let package_manifest_meta =
+                std::fs::symlink_metadata(&package_manifest_path).map_err(|error| {
+                    MgError::Other(format!(
+                        "inspect Flutter SDK package manifest '{}': {error}",
+                        package_manifest_path.display()
+                    ))
+                })?;
+            if !package_manifest_meta.file_type().is_file() {
+                return Err(MgError::Integrity(format!(
+                    "Flutter SDK package '{name}' has a linked or non-regular pubspec.yaml"
+                )));
+            }
+            let manifest_text =
+                std::fs::read_to_string(&package_manifest_path).map_err(|error| {
+                    MgError::Other(format!(
+                        "read Flutter SDK package manifest '{}': {error}",
+                        package_manifest_path.display()
+                    ))
+                })?;
+            let manifest: serde_yaml::Value =
+                serde_yaml::from_str(&manifest_text).map_err(|error| {
+                    MgError::Other(format!(
+                        "parse Flutter SDK package manifest '{}': {error}",
+                        package_manifest_path.display()
+                    ))
+                })?;
+            if manifest.get("name").and_then(serde_yaml::Value::as_str) != Some(name.as_str()) {
+                return Err(MgError::Integrity(format!(
+                    "Flutter SDK package identity mismatch for '{name}'"
+                )));
+            }
+            let lib_dir = canonical_package_root.join("lib");
+            if !std::fs::symlink_metadata(&lib_dir).is_ok_and(|meta| meta.is_dir()) {
+                return Err(MgError::Integrity(format!(
+                    "Flutter SDK package '{name}' has no regular lib directory"
+                )));
+            }
+            let language_version = manifest
+                .get("environment")
+                .and_then(|value| value.get("sdk"))
+                .and_then(serde_yaml::Value::as_str)
+                .and_then(dart_language_version_floor);
+            let root_uri = url::Url::from_directory_path(&canonical_package_root)
+                .map_err(|_| MgError::Other("cannot encode Flutter SDK package URI".to_string()))?
+                .to_string();
+            entries.push(FlutterPackageConfigEntry {
+                name: name.clone(),
+                root_uri,
+                package_uri: "lib/",
+                language_version,
+            });
+        }
+    }
+    entries.sort_by(|left, right| left.name.cmp(&right.name));
+    if !config_dir.exists() {
+        std::fs::create_dir(&config_dir)
+            .map_err(|error| MgError::Other(format!("create .dart_tool directory: {error}")))?;
+    }
+    let config = FlutterPackageConfig {
+        config_version: 2,
+        generator: "MagiCore",
+        generator_version: env!("CARGO_PKG_VERSION"),
+        packages: entries,
+    };
+    let bytes = serde_json::to_vec_pretty(&config)
+        .map_err(|error| MgError::Other(format!("serialize Flutter package config: {error}")))?;
+    atomic_write_project_file(
+        &config_dir.join("package_config.json"),
+        &bytes,
+        "Flutter package config",
+    )?;
+    let graph_bytes = serde_json::to_vec_pretty(&package_graph)
+        .map_err(|error| MgError::Other(format!("serialize Flutter package graph: {error}")))?;
+    atomic_write_project_file(
+        &config_dir.join("package_graph.json"),
+        &graph_bytes,
+        "Flutter package graph",
+    )
+}
+
+/// Build Dart Pub's package_graph.json contract from MGC's resolved graph.
+/// This file is needed by current Flutter commands in addition to
+/// package_config.json; MGC derives it without invoking `pub get`.
+/// (Dựng package_graph.json theo contract Dart Pub từ graph MGC resolve.)
+fn build_flutter_package_graph(
+    graph: &ResolvedGraph,
+    project_root: &Path,
+    sdk_root: Option<&Path>,
+    sdk_packages: &[String],
+) -> MgResult<FlutterPackageGraph> {
+    let pubspec_path = project_root.join("pubspec.yaml");
+    let pubspec_text = std::fs::read_to_string(&pubspec_path).map_err(|error| {
+        MgError::Other(format!("read Flutter pubspec for package graph: {error}"))
+    })?;
+    let pubspec: serde_yaml::Value = serde_yaml::from_str(&pubspec_text).map_err(|error| {
+        MgError::Other(format!("parse Flutter pubspec for package graph: {error}"))
+    })?;
+    let root_name = pubspec
+        .get("name")
+        .and_then(serde_yaml::Value::as_str)
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| MgError::Integrity("Flutter pubspec has no valid package name".to_string()))?
+        .to_string();
+    let root_version = pubspec
+        .get("version")
+        .and_then(serde_yaml::Value::as_str)
+        .unwrap_or("0.0.0")
+        .to_string();
+    let dependencies = flutter_pubspec_dependency_names(&pubspec, "dependencies")?;
+    let dev_dependencies = flutter_pubspec_dependency_names(&pubspec, "dev_dependencies")?;
+
+    let mut entries = BTreeMap::<String, FlutterPackageGraphEntry>::new();
+    for package in &graph.packages {
+        let name = package.id.name_str().to_string();
+        if name == root_name {
+            return Err(MgError::Integrity(format!(
+                "Flutter resolved graph contains the root project name '{root_name}'"
+            )));
+        }
+        let mut package_dependencies = package
+            .deps
+            .iter()
+            .map(|dependency| dependency.name_str().to_string())
+            .collect::<Vec<_>>();
+        package_dependencies.sort();
+        package_dependencies.dedup();
+        entries.insert(
+            name.clone(),
+            FlutterPackageGraphEntry {
+                name,
+                version: package.id.version().to_string(),
+                dependencies: package_dependencies,
+                dev_dependencies: None,
+            },
+        );
+    }
+
+    if !sdk_packages.is_empty() {
+        let sdk_root = sdk_root.ok_or_else(|| {
+            MgError::Other(
+                "Flutter SDK packages are required but no Flutter SDK root is available"
+                    .to_string(),
+            )
+        })?;
+        for name in sdk_packages {
+            if name == &root_name || entries.contains_key(name) {
+                return Err(MgError::Integrity(format!(
+                    "Flutter package graph contains duplicate package name '{name}'"
+                )));
+            }
+            let package_root = crate::manifest::flutter::flutter_sdk_package_root(sdk_root, name)?;
+            let manifest_path = package_root.join("pubspec.yaml");
+            let manifest_text = std::fs::read_to_string(&manifest_path).map_err(|error| {
+                MgError::Other(format!(
+                    "read Flutter SDK package graph manifest '{}': {error}",
+                    manifest_path.display()
+                ))
+            })?;
+            let manifest: serde_yaml::Value =
+                serde_yaml::from_str(&manifest_text).map_err(|error| {
+                    MgError::Other(format!(
+                        "parse Flutter SDK package graph manifest '{}': {error}",
+                        manifest_path.display()
+                    ))
+                })?;
+            let actual_name = manifest.get("name").and_then(serde_yaml::Value::as_str);
+            if actual_name != Some(name.as_str()) {
+                return Err(MgError::Integrity(format!(
+                    "Flutter SDK package graph identity mismatch for '{name}'"
+                )));
+            }
+            let mut package_dependencies = Vec::new();
+            if let Some(dependency_map) = manifest.get("dependencies") {
+                let mapping = dependency_map.as_mapping().ok_or_else(|| {
+                    MgError::Integrity(format!(
+                        "Flutter SDK package '{name}' dependencies must be a mapping"
+                    ))
+                })?;
+                for (dependency_name, value) in mapping {
+                    let dependency_name = dependency_name.as_str().ok_or_else(|| {
+                        MgError::Integrity(
+                            "Flutter SDK dependency name must be a string".to_string(),
+                        )
+                    })?;
+                    if let Some(fields) = value.as_mapping() {
+                        let source = fields
+                            .get(serde_yaml::Value::String("sdk".to_string()))
+                            .and_then(serde_yaml::Value::as_str)
+                            .ok_or_else(|| MgError::Unsupported {
+                                core: "app",
+                                capability: "Flutter package graph dependency source",
+                                guidance: format!("cannot represent dependency source for '{dependency_name}' in SDK package '{name}'"),
+                            })?;
+                        if fields.len() != 1 || !matches!(source, "flutter" | "dart") {
+                            return Err(MgError::Unsupported {
+                                core: "app",
+                                capability: "Flutter package graph dependency source",
+                                guidance: format!(
+                                    "cannot represent source '{source}' for '{dependency_name}' in SDK package '{name}'"
+                                ),
+                            });
+                        }
+                        if source == "flutter" {
+                            package_dependencies.push(dependency_name.to_string());
+                        }
+                    } else if value.is_string() || value.is_null() {
+                        package_dependencies.push(dependency_name.to_string());
+                    } else {
+                        return Err(MgError::Unsupported {
+                            core: "app",
+                            capability: "Flutter package graph dependency constraint",
+                            guidance: format!(
+                                "cannot represent dependency '{dependency_name}' in SDK package '{name}'"
+                            ),
+                        });
+                    }
+                }
+            }
+            package_dependencies.sort();
+            package_dependencies.dedup();
+            entries.insert(
+                name.clone(),
+                FlutterPackageGraphEntry {
+                    name: name.clone(),
+                    version: manifest
+                        .get("version")
+                        .and_then(serde_yaml::Value::as_str)
+                        .unwrap_or("0.0.0")
+                        .to_string(),
+                    dependencies: package_dependencies,
+                    dev_dependencies: None,
+                },
+            );
+        }
+    }
+
+    let known_packages = entries
+        .keys()
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>();
+    for entry in entries.values() {
+        for dependency in &entry.dependencies {
+            if !known_packages.contains(dependency) {
+                return Err(MgError::Integrity(format!(
+                    "Flutter package graph edge '{} -> {dependency}' has no resolved package",
+                    entry.name
+                )));
+            }
+        }
+    }
+    for dependency in dependencies.iter().chain(dev_dependencies.iter()) {
+        if !known_packages.contains(dependency) {
+            return Err(MgError::Integrity(format!(
+                "Flutter root package graph dependency '{dependency}' is not resolved"
+            )));
+        }
+    }
+
+    let mut packages = vec![FlutterPackageGraphEntry {
+        name: root_name.clone(),
+        version: root_version,
+        dependencies,
+        dev_dependencies: Some(dev_dependencies),
+    }];
+    packages.extend(entries.into_values());
+    Ok(FlutterPackageGraph {
+        roots: vec![root_name],
+        packages,
+        config_version: 1,
+    })
+}
+
+fn flutter_pubspec_dependency_names(
+    pubspec: &serde_yaml::Value,
+    section: &str,
+) -> MgResult<Vec<String>> {
+    let Some(section_value) = pubspec.get(section) else {
+        return Ok(Vec::new());
+    };
+    let mapping = section_value.as_mapping().ok_or_else(|| {
+        MgError::Integrity(format!("Flutter pubspec '{section}' must be a mapping"))
+    })?;
+    let mut names = mapping
+        .keys()
+        .map(|name| {
+            name.as_str().map(str::to_string).ok_or_else(|| {
+                MgError::Integrity(format!("Flutter pubspec '{section}' has a non-string name"))
+            })
+        })
+        .collect::<MgResult<Vec<_>>>()?;
+    names.sort();
+    Ok(names)
+}
+
+/// Extract the Dart language version floor from constraints with an explicit
+/// lower bound. Constraints without a safely understood floor leave this
+/// optional field absent rather than inventing a language version.
+fn dart_language_version_floor(constraint: &str) -> Option<String> {
+    for token in constraint.split_whitespace() {
+        let candidate = token
+            .strip_prefix(">=")
+            .or_else(|| token.strip_prefix('^'))
+            .or_else(|| token.strip_prefix('='));
+        let Some(candidate) = candidate else { continue };
+        let mut parts = candidate.trim().split('.');
+        let major = parts.next()?.parse::<u64>().ok()?;
+        let minor = parts.next()?.parse::<u64>().ok()?;
+        if major > 0 || minor > 0 {
+            return Some(format!("{major}.{minor}"));
+        }
+    }
+    None
+}
+
+/// Reconstruct a protocol `ResolvedEntry` from a resolved graph package.
+/// Dựng lại `ResolvedEntry` của protocol từ một package trong graph đã resolve.
+fn entry_from_package(pkg: &ResolvedPackage) -> ResolvedEntry {
+    ResolvedEntry {
+        name: pkg.id.name_str().to_string(),
+        version: pkg.id.version().to_string(),
+        deps: Vec::new(),
+        artifact_url: pkg.tarball_url.clone(),
+        sha256: mgc_lockfile::policy::native_sha256_hex(&pkg.integrity),
+        extra_markers: Vec::new(),
+    }
+}
+
+/// Resolve (and create) the mgc-managed pub cache root (`MGC_DATA_DIR/store/pub`).
+/// Resolve (và tạo) gốc pub cache do mgc quản (`MGC_DATA_DIR/store/pub`).
+fn pub_cache_root(create: bool) -> MgResult<PathBuf> {
+    let root = mgc_platform::paths::mgc_data_dir().join("store/pub");
+    if create {
+        std::fs::create_dir_all(&root)
+            .map_err(|e| MgError::Other(format!("create pub cache: {e}")))?;
+    }
+    Ok(root)
+}
+
+/// Build (and create) the mgc CAS content store used by native install.
+/// Dựng (và tạo) content store CAS mgc cho install native.
+fn content_store() -> MgResult<ContentStore> {
+    ContentStore::new(mgc_store::default_store_root()).map_err(|e| MgError::Store(e.to_string()))
+}
+
+/// Native Swift install: registry entries download → verify the registry
+/// checksum → import to the mgc CAS (blake3) → extract into
+/// `{swift_root}/checkouts/{identity}-{version}/`; GIT entries clone at the
+/// pinned tag with commit-SHA verification (a moved tag fails closed) —
+/// checkouts are directories, so no CAS archive import applies to them.
+/// A SwiftPM-compatible Package.resolved (v2) is exported into the project.
+/// No `swift package resolve` spawn — mgc owns resolve/fetch/install
+/// (Phase 2).
+/// Install Swift native: entry registry tải → verify checksum registry →
+/// import vào CAS mgc (blake3) → giải nén vào
+/// `{swift_root}/checkouts/{identity}-{version}/`; entry GIT clone tại tag
+/// đã ghim với xác minh SHA commit (tag bị dịch fail-closed) — checkout là
+/// thư mục nên không áp import CAS archive. Package.resolved (v2) tương
+/// thích SwiftPM được xuất vào project. Không spawn `swift package resolve`
+/// — mgc giữ resolve/fetch/install (Phase 2).
+async fn install_swift_native(
+    graph: &ResolvedGraph,
+    lock_packages: &[mgc_lockfile::Package],
+    project_root: &Path,
+) -> MgResult<InstallSummary> {
+    let started = std::time::Instant::now();
+    let protocol = SwiftRegistryProtocol::from_env();
+    let swift_root = swift_store_root()?;
+    let store = content_store()?;
+    let mut added = Vec::with_capacity(graph.packages.len());
+
+    for pkg in &graph.packages {
+        let entry = entry_from_package(pkg);
+        let is_git = !pkg.tarball_url.ends_with(".zip");
+        if is_git {
+            // Resolve-time provenance SHA rides the lock markers — an
+            // absent lock (fresh adapter instance) degrades to an UNVERIFIED
+            // checkout with a loud warning (no silent trust).
+            // (SHA provenance lúc resolve nằm trong marker lock — thiếu
+            // lock (instance adapter mới) hạ xuống checkout CHƯA XÁC MINH
+            // kèm cảnh báo ồn ào (không tin tưởng âm thầm).)
+            let expected = lock_packages
+                .iter()
+                .find(|p| p.name == pkg.id.name_str())
+                .and_then(|p| p.markers.as_ref())
+                .and_then(|ms| {
+                    ms.iter()
+                        .find_map(|m| m.strip_prefix("git-commit:").map(str::to_string))
+                });
+            protocol.materialize_git(&entry, expected.as_deref(), &swift_root)?;
+        } else {
+            let bytes = protocol.download(&entry).await?;
+            protocol.verify(&entry, &bytes)?;
+            store
+                .import_bytes(&bytes)
+                .map_err(|e| MgError::Store(e.to_string()))?;
+            protocol.materialize(&entry, &bytes, &swift_root)?;
+        }
+        added.push(pkg.id.clone());
+    }
+
+    // Export the SwiftPM-compatible Package.resolved from the resolution.
+    // (Xuất Package.resolved tương thích SwiftPM từ kết quả resolve.)
+    let pins = build_swift_pins(graph, lock_packages);
+    protocol.export_package_resolved(&pins, project_root)?;
+
+    Ok(InstallSummary {
+        added,
+        bytes_from_cache: 0,
+        duration_ms: started.elapsed().as_millis() as u64,
+        cache_mode: InstallCacheMode::MgCStore,
+    })
+}
+
+/// Package.resolved pins from the resolved graph: registry entries key the
+/// identity as `scope.name`; git entries use the repo name with the commit
+/// SHA as revision provenance (from the lock markers when present).
+/// Pin Package.resolved từ graph đã resolve: entry registry khóa identity
+/// dạng `scope.name`; entry git dùng tên repo với SHA commit làm provenance
+/// revision (từ marker lock khi có).
+fn build_swift_pins(
+    graph: &ResolvedGraph,
+    lock_packages: &[mgc_lockfile::Package],
+) -> Vec<mgc_resolver::protocols::swift::SwiftResolvedPin> {
+    graph
+        .packages
+        .iter()
+        .map(|pkg| {
+            let name = pkg.id.name_str();
+            let is_git = !pkg.tarball_url.ends_with(".zip");
+            if is_git {
+                let revision = lock_packages
+                    .iter()
+                    .find(|p| p.name == name)
+                    .and_then(|p| p.markers.as_ref())
+                    .and_then(|ms| {
+                        ms.iter()
+                            .find_map(|m| m.strip_prefix("git-commit:").map(str::to_string))
+                    });
+                let version = pkg.id.version();
+                // A tag-shaped version pins `state.version`; branch/SHA
+                // pins carry the revision only.
+                // (Version dạng tag ghim `state.version`; pin branch/SHA
+                // chỉ mang revision.)
+                mgc_resolver::protocols::swift::SwiftResolvedPin {
+                    identity: name.rsplit('/').next().unwrap_or(name).to_lowercase(),
+                    version: mgc_types::Version::parse(&version.to_string())
+                        .ok()
+                        .map(|_| version.to_string()),
+                    revision,
+                    branch: None,
+                    location: Some(format!("https://{}.git", name)),
+                }
+            } else {
+                mgc_resolver::protocols::swift::SwiftResolvedPin {
+                    identity: name.replace('/', ".").to_lowercase(),
+                    version: Some(pkg.id.version().to_string()),
+                    revision: None,
+                    branch: None,
+                    location: None,
+                }
+            }
+        })
+        .collect()
+}
+
+/// Resolve (and create) the mgc-managed Swift store root
+/// (`MGC_DATA_DIR/store/swift`) — checkouts live under `<root>/checkouts`.
+/// `MGC_SWIFT_STORE_ROOT` overrides the root (testability + shared-cache
+/// placement), mirroring the other engines' env seams.
+/// Resolve (và tạo) gốc store Swift do mgc quản (`MGC_DATA_DIR/store/swift`)
+/// — checkouts nằm dưới `<root>/checkouts`. `MGC_SWIFT_STORE_ROOT` ghi đè
+/// gốc (khả nghiệm + vị trí cache dùng chung), giống các seam env của
+/// engine khác.
+fn swift_store_root() -> MgResult<PathBuf> {
+    let root = match std::env::var("MGC_SWIFT_STORE_ROOT")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+    {
+        Some(over) => PathBuf::from(over),
+        None => mgc_platform::paths::mgc_data_dir()
+            .join("store")
+            .join("swift"),
+    };
+    std::fs::create_dir_all(&root)
+        .map_err(|e| MgError::Other(format!("create swift store root: {e}")))?;
+    Ok(root)
+}
+
+/// Replace the lock entries owned by this app install lane. Empty results
+/// clear stale entries for the lane; entries from every other ecosystem
+/// remain untouched (RN JS is written by the web adapter).
+/// Thay các entry thuộc lane app đang cài. Kết quả rỗng xóa pin cũ của
+/// lane; ecosystem khác được giữ nguyên (RN JS do web adapter ghi).
+#[cfg(test)]
+fn write_canonical_lock(
+    project_root: &Path,
+    replace_ecosystems: &[mgc_lockfile::EcosystemTag],
+    lock_packages: Vec<mgc_lockfile::Package>,
+) -> MgResult<()> {
+    write_canonical_lock_with_roots(project_root, replace_ecosystems, lock_packages, Vec::new())
+}
+
+fn write_canonical_lock_with_roots(
+    project_root: &Path,
+    replace_ecosystems: &[mgc_lockfile::EcosystemTag],
+    lock_packages: Vec<mgc_lockfile::Package>,
+    direct_package_ids: Vec<String>,
+) -> MgResult<()> {
+    let lock_path = project_root.join("mgc.lock");
+    if replace_ecosystems.is_empty() {
+        return Err(MgError::Other(
+            "refusing to write mgc.lock without an owned ecosystem scope".to_string(),
+        ));
+    }
+    if lock_packages
+        .iter()
+        .any(|package| !replace_ecosystems.contains(&package.ecosystem))
+    {
+        return Err(MgError::Other(
+            "refusing to write an app lock entry outside the active ecosystem scope".to_string(),
+        ));
+    }
+
+    let owner_core = app_lock_owner_core(project_root)?;
+    // Even an empty native install writes an empty lock. App dev performs a
+    // strict freshness check before launching; without this file, a successful
+    // install would leave a dependency-free project unable to start.
+    // (Install native rỗng vẫn ghi lock rỗng. `mgc dev` kiểm freshness
+    // nghiêm ngặt trước khi chạy; thiếu file sẽ khiến project không dependency
+    // không thể khởi động sau một lần install thành công.)
+    // v4 write path (explicit `[lock] schema` only): lane rows convert
+    // losslessly against the v4 base on disk — the legacy v3 model is never
+    // in the loop, so a v4 lock stays readable across installs.
+    // (Đường ghi v4 (chỉ khi `[lock] schema` tường minh): row lane convert
+    // với base v4 trên đĩa — model v3 legacy không tham gia, nên lock v4
+    // đọc được qua mọi lần install.)
+    if mgc_config::project::lock_schema_is_v4(project_root)
+        .map_err(|error| MgError::Other(error.to_string()))?
+    {
+        return write_canonical_lock_v4(
+            &lock_path,
+            lock_packages,
+            &owner_core,
+            replace_ecosystems,
+            &direct_package_ids,
+        );
+    }
+    mgc_lockfile::parser::ensure_v3_readable_lock(&lock_path)
+        .map_err(|error| MgError::Other(error.to_string()))?;
+    let mut lockfile = match mgc_lockfile::load_lockfile(&lock_path) {
+        Ok(lockfile) => lockfile,
+        Err(mgc_lockfile::LockfileError::IoError(error))
+            if error.kind() == std::io::ErrorKind::NotFound =>
+        {
+            mgc_lockfile::Lockfile::new()
+        }
+        Err(error) => {
+            return Err(MgError::Other(format!(
+                "cannot read existing mgc.lock safely: {error}"
+            )));
+        }
+    };
+    let original_packages = lockfile.packages.clone();
+    let original_version = lockfile.version.clone();
+    let original_roots = lockfile.root_dependencies_by_owner.clone();
+
+    // One ecosystem can be used by multiple cores in a polyglot project
+    // (for example Dart by App and Python by AI after a future schema map).
+    // Replace only entries owned by this project core; never erase a sibling
+    // core's pins merely because the ecosystem tag overlaps.
+    // (Chỉ thay entry của core hiện tại; không xóa pin của core khác do trùng ecosystem.)
+    for ecosystem in replace_ecosystems {
+        let competing_owner_exists = lockfile.packages.iter().any(|package| {
+            package.ecosystem == *ecosystem
+                && package
+                    .owner_core
+                    .as_deref()
+                    .is_some_and(|owner| owner != owner_core)
+        });
+        if !competing_owner_exists {
+            for package in &mut lockfile.packages {
+                if package.ecosystem == *ecosystem && package.owner_core.is_none() {
+                    package.owner_core = Some(owner_core.clone());
+                }
+            }
+        }
+    }
+    let mut owned_packages = lock_packages;
+    for package in &mut owned_packages {
+        package.owner_core = Some(owner_core.clone());
+    }
+    lockfile.packages.retain(|package| {
+        !replace_ecosystems.contains(&package.ecosystem)
+            || package.owner_core.as_deref() != Some(owner_core.as_str())
+    });
+    lockfile.packages.extend(owned_packages);
+    for ecosystem in replace_ecosystems {
+        mgc_lockfile::update_owner_root_pins(
+            &mut lockfile,
+            &owner_core,
+            *ecosystem,
+            direct_package_ids.clone(),
+        );
+    }
+    if lock_path.is_file()
+        && lockfile.packages == original_packages
+        && lockfile.root_dependencies_by_owner == original_roots
+        && original_version == mgc_lockfile::LOCKFILE_SCHEMA_VERSION
+    {
+        return Ok(());
+    }
+    mgc_lockfile::ensure_lockfile_mutation_allowed(&lock_path)
+        .map_err(|error| MgError::Other(error.to_string()))?;
+    lockfile.metadata.generated_at = chrono::Utc::now().to_rfc3339();
+    lockfile.metadata.generator = format!("mgc/{}", env!("CARGO_PKG_VERSION"));
+    let toml = mgc_lockfile::writer::serialize_lockfile(&lockfile)
+        .map_err(|e| MgError::Other(format!("lockfile serialization failed: {e}")))?;
+    atomic_write_canonical_lock(&lock_path, toml.as_bytes())
+}
+
+fn direct_package_ids(graph: &ResolvedGraph) -> Vec<String> {
+    graph
+        .packages
+        .iter()
+        .filter(|package| package.direct)
+        .map(|package| package.id.to_string())
+        .collect()
+}
+
+/// v4 lane write: convert this lane's resolved rows losslessly, merge with
+/// the v4 base on disk (sibling lanes preserved), finalize digest +
+/// round-trip proof, and atomically replace the lock.
+/// (Ghi v4 của lane: convert row đã resolve lossless, gộp với base v4 trên
+/// đĩa (giữ lane khác), hoàn thiện digest + chứng minh round-trip và thay
+/// atomic lock.)
+fn write_canonical_lock_v4(
+    lock_path: &std::path::Path,
+    lock_packages: Vec<mgc_lockfile::Package>,
+    owner_core: &str,
+    replace_ecosystems: &[mgc_lockfile::EcosystemTag],
+    direct_package_ids: &[String],
+) -> MgResult<()> {
+    use mgc_lockfile::migrate::{lane_rows_to_v4, read_v4_merge_base, verify_v4_merge_base};
+    use mgc_lockfile::v4_graph::{merge_v4_lane_packages, v4_docs_match_material};
+    use mgc_lockfile::writer::finalize_v4_document;
+    let generator = format!("mgc/{}", env!("CARGO_PKG_VERSION"));
+    let mut lane_rows = lock_packages;
+    for package in &mut lane_rows {
+        package.owner_core = Some(owner_core.to_string());
+    }
+    let lane_rows: Vec<mgc_lockfile::Package> = lane_rows
+        .into_iter()
+        .filter(|package| replace_ecosystems.contains(&package.ecosystem))
+        .collect();
+    let (lane_packages, lane_sources) =
+        lane_rows_to_v4(lane_rows, &generator).map_err(|error| {
+            MgError::Other(format!("v4 lane write refused (lossy lane rows): {error}"))
+        })?;
+    let (base, had_legacy_rows) =
+        read_v4_merge_base(lock_path).map_err(|error| MgError::Other(error.to_string()))?;
+    // Sibling rows are preserved verbatim: the base must verify first, or a
+    // tampered lock would flow into the new document unchecked.
+    // (Row khác được giữ nguyên văn: base phải xác minh trước, nếu không lock
+    // bị sửa sẽ chảy vào lock mới mà không ai kiểm.)
+    if let Some(base_doc) = &base {
+        verify_v4_merge_base(base_doc).map_err(|error| MgError::Other(error.to_string()))?;
+    }
+    let mut lane_roots: Vec<String> = direct_package_ids.to_vec();
+    lane_roots.sort();
+    lane_roots.dedup();
+    let base_material = base.clone();
+    let (mut doc, dropped) = merge_v4_lane_packages(
+        base,
+        lane_packages,
+        lane_sources,
+        lane_roots,
+        owner_core,
+        &generator,
+    );
+    if had_legacy_rows || dropped {
+        // A non-v4 base cannot contribute lossless rows: report, never silent.
+        // (Base không v4 không đóng góp lossless được: báo rõ, không lặng.)
+        eprintln!(
+            "WARNING: non-v4 mgc.lock rows were replaced by the v4 lane write (sibling pins need `mgc migrate lock --to v4` or re-install under v4 schema)"
+        );
+    }
+    // Byte-identical replay: a merge that changes no material row skips the
+    // rewrite (parity with the v3 unchanged short-circuit).
+    // (Replay giữ nguyên byte: merge không đổi row material nào thì bỏ qua
+    // ghi lại (parity với short-circuit v3).)
+    if let Some(base_doc) = &base_material
+        && v4_docs_match_material(base_doc, &doc)
+        && !dropped
+    {
+        return Ok(());
+    }
+    // Signed v4 on disk is never rewritten without explicit re-signing.
+    // (v4 đã ký trên đĩa không bao giờ bị ghi đè nếu không ký lại tường minh.)
+    if let Some(base_doc) = &base_material {
+        mgc_lockfile::atomic::ensure_v4_unsigned_for_rewrite(base_doc)
+            .map_err(|error| MgError::Other(error.to_string()))?;
+    }
+    doc.metadata.generated_at = chrono::Utc::now().to_rfc3339();
+    let text = finalize_v4_document(&mut doc).map_err(|error| MgError::Other(error.to_string()))?;
+    mgc_lockfile::atomic::atomic_write_v4_bytes(lock_path, text.as_bytes())
+        .map_err(|error| MgError::Other(error.to_string()))?;
+    Ok(())
+}
+
+/// Resolve the app install lane's core identity from the project marker/config.
+/// Missing identity is only tolerated for legacy direct adapter callers and
+/// defaults to `app`; malformed or unknown identity fails closed.
+/// (Đọc core từ marker/config; chỉ caller adapter legacy thiếu metadata mới mặc định app.)
+fn app_lock_owner_core(project_root: &Path) -> MgResult<String> {
+    let marker = mgc_config::project::ProjectConfig::read_core_marker(project_root)
+        .map_err(|error| MgError::Other(format!("cannot determine lock owner core: {error}")))?;
+    let owner = match marker {
+        Some(core) => core,
+        None => match mgc_config::project::ProjectConfig::load(project_root)
+            .map_err(|error| MgError::Other(format!("cannot read project core owner: {error}")))?
+        {
+            Some(config) => canonical_core_name(&config.ecosystem),
+            None => "app".to_string(),
+        },
+    };
+    if !mgc_config::project::ProjectConfig::KNOWN_CORES.contains(&owner.as_str()) {
+        return Err(MgError::Other(format!(
+            "refusing to write app lock entries for unknown core owner '{owner}'"
+        )));
+    }
+    Ok(owner)
+}
+
+fn canonical_core_name(value: &str) -> String {
+    let core = value.trim().to_ascii_lowercase();
+    if core == "cloud" {
+        "clo".to_string()
+    } else {
+        core
+    }
+}
+
+/// Publish mgc.lock using a unique same-directory temp and an atomic
+/// platform-aware replace, so a crash cannot leave a truncated lock.
+/// Ghi mgc.lock bằng temp duy nhất cùng thư mục và thay thế atomic.
+fn atomic_write_canonical_lock(path: &Path, bytes: &[u8]) -> MgResult<()> {
+    mgc_lockfile::ensure_lockfile_mutation_allowed(path)
+        .map_err(|error| MgError::Other(error.to_string()))?;
+    atomic_write_project_file(path, bytes, "mgc.lock")
+}
+
+fn atomic_write_project_file(path: &Path, bytes: &[u8], label: &str) -> MgResult<()> {
+    use std::io::Write;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    static NONCE: AtomicU64 = AtomicU64::new(0);
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let filename = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| MgError::Other(format!("{label} path has no valid filename")))?;
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| MgError::Other(format!("system clock is invalid: {e}")))?
+        .as_nanos();
+    let nonce = NONCE.fetch_add(1, Ordering::Relaxed);
+    let temp = parent.join(format!(
+        ".{filename}.{}.{}.{nonce}.tmp",
+        std::process::id(),
+        timestamp
+    ));
+
+    let result = (|| {
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(libc::O_NOFOLLOW);
+        }
+        let mut file = options
+            .open(&temp)
+            .map_err(|e| MgError::Other(format!("cannot create {label} staging file: {e}")))?;
+        file.write_all(bytes)
+            .map_err(|e| MgError::Other(format!("cannot write {label} staging file: {e}")))?;
+        file.sync_all()
+            .map_err(|e| MgError::Other(format!("cannot sync {label} staging file: {e}")))?;
+        mgc_lockfile::atomic::atomic_replace_file(&temp, path)
+            .map_err(|e| MgError::Other(format!("cannot atomically replace {label}: {e}")))?;
+        #[cfg(unix)]
+        std::fs::File::open(parent)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|e| MgError::Other(format!("cannot sync {label} parent directory: {e}")))?;
+        Ok(())
+    })();
+    if let Err(write_error) = result {
+        match std::fs::remove_file(&temp) {
+            Ok(()) => Err(write_error),
+            Err(cleanup_error) if cleanup_error.kind() == std::io::ErrorKind::NotFound => {
+                Err(write_error)
+            }
+            Err(cleanup_error) => Err(MgError::Other(format!(
+                "{write_error}; additionally failed to remove staging file '{}': {cleanup_error}",
+                temp.display()
+            ))),
+        }
+    } else {
+        result
+    }
+}
+
+#[cfg(test)]
+#[path = "test/mod.rs"]
+mod tests;

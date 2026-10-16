@@ -2,16 +2,17 @@
 name = "mgc-http"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "HTTP helpers for MagiCore"
-
 [dependencies]
+mgc-platform = { workspace = true }
 reqwest = { workspace = true }
 url = { workspace = true }
 http = { workspace = true }
-mime = "0.3"
+mime = "0.3.17"
 tokio = { workspace = true }
 tracing = { workspace = true }
 async-trait = { workspace = true }
@@ -21,18 +22,18 @@ base64 = { workspace = true }
 sha2 = { workspace = true }
 time = { workspace = true }
 regex = { workspace = true }
-rustls = { version = "0.23", features = ["std", "tls12"] }
-rustls-pki-types = { version = "1.9", features = ["std"] }  # Replaced rustls-pemfile (unmaintained RUSTSEC-2025-0134)
-webpki-roots = "0.25"
+rustls = { version = "0.23.46", features = ["std", "tls12"] }
+rustls-pki-types = { version = "1.15.1", features = ["std"] }  # Replaced rustls-pemfile (unmaintained RUSTSEC-2025-0134)
+webpki-roots = "1.0.9"
 serde_json = { workspace = true }
 hex = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
-rustls-native-certs = "0.8"  # Updated to 0.8.x which dropped rustls-pemfile dependency
+rustls-native-certs = "0.8.5"
 
 [dev-dependencies]
 tempfile = { workspace = true }
-tokio-test = "0.4"
+tokio-test = "0.4.6"
 
 [[test]]
 name = "test_security"

@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Generate monorepo backend + fullstack templates."""
 import os
+from pathlib import Path
 
-BASE = "/Users/doanmihh/Documents/Workspace/MagiCore/templates/web"
+# Resolve templates from this checkout rather than one user's workspace.
+# (Tìm template theo checkout, không phụ thuộc workspace của một người.)
+BASE = str(Path(__file__).resolve().parents[1] / "templates" / "web")
 
 def ensure_dir(path):
     os.makedirs(path, exist_ok=True)
@@ -106,7 +109,12 @@ ALLO_SOURCES = {
 """,
         "tsconfig.json": """{ "extends": "./.nuxt/tsconfig.json" }
 """,
-        "nuxt.config.ts": """export default defineNuxtConfig({ devtools: { enabled: true } });
+        "nuxt.config.ts": """export default defineNuxtConfig({
+  devtools: { enabled: true },
+  // Exclude MGC-owned caches and logs while retaining generated build assets.
+  // Không watch cache/log nội bộ MGC; build assets vẫn có thể được theo dõi.
+  ignore: ['**/.magicore/cache', '**/.magicore/cache/**', '**/.magicore/store', '**/.magicore/store/**', '**/.magicore/exec.log'],
+});
 """,
         "app.vue": """<template><main><h1>Welcome</h1></main></template>
 """,

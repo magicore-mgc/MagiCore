@@ -5,11 +5,11 @@ use std::sync::{Mutex, OnceLock};
 
 use base64::Engine;
 use chrono;
-use mgc_lockfile::{Lockfile, LockfileMetadata, Package};
+use mgc_lockfile::{LOCKFILE_SCHEMA_VERSION, Lockfile, LockfileMetadata, Package};
 use mgc_store::{Layout, PackageCache};
 use mgc_types::{
-    adapter::ResolvedGraph, adapter::ResolvedPackage, Manifest, MgError, MgResult, PackageId,
-    PackageName, Version,
+    Manifest, MgError, MgResult, PackageId, Version, adapter::ResolvedGraph,
+    adapter::ResolvedPackage,
 };
 use sha2::{Digest, Sha512};
 
@@ -33,14 +33,25 @@ pub fn compute_tarball_integrity(bytes: &[u8]) -> String {
 }
 
 pub fn web_lockfile_matches_graph(lockfile: &Lockfile, graph: &ResolvedGraph) -> bool {
-    // Check version is "2" (new schema)
-    if lockfile.version != "2" || lockfile.packages.len() != graph.packages.len() {
+    // Accept both "2" (legacy on-disk locks must still short-circuit the
+    // rewrite) and the current schema version ("3") that this writer emits.
+    // Chấp nhận cả "2" (lock cũ trên đĩa vẫn được phép bỏ qua ghi lại) lẫn
+    // version schema hiện tại ("3") mà writer này ghi ra.
+    if lockfile.version != "2" && lockfile.version != LOCKFILE_SCHEMA_VERSION {
+        return false;
+    }
+
+    let web_packages: Vec<_> = lockfile
+        .packages
+        .iter()
+        .filter(|package| is_web_lock_package(lockfile, package))
+        .collect();
+    if web_packages.len() != graph.packages.len() {
         return false;
     }
 
     // Check packages match
-    lockfile
-        .packages
+    web_packages
         .iter()
         .zip(graph.packages.iter())
         .all(|(locked, resolved)| {
@@ -54,6 +65,14 @@ pub fn web_lockfile_matches_graph(lockfile: &Lockfile, graph: &ResolvedGraph) ->
                     .all(|(left, right)| left == &right.to_string())
                 && (resolved.integrity.is_empty() || locked.integrity == resolved.integrity)
         })
+}
+
+/// v2 locks predate ecosystem tags and were web-only; in v3, ownership is
+/// explicit and only `web` entries belong to this adapter.
+/// (Lock v2 chưa có ecosystem nên mặc định là web; v3 chỉ nhận tag web.)
+fn is_web_lock_package(lockfile: &Lockfile, package: &Package) -> bool {
+    package.ecosystem == mgc_lockfile::EcosystemTag::Web
+        || (lockfile.version == "2" && package.ecosystem == mgc_lockfile::EcosystemTag::Other)
 }
 
 pub fn installed_package_version(path: &Path) -> Option<Version> {
@@ -75,13 +94,49 @@ pub fn read_web_lockfile(project_root: &Path) -> Option<Lockfile> {
 }
 
 pub fn read_web_lockfile_checked(project_root: &Path) -> MgResult<Option<Lockfile>> {
-    let lock_path = project_root.join("mgc.lock");
-    if !lock_path.exists() {
-        return Ok(None);
+    let mut lockfile = read_web_lockfile_document(project_root)?;
+    if let Some(lockfile) = &mut lockfile {
+        scope_web_lock_packages(lockfile, &web_lock_owner_core(project_root)?);
     }
+    Ok(lockfile)
+}
 
-    let content = std::fs::read_to_string(&lock_path)
-        .map_err(|e| MgError::Other(format!("Failed to read lockfile: {}", e)))?;
+/// True when mgc.lock on disk declares schema version 4 (any content).
+/// Used to skip legacy readers that would misparse it, after the v4 path
+/// already ran: a v4 miss means re-resolve, never a legacy parse error.
+/// (Đúng khi mgc.lock trên đĩa khai báo schema 4 (mọi nội dung). Dùng để bỏ
+/// qua reader legacy có thể parse sai, sau khi đường v4 đã chạy: v4 miss
+/// nghĩa là resolve mới, không bao giờ là lỗi parse legacy.)
+pub(crate) fn lock_on_disk_is_v4(project_root: &Path) -> bool {
+    let lock_path = project_root.join("mgc.lock");
+    let Ok(bytes) = mgc_lockfile::read_lockfile_bytes(&lock_path) else {
+        return false;
+    };
+    let Ok(content) = String::from_utf8(bytes) else {
+        return false;
+    };
+    mgc_lockfile::detect_lockfile_version(&content).is_ok_and(|version| version == 4)
+}
+
+/// Read the complete shared lock document. Only lock publication uses this;
+/// operation readers must use `read_web_lockfile_checked` so sibling-core
+/// Web entries cannot satisfy this project's dependency graph.
+/// (Chỉ writer đọc toàn bộ lock; reader nghiệp vụ phải dùng bản đã scope.)
+fn read_web_lockfile_document(project_root: &Path) -> MgResult<Option<Lockfile>> {
+    let lock_path = project_root.join("mgc.lock");
+    let bytes = match mgc_lockfile::read_lockfile_bytes(&lock_path) {
+        Ok(bytes) => bytes,
+        Err(mgc_lockfile::LockfileError::IoError(error))
+            if error.kind() == std::io::ErrorKind::NotFound =>
+        {
+            return Ok(None);
+        }
+        Err(error) => {
+            return Err(MgError::Other(format!("Failed to read lockfile: {error}")));
+        }
+    };
+    let content = String::from_utf8(bytes)
+        .map_err(|error| MgError::Other(format!("Lockfile is not valid UTF-8: {error}")))?;
 
     // Dual-format reader: TOML chuẩn v2 (import/migrate ghi) trước, JSON-flavoured
     // (add/install path cũ) fallback — cùng 1 kiểu Lockfile nên chuyển giá vô hình.
@@ -94,6 +149,16 @@ pub fn read_web_lockfile_checked(project_root: &Path) -> MgResult<Option<Lockfil
 
     maybe_warn_missing_lockfile_checksum(project_root, &lockfile);
     Ok(Some(lockfile))
+}
+
+fn scope_web_lock_packages(lockfile: &mut Lockfile, owner_core: &str) {
+    let legacy_web_lock = lockfile.version == "2" && owner_core == "web";
+    lockfile.packages.retain(|package| {
+        package.ecosystem != mgc_lockfile::EcosystemTag::Web
+            || package.owner_core.as_deref() == Some(owner_core)
+            || (owner_core == "web" && package.owner_core.is_none())
+            || (legacy_web_lock && package.ecosystem == mgc_lockfile::EcosystemTag::Other)
+    });
 }
 
 pub fn maybe_warn_missing_lockfile_checksum(project_root: &Path, lockfile: &Lockfile) {
@@ -121,26 +186,255 @@ pub fn maybe_warn_missing_lockfile_checksum(project_root: &Path, lockfile: &Lock
     }
 }
 
-pub fn write_web_lockfile_with_state(
-    project_root: &Path,
-    graph: &ResolvedGraph,
-    _state: &str,
-) -> MgResult<()> {
-    let lock_path = project_root.join("mgc.lock");
-    let mut lockfile = read_web_lockfile_checked(project_root)?.unwrap_or_else(|| Lockfile {
-        version: "2".to_string(),
+/// Fresh v3 lock skeleton (extracted from the write path so the
+/// diverged-v4 branch shares the exact missing-lock default).
+/// (Khung lock v3 mới — nhánh v4 lệch dùng chung default với lock thiếu.)
+fn fresh_v3_lockfile() -> Lockfile {
+    Lockfile {
+        // Deliberate v3 bump (Phase 1): newly written web locks target the
+        // canonical v3 schema.
+        // Nâng lên v3 có chủ đích (Phase 1): lock web mới ghi nhắm schema
+        // canonical v3.
+        version: LOCKFILE_SCHEMA_VERSION.to_string(),
         metadata: LockfileMetadata {
             generated_at: chrono::Utc::now().to_rfc3339(),
             generator: format!("mgc/{}", env!("CARGO_PKG_VERSION")),
             lockfile_hash: String::new(),
             signer: None,
+            dependency_ownership: Vec::new(),
         },
+        // Web lockfiles carry no imported root graph — the manifest is
+        // the root source of truth; root_dependencies stays empty (P0
+        // finding #6: the field exists for IMPORTERS, web keeps []).
+        // Lockfile web không mang root graph import — manifest là nguồn
+        // chân lý của root; root_dependencies giữ rỗng (P0 finding #6:
+        // trường này dành cho IMPORTER, web để []).
+        root_dependencies: Vec::new(),
+        root_dependencies_by_owner: Default::default(),
         packages: Vec::new(),
-    });
+        workspace: None,
+        optimizer_profile: None,
+    }
+}
 
-    if web_lockfile_matches_graph(&lockfile, graph) {
+/// Write-target schema for new locks: v4 only with explicit
+/// `mgc.toml [lock] schema = "4"`. Readers accept all schemas regardless.
+/// Shared rule lives in `mgc-config` so lanes cannot drift.
+/// (Schema đích ghi cho lock mới: chỉ v4 khi tường minh. Luật dùng chung
+/// nằm ở `mgc-config` để các lane không lệch.)
+pub(crate) fn web_lock_schema_is_v4(project_root: &Path) -> MgResult<bool> {
+    mgc_config::project::lock_schema_is_v4(project_root)
+        .map_err(|error| MgError::Other(error.to_string()))
+}
+
+/// v4 install write path: build the document straight from the resolved
+/// graph (no lossy v3 detour), fill digest + timestamp, prove round-trip,
+/// and atomically replace the lock. A matching v4 already on disk is kept
+/// byte-identical (replay, not rewrite).
+/// (Đường ghi v4 của install: dựng tài liệu thẳng từ graph đã resolve
+/// (không vòng v3 hao hụt), điền digest + timestamp, chứng minh round-trip
+/// và thay atomic. v4 khớp trên đĩa được giữ nguyên byte.)
+fn write_web_lockfile_v4(
+    project_root: &Path,
+    lock_path: &Path,
+    graph: &ResolvedGraph,
+    registry_url: &str,
+    owner_core: &str,
+) -> MgResult<()> {
+    // A matching v4 on disk stays untouched (replay parity with the v3
+    // short-circuit below). Anything else is rebuilt from the graph.
+    // (v4 khớp trên đĩa giữ nguyên (parity replay với short-circuit v3).)
+    if let Some(doc) = read_v4_document_if_present(project_root)?
+        && (doc.root_dependencies_by_owner.is_empty()
+            || doc.root_dependencies_by_owner.contains_key(owner_core))
+        && let Ok(replayed) = mgc_lockfile::v4_graph::graph_from_v4_lockfile(&doc, owner_core)
+        && resolved_graphs_match_material(&replayed, graph)
+    {
         return Ok(());
     }
+    // Unreplayable verified bases are merged from the fresh graph, with signature guards below.
+    // Base đã verify nhưng không replay được sẽ merge graph mới, vẫn qua cổng chữ ký bên dưới.
+    // Signed v4 on disk is never rewritten without explicit re-signing;
+    // unsigned v4 mutates through the schema-aware path (the legacy gate
+    // below would refuse every v4 document, signed or not).
+    // (v4 đã ký trên đĩa không bao giờ bị ghi đè nếu không ký lại tường
+    // minh; v4 không ký mutate qua đường schema-aware (cổng legacy dưới
+    // từ chối mọi v4, ký hay không).)
+    if let Some(doc) = read_v4_document_if_present(project_root)? {
+        mgc_lockfile::atomic::ensure_v4_unsigned_for_rewrite(&doc)
+            .map_err(|error| MgError::Other(error.to_string()))?;
+    }
+    // Lane-first merge (parity with app/lib): sibling v4 rows on disk are
+    // preserved; legacy rows cannot follow and are reported, never silent.
+    // (Merge lane trước (parity với app/lib): giữ row v4 khác trên đĩa;
+    // row legacy không theo được thì báo, không lặng.)
+    let generator = format!("mgc/{}", env!("CARGO_PKG_VERSION"));
+    let lane = mgc_lockfile::v4_graph::build_v4_from_resolved_graph(
+        graph,
+        registry_url,
+        mgc_lockfile::EcosystemTag::Web,
+        owner_core,
+        &generator,
+    )
+    .map_err(|error| MgError::Other(error.to_string()))?;
+    let (base, had_legacy_rows) = mgc_lockfile::migrate::read_v4_merge_base(lock_path)
+        .map_err(|error| MgError::Other(error.to_string()))?;
+    let base_material = base.clone();
+    let (mut doc, dropped) = mgc_lockfile::v4_graph::merge_v4_lane_packages(
+        base,
+        lane.packages,
+        lane.sources,
+        lane.root_dependencies,
+        owner_core,
+        &generator,
+    );
+    if had_legacy_rows || dropped {
+        eprintln!(
+            "WARNING: non-v4 mgc.lock rows were replaced by the v4 lane write (sibling pins need `mgc migrate lock --to v4` or re-install under v4 schema)"
+        );
+    }
+    // Signed v4 on disk is never rewritten without explicit re-signing.
+    // (v4 đã ký trên đĩa không bao giờ bị ghi đè nếu không ký lại tường minh.)
+    if let Some(base_doc) = &base_material {
+        mgc_lockfile::atomic::ensure_v4_unsigned_for_rewrite(base_doc)
+            .map_err(|error| MgError::Other(error.to_string()))?;
+    }
+    if let Some(base_doc) = &base_material
+        && mgc_lockfile::v4_graph::v4_docs_match_material(base_doc, &doc)
+        && !dropped
+    {
+        return Ok(());
+    }
+    doc.metadata.generated_at = chrono::Utc::now().to_rfc3339();
+    let text = mgc_lockfile::writer::finalize_v4_document(&mut doc)
+        .map_err(|error| MgError::Other(error.to_string()))?;
+    mgc_lockfile::atomic::atomic_write_v4_bytes(lock_path, text.as_bytes())
+        .map_err(|error| MgError::Other(error.to_string()))?;
+    Ok(())
+}
+
+/// v4 document on disk, if the lockfile parses as version 4 — `None`
+/// for missing/legacy/unreadable-version locks (legacy reader owns them).
+/// (Tài liệu v4 trên đĩa — `None` cho lock thiếu/legacy.)
+/// Verify v4 digest and signature math before an adapter consumes or
+/// preserves the document. Trust policy remains Warn, matching install.
+/// Xác minh digest và chữ ký v4 trước khi adapter dùng hoặc giữ tài liệu;
+/// chính sách tin cậy là Warn, đồng nhất với install.
+pub(crate) fn verify_v4_document_integrity(
+    doc: &mgc_lockfile::canonical::LockfileV4,
+) -> MgResult<mgc_lockfile::policy::V4VerifyReport> {
+    let report = mgc_lockfile::policy::verify_v4_math(doc)
+        .map_err(|error| MgError::Other(format!("Failed to verify v4 lockfile: {error}")))?;
+    mgc_lockfile::policy::enforce_policy(&report, mgc_lockfile::policy::LockPolicyMode::Warn, &[])
+        .map_err(|error| MgError::Other(format!("Failed to verify v4 lockfile: {error}")))?;
+    Ok(report)
+}
+
+pub(crate) fn read_v4_document_if_present(
+    project_root: &Path,
+) -> MgResult<Option<mgc_lockfile::canonical::LockfileV4>> {
+    let lock_path = project_root.join("mgc.lock");
+    let bytes = match mgc_lockfile::read_lockfile_bytes(&lock_path) {
+        Ok(bytes) => bytes,
+        Err(mgc_lockfile::LockfileError::IoError(error))
+            if error.kind() == std::io::ErrorKind::NotFound =>
+        {
+            return Ok(None);
+        }
+        Err(error) => {
+            return Err(MgError::Other(format!("Failed to read lockfile: {error}")));
+        }
+    };
+    let content = String::from_utf8(bytes)
+        .map_err(|error| MgError::Other(format!("Lockfile is not valid UTF-8: {error}")))?;
+    if !mgc_lockfile::detect_lockfile_version(&content).is_ok_and(|version| version == 4) {
+        return Ok(None);
+    }
+    let doc = mgc_lockfile::canonical::parse_v4_document(&content)
+        .map_err(|error| MgError::Other(format!("Failed to parse lockfile: {error}")))?;
+    verify_v4_document_integrity(&doc)?;
+    Ok(Some(doc))
+}
+
+/// Material-field equality between a replayed v4 graph and the installed
+/// graph (id/integrity/URL/deps/peer sets). Flags the writer drops
+/// (`direct`, `dev`) are excluded — v3 cannot persist them, so they can
+/// never prove divergence. Order-insensitive: adjacency is a set.
+/// (Bằng nhau trên trường material mà writer giữ; bỏ qua flag writer
+/// không lưu; không phụ thuộc thứ tự.)
+fn resolved_graphs_match_material(first: &ResolvedGraph, second: &ResolvedGraph) -> bool {
+    use std::collections::HashSet;
+    if first.packages.len() != second.packages.len() {
+        return false;
+    }
+    let key_of = |package: &ResolvedPackage| {
+        let mut deps: Vec<String> = package.deps.iter().map(|id| id.to_string()).collect();
+        deps.sort();
+        let mut peers: Vec<String> = package.peer_deps.iter().map(|id| id.to_string()).collect();
+        peers.sort();
+        (
+            package.id.to_string(),
+            package.integrity.clone(),
+            package.tarball_url.clone(),
+            deps,
+            peers,
+        )
+    };
+    let first_set: HashSet<_> = first.packages.iter().map(key_of).collect();
+    let second_set: HashSet<_> = second.packages.iter().map(key_of).collect();
+    first_set == second_set
+}
+
+pub fn write_web_lockfile_with_state(
+    project_root: &Path,
+    graph: &ResolvedGraph,
+    registry_url: &str,
+) -> MgResult<()> {
+    let lock_path = project_root.join("mgc.lock");
+    let owner_core = web_lock_owner_core(project_root)?;
+    // Schema write target (Spec: easy config): `mgc.toml [lock] schema`
+    // chooses `"4"`; anything else (including absent) keeps the v3 path
+    // byte-identical to before. Unknown values fail closed here, never
+    // silently fall back.
+    // (Đích schema ghi (Spec: cấu hình dễ): `mgc.toml [lock] schema` chọn
+    // `"4"`; còn lại giữ nguyên đường v3. Giá trị lạ fail-closed tại đây.)
+    if web_lock_schema_is_v4(project_root)? {
+        return write_web_lockfile_v4(project_root, &lock_path, graph, registry_url, &owner_core);
+    }
+    // v4 on disk: a replayed graph must round-trip byte-identically
+    // instead of being rewritten (rebuilding v4 from ResolvedGraph would
+    // drop variant/source identity — forbidden flattening). A diverged
+    // graph falls back to a fresh v3 write with a LOUD downgrade warning
+    // (same shape as the missing-lock default below, never silent).
+    // (Lock v4 trên đĩa: graph replay phải giữ nguyên byte; graph lệch
+    // thì ghi mới v3 kèm cảnh báo DOWNGRADE rõ ràng, không bao giờ lặng.)
+    let v4_on_disk = read_v4_document_if_present(project_root)?;
+    let had_v4_on_disk = v4_on_disk.is_some();
+    if let Some(doc) = &v4_on_disk {
+        let replayed = mgc_lockfile::v4_graph::graph_from_v4_lockfile(doc, &owner_core)
+            .map_err(|error| MgError::Other(error.to_string()))?;
+        if resolved_graphs_match_material(&replayed, graph) {
+            return Ok(());
+        }
+        eprintln!(
+            "WARNING: installed graph diverged from the v4 mgc.lock — rewriting as v3 (variant/source identity of the old v4 pins is not preserved; re-run `mgc migrate lock --to v4` for a lossless v4)"
+        );
+    }
+    // A diverged v4 must NOT go through the legacy reader (it cannot
+    // parse v4); it takes the same fresh-v3 default as a missing lock.
+    // (v4 lệch không qua reader legacy — đi default v3 mới như lock thiếu.)
+    let mut lockfile = match v4_on_disk {
+        Some(_) => fresh_v3_lockfile(),
+        None => read_web_lockfile_document(project_root)?.unwrap_or_else(fresh_v3_lockfile),
+    };
+
+    let mut scoped_lock = lockfile.clone();
+    scope_web_lock_packages(&mut scoped_lock, &owner_core);
+    if !had_v4_on_disk && lock_path.is_file() && web_lockfile_matches_graph(&scoped_lock, graph) {
+        return Ok(());
+    }
+    mgc_lockfile::ensure_lockfile_mutation_allowed(&lock_path)
+        .map_err(|error| MgError::Other(error.to_string()))?;
 
     let local_layout = Layout::new(project_cache_dir(project_root));
     let cache = PackageCache::new(local_layout.cache_dir())
@@ -152,7 +446,7 @@ pub fn write_web_lockfile_with_state(
     lockfile.metadata.generator = format!("mgc/{}", env!("CARGO_PKG_VERSION"));
 
     // Update packages
-    lockfile.packages = graph
+    let next_web_packages: Vec<Package> = graph
         .packages
         .iter()
         .map(|pkg| {
@@ -171,14 +465,45 @@ pub fn write_web_lockfile_with_state(
             };
 
             Package {
+                owner_core: Some(owner_core.clone()),
                 name: pkg.id.name_str().to_string(),
                 version: pkg.id.version().to_string(),
                 resolved: pkg.tarball_url.clone(),
                 integrity,
                 dependencies: pkg.deps.iter().map(ToString::to_string).collect(),
+                peers: (!pkg.peer_deps.is_empty())
+                    .then(|| pkg.peer_deps.iter().map(ToString::to_string).collect()),
+                ecosystem: mgc_lockfile::EcosystemTag::Web,
+                // Web is the one MGC-native engine — every entry records its
+                // registry source and CAS ref so the lock owns the graph.
+                // (Web là engine mgc-native duy nhất — mỗi entry ghi registry
+                // source và CAS ref để lock sở hữu graph.)
+                registry: Some(format!("npm://{registry_url}")),
+                ..Package::default()
             }
         })
         .collect();
+    let legacy_v2 = lockfile.version == "2";
+    lockfile.packages.retain(|package| {
+        !(package.ecosystem == mgc_lockfile::EcosystemTag::Web
+            && (package.owner_core.as_deref() == Some(owner_core.as_str())
+                || (owner_core == "web" && package.owner_core.is_none()))
+            || (legacy_v2 && package.ecosystem == mgc_lockfile::EcosystemTag::Other))
+    });
+    lockfile.packages.extend(next_web_packages);
+    let direct_roots: Vec<String> = graph
+        .packages
+        .iter()
+        .filter(|package| package.direct)
+        .map(|package| package.id.to_string())
+        .collect();
+    mgc_lockfile::update_owner_root_pins(
+        &mut lockfile,
+        &owner_core,
+        mgc_lockfile::EcosystemTag::Web,
+        direct_roots,
+    );
+    lockfile.version = LOCKFILE_SCHEMA_VERSION.to_string();
 
     // Write lockfile — CANONICAL TOML v2 (một format duy nhất cho mọi đường ghi;
     // reader vẫn đọc được JSON-flavoured cũ từ các bản trước)
@@ -186,10 +511,115 @@ pub fn write_web_lockfile_with_state(
     let toml_content = mgc_lockfile::writer::serialize_lockfile(&lockfile)
         .map_err(|e| MgError::Other(format!("TOML serialization failed: {}", e)))?;
 
-    std::fs::write(&lock_path, toml_content.as_bytes())
-        .map_err(|e| MgError::Other(format!("Failed to write lockfile: {}", e)))?;
+    atomic_write_web_lockfile(&lock_path, toml_content.as_bytes())?;
 
     Ok(())
+}
+
+/// Resolve the caller core from the project signature so embedded web
+/// engines (Cloud/CDK, App/React Native) do not relabel or prune another
+/// core's package entries. Missing metadata retains the historical Web
+/// default; malformed metadata fails closed.
+/// (Lấy core caller từ chữ ký project để engine web nhúng không ghi đè core khác.)
+pub(crate) fn web_lock_owner_core(project_root: &Path) -> MgResult<String> {
+    let marker = mgc_config::project::ProjectConfig::read_core_marker(project_root)
+        .map_err(|error| MgError::Other(format!("cannot determine lock owner core: {error}")))?;
+    let owner = match marker {
+        Some(core) => core,
+        None => match mgc_config::project::ProjectConfig::load(project_root)
+            .map_err(|error| MgError::Other(format!("cannot read project core owner: {error}")))?
+        {
+            Some(config) => canonical_core_name(&config.ecosystem),
+            None => "web".to_string(),
+        },
+    };
+    if !mgc_config::project::ProjectConfig::KNOWN_CORES.contains(&owner.as_str()) {
+        return Err(MgError::Other(format!(
+            "refusing to write lock entries for unknown core owner '{owner}'"
+        )));
+    }
+    Ok(owner)
+}
+
+fn canonical_core_name(value: &str) -> String {
+    let core = value.trim().to_ascii_lowercase();
+    if core == "cloud" {
+        "clo".to_string()
+    } else {
+        core
+    }
+}
+
+/// Atomically publish the unified lockfile. The same-directory staging
+/// file prevents crashes from leaving a truncated lock visible to other
+/// ecosystem adapters.
+/// (Ghi lockfile hợp nhất nguyên tử để crash không để lại file cụt.)
+fn atomic_write_web_lockfile(path: &Path, bytes: &[u8]) -> MgResult<()> {
+    mgc_lockfile::ensure_lockfile_mutation_allowed(path)
+        .map_err(|error| MgError::Other(error.to_string()))?;
+    use std::io::Write;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    static NONCE: AtomicU64 = AtomicU64::new(0);
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let filename = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| MgError::Other("mgc.lock path has no valid filename".to_string()))?;
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| MgError::Other(format!("system clock is invalid: {error}")))?
+        .as_nanos();
+    let nonce = NONCE.fetch_add(1, Ordering::Relaxed);
+    let temp = parent.join(format!(
+        ".{filename}.web.{}.{}.{nonce}.tmp",
+        std::process::id(),
+        timestamp
+    ));
+
+    let result = (|| {
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(libc::O_NOFOLLOW);
+        }
+        let mut file = options
+            .open(&temp)
+            .map_err(|error| MgError::Other(format!("cannot create lock staging file: {error}")))?;
+        file.write_all(bytes)
+            .map_err(|error| MgError::Other(format!("cannot write lock staging file: {error}")))?;
+        file.sync_all()
+            .map_err(|error| MgError::Other(format!("cannot sync lock staging file: {error}")))?;
+        mgc_lockfile::atomic::atomic_replace_file(&temp, path).map_err(|error| {
+            MgError::Other(format!("cannot atomically replace mgc.lock: {error}"))
+        })?;
+        #[cfg(unix)]
+        std::fs::File::open(parent)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|error| MgError::Other(format!("cannot sync lock directory: {error}")))?;
+        Ok(())
+    })();
+
+    if let Err(write_error) = result {
+        match std::fs::remove_file(&temp) {
+            Ok(()) => Err(write_error),
+            Err(cleanup_error) if cleanup_error.kind() == std::io::ErrorKind::NotFound => {
+                Err(write_error)
+            }
+            Err(cleanup_error) => Err(MgError::Other(format!(
+                "{write_error}; additionally failed to remove staging file '{}': {cleanup_error}",
+                temp.display()
+            ))),
+        }
+    } else {
+        result
+    }
 }
 
 pub fn lockfile_satisfies_manifest(lockfile: &Lockfile, manifest: &Manifest) -> bool {
@@ -197,7 +627,7 @@ pub fn lockfile_satisfies_manifest(lockfile: &Lockfile, manifest: &Manifest) -> 
         let Some(lp) = lockfile
             .packages
             .iter()
-            .find(|p| p.name == dep.name.as_str())
+            .find(|p| is_web_lock_package(lockfile, p) && p.name == dep.name.as_str())
         else {
             return false;
         };
@@ -216,36 +646,142 @@ pub fn lockfile_satisfies_manifest(lockfile: &Lockfile, manifest: &Manifest) -> 
 pub fn build_graph_from_lockfile(
     lockfile: &Lockfile,
     manifest: &Manifest,
+    owner_core: &str,
 ) -> MgResult<Option<ResolvedGraph>> {
-    let mut packages = Vec::new();
-    for dep in manifest.all_dependencies() {
-        let Some(lp) = lockfile
-            .packages
-            .iter()
-            .find(|lp| lp.name == dep.name.as_str())
-        else {
+    let mut packages_by_id = std::collections::HashMap::new();
+    let mut ids_by_name: std::collections::HashMap<String, Vec<PackageId>> =
+        std::collections::HashMap::new();
+    for package in lockfile
+        .packages
+        .iter()
+        .filter(|package| is_web_lock_package(lockfile, package))
+    {
+        let id = PackageId::parse(&format!("{}@{}", package.name, package.version))?;
+        if packages_by_id.insert(id.clone(), package).is_some() {
+            // An ambiguous exact identity cannot safely reconstruct edges.
+            // (Identity trùng khiến không thể phục hồi cạnh một cách an toàn.)
+            return Ok(None);
+        }
+        ids_by_name
+            .entry(id.name_str().to_string())
+            .or_default()
+            .push(id);
+    }
+
+    let mut pinned_roots = std::collections::HashSet::new();
+    if let Some(roots) = lockfile.root_dependencies_by_owner.get(owner_core) {
+        for root in roots {
+            let parsed = mgc_lockfile::parse_root_pin(root);
+            if parsed
+                .ecosystem
+                .is_some_and(|ecosystem| ecosystem != mgc_lockfile::EcosystemTag::Web)
+            {
+                continue;
+            }
+            let Ok(id) = PackageId::parse(parsed.package_id) else {
+                return Ok(None);
+            };
+            if packages_by_id.contains_key(&id) {
+                pinned_roots.insert(id);
+            }
+        }
+    }
+    if pinned_roots.is_empty() && lockfile.version == "2" {
+        for root in &lockfile.root_dependencies {
+            if let Ok(id) = PackageId::parse(root)
+                && packages_by_id.contains_key(&id)
+            {
+                pinned_roots.insert(id);
+            }
+        }
+    }
+
+    let mut root_ids = Vec::new();
+    for dependency in manifest.all_dependencies() {
+        let candidates: Vec<PackageId> = if pinned_roots.is_empty() {
+            ids_by_name
+                .get(dependency.name.as_str())
+                .into_iter()
+                .flatten()
+                .filter(|id| dependency.range.matches(id.version()))
+                .cloned()
+                .collect()
+        } else {
+            pinned_roots
+                .iter()
+                .filter(|id| {
+                    id.name_str() == dependency.name.as_str()
+                        && dependency.range.matches(id.version())
+                })
+                .cloned()
+                .collect()
+        };
+        if candidates.len() != 1 {
+            // Missing or ambiguous root pins fall back to a fresh resolution;
+            // never silently choose a different version.
+            // (Thiếu hoặc trùng root pin thì resolve mới; không tự chọn version khác.)
+            return Ok(None);
+        }
+        root_ids.push(candidates[0].clone());
+    }
+
+    let mut pending = std::collections::VecDeque::from(root_ids.clone());
+    let mut visited = std::collections::HashSet::new();
+    let mut graph_packages = Vec::new();
+    while let Some(id) = pending.pop_front() {
+        if !visited.insert(id.clone()) {
+            continue;
+        }
+        let Some(package) = packages_by_id.get(&id).copied() else {
             return Ok(None);
         };
-        let version = Version::parse(&lp.version).map_err(|e| MgError::Other(e.to_string()))?;
-        let deps: Vec<PackageId> = lp
-            .dependencies
-            .iter()
-            .filter_map(|d| {
-                let dep_pkg = lockfile.packages.iter().find(|lp| lp.name == *d)?;
-                let v = Version::parse(&dep_pkg.version).ok()?;
-                Some(PackageId::new(PackageName::new(d).ok()?, v))
-            })
-            .collect();
-
-        packages.push(ResolvedPackage {
-            id: PackageId::new(dep.name.clone(), version),
-            integrity: lp.integrity.clone(),
-            tarball_url: lp.resolved.clone(),
-            deps,
-            peer_deps: Vec::new(), // peer_deps removed from new schema
-            direct: manifest.find_dep(dep.name.as_str()).is_some(),
-            dev: manifest.dev_dependencies.iter().any(|d| d.name == dep.name),
+        let mut dependencies = Vec::with_capacity(package.dependencies.len());
+        for edge in &package.dependencies {
+            let Some(target) = locked_edge_target(edge, &packages_by_id, &ids_by_name) else {
+                return Ok(None);
+            };
+            pending.push_back(target.clone());
+            dependencies.push(target);
+        }
+        let mut peer_dependencies = Vec::new();
+        for edge in package.peers.as_deref().unwrap_or_default() {
+            let Some(target) = locked_edge_target(edge, &packages_by_id, &ids_by_name) else {
+                return Ok(None);
+            };
+            pending.push_back(target.clone());
+            peer_dependencies.push(target);
+        }
+        graph_packages.push(ResolvedPackage {
+            id: id.clone(),
+            integrity: package.integrity.clone(),
+            tarball_url: package.resolved.clone(),
+            deps: dependencies,
+            peer_deps: peer_dependencies,
+            direct: root_ids.contains(&id),
+            dev: root_ids.contains(&id)
+                && manifest
+                    .dev_dependencies
+                    .iter()
+                    .any(|dependency| dependency.name.as_str() == id.name_str()),
         });
     }
-    Ok(Some(ResolvedGraph { packages }))
+    Ok(Some(ResolvedGraph {
+        packages: graph_packages,
+    }))
+}
+
+/// Resolve a lock edge by exact package identity; old locks with name-only
+/// edges are accepted only when that name has one unambiguous version.
+/// (Phục hồi cạnh bằng identity chính xác; lock cũ chỉ có tên được nhận khi
+/// tên đó có đúng một version, tránh nối nhầm khi có nhiều version.)
+fn locked_edge_target(
+    edge: &str,
+    packages_by_id: &std::collections::HashMap<PackageId, &Package>,
+    ids_by_name: &std::collections::HashMap<String, Vec<PackageId>>,
+) -> Option<PackageId> {
+    if let Ok(id) = PackageId::parse(edge) {
+        return packages_by_id.contains_key(&id).then_some(id);
+    }
+    let candidates = ids_by_name.get(edge)?;
+    (candidates.len() == 1).then(|| candidates[0].clone())
 }

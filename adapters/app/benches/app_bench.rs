@@ -1,7 +1,8 @@
 #![allow(clippy::unwrap_used)]
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use mgc_app_adapter::{detect_language, AppLanguage};
+use criterion::{Criterion, criterion_group, criterion_main};
+use mgc_app_adapter::{AppLanguage, detect_language};
 use std::fs;
+use std::hint::black_box;
 use tempfile::tempdir;
 
 fn bench_app_language_detection(c: &mut Criterion) {

@@ -3,15 +3,65 @@
 use anyhow::Result;
 
 pub async fn run(framework: &str, project_name: &str) -> Result<()> {
-    let mut config = crate::wizard::game::GameWizard::run();
+    // Phase 4: Parse scaffold spec sớm với typo detection
+    use crate::scaffold::spec::{CoreKind, parse_scaffold_spec};
+    let parsed_framework = if framework.is_empty() {
+        None
+    } else {
+        Some(
+            parse_scaffold_spec(CoreKind::Game, framework).map_err(|error| {
+                crate::error::invalid_framework_spec("game", framework, &error.to_string())
+            })?,
+        )
+    };
+    let mut config = if let Some(spec) = &parsed_framework {
+        crate::wizard::engine::ScaffoldConfig {
+            core: "game".to_string(),
+            sub_type: String::new(),
+            frameworks: vec![spec.normalized_name.clone()],
+            project_name: project_name.to_string(),
+            features: Vec::new(),
+            template_dir: std::path::PathBuf::new(),
+        }
+    } else {
+        crate::wizard::game::GameWizard::run()
+    };
     config.project_name = project_name.to_string();
-    if !framework.is_empty() {
-        config.frameworks = vec![framework.to_string()];
-    }
     if let Some(fw) = config.frameworks.first() {
-        // Registry-first: fetch layer game/<fw> nếu chưa có (template.toml+sources);
-        // fetch fail → fallback generator procedural sẵn có.
-        crate::commands::template::ensure_layer(&format!("game/{fw}")).await;
+        // Phase 3: Handle typed result
+        let request = parsed_framework
+            .as_ref()
+            .map(|spec| spec.template_request())
+            .unwrap_or_else(|| fw.to_string());
+        let explicit_ref = parsed_framework.as_ref().is_some_and(|spec| {
+            !matches!(
+                &spec.requested_ref,
+                crate::scaffold::spec::ScaffoldRef::Default
+            )
+        });
+        match crate::commands::template::ensure_layer(&format!("game/{request}")).await {
+            Ok(status) if status.is_available() => {}
+            Ok(_) => {
+                mgc_ui::warning(&format!(
+                    "Optional game layer 'game/{}' not found, using fallback generator",
+                    fw
+                ));
+            }
+            Err(e) if explicit_ref || !e.is_availability_failure() => return Err(e.into()),
+            Err(e) => {
+                // Built-in generator fallback — but ONLY for frameworks
+                // this core's processor actually generates; anything else
+                // keeps the honest layer-required error (no mislabeled scaffold).
+                // (Fallback generator nội bộ — chỉ framework processor hỗ trợ.)
+                if crate::scaffold::processors::game::GameProcessor::supports(fw) {
+                    mgc_ui::warning(&format!(
+                        "Registry layer unavailable ({e}) — using built-in game generator",
+                    ));
+                } else {
+                    anyhow::bail!("Required game template layer missing: {}", e)
+                }
+            }
+        }
     }
     super::scaffold_and_save_metadata(&config)?;
     mgc_ui::success("Game project created. Run `mgc add-game <pkg>` or `mgc install-game` next.");

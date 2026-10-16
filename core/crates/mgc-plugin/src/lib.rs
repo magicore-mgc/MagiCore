@@ -11,10 +11,10 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use async_trait::async_trait;
+use mgc_types::Ecosystem;
 use mgc_types::adapter::{InstallOptions, InstallSummary, PackageAdapter, ResolvedGraph};
 use mgc_types::error::MgResult;
 use mgc_types::manifest::Manifest;
-use mgc_types::Ecosystem;
 
 pub mod backend;
 pub mod fetcher;
@@ -38,6 +38,9 @@ pub struct Plugin {
     pub template: Arc<dyn TemplateGenerator>,
     pub cache: Arc<dyn CacheBackend>,
     adapter: Option<Arc<dyn PackageAdapter>>,
+    // Built-in adapter configuration belongs to one project context.
+    // Adapter native đã gắn context không được tái dùng cho project khác.
+    context_scoped: bool,
 }
 
 impl Plugin {
@@ -58,7 +61,22 @@ impl Plugin {
                 ecosystem: adapter.ecosystem(),
             }),
             adapter: Some(adapter),
+            context_scoped: false,
         }
+    }
+
+    /// Register a native bridge without making its adapter a global context cache.
+    /// Giữ bridge trong registry; mỗi project phải tạo lại adapter theo cấu hình riêng.
+    pub fn from_project_adapter(adapter: Arc<dyn PackageAdapter>) -> Self {
+        let mut plugin = Self::from_adapter(adapter);
+        plugin.context_scoped = true;
+        plugin
+    }
+
+    /// Whether factory callers must bind a fresh adapter to their own project.
+    /// Không tái dùng back-reference chứa registry/ngôn ngữ của context khác.
+    pub fn is_context_scoped(&self) -> bool {
+        self.context_scoped
     }
 
     /// Registry lookup miss → thử adapter backend map từ PackageAdapter (không đăng ký lại).
@@ -162,29 +180,43 @@ impl PluginRegistry {
 
     pub fn register(&self, plugin: Plugin) -> Result<(), String> {
         let key = plugin.ecosystem.as_str();
-        let mut map = self.by_ecosystem.lock().unwrap();
+        // Poisoned lock means a previous holder panicked mid-insert —
+        // fail the registration instead of panicking every later caller.
+        let mut map = self
+            .by_ecosystem
+            .lock()
+            .map_err(|_| "plugin registry lock poisoned".to_string())?;
         if map.contains_key(key) {
-            return Err(format!("plugin already registered for ecosystem '{}'", key));
+            return Err(format!("plugin already registered for ecosystem '{key}'"));
         }
         map.insert(key, plugin);
         Ok(())
     }
 
     pub fn get(&self, ecosystem: Ecosystem) -> Option<Plugin> {
+        // Poisoned → None: callers (factory) fall through to the built-in
+        // adapters, which is the safe default. A poisoned global registry
+        // is reported by the panicking holder's own crash evidence.
         self.by_ecosystem
             .lock()
-            .unwrap()
+            .ok()?
             .get(ecosystem.as_str())
             .cloned()
     }
 
     pub fn registered(&self) -> Vec<Ecosystem> {
+        // Keys come only from `Ecosystem::as_str`, so `from_str` cannot
+        // fail on them — but a foreign key must never panic listing.
+        // (Key chỉ từ `as_str`; key lạ thì bỏ qua, không panic.)
         self.by_ecosystem
             .lock()
-            .unwrap()
-            .keys()
-            .map(|key| Ecosystem::from_str(key).unwrap())
-            .collect()
+            .ok()
+            .map(|map| {
+                map.keys()
+                    .filter_map(|key| Ecosystem::from_str(key))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 }
 

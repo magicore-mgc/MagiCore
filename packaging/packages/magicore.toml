@@ -5,4 +5,4 @@ mode = "multi-core"
 primary_core = "all"
 no_default_features = true
 features = ["all"]
-install_hint = "brew install magicore  |  curl -fsSL https://raw.githubusercontent.com/mingd-153/MagiCore/main/scripts/install-from-gh.sh | bash -s -- --package magicore"
+install_hint = "Install a published GitHub release: bash scripts/install-from-gh.sh --package magicore --version <published-version> --dir <bin-directory>"

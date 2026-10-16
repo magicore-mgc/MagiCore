@@ -1,0 +1,816 @@
+//! `build/web_engine.rs` — Web build engine (P1 split from build.rs,
+//! Tech Lead 2026-09-11). One responsibility: turning the resolved web
+//! build lane into a real build — framework script mapping through the
+//! compat gate, node_modules/.bin shims, and the native-engine compiled
+//! executable lane. Per-core dispatch stays in build.rs.
+//! `build/web_engine.rs` — Engine build web (tách từ build.rs theo P1).
+//! Một trách nhiệm: biến lane build web đã resolve thành build thật —
+//! ánh xạ script framework qua cổng compat, shim node_modules/.bin, và
+//! lane executable compile native-engine. Dispatch per-core giữ ở
+//! build.rs.
+
+use anyhow::{Context, Result, bail};
+use serde_json::Value;
+use std::ffi::OsString;
+use std::path::{Component, Path, PathBuf};
+use std::time::Instant;
+
+use crate::bundler::{Bundler, BundlerConfig};
+use mgc_config::project::ProjectExecutionConfig;
+use mgc_ui::info;
+
+pub(super) async fn build_web(
+    root: &Path,
+    execution: &ProjectExecutionConfig,
+    target: Option<String>,
+    compat: &crate::commands::compat::CompatMode,
+    compat_runner: Option<&str>,
+) -> Result<()> {
+    let start_time = Instant::now();
+
+    let resolved_target = resolve_web_build_target(execution, target.as_deref());
+    info(&format!("Resolved build lane: {}", resolved_target.label()));
+
+    match resolved_target {
+        WebBuildTarget::CompatibilityShell => {
+            info("Engine Web: Running compatibility-shell bundler...");
+        }
+        WebBuildTarget::NativeReady => {
+            info(
+                "Engine Web: Running compatibility-shell build with native-ready bridge metadata...",
+            );
+            info(
+                "Native-ready lane keeps framework compatibility while preparing Rust/native execution surfaces.",
+            );
+        }
+        WebBuildTarget::CompiledExecutable => {
+            info("Engine Web: Compiled executable lane selected.");
+            info(
+                "MagiCore will build web assets first, then compile the Rust-native engine executable.",
+            );
+        }
+    }
+
+    if run_framework_build_if_supported(root, compat, compat_runner)? {
+        let elapsed = start_time.elapsed();
+        mgc_ui::blank_line();
+        mgc_ui::success(&format!("Framework build completed in {:?}", elapsed));
+
+        if matches!(
+            resolved_target,
+            WebBuildTarget::NativeReady | WebBuildTarget::CompiledExecutable
+        ) {
+            if let Some(engine_crate) = find_native_engine_crate(root) {
+                let binary = build_native_engine(
+                    root, // project root for optimizer config
+                    &engine_crate,
+                    matches!(resolved_target, WebBuildTarget::CompiledExecutable),
+                )?;
+                mgc_ui::success(&format!("Native engine binary ready: {}", binary.display()));
+            } else {
+                info(
+                    "No native engine crate detected for this project; compatibility artifact is still ready.",
+                );
+            }
+        }
+
+        return Ok(());
+    }
+
+    let entry = find_entry_point(root)?;
+    info(&format!("Entry point: {}", entry.display()));
+
+    let config = BundlerConfig {
+        entry: entry.clone(),
+        output_dir: root.join("dist"),
+        minify: true,
+        sourcemap: true,
+        target: "es2020".to_string(),
+        public_path: "/".to_string(),
+    };
+
+    let bundler = Bundler::new(config.clone());
+    let result = bundler.bundle().await?;
+
+    let elapsed = start_time.elapsed();
+    mgc_ui::blank_line();
+    mgc_ui::success(&format!(
+        "Bundle created: {:.2} KB in {:?}",
+        result.size as f64 / 1024.0,
+        elapsed
+    ));
+
+    info("Processing assets...");
+    crate::bundler::process_assets(&config).await?;
+
+    if matches!(
+        resolved_target,
+        WebBuildTarget::NativeReady | WebBuildTarget::CompiledExecutable
+    ) {
+        if let Some(engine_crate) = find_native_engine_crate(root) {
+            let binary = build_native_engine(
+                root, // project root for optimizer config
+                &engine_crate,
+                matches!(resolved_target, WebBuildTarget::CompiledExecutable),
+            )?;
+            mgc_ui::success(&format!("Native engine binary ready: {}", binary.display()));
+        } else {
+            info(
+                "No native engine crate detected for this project; compatibility artifact is still ready.",
+            );
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WebBuildTarget {
+    CompatibilityShell,
+    NativeReady,
+    CompiledExecutable,
+}
+
+impl WebBuildTarget {
+    fn label(self) -> &'static str {
+        match self {
+            Self::CompatibilityShell => "compatibility-shell",
+            Self::NativeReady => "native-ready",
+            Self::CompiledExecutable => "compiled-executable",
+        }
+    }
+}
+
+pub(crate) fn resolve_web_build_target(
+    execution: &ProjectExecutionConfig,
+    explicit_target: Option<&str>,
+) -> WebBuildTarget {
+    if let Some(target) = explicit_target.map(|value| value.trim().to_ascii_lowercase()) {
+        return match target.as_str() {
+            "native" | "compiled" | "compiled-executable" | "executable" => {
+                WebBuildTarget::CompiledExecutable
+            }
+            "native-ready" => WebBuildTarget::NativeReady,
+            _ => WebBuildTarget::CompatibilityShell,
+        };
+    }
+
+    match execution.lane.trim().to_ascii_lowercase().as_str() {
+        "compiled-executable" => WebBuildTarget::CompiledExecutable,
+        "native-ready" => WebBuildTarget::NativeReady,
+        _ => WebBuildTarget::CompatibilityShell,
+    }
+}
+
+fn run_framework_build_if_supported(
+    root: &Path,
+    compat: &crate::commands::compat::CompatMode,
+    compat_runner: Option<&str>,
+) -> Result<bool> {
+    let package_json = root.join("package.json");
+    if !package_json.exists() {
+        return Ok(false);
+    }
+
+    let content = std::fs::read_to_string(&package_json)?;
+    let package: Value = serde_json::from_str(&content)?;
+    let Some(script) = package
+        .get("scripts")
+        .and_then(|scripts| scripts.get("build"))
+        .and_then(|value| value.as_str())
+    else {
+        return Ok(false);
+    };
+
+    reject_external_package_manager_script(script, &package_json, compat_runner)?;
+    let Some(launches) = map_framework_build_chain(root, script, compat, compat_runner)? else {
+        return Ok(false);
+    };
+    for (program, args, envs) in launches {
+        info(&format!(
+            "Framework-aware build: {} {}",
+            program.display(),
+            args.iter()
+                .map(|arg| arg.to_string_lossy().to_string())
+                .collect::<Vec<_>>()
+                .join(" ")
+        ));
+
+        let local_bin = root.join("node_modules").join(".bin");
+        let mut env = vec![(
+            "PATH".to_string(),
+            prepend_path(&local_bin)?.to_string_lossy().to_string(),
+        )];
+        for (key, value) in envs {
+            env.push((
+                key.to_string_lossy().to_string(),
+                value.to_string_lossy().to_string(),
+            ));
+        }
+
+        let args = args
+            .iter()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+        // Pass the explicitly selected runtime after the compatibility gate.
+        // Truyền runtime đã chọn tường minh sau khi qua cổng compatibility.
+        let compat_runtime = match compat {
+            crate::commands::compat::CompatMode::Native => None,
+            crate::commands::compat::CompatMode::Explicit(runtime) => Some(runtime.clone()),
+        };
+        // Exact-manifest lane context for this operation (exact-match only).
+        // (Ngữ cảnh lane cho manifest exception của operation này (chỉ khớp chính xác).)
+        let (policy_manifest, policy_context, policy_profile) =
+            crate::commands::policy::load_policy_for_run(root, "build");
+        let opts = mgc_exec::prelude::ExecOptions {
+            cwd: Some(root.to_path_buf()),
+            log_path: Some(root.join(".magicore").join("exec.log")),
+            env,
+            clean_env: true,
+            compat_runtime,
+            compat_runner: compat_runner.map(str::to_string),
+            policy_manifest,
+            policy_context,
+            policy_profile,
+            execution_scope: Some(mgc_exec::allowlist::ExecutionScope::BuildRunner),
+            ..Default::default()
+        };
+        mgc_exec::prelude::run_inherited(&program.to_string_lossy(), &args, &opts)
+            .with_context(|| format!("failed to start build '{}'", program.display()))?;
+    }
+
+    Ok(true)
+}
+
+type BuildLaunch = (PathBuf, Vec<OsString>, Vec<(OsString, OsString)>);
+
+pub(crate) fn map_framework_build_chain(
+    root: &Path,
+    script: &str,
+    compat: &crate::commands::compat::CompatMode,
+    compat_runner: Option<&str>,
+) -> Result<Option<Vec<BuildLaunch>>> {
+    // Map every AND-linked command before executing any of them; never pass
+    // shell operators to a framework or invoke a shell to interpret them.
+    // Map toàn bộ chuỗi AND trước khi chạy; không đưa toán tử vào framework/shell.
+    let mut launches = Vec::new();
+    let invocations = mgc_exec::allowlist::parse_script_chain(script)?;
+    let compound = invocations.len() > 1;
+    for invocation in invocations {
+        // Spec rev4 §7/§9: the declared `--compat-runner` manager skips the
+        // rival-runtime gate; its launches run compat-audit downstream.
+        // (Spec rev4 §7/§9: manager `--compat-runner` đã khai báo bỏ qua
+        // cổng rival-runtime; launch của nó chịu compat-audit phía sau.)
+        if !mgc_exec::prelude::compat_runner_allows(&invocation.program, compat_runner) {
+            crate::commands::compat::gate_runtime_spawn(compat, &invocation.program)?;
+        }
+        let mut words = vec![invocation.program.as_str()];
+        words.extend(invocation.args.iter().map(String::as_str));
+        let Some((program, args, mut envs)) =
+            map_framework_build_script(root, &words, compat_runner)?
+        else {
+            if compound {
+                anyhow::bail!(
+                    "unsupported command in framework build chain: {}",
+                    invocation.program
+                );
+            }
+            return Ok(None);
+        };
+        envs.extend(
+            invocation
+                .env
+                .into_iter()
+                .map(|(key, value)| (key.into(), value.into())),
+        );
+        launches.push((program, args, envs));
+    }
+    Ok(Some(launches))
+}
+
+pub(crate) fn map_framework_build_script(
+    root: &Path,
+    tokens: &[&str],
+    compat_runner: Option<&str>,
+) -> Result<Option<BuildLaunch>> {
+    // Compat lane (P0-1): bun/deno build scripts spawn the rival runtime
+    // DIRECTLY — only reachable when the compat gate above already passed
+    // (native mode fails earlier at gate_runtime_spawn). No bun.pm usage.
+    // Lane compat: script build bun/deno spawn runtime đối thủ TRỰC TIẾP —
+    // chỉ đến được đây khi cổng compat phía trên đã pass.
+    if let ["bun", rest @ ..] = tokens {
+        return Ok(Some((
+            PathBuf::from("bun"),
+            rest.iter().map(OsString::from).collect(),
+            vec![],
+        )));
+    }
+    if let ["deno", rest @ ..] = tokens {
+        return Ok(Some((
+            PathBuf::from("deno"),
+            rest.iter().map(OsString::from).collect(),
+            vec![],
+        )));
+    }
+    // Spec rev4 §7/§9: a declared compat runner maps to a direct launch of
+    // itself (same shape as the bun/deno arms above); the exec layer applies
+    // compat-audit instead of native-deny. Undeclared PM tokens fall through
+    // to Ok(None) → unsupported-chain handling by the caller.
+    // (Spec rev4 §7/§9: runner compat đã khai báo map thành launch trực tiếp
+    // chính nó (giống arm bun/deno trên); exec layer áp compat-audit thay vì
+    // native-deny. Token PM không khai báo rơi xuống Ok(None).)
+    if let [first, rest @ ..] = tokens
+        && mgc_exec::prelude::compat_runner_allows(first, compat_runner)
+    {
+        return Ok(Some((
+            PathBuf::from(first),
+            rest.iter().map(OsString::from).collect(),
+            vec![],
+        )));
+    }
+    let launch = match tokens {
+        ["node", "--check", source] => {
+            let Some(source_path) = resolve_project_source_file(root, source) else {
+                return Ok(None);
+            };
+            (
+                node_runner(),
+                vec![OsString::from("--check"), source_path.into_os_string()],
+                vec![],
+            )
+        }
+        [tool @ ("tsc" | "vue-tsc"), rest @ ..] => {
+            (node_runner(), node_bin_args(root, tool, rest)?, vec![])
+        }
+        ["vite", "build"] => (
+            node_runner(),
+            node_bin_args(root, "vite", &["build"])?,
+            vec![],
+        ),
+        ["vite", "build", rest @ ..] => (
+            node_runner(),
+            node_bin_args(root, "vite", &["build"])?
+                .into_iter()
+                .chain(rest.iter().map(OsString::from))
+                .collect(),
+            vec![],
+        ),
+        ["next", "build"] => (
+            node_runner(),
+            node_bin_args(root, "next", &["build"])?,
+            vec![],
+        ),
+        ["next", "build", rest @ ..] => (
+            node_runner(),
+            node_bin_args(root, "next", &["build"])?
+                .into_iter()
+                .chain(rest.iter().map(OsString::from))
+                .collect(),
+            vec![],
+        ),
+        ["nuxt", "build"] => (
+            node_runner(),
+            node_bin_args(root, "nuxt", &["build"])?,
+            vec![
+                (
+                    OsString::from("NUXT_TELEMETRY_DISABLED"),
+                    OsString::from("1"),
+                ),
+                (
+                    OsString::from("NUXT_TELEMETRY_CONSENT"),
+                    OsString::from("0"),
+                ),
+            ],
+        ),
+        ["astro", "build"] => (
+            node_runner(),
+            node_bin_args(root, "astro", &["build"])?,
+            vec![],
+        ),
+        ["remix", "vite:build"] => (
+            node_runner(),
+            node_bin_args_plain(root, "remix", &["vite:build"])?,
+            vec![],
+        ),
+        ["remix", "build"] => (
+            node_runner(),
+            node_bin_args_plain(root, "remix", &["build"])?,
+            vec![],
+        ),
+        ["ng", "build"] => (
+            node_runner(),
+            node_bin_args_plain(root, "ng", &["build"])?,
+            vec![
+                (OsString::from("NG_CLI_ANALYTICS"), OsString::from("false")),
+                (OsString::from("CI"), OsString::from("1")),
+            ],
+        ),
+        _ => return Ok(None),
+    };
+
+    Ok(Some(launch))
+}
+
+fn resolve_project_source_file(root: &Path, source: &str) -> Option<PathBuf> {
+    // Build syntax checks may inspect only regular files contained in this project.
+    // Kiểm tra cú pháp chỉ được đọc file thường nằm bên trong project hiện tại.
+    let relative = Path::new(source);
+    if relative.as_os_str().is_empty()
+        || relative.is_absolute()
+        || relative
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_) | Component::CurDir))
+    {
+        return None;
+    }
+
+    let canonical_root = root.canonicalize().ok()?;
+    let canonical_source = canonical_root.join(relative).canonicalize().ok()?;
+    (canonical_source.is_file() && canonical_source.starts_with(&canonical_root))
+        .then_some(canonical_source)
+}
+
+pub(crate) fn reject_external_package_manager_script(
+    script: &str,
+    manifest_path: &Path,
+    compat_runner: Option<&str>,
+) -> Result<()> {
+    // Spec rev4 §7/§9: the declared `--compat-runner` manager is exempt from
+    // the script-token check; its subtree runs compat-audit downstream.
+    // (Spec rev4 §7/§9: manager `--compat-runner` đã khai báo được miễn
+    // check token script; subtree của nó chịu compat-audit phía sau.)
+    if let Some(pm) = mgc_exec::allowlist::find_forbidden_tool_in_script(script)
+        && !mgc_exec::prelude::compat_runner_allows(pm, compat_runner)
+    {
+        // P0-1 (2026-09-10): "bun run x"/"deno run|task x" là runtime usage —
+        // gate_runtime_spawn phía caller đã xử lý bun/deno (native fail,
+        // compat mở đúng runtime). Chỉ từ chối khi token là PM THẬT
+        // (bun install/npm/pnpm/...).
+        let tokens: Vec<&str> = script.split_whitespace().collect();
+        let is_runtime_usage = matches!(
+            tokens.as_slice(),
+            ["bun", "run", ..] | ["deno", "run", ..] | ["deno", "task", ..]
+        );
+        if !is_runtime_usage {
+            return Err(crate::error::web_forbidden_pm(script, manifest_path, pm));
+        }
+    }
+    Ok(())
+}
+
+fn node_runner() -> PathBuf {
+    PathBuf::from("node")
+}
+
+pub(crate) fn node_bin_args(
+    project_root: &Path,
+    bin_name: &str,
+    args: &[&str],
+) -> Result<Vec<OsString>> {
+    let bin_dir = project_root.join("node_modules").join(".bin");
+    let bin = bin_dir.join(bin_name);
+    // Windows: npm-style .bin uses .cmd shims (create_bin_link writes them) —
+    // the extensionless entry may not exist. Accept the shim variants.
+    // Windows: .bin dùng shim .cmd — file gốc có thể không tồn tại, chấp nhận biến thể.
+    let entry_path = if bin.exists() {
+        bin.clone()
+    } else {
+        let shim = bin_dir.join(format!("{bin_name}.cmd"));
+        if shim.exists() {
+            shim
+        } else {
+            bail!(
+                "Missing local executable '{}'. Run 'mgc install-web' in '{}'.",
+                bin_name,
+                project_root.display()
+            );
+        }
+    };
+
+    // Resolve symlink target when the entry is a real symlink (unix). On
+    // Windows the npm .cmd shim wraps the real JS entry — parse the quoted
+    // script path from the shim body (npm shims end with: "<js path>" %*)
+    // so node receives the JS file, not the shim itself.
+    // Unix: đọc đích symlink. Windows: shim .cmd bọc JS thật — trích đường
+    // dẫn JS trong nháy kép từ thân shim để node chạy JS, không chạy shim.
+    let entry = {
+        #[cfg(unix)]
+        {
+            std::fs::read_link(&entry_path)
+                .map(|target| {
+                    if target.is_absolute() {
+                        target
+                    } else {
+                        entry_path.parent().unwrap_or(project_root).join(target)
+                    }
+                })
+                .unwrap_or_else(|_| entry_path.clone())
+        }
+        #[cfg(not(unix))]
+        {
+            let raw = std::fs::read_to_string(&entry_path).unwrap_or_default();
+            let mut resolved: Option<PathBuf> = None;
+            for line in raw.lines().rev() {
+                // mgc/npm shim target line:  "...path..." %* — the quoted path
+                // may be extensionless (typescript's bin/tsc), so accept any
+                // quoted existing file on the last command line.
+                // Dòng đích shim: "...đường dẫn..." %* — đích có thể không
+                // đuôi file (bin/tsc), nhận mọi đường dẫn tồn tại trong nháy.
+                if let Some(q1) = line.find('"')
+                    && let Some(q2) = line[q1 + 1..].find('"')
+                {
+                    let candidate = PathBuf::from(&line[q1 + 1..q1 + 1 + q2]);
+                    if candidate.is_file() {
+                        resolved = Some(candidate);
+                        break;
+                    }
+                }
+            }
+            match resolved {
+                Some(path) if path.is_absolute() => path,
+                Some(path) => entry_path.parent().unwrap_or(project_root).join(path),
+                None => entry_path.clone(),
+            }
+        }
+    };
+
+    let mut result = vec![
+        OsString::from("--preserve-symlinks"),
+        OsString::from("--preserve-symlinks-main"),
+        entry.into_os_string(),
+    ];
+    result.extend(args.iter().map(OsString::from));
+    Ok(result)
+}
+
+/// Plain variant WITHOUT --preserve-symlinks*: beasties (Angular
+/// critical-CSS inliner) loads its DOM implementation twice under
+/// symlink-preserving resolution on store-backed trees, so the document
+/// and its elements come from different module copies
+/// (`document.documentElement?.setAttribute is not a function`). Realpath
+/// resolution unifies the copies — the same invocation npm/npx performs.
+/// Only frameworks proven broken under the flags may use this.
+/// (Biến thể không preserve-symlinks — chỉ framework đã chứng minh vỡ.)
+pub(crate) fn node_bin_args_plain(
+    project_root: &Path,
+    bin_name: &str,
+    args: &[&str],
+) -> Result<Vec<OsString>> {
+    let mut full = node_bin_args(project_root, bin_name, args)?;
+    full.retain(|arg| arg != "--preserve-symlinks" && arg != "--preserve-symlinks-main");
+    Ok(full)
+}
+
+pub(crate) fn prepend_path(local_bin: &Path) -> Result<OsString> {
+    let current = std::env::var_os("PATH").unwrap_or_default();
+    let mut parts = vec![local_bin.as_os_str().to_os_string()];
+    parts.extend(std::env::split_paths(&current).map(|path| path.into_os_string()));
+    std::env::join_paths(parts).map_err(|err| crate::error::join_paths(&err))
+}
+
+pub(crate) fn find_entry_point(root: &Path) -> Result<PathBuf> {
+    let candidates = [
+        "src/index.ts",
+        "src/index.tsx",
+        "src/main.ts",
+        "src/main.tsx",
+        "src/app.ts",
+        "src/app.tsx",
+        "index.ts",
+        "index.tsx",
+        "main.ts",
+        "main.tsx",
+        "src/index.js",
+        "src/index.jsx",
+        "src/main.js",
+        "src/main.jsx",
+        "src/app.js",
+        "src/app.jsx",
+        "index.js",
+        "index.jsx",
+        "main.js",
+        "main.jsx",
+    ];
+
+    for candidate in candidates {
+        let path = root.join(candidate);
+        if path.exists() {
+            return Ok(path);
+        }
+    }
+
+    let pkg_path = root.join("package.json");
+    if pkg_path.exists() {
+        let content = std::fs::read_to_string(&pkg_path)?;
+        let pkg: serde_json::Value = serde_json::from_str(&content)?;
+
+        if let Some(main) = pkg.get("main").and_then(|v| v.as_str()) {
+            let path = root.join(main);
+            if path.exists() {
+                return Ok(path);
+            }
+        }
+        if let Some(module) = pkg.get("module").and_then(|v| v.as_str()) {
+            let path = root.join(module);
+            if path.exists() {
+                return Ok(path);
+            }
+        }
+    }
+
+    bail!(
+        "Could not find entry point. Checked: src/index.ts, src/index.tsx, src/main.ts, src/main.tsx, and package.json main/module fields"
+    )
+}
+
+pub(crate) fn find_native_engine_crate(root: &Path) -> Option<PathBuf> {
+    let candidates = [
+        root.join("crates").join("engine"),
+        root.join("apps")
+            .join("frontend")
+            .join("crates")
+            .join("engine"),
+    ];
+
+    candidates
+        .into_iter()
+        .find(|path| path.join("Cargo.toml").exists())
+}
+
+fn build_native_engine(project_root: &Path, crate_dir: &Path, release: bool) -> Result<PathBuf> {
+    let start = Instant::now();
+    info(&format!(
+        "Building native engine crate at {}...",
+        crate_dir.display()
+    ));
+
+    // Load optimizer env from project root (not crate subdirectory)
+    // Optimizer config is generated at project root: .mgc-optimizer/rust_cargo_profile.toml
+    let runtime = crate::commands::optimizer::runtime_detect::DetectedRuntime::RustLib;
+    let optimizer_envs =
+        crate::commands::optimizer::env_loader::load_optimizer_env(project_root, &runtime)?;
+    let env_opt = if optimizer_envs.is_empty() {
+        None
+    } else {
+        Some(optimizer_envs.into_iter().collect())
+    };
+
+    let mut args = vec!["build", "--locked", "--offline"];
+    if release {
+        args.push("--release");
+    }
+
+    run_allowlisted_tool_with_env(crate_dir, "cargo", &args, env_opt)?;
+
+    let binary_name = if cfg!(windows) {
+        "mgc-web-engine.exe"
+    } else {
+        "mgc-web-engine"
+    };
+    let profile_dir = if release { "release" } else { "debug" };
+    let binary = crate_dir.join("target").join(profile_dir).join(binary_name);
+    if !binary.exists() {
+        bail!(
+            "native engine build completed but binary '{}' was not found",
+            binary.display()
+        );
+    }
+
+    info(&format!(
+        "Native engine build completed in {:?}",
+        start.elapsed()
+    ));
+    Ok(binary)
+}
+
+pub(crate) fn run_allowlisted_tool(root: &Path, program: &str, args: &[&str]) -> Result<()> {
+    run_allowlisted_tool_with_env(root, program, args, None)
+}
+
+pub(crate) fn run_allowlisted_tool_with_env(
+    root: &Path,
+    program: &str,
+    args: &[&str],
+    env: Option<Vec<(String, String)>>,
+) -> Result<()> {
+    let opts = mgc_exec::prelude::ExecOptions {
+        cwd: Some(root.to_path_buf()),
+        log_path: Some(root.join(".magicore").join("exec.log")),
+        env: env.unwrap_or_default(),
+        clean_env: false, // Preserve env when custom env provided
+        execution_scope: Some(mgc_exec::allowlist::ExecutionScope::BuildRunner),
+        ..Default::default()
+    };
+    let args = args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
+    mgc_exec::prelude::run(program, &args, &opts)?;
+    Ok(())
+}
+
+/// Detect lib runtime for optimizer env loading
+/// Phát hiện runtime thư viện để load env optimizer
+pub(crate) fn detect_lib_runtime(
+    root: &Path,
+) -> crate::commands::optimizer::runtime_detect::DetectedRuntime {
+    use crate::commands::optimizer::runtime_detect::DetectedRuntime;
+
+    if root.join("Cargo.toml").exists() {
+        DetectedRuntime::RustLib
+    } else if root.join("pyproject.toml").exists() {
+        DetectedRuntime::PythonLib
+    } else if root.join("go.mod").exists() {
+        DetectedRuntime::GoLib
+    } else if root.join("package.json").exists() {
+        DetectedRuntime::TypeScriptLib
+    } else {
+        DetectedRuntime::Unknown
+    }
+}
+
+/// Detect app runtime for optimizer env loading
+/// Phát hiện runtime ứng dụng để load env optimizer
+pub(crate) fn detect_app_runtime(
+    root: &Path,
+) -> crate::commands::optimizer::runtime_detect::DetectedRuntime {
+    use crate::commands::optimizer::runtime_detect::DetectedRuntime;
+    crate::commands::optimizer::runtime_detect::detect_runtimes(root, "app")
+        .first()
+        .cloned()
+        .unwrap_or(DetectedRuntime::Unknown)
+}
+
+/// Build Rust with the complete optimizer environment — build Rust với toàn bộ env optimizer.
+pub(crate) fn build_rust_with_env(
+    root: &Path,
+    optimizer_envs: std::collections::HashMap<String, String>,
+) -> Result<()> {
+    let start = Instant::now();
+    info("Detected Rust project — running cargo build...");
+
+    if let Some(rustflags) = optimizer_envs.get("RUSTFLAGS") {
+        mgc_ui::info(&format!("Applying RUSTFLAGS: {rustflags}"));
+    }
+
+    let opts = mgc_exec::prelude::ExecOptions {
+        cwd: Some(root.to_path_buf()),
+        log_path: Some(root.join(".magicore").join("exec.log")),
+        env: optimizer_envs.into_iter().collect(),
+        clean_env: false, // Preserve existing env
+        execution_scope: Some(mgc_exec::allowlist::ExecutionScope::BuildRunner),
+        ..Default::default()
+    };
+    mgc_exec::prelude::run(
+        "cargo",
+        &[
+            "build".to_string(),
+            "--locked".to_string(),
+            "--offline".to_string(),
+        ],
+        &opts,
+    )?;
+
+    let elapsed = start.elapsed();
+    mgc_ui::success(&format!("Rust build completed in {:?}", elapsed));
+    Ok(())
+}
+
+/// Build a library Rust project using only Cargo sources materialized by MGC.
+/// Build Rust library bằng Cargo nhưng chỉ đọc source MGC đã materialize.
+pub(crate) fn build_rust_with_managed_source(
+    root: &Path,
+    optimizer_envs: std::collections::HashMap<String, String>,
+    source_root: &Path,
+) -> Result<()> {
+    let start = Instant::now();
+    info("Detected Rust library — building from the MagiCore-managed offline source...");
+    if let Some(rustflags) = optimizer_envs.get("RUSTFLAGS") {
+        mgc_ui::info(&format!("Applying RUSTFLAGS: {rustflags}"));
+    }
+    let source_path = source_root.to_str().ok_or_else(|| {
+        anyhow::anyhow!("MagiCore Cargo source path must be valid UTF-8 on this platform")
+    })?;
+    let directory_value = toml::Value::String(source_path.to_string()).to_string();
+    let source_config = format!("source.mgc-managed.directory={directory_value}");
+    let args = [
+        "--config".to_string(),
+        "source.crates-io.replace-with=\"mgc-managed\"".to_string(),
+        "--config".to_string(),
+        source_config,
+        "build".to_string(),
+        "--locked".to_string(),
+        "--offline".to_string(),
+    ];
+    let opts = mgc_exec::prelude::ExecOptions {
+        cwd: Some(root.to_path_buf()),
+        log_path: Some(root.join(".magicore").join("exec.log")),
+        env: optimizer_envs.into_iter().collect(),
+        clean_env: false,
+        execution_scope: Some(mgc_exec::allowlist::ExecutionScope::BuildRunner),
+        ..Default::default()
+    };
+    mgc_exec::prelude::run("cargo", &args, &opts)?;
+    mgc_ui::success(&format!(
+        "Rust library build completed in {:?}",
+        start.elapsed()
+    ));
+    Ok(())
+}

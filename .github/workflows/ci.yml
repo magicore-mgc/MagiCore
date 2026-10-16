@@ -1,35 +1,573 @@
 name: CI
 
 on:
+  workflow_call:
   push:
-    branches: [main, development]
+    branches: [main, development, "feature/**", "fix/**"]
   pull_request:
     branches: [main, development]
+
+# Replace superseded validation runs on the same ref. — Hủy lượt kiểm cũ khi ref có lượt mới.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  coverage-manifest-contract:
+    name: Coverage Manifest Contract
+    runs-on: ubuntu-latest
+    steps:
+      # Installer integrity contract reads a pinned historical file with git show.
+      # Hợp đồng integrity cần đọc file ở commit lịch sử bằng git show.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Validate CI, release, and action-pin contracts
+        run: bash scripts/test_ci_workflow_contract.sh
+      - name: Validate Phase 0 coverage schema, fixture, and anti-laundering rules
+        run: |
+          python3 -m json.tool ci/evidence/coverage-manifest.schema.json >/dev/null
+          python3 scripts/test_coverage_manifest.py
+          python3 scripts/validate_coverage_manifest.py
+      - name: Keep Docker benchmark lifecycle attached to the MGC binary
+        run: python3 tests/test_benchmark_container_contract.py
+
   check:
     name: Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
         with:
+          toolchain: "1.99.0"
           components: rustfmt, clippy
+      - name: Setup Python (Unix process-guard regression tests require python3)
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.15.0"
+      - name: Setup Go (esbuild-rs build script needs go on PATH)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.2"
+          cache: false
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2 (latest)
       - name: cargo fmt
         run: cargo fmt --all --check
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: mgc-exec allowlist tests
-        run: cargo test -p mgc-exec --test test_run 2>&1
+        # These tests inspect the OS process table while launching synthetic tools; serialize their fixtures.
+        # Test này đọc process table khi spawn tool giả lập; chạy tuần tự để không gán chéo fixture.
+        run: cargo test -p mgc-exec --test test_run -- --test-threads=1 2>&1
         timeout-minutes: 2
+
+  minimum-rust-version:
+    name: Minimum supported Rust (1.94)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install minimum Rust toolchain
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
+        with:
+          toolchain: 1.94.0
+      - name: Setup Go (esbuild-rs build script needs go on PATH)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.2"
+          cache: false
+      - name: Check every workspace target at the declared MSRV
+        run: cargo check --workspace --all-targets --locked
+
+  docker-cli-smoke:
+    name: Build and smoke-test CLI container (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Flutter SDK for MGC Pub resolution
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: "3.47.7"
+          channel: stable
+          cache: false
+      - name: Build the CLI image from the locked workspace
+        run: docker build --pull --tag magicore-cli-smoke .
+      - name: Extract the tested MGC binary for SDK-aware host lock generation
+        run: |
+          set -euo pipefail
+          docker create --name magicore-cli-extract magicore-cli-smoke
+          docker cp magicore-cli-extract:/usr/local/bin/mgc "$RUNNER_TEMP/mgc"
+          docker rm magicore-cli-extract
+          chmod 0755 "$RUNNER_TEMP/mgc"
+          "$RUNNER_TEMP/mgc" --version
+      - name: Verify the released entrypoint starts
+        run: |
+          test "$(docker image inspect --format '{{.Config.User}}' magicore-cli-smoke)" = "65532:65532"
+          docker run --rm magicore-cli-smoke --version
+          docker run --rm magicore-cli-smoke --help
+      - name: Build a project image with MagiCore lifecycle
+        run: |
+          set -euo pipefail
+          chmod 0777 tests/docker/web-node
+          docker run --rm \
+            --volume "${PWD}/tests/docker/web-node:/workspace" \
+            --workdir /workspace \
+            magicore-cli-smoke \
+            install-web
+          test -s tests/docker/web-node/mgc.lock
+          docker build \
+            --build-arg MGC_IMAGE=magicore-cli-smoke \
+            --file tests/docker/web-node/Dockerfile \
+            --tag magicore-web-node-docker-e2e \
+            tests/docker/web-node
+      - name: Run the app and test its live endpoint through MagiCore
+        run: |
+          set -euo pipefail
+          docker volume create magicore-web-node-e2e-data >/dev/null
+          docker run --detach --name magicore-web-node-docker-e2e \
+            --publish 4315:4315 \
+            --volume magicore-web-node-e2e-data:/mgc-data \
+            magicore-web-node-docker-e2e
+          trap 'docker rm --force magicore-web-node-docker-e2e >/dev/null 2>&1 || true; docker volume rm magicore-web-node-e2e-data >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 30); do
+            if docker exec magicore-web-node-docker-e2e mgc install-web --frozen && \
+              docker exec --env MGC_CONTAINER_SMOKE=1 magicore-web-node-docker-e2e mgc test; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs magicore-web-node-docker-e2e
+          exit 1
+      - name: Scaffold and build a real web container through the MGC CLI
+        run: |
+          set -euo pipefail
+          project_root="${RUNNER_TEMP}/mgc-generated-web-container"
+          mkdir -p "${project_root}"
+          chmod 0777 "${project_root}"
+          docker run --rm \
+            --volume "${project_root}:/workspace" \
+            --workdir /workspace \
+            magicore-cli-smoke \
+            create-web react-vite container-web --k8s
+          project="${project_root}/container-web"
+          docker run --rm \
+            --volume "${project}:/workspace" \
+            --workdir /workspace \
+            magicore-cli-smoke \
+            install-web
+          test -s "${project}/mgc.lock"
+          # The CLI image writes project metadata as UID 65532:65532. The
+          # runner's Docker client must be able to read this build context.
+          # (CLI image ghi metadata dưới UID 65532:65532; Docker client runner cần đọc được build context.)
+          sudo chown -R "$(id -u):$(id -g)" "${project}"
+          test "$(cat "${project}/.mgc.core")" = "web"
+          test -r "${project}/mgc.toml"
+          grep -F 'RUN mgc install-web --frozen' "${project}/Dockerfile"
+          grep -F 'RUN mgc test' "${project}/Dockerfile"
+          grep -F 'ENTRYPOINT ["/usr/local/bin/mgc-container-entrypoint"]' "${project}/Dockerfile"
+          grep -F 'CMD ["dev", "--host", "0.0.0.0"' "${project}/Dockerfile"
+          grep -F 'mgc install-web --frozen' "${project}/mgc-container-entrypoint"
+          docker compose --file "${project}/docker-compose.yml" config --quiet
+          docker build \
+            --build-arg MGC_IMAGE=magicore-cli-smoke \
+            --file "${project}/Dockerfile" \
+            --tag magicore-container-web:local \
+            "${project}"
+      - name: Run and reach the CLI-scaffolded container
+        run: |
+          set -euo pipefail
+          docker volume create magicore-generated-web-e2e-data >/dev/null
+          docker run --detach --name magicore-generated-web-e2e \
+            --publish 127.0.0.1:4315:4315 \
+            --volume magicore-generated-web-e2e-data:/mgc-data \
+            magicore-container-web:local
+          trap 'docker rm --force magicore-generated-web-e2e >/dev/null 2>&1 || true; docker volume rm magicore-generated-web-e2e-data >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:4315/ | grep -F '<title>container-web</title>'; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs magicore-generated-web-e2e
+          exit 1
+      - name: Scaffold an Express service through MGC and build its container
+        run: |
+          set -euo pipefail
+          project_root="${RUNNER_TEMP}/mgc-generated-express-container"
+          mkdir -p "${project_root}"
+          chmod 0777 "${project_root}"
+          docker run --rm \
+            --volume "${project_root}:/workspace" \
+            --workdir /workspace \
+            magicore-cli-smoke \
+            create-web express container-express --docker
+          project="${project_root}/container-express"
+          docker run --rm \
+            --volume "${project}:/workspace" \
+            --workdir /workspace \
+            magicore-cli-smoke \
+            install-web
+          test -s "${project}/mgc.lock"
+          sudo chown -R "$(id -u):$(id -g)" "${project}"
+          test "$(cat "${project}/.mgc.core")" = "web"
+          grep -F "app.listen(port, '0.0.0.0'" "${project}/src/server.ts"
+          grep -F 'RUN mgc install-web --frozen' "${project}/Dockerfile"
+          grep -F 'RUN mgc test' "${project}/Dockerfile"
+          docker build \
+            --build-arg MGC_IMAGE=magicore-cli-smoke \
+            --file "${project}/Dockerfile" \
+            --tag magicore-express-container:local \
+            "${project}"
+      - name: Run the MGC-scaffolded Express container through Docker port mapping
+        run: |
+          set -euo pipefail
+          docker run --detach --name magicore-generated-express-e2e \
+            --publish 127.0.0.1:4351:4315 \
+            magicore-express-container:local
+          trap 'docker rm --force magicore-generated-express-e2e >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:4351/ | grep -F 'Hello from MagiCore Express!'; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs magicore-generated-express-e2e
+          exit 1
+      - name: Build and run the AI Python container with MGC-owned packages
+        run: |
+          set -euo pipefail
+          project_root="${RUNNER_TEMP}/mgc-generated-ai-container"
+          mkdir -p "${project_root}"
+          chmod 0777 "${project_root}"
+          docker run --rm \
+            --volume "${project_root}:/workspace" \
+            --workdir /workspace \
+            magicore-cli-smoke \
+            create-ai python-agent container-ai --docker
+          project="${project_root}/container-ai"
+          docker run --rm \
+            --volume "${project}:/workspace" \
+            --workdir /workspace \
+            magicore-cli-smoke \
+            install-ai
+          test -s "${project}/mgc.lock"
+          sudo chown -R "$(id -u):$(id -g)" "${project}"
+          test "$(cat "${project}/.mgc.core")" = "ai"
+          grep -F 'COPY --from=mgc-cli /usr/local/bin/mgc' "${project}/Dockerfile"
+          grep -F 'pytest==9.1.1' "${project}/pyproject.toml"
+          grep -F 'RUN mgc install --frozen' "${project}/Dockerfile"
+          grep -F 'RUN mgc test' "${project}/Dockerfile"
+          docker compose --file "${project}/docker-compose.yml" config --quiet
+          docker build \
+            --build-arg MGC_IMAGE=magicore-cli-smoke \
+            --file "${project}/Dockerfile" \
+            --tag magicore-ai-python-container:local \
+            "${project}"
+          docker run --rm magicore-ai-python-container:local
+          MGC_IMAGE_NAME=magicore-ai-python-container:local \
+            MGC_DATA_VOLUME=magicore-ai-python-e2e-data \
+            docker compose --file "${project}/docker-compose.yml" run --rm app
+      - name: Build and run the CDK validation container through MGC
+        run: |
+          set -euo pipefail
+          project_root="${RUNNER_TEMP}/mgc-generated-clo-container"
+          mkdir -p "${project_root}"
+          chmod 0777 "${project_root}"
+          docker run --rm \
+            --volume "${project_root}:/workspace" \
+            --workdir /workspace \
+            magicore-cli-smoke \
+            create-clo cdk-typescript container-clo --docker
+          project="${project_root}/container-clo"
+          docker run --rm \
+            --volume "${project}:/workspace" \
+            --workdir /workspace \
+            magicore-cli-smoke \
+            install
+          test -s "${project}/mgc.lock"
+          sudo chown -R "$(id -u):$(id -g)" "${project}"
+          test "$(cat "${project}/.mgc.core")" = "clo"
+          grep -F 'COPY --from=mgc-cli /usr/local/bin/mgc' "${project}/Dockerfile"
+          grep -F 'RUN mgc install --frozen' "${project}/Dockerfile"
+          grep -F 'RUN mgc test' "${project}/Dockerfile"
+          grep -F 'RUN mgc build' "${project}/Dockerfile"
+          docker compose --file "${project}/docker-compose.yml" config --quiet
+          docker build \
+            --build-arg MGC_IMAGE=magicore-cli-smoke \
+            --file "${project}/Dockerfile" \
+            --tag magicore-clo-cdk-container:local \
+            "${project}"
+          docker run --rm magicore-clo-cdk-container:local
+          MGC_IMAGE_NAME=magicore-clo-cdk-container:local \
+            MGC_DATA_VOLUME=magicore-clo-cdk-e2e-data \
+            docker compose --file "${project}/docker-compose.yml" run --rm app
+      - name: Build and run the Rust library container with MGC-owned packages
+        run: |
+          set -euo pipefail
+          project_root="${RUNNER_TEMP}/mgc-generated-lib-container"
+          mkdir -p "${project_root}"
+          chmod 0777 "${project_root}"
+          docker run --rm \
+            --volume "${project_root}:/workspace" \
+            --workdir /workspace \
+            magicore-cli-smoke \
+            create-lib rust container-lib --docker
+          project="${project_root}/container-lib"
+          docker run --rm \
+            --volume "${project}:/workspace" \
+            --workdir /workspace \
+            magicore-cli-smoke \
+            install
+          test -s "${project}/mgc.lock"
+          sudo chown -R "$(id -u):$(id -g)" "${project}"
+          test "$(cat "${project}/.mgc.core")" = "lib"
+          grep -F 'COPY --from=mgc-cli /usr/local/bin/mgc' "${project}/Dockerfile"
+          grep -F 'RUN mgc install --frozen' "${project}/Dockerfile"
+          grep -F 'RUN mgc test' "${project}/Dockerfile"
+          grep -F 'RUN mgc build' "${project}/Dockerfile"
+          docker compose --file "${project}/docker-compose.yml" config --quiet
+          docker build \
+            --build-arg MGC_IMAGE=magicore-cli-smoke \
+            --file "${project}/Dockerfile" \
+            --tag magicore-lib-rust-container:local \
+            "${project}"
+          docker run --rm magicore-lib-rust-container:local
+          MGC_IMAGE_NAME=magicore-lib-rust-container:local \
+            MGC_DATA_VOLUME=magicore-lib-rust-e2e-data \
+            docker compose --file "${project}/docker-compose.yml" run --rm app
+      - name: Build and run Go, Python, and TypeScript library containers through MGC
+        run: |
+          set -euo pipefail
+          for language in go python typescript; do
+            project_name="container-lib-${language}"
+            project_root="${RUNNER_TEMP}/mgc-generated-${project_name}"
+            mkdir -p "${project_root}"
+            chmod 0777 "${project_root}"
+            docker run --rm \
+              --volume "${project_root}:/workspace" \
+              --workdir /workspace \
+              magicore-cli-smoke \
+              create-lib "${language}" "${project_name}" --docker
+            project="${project_root}/${project_name}"
+            image="magicore-lib-${language}-container:local"
+            docker run --rm \
+              --volume "${project}:/workspace" \
+              --workdir /workspace \
+              magicore-cli-smoke \
+              install
+            test -s "${project}/mgc.lock"
+            sudo chown -R "$(id -u):$(id -g)" "${project}"
+            test "$(cat "${project}/.mgc.core")" = "lib"
+            docker compose --file "${project}/docker-compose.yml" config --quiet
+            grep -F 'COPY --from=mgc-cli /usr/local/bin/mgc' "${project}/Dockerfile"
+            grep -F 'RUN mgc test' "${project}/Dockerfile"
+            grep -F 'RUN mgc build' "${project}/Dockerfile"
+            docker build \
+              --build-arg MGC_IMAGE=magicore-cli-smoke \
+              --file "${project}/Dockerfile" \
+              --tag "${image}" \
+              "${project}"
+            docker run --rm "${image}"
+            MGC_IMAGE_NAME="${image}" \
+              MGC_DATA_VOLUME="magicore-lib-${language}-e2e-data" \
+              docker compose --file "${project}/docker-compose.yml" run --rm app
+          done
+      - name: Build and run the Flutter app container with MGC-owned Pub dependencies
+        run: |
+          set -euo pipefail
+          project_root="${RUNNER_TEMP}/mgc-generated-app-container"
+          mkdir -p "${project_root}"
+          chmod 0777 "${project_root}"
+          docker run --rm \
+            --volume "${project_root}:/workspace" \
+            --workdir /workspace \
+            magicore-cli-smoke \
+            create-app flutter container-app --docker
+          project="${project_root}/container-app"
+          sudo chown -R "$(id -u):$(id -g)" "${project}"
+          mkdir -p "${RUNNER_TEMP}/mgc-app-home" "${RUNNER_TEMP}/mgc-app-data" "${RUNNER_TEMP}/mgc-app-cache" "${RUNNER_TEMP}/mgc-app-templates"
+          (
+            cd "${project}"
+            HOME="${RUNNER_TEMP}/mgc-app-home" \
+            MGC_DATA_DIR="${RUNNER_TEMP}/mgc-app-data" \
+            MGC_CACHE_DIR="${RUNNER_TEMP}/mgc-app-cache" \
+            MGC_TEMPLATES_DIR="${RUNNER_TEMP}/mgc-app-templates" \
+              "${RUNNER_TEMP}/mgc" install
+          )
+          test -s "${project}/mgc.lock"
+          test "$(cat "${project}/.mgc.core")" = "app"
+          grep -F 'COPY --from=mgc-cli /usr/local/bin/mgc' "${project}/Dockerfile"
+          grep -F 'FLUTTER_VERSION=3.47.7' "${project}/Dockerfile"
+          grep -F 'sha256sum --check --strict' "${project}/Dockerfile"
+          grep -F 'RUN mgc install --frozen && mgc test && mgc build' "${project}/Dockerfile"
+          if grep -F 'dart pub get' "${project}/Dockerfile"; then
+            echo 'Flutter dependency installation bypasses MGC' >&2
+            exit 1
+          fi
+          docker compose --file "${project}/docker-compose.yml" config --quiet
+          docker build \
+            --build-arg MGC_IMAGE=magicore-cli-smoke \
+            --file "${project}/Dockerfile" \
+            --tag magicore-app-flutter-container:local \
+            "${project}"
+          docker run --rm magicore-app-flutter-container:local
+          MGC_IMAGE_NAME=magicore-app-flutter-container:local \
+            MGC_DATA_VOLUME=magicore-app-flutter-e2e-data \
+            docker compose --file "${project}/docker-compose.yml" run --rm app
+      - name: Verify non-root writes in every generated container profile
+        run: |
+          set -euo pipefail
+          for image in \
+            magicore-container-web:local \
+            magicore-express-container:local \
+            magicore-ai-python-container:local \
+            magicore-clo-cdk-container:local \
+            magicore-lib-rust-container:local \
+            magicore-lib-go-container:local \
+            magicore-lib-python-container:local \
+            magicore-lib-typescript-container:local \
+            magicore-app-flutter-container:local; do
+            docker run --rm --entrypoint /bin/sh "$image" -ec '
+              test "$(id -u)" = 65532
+              for root in /app /mgc-data; do
+                probe="$(mktemp "$root/.mgc-write-probe.XXXXXX")"
+                rm "$probe"
+              done
+            '
+          done
+      - name: Deploy the CLI-scaffolded image to Kubernetes with kind
+        uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
+        with:
+          cluster_name: kind
+      - name: Exercise the generated Kubernetes Deployment and Service
+        run: |
+          set -euo pipefail
+          project="${RUNNER_TEMP}/mgc-generated-web-container/container-web"
+          kind load docker-image magicore-container-web:local
+          kubectl apply --filename "${project}/k8s/deployment.yaml"
+          kubectl rollout status deployment/magicore-container-web --timeout=180s
+          kubectl port-forward --address 127.0.0.1 service/magicore-container-web 4315:4315 \
+            >"${RUNNER_TEMP}/mgc-k8s-port-forward.log" 2>&1 &
+          port_forward_pid=$!
+          trap 'kill "${port_forward_pid}" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:4315/ | grep -F '<title>container-web</title>'; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat "${RUNNER_TEMP}/mgc-k8s-port-forward.log"
+          kubectl describe pod --selector=app.kubernetes.io/name=magicore-container-web
+          exit 1
+
+  nix-package:
+    name: Build and run the Nix package
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Nix with flakes enabled
+        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+      - name: Build the mgc package with the committed input lock
+        run: |
+          test -s flake.lock
+          nix build --no-update-lock-file --no-write-lock-file --print-build-logs .#default
+      - name: Smoke-test the Nix-installed CLI
+        run: |
+          ./result/bin/mgc --version
+          ./result/bin/mgc --help
+
+  dependency-ownership-audit:
+    # Native ownership gate: any external dependency-lifecycle tool spawn
+    # blocks CI, even when marked DELEGATED.
+    # Cổng native ownership: mọi tool ngoài trong dependency lifecycle chặn
+    # CI, kể cả khi có nhãn DELEGATED.
+    name: Dependency Ownership Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Dependency ownership audit negative controls
+        run: python3 scripts/test_audit_dependency_delegation.py
+      - name: Audit matrix source provenance tests
+        run: python3 scripts/test_audit_capability_matrix.py
+      - name: Audit dependency ownership (fail on any delegation)
+        run: python3 scripts/audit_dependency_delegation.py
+      - name: Audit mutation-writer call manifest (fail on gateway bypass)
+        run: python3 scripts/audit_mutation_calls.py
+      - name: Mutation-gate negative controls (fail if the gate is blind)
+        run: python3 scripts/audit_mutation_calls.py --self-test
+      - name: Audit ledger stays gitignored (local-only)
+        run: git check-ignore -q docs/specs/dependencyDelegationAudit.json
+
+  windows-spawn-tests:
+    name: Windows Spawn Tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
+        with:
+          toolchain: "1.99.0"
+
+      - name: Setup Node.js (for spawn tests)
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.12.0"
+
+      - name: Setup Flutter (for .bat spawn tests)
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: "3.47.7"
+          channel: "stable"
+
+      - name: Resolve Flutter SDK dependencies before MGC process guard
+        shell: bash
+        run: bash scripts/bootstrap_flutter_sdk.sh
+
+      - name: Setup Go (esbuild-rs build script needs go on PATH)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.2"
+          cache: false
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Run Windows spawn tests
+        shell: bash
+        run: |
+          echo "=== Windows Tool Resolution ==="
+          where.exe node || echo "Node not found"
+          where.exe flutter || echo "Flutter not found"
+          where.exe gradle || echo "Gradle not found (expected)"
+          where.exe swift || echo "Swift not found (expected)"
+          echo ""
+
+          echo "=== Running mgc-exec Windows Tests ==="
+          cargo test -p mgc-exec --test windows_spawn_test --test multiplatform_tools_test --locked -- --nocapture
+          # Verify all Windows inspector, authenticated probe and cwd contracts.
+          # Kiểm mọi contract Windows của inspector, probe xác thực và cwd.
+          cargo test -p mgc-exec --lib windows_ --locked -- --nocapture
+          cargo test -p mgc-lockfile --test no_follow atomic_replace_handles_long_windows_paths --locked -- --nocapture
+        timeout-minutes: 10
+      - name: Native dependency ownership matrix (Windows)
+        shell: bash
+        run: cargo test -p mgc --test native_ownership_matrix_e2e --locked -- --test-threads=1
+        timeout-minutes: 20
+      - name: Verify authenticated npm version probe through the Node shim
+        shell: bash
+        run: cargo test -p mgc --test native_ownership_matrix_e2e framework_npm_version_probe_uses_mgc_shim_with_canonical_windows_cwd --locked -- --ignored --exact --test-threads=1 --nocapture
+        timeout-minutes: 5
       - name: single-core web CLI surface
         run: cargo test -p mgc --no-default-features --features web test_single_core_create_alias_parses --quiet
+      - name: Global CLI tool install, execute, recovery, and Windows PATH E2E
+        shell: bash
+        run: cargo test -p mgc --test global_tool_e2e --locked -- --ignored --exact platform::global_cli_install_update_list_and_remove_are_isolated_and_persistent --test-threads=1 --nocapture
       - name: cargo check
         run: cargo check --workspace --all-targets --locked
       - name: module hygiene
@@ -39,6 +577,13 @@ jobs:
       - name: release hash updater syntax
         run: bash -n scripts/update-release-hashes.sh
       - name: package manifests syntax
+        # Windows fix (2026-09-11): this job's default shell on Windows
+        # is pwsh — `>/dev/null` is a bash-ism that pwsh misreads as the
+        # path D:\dev\null. Force bash for the POSIX redirect syntax.
+        # Fix Windows: shell mặc định của job này trên Windows là pwsh —
+        # `>/dev/null` là cú pháp bash mà pwsh hiểu nhầm thành đường dẫn
+        # D:\dev\null. Ép bash cho cú pháp redirect POSIX.
+        shell: bash
         run: |
           ruby -c packaging/homebrew/magicore.rb
           ruby -c packaging/homebrew/magicore-web.rb
@@ -46,6 +591,12 @@ jobs:
           python3 -m json.tool packaging/scoop/magicore-web.json >/dev/null
       - name: benchmark provenance
         run: python3 benchmark/scripts/verify_benchmark_provenance.py
+      - name: benchmark command parity
+        run: python3 benchmark/scripts/test_bench_v2.py
+      - name: analyzer regression tests
+        run: python3 benchmark/scripts/test_analyzer_strict.py
+      - name: manifest updater integration tests
+        run: bash scripts/test_manifest_updater.sh
       - name: internal specs stay ignored
         run: |
           git check-ignore -q docs/specs/magiCoreChangeLog.md
@@ -55,7 +606,7 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Free disk space
@@ -67,9 +618,24 @@ jobs:
           sudo rm -rf "$AGENT_TOOLSDIRECTORY"
           df -h
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
+        with:
+          toolchain: "1.99.0"
+      - name: Setup Node.js (global CLI tool E2E)
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.12.0"
+      - name: Setup Python (Unix process-guard regression tests require python3)
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.15.0"
+      - name: Setup Go (esbuild-rs build script needs go on PATH)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.2"
+          cache: false
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2 (latest)
       - name: cargo test
         run: cargo test --workspace --locked --exclude mgc --exclude mgc-e2e -- --test-threads=4
       - name: Seed registry + cargo test (mgc + mgc-e2e, skip benchmarks)
@@ -77,35 +643,38 @@ jobs:
           ./target/debug/mgc-registry --host 127.0.0.1 --port 4315 --store-dir /tmp/mgc-reg-store >/tmp/mgc-reg.log 2>&1 &
           SRV=$!
           trap 'kill $SRV' EXIT
-          for i in $(seq 1 15); do curl -sf -o /dev/null http://127.0.0.1:4315/ && break || sleep 1; done
-          mkdir -p /tmp/mgc-tpl && git archive 1b69dd0^ templates | tar -x -C /tmp/mgc-tpl
-          node -e '
-            const fs = require("fs"), path = require("path");
-            const root = "/tmp/mgc-tpl/templates";
-            let ok = 0, fail = 0;
-            function walk(d) {
-              for (const f of fs.readdirSync(d, { withFileTypes: true })) {
-                const p = path.join(d, f.name);
-                if (f.isDirectory()) { walk(p); continue; }
-                if (!f.isSymbolicLink()) continue;
-                let tgt = fs.readlinkSync(p);
-                let resolved;
-                if (tgt.startsWith("/")) {
-                  const i = tgt.indexOf("/templates/");
-                  if (i < 0) { fail++; continue; }
-                  resolved = path.join(root, tgt.slice(i + "/templates/".length));
-                } else { resolved = path.resolve(path.dirname(p), tgt); }
-                try { fs.rmSync(p); fs.cpSync(resolved, p, { recursive: true, verbatimSymlinks: false }); ok++; }
-                catch (e) { fail++; }
-              }
-            }
-            walk(root);
-            console.log(`resolved symlinks: ${ok} ok, ${fail} skipped`);
-          '
-          mkdir -p /tmp/mgc-tpl/templates/web/backend/php/laravel/sources/storage/logs
-          touch /tmp/mgc-tpl/templates/web/backend/php/laravel/sources/storage/logs/.gitkeep
-          printf 'APP_ENV=dev\nAPP_DEBUG=1\nAPP_SECRET=changeme\nAPP_NAME={{project_name}}\n' > /tmp/mgc-tpl/templates/web/backend/php/symfony/sources/.env
-          MAGICORE_TEMPLATE_DIR=/tmp/mgc-tpl/templates MGC_NPM_REGISTRY=http://127.0.0.1:4315 cargo run -p mgc -- template publish-all
+          registry_ready=0
+          for i in $(seq 1 15); do
+            if curl -sf -o /dev/null http://127.0.0.1:4315/v2/; then
+              registry_ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$registry_ready" != 1 ]]; then
+            echo "FAIL: isolated registry did not become ready" >&2
+            exit 1
+          fi
+          # Seed only the compiled product template archives; no historical source snapshot or hand-written fixture files.
+          # Seed chỉ từ archive template được biên dịch vào sản phẩm; không lấy snapshot cũ hoặc tự chèn file fixture.
+          python3 scripts/materialize_embedded_template_sources.py \
+            --embedded-dir cli/embedded \
+            --manifest cli/src/scaffold/embedded.rs \
+            --output "${RUNNER_TEMP}/mgc-template-source/templates"
+          MAGICORE_TEMPLATE_DIR="${RUNNER_TEMP}/mgc-template-source/templates" \
+            MGC_NPM_REGISTRY=http://127.0.0.1:4315 \
+            cargo run -p mgc -- template publish-all
+          template_cache="${RUNNER_TEMP}/mgc-template-fetch-cache"
+          mkdir -p "$template_cache"
+          while IFS= read -r template_manifest; do
+            layer_dir="${template_manifest%/template.toml}"
+            layer_rel="${layer_dir#"${RUNNER_TEMP}/mgc-template-source/templates/"}"
+            layer_core="${layer_rel%%/*}"
+            MGC_TEMPLATES_DIR="$template_cache" \
+              ./target/debug/mgc template fetch "$layer_core" "$layer_rel" \
+                --registry http://127.0.0.1:4315 --tag 0.1.0
+            diff -qr --exclude=.mgc-version "$layer_dir" "${template_cache}/${layer_rel}"
+          done < <(find "${RUNNER_TEMP}/mgc-template-source/templates" -type f -name template.toml | sort)
           mkdir -p /tmp/mgc-empty-cache
           MGC_NPM_REGISTRY=http://127.0.0.1:4315 MGC_TEMPLATES_DIR=/tmp/mgc-empty-cache cargo test -p mgc -p mgc-e2e --locked -- --test-threads=4 --skip bench_
 
@@ -113,10 +682,225 @@ jobs:
     name: Build Release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
+        with:
+          toolchain: "1.99.0"
+      - name: Setup Go (esbuild-rs build script needs go on PATH)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.2"
+          cache: false
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2 (latest)
       - name: cargo build --release
         run: cargo build --release --all-targets --locked
+
+  test-with-runtimes:
+    name: Test with Full Runtime Matrix
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
+        with:
+          toolchain: "1.99.0"
+
+      - name: Setup Go (esbuild-rs build script needs go on PATH)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.2"
+          cache: false
+      - name: Setup Python for lifecycle E2E
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.15.0"
+      - name: Setup Node.js for global CLI lifecycle E2E
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.12.0"
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2 (latest)
+
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          # Keep this matrix aligned with all-core lifecycle and Windows spawn CI.
+          # Đồng bộ runtime với lifecycle all-core và Windows spawn CI.
+          flutter-version: "3.47.7"
+          channel: "stable"
+          cache: true
+
+      - name: Resolve Flutter SDK dependencies before MGC process guard
+        shell: bash
+        run: bash scripts/bootstrap_flutter_sdk.sh
+
+      - name: Build optimized mgc binary for lifecycle E2E
+        run: cargo build --release --bin mgc --locked
+
+      - name: Global CLI tool lifecycle E2E (Unix)
+        if: runner.os != 'Windows'
+        run: cargo test -p mgc --test global_tool_e2e --locked -- --include-ignored --test-threads=1 --nocapture
+        env:
+          MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
+
+      - name: Verify runtimes available
+        run: |
+          python3 --version
+          node --version
+          flutter --version
+          flutter doctor -v
+          go version || echo "Go not available"
+
+      - name: Run native test-runner security E2E on release binary
+        run: cargo test -p mgc --test test_runner_security --locked
+        env:
+          MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
+
+      - name: Run optimizer E2E on release binary (MUST PASS - no || true)
+        run: cargo test -p mgc --test optimizer_lifecycle_e2e --locked -- --include-ignored --nocapture
+        env:
+          MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
+
+      - name: Run Web, App scaffold, and Lib lifecycle tests on release binary
+        run: cargo test --locked -p mgc --test full_lifecycle_e2e -- --nocapture --test-threads=1
+        env:
+          MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
+
+      - name: Run Node-backed Web lifecycle test on release binary
+        run: cargo test --locked -p mgc --test full_lifecycle_e2e test_web_full_lifecycle -- --ignored --exact --nocapture --test-threads=1
+        env:
+          MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
+
+      - name: Run AI lifecycle test with MGC-installed pytest on release binary
+        run: cargo test --locked -p mgc --test full_lifecycle_e2e test_ai_full_lifecycle -- --ignored --exact --nocapture --test-threads=1
+        env:
+          MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
+
+      - name: Run cache stress tests (MUST PASS)
+        run: cargo test -p mgc --test cache_stress_test --locked -- --nocapture
+
+      - name: Run CLI surface tests (MUST PASS)
+        run: cargo test -p mgc --test cli_surface_errors_test --locked -- --nocapture
+
+      - name: Run install smoke tests (MUST PASS)
+        run: cargo test -p mgc --test install_smoke_test --locked -- --nocapture
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "=== Test Summary ==="
+          echo "Runtimes provisioned: Python3, Node, Flutter; project dependencies are installed through MGC"
+          echo "Full-core lifecycle and global-tool E2Es invoke the optimized release mgc binary"
+          echo "Install smoke tests: structure verified"
+
+  fault-matrix-portable:
+    # Gate 11-D2 (2026-09-15) + P0-6 (Tech Lead 2026-09-15): the fault/stress
+    # suites split by PORTABILITY, and Windows becomes a REQUIRED lane.
+    # kill_injection_matrix / stress_shared_store_matrix /
+    # install_process_race are platform-portable (the unix-only assertion
+    # paths are already cfg-gated inside the suites — kill-injection asserts
+    # SIGKILL details on unix and "did not exit cleanly" elsewhere), so they
+    # gate ALL THREE hardened OSes with NO `|| true` and NO
+    # continue-on-error.
+    # (Gate 11-D2 + P0-6: các suite fault/stress tách theo TÍNH DI ĐỘNG,
+    # Windows thành lane BẮT BUỘC. Ba suite trên chạy được mọi nền tảng
+    # (đường assert unix-only đã cfg-gate sẵn trong suite), nên chúng gate
+    # CẢ BA OS với NO `|| true` và KHÔNG continue-on-error.)
+    name: Fault Matrix — portable (MUST PASS, 3 OS)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
+        with:
+          toolchain: "1.99.0"
+
+      - name: Setup Go (esbuild-rs build script needs go on PATH)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.2"
+          cache: false
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Build test binaries (compile errors fail here, loudly)
+        run: cargo build -p mgc --tests --locked
+        timeout-minutes: 45
+
+      - name: kill injection matrix (MUST PASS — no || true)
+        # Gate 11-B.2 failpoint handshake: SIGKILL at every install phase
+        # must never corrupt the store; doctor --repair must end HEALTHY.
+        # (Gate 11-B.2 handshake failpoint: SIGKILL tại mọi phase install
+        # không được làm hỏng store; doctor --repair phải kết thúc HEALTHY.)
+        run: cargo test -p mgc --test kill_injection_matrix --locked
+        timeout-minutes: 30
+
+      - name: stress shared store matrix (MUST PASS — no || true)
+        run: cargo test -p mgc --test stress_shared_store_matrix --locked
+        timeout-minutes: 20
+
+      - name: install process race (MUST PASS — no || true)
+        run: cargo test -p mgc --test install_process_race --locked
+        timeout-minutes: 20
+
+  fault-matrix-unix-only:
+    # P0-6 (Tech Lead 2026-09-15): suites that are NOT (yet) portable stay
+    # REQUIRED on ubuntu+macos. disk_fault_injection_e2e uses
+    # std::os::unix::fs::PermissionsExt (permission fault injection);
+    # stress_64_process_race stays here per the Tech Lead verdict (its 64
+    # concurrent processes are unix-runner territory for now — no unix-only
+    # API was found in it, it may graduate to the portable lane after a
+    # Windows soak).
+    # (P0-6: các suite chưa di động vẫn BẮT BUỘC trên ubuntu+macos.
+    # disk_fault_injection_e2e dùng PermissionsExt (unix-only);
+    # stress_64_process_race ở lại theo phán quyết Tech Lead — không tìm
+    # thấy unix-only API trong nó, có thể chuyển lên lane portable sau khi
+    # ngâm Windows đủ lâu.)
+    name: Fault Matrix — unix-only (MUST PASS)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
+        with:
+          toolchain: "1.99.0"
+
+      - name: Setup Go (esbuild-rs build script needs go on PATH)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.2"
+          cache: false
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Build test binaries (compile errors fail here, loudly)
+        run: cargo build -p mgc --tests --locked
+        timeout-minutes: 45
+
+      - name: 64-process stress race (MUST PASS — no || true)
+        run: cargo test -p mgc --test stress_64_process_race --locked
+        timeout-minutes: 25
+
+      - name: disk fault injection e2e (MUST PASS — no || true)
+        run: cargo test -p mgc --test disk_fault_injection_e2e --locked
+        timeout-minutes: 20

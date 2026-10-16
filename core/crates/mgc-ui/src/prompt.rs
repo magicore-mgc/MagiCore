@@ -1,7 +1,7 @@
 /// Interactive prompts with styled UI
 use anyhow::Result;
 use console::style;
-use dialoguer::{Confirm, Input, MultiSelect, Select};
+use dialoguer::{Confirm, Input, MultiSelect, Password, Select};
 
 fn prompt_style(text: &str) -> String {
     format!(
@@ -25,6 +25,14 @@ pub fn input(prompt: &str) -> Result<String> {
     Ok(Input::new()
         .with_prompt(prompt_style(prompt))
         .interact_text()?)
+}
+
+/// Read a password without echoing it to the terminal.
+/// Nhập mật khẩu dạng ẩn, không hiện ký tự trên terminal.
+pub fn password(prompt: &str) -> Result<String> {
+    Ok(Password::new()
+        .with_prompt(prompt_style(prompt))
+        .interact()?)
 }
 
 /// Select one from list with styled items

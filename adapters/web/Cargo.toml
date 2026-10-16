@@ -2,12 +2,13 @@
 name = "mgc-web-adapter"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Web ecosystem adapter for MagiCore"
-
 [dependencies]
+mgc-audit = { workspace = true }
 # Core crates
 mgc-types = { workspace = true }
 mgc-adapter-base = { workspace = true }
@@ -34,6 +35,7 @@ futures-util = { workspace = true }
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }
+toml = { workspace = true }
 
 # Error handling
 thiserror = { workspace = true }
@@ -52,15 +54,23 @@ flate2 = { workspace = true }
 tar = { workspace = true }
 tempfile = { workspace = true }
 lru = { workspace = true }
-urlencoding = "2"
+urlencoding = "2.1.3"
 chrono = { workspace = true }
+libc = { workspace = true }
+uuid = { workspace = true }
 
 # Parallelism
 rayon = { workspace = true }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.1.4", features = ["fs"] }
+
 [dev-dependencies]
 pretty_assertions = { workspace = true }
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { workspace = true, features = ["html_reports"] }
 
 [lints]
 workspace = true

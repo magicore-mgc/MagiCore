@@ -1,8 +1,11 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
+
+const DEFAULT_STORAGE_BUDGET_GIB: u64 = 50;
+const STORAGE_BUDGET_GIB_ENV: &str = "MGC_STORAGE_BUDGET_GB";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CacheTarget {
@@ -120,36 +123,44 @@ fn cache_entries(
 ) -> Result<Vec<CacheEntry>> {
     let mut entries = Vec::new();
 
+    // let-chain edition 2024 — gộp điều kiện theo clippy 1.98.
     if target.includes(CacheTarget::Shared) {
-        if let Some(root) = dirs::cache_dir() {
-            let shared = match core {
-                Some("web") => root.join("magicore").join("web"),
-                Some(core) => root.join("magicore").join(core),
-                None => root.join("magicore"),
-            };
+        let data_root = mgc_platform::paths::mgc_data_dir();
+        let shared = shared_cache_path(&data_root, core);
+        entries.push(CacheEntry {
+            label: "shared",
+            path: shared,
+            removable: true,
+        });
+        if core.is_none() || core == Some("app") {
             entries.push(CacheEntry {
-                label: "shared",
-                path: shared,
+                label: "app-pub-store",
+                path: data_root.join("store").join("pub"),
+                removable: true,
+            });
+            entries.push(CacheEntry {
+                label: "app-swift-store",
+                path: data_root.join("store").join("swift"),
                 removable: true,
             });
         }
     }
 
-    if target.includes(CacheTarget::Project) {
-        if let Ok(cwd) = std::env::current_dir() {
-            if let Some(root) = crate::commands::core::shared::find_project_root(&cwd)? {
-                let project = match core {
-                    Some("web") => root.join(".magicore").join("cache").join("web"),
-                    Some(core) => root.join(".magicore").join("cache").join(core),
-                    None => root.join(".magicore").join("cache"),
-                };
-                entries.push(CacheEntry {
-                    label: "project",
-                    path: project,
-                    removable: true,
-                });
-            }
-        }
+    // let-chain edition 2024 — gộp điều kiện theo clippy 1.98.
+    if target.includes(CacheTarget::Project)
+        && let Ok(cwd) = std::env::current_dir()
+        && let Some(root) = crate::commands::core::shared::find_project_root(&cwd)?
+    {
+        let project = match core {
+            Some("web") => root.join(".magicore").join("cache").join("web"),
+            Some(core) => root.join(".magicore").join("cache").join(core),
+            None => root.join(".magicore").join("cache"),
+        };
+        entries.push(CacheEntry {
+            label: "project",
+            path: project,
+            removable: true,
+        });
     }
 
     if include_build {
@@ -162,6 +173,14 @@ fn cache_entries(
     }
 
     Ok(entries)
+}
+
+fn shared_cache_path(data_root: &Path, core: Option<&str>) -> PathBuf {
+    let root = data_root.join("cache");
+    match core {
+        Some(core) => root.join(core),
+        None => root,
+    }
 }
 
 fn workspace_build_cache_path() -> Result<PathBuf> {
@@ -199,46 +218,134 @@ fn find_cargo_workspace_root(start: &Path) -> Option<PathBuf> {
 fn print_status(entries: &[CacheEntry]) -> Result<()> {
     if entries.is_empty() {
         println!("No cache paths found.");
-        return Ok(());
-    }
-
-    for entry in entries {
-        let bytes = path_size(&entry.path);
-        let exists = entry.path.exists();
-        println!(
-            "{}\t{}\t{}\t{}",
-            entry.label,
-            human_bytes(bytes),
-            if exists { "exists" } else { "missing" },
-            entry.path.display()
-        );
-        if entry.label == "shared" && entry.path.ends_with("magicore/web") {
-            let stats = web_shared_cache_stats(&entry.path);
+    } else {
+        for entry in entries {
+            let bytes = path_size(&entry.path);
+            let exists = entry.path.exists();
             println!(
-                "shared:web:pinned\t{}\t{} roots\t{} refs",
-                human_bytes(stats.pinned_package_bytes),
-                stats.pinned_package_roots,
-                stats.project_refs
+                "{}\t{}\t{}\t{}",
+                entry.label,
+                human_bytes(bytes),
+                if exists { "exists" } else { "missing" },
+                entry.path.display()
             );
-            println!(
-                "shared:web:unpinned\t{}\t{} roots",
-                human_bytes(stats.unpinned_package_bytes),
-                stats.unpinned_package_roots
-            );
-        } else if entry.label == "project" && entry.path.ends_with(".magicore/cache/web") {
-            let stats = web_project_cache_stats(&entry.path);
-            println!("project:web:cas\t{}\tcas", human_bytes(stats.cas_bytes));
-            println!(
-                "project:web:tarballs\t{}\tcache",
-                human_bytes(stats.tarball_bytes)
-            );
-            println!(
-                "project:web:resolutions\t{}\tresolutions",
-                human_bytes(stats.resolution_bytes)
-            );
+            if entry.label == "shared" && entry.path.ends_with("cache/web") {
+                let stats = web_shared_cache_stats(&entry.path);
+                println!(
+                    "shared:web:pinned\t{}\t{} roots\t{} refs",
+                    human_bytes(stats.pinned_package_bytes),
+                    stats.pinned_package_roots,
+                    stats.project_refs
+                );
+                println!(
+                    "shared:web:unpinned\t{}\t{} roots",
+                    human_bytes(stats.unpinned_package_bytes),
+                    stats.unpinned_package_roots
+                );
+            } else if entry.label == "project" && entry.path.ends_with(".magicore/cache/web") {
+                let stats = web_project_cache_stats(&entry.path);
+                println!("project:web:cas\t{}\tcas", human_bytes(stats.cas_bytes));
+                println!(
+                    "project:web:tarballs\t{}\tcache",
+                    human_bytes(stats.tarball_bytes)
+                );
+                println!(
+                    "project:web:resolutions\t{}\tresolutions",
+                    human_bytes(stats.resolution_bytes)
+                );
+            }
         }
     }
+
+    print_storage_budget()?;
     Ok(())
+}
+
+fn print_storage_budget() -> Result<()> {
+    let data_root = mgc_platform::paths::mgc_data_dir();
+    let cwd = std::env::current_dir()?;
+    let project_root = crate::commands::core::shared::find_project_root(&cwd)?;
+    let data_bytes = measured_path_size(&data_root)?;
+    let project_bytes = match project_root.as_deref() {
+        Some(project) => measured_path_size(project)?,
+        None => 0,
+    };
+    let combined_bytes = project_root
+        .as_deref()
+        .map(|project| combined_path_size(&data_root, project, data_bytes, project_bytes))
+        .unwrap_or(data_bytes);
+    let budget_gib = storage_budget_gib();
+    let budget_bytes = budget_gib.saturating_mul(1024_u64.pow(3));
+
+    println!(
+        "storage:data\t{}\t{}",
+        human_bytes(data_bytes),
+        data_root.display()
+    );
+    if let Some(project) = project_root {
+        println!(
+            "storage:project\t{}\t{}",
+            human_bytes(project_bytes),
+            project.display()
+        );
+        println!("storage:combined\t{}", human_bytes(combined_bytes));
+    } else {
+        println!("storage:project\tproject root not detected");
+        println!("storage:combined\t{}", human_bytes(combined_bytes));
+    }
+    println!("storage:budget\t{} GiB", budget_gib);
+    if combined_bytes >= budget_bytes {
+        println!(
+            "warning\tcombined project and MagiCore data usage has reached the configured budget"
+        );
+    }
+    Ok(())
+}
+
+fn storage_budget_gib() -> u64 {
+    std::env::var(STORAGE_BUDGET_GIB_ENV)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(DEFAULT_STORAGE_BUDGET_GIB)
+}
+
+fn combined_path_size(
+    data_root: &Path,
+    project_root: &Path,
+    data_bytes: u64,
+    project_bytes: u64,
+) -> u64 {
+    let data = canonical_or_original(data_root);
+    let project = canonical_or_original(project_root);
+    if data.starts_with(&project) {
+        project_bytes
+    } else if project.starts_with(&data) {
+        data_bytes
+    } else {
+        data_bytes.saturating_add(project_bytes)
+    }
+}
+
+fn measured_path_size(path: &Path) -> Result<u64> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(error) => return Err(error.into()),
+    };
+    if metadata.is_file() || metadata.file_type().is_symlink() {
+        return Ok(metadata.len());
+    }
+
+    let mut total = 0u64;
+    for entry in WalkDir::new(path).follow_links(false) {
+        let entry = entry?;
+        let metadata = std::fs::symlink_metadata(entry.path())?;
+        if metadata.is_file() || metadata.file_type().is_symlink() {
+            total = total.saturating_add(metadata.len());
+        }
+    }
+    Ok(total)
 }
 
 fn clean(entries: &[CacheEntry], yes: bool) -> Result<()> {
@@ -295,6 +402,11 @@ fn prune(entries: &[CacheEntry], yes: bool, dry_run: bool, core: Option<&str>) -
                 stats.tarball_files,
                 stats.resolution_files,
                 entry.path.display()
+            );
+        } else if matches!(entry.label, "app-pub-store" | "app-swift-store") {
+            println!(
+                "skip\t{}\tprune has no live-project reference graph; use `mgc cache clean --target shared --core app --yes` to remove it explicitly",
+                entry.label
             );
         } else if core.is_some() {
             let stats = prune_generic_cache(&entry.path, dry_run)?;
@@ -353,42 +465,75 @@ fn prune_generic_cache(root: &Path, dry_run: bool) -> Result<GenericPruneStats> 
 }
 
 /// Prune CAS blobs using the SQLite refcount (slice 5 of T1): a blob is
-/// prunable when it has no live refcount in the DB (or the DB has no row for
-/// it). The nlink heuristic stays as the outer safety net — never prune a
-/// blob still hardlinked into a live tree. DB missing/corrupt → nlink only.
-/// (Prune blob CAS theo refcount SQLite: xóa blob không còn ref nào trong DB
-///  (hoặc chưa từng claim). Heuristic nlink vẫn là lưới an toàn ngoài — không
-///  bao giờ xóa blob còn hardlink. DB mất/hỏng → chỉ dùng nlink.)
+/// prunable when it has no live refcount in the DB. FAIL-CLOSED (P0-C,
+/// Tech Lead vòng-7 2026-09-13): exports are independent copies since the
+/// hardlink removal, so a LIVE blob has nlink == 1 — the old nlink-only
+/// fallback (on DB missing/corrupt/unreadable) treated live blobs as
+/// unreferenced and DELETED the shared cache projects still warm-claim.
+/// When the DB cannot be read, prune REFUSES to run and points at
+/// `mgc store doctor` — it never guesses.
+/// (Prune blob CAS theo refcount SQLite: xóa blob khi không còn ref sống
+/// trong DB. FAIL-CLOSED (P0-C): export là bản sao độc lập từ khi bỏ
+/// hardlink nên blob SỐNG có nlink == 1 — fallback nlink-only cũ (khi DB
+/// mất/hỏng/không đọc được) coi blob sống là unreferenced và XÓA cache
+/// chia sẻ mà project còn đang warm-claim. Khi DB không đọc được, prune
+/// TỪ CHỐI chạy và trỏ tới `mgc store doctor` — không bao giờ đoán mò.)
 fn prune_cas_blobs_under(cas_root: &Path, store_root: &Path, dry_run: bool) -> Result<usize> {
     if !cas_root.exists() {
         return Ok(0);
     }
 
-    let live: HashSet<String> = match mgc_store::Database::open(&store_root.join("store.db")) {
-        Ok(db) => {
-            let mut set = HashSet::new();
-            match db.list_cas_live_refs() {
-                Ok(live_refs) => {
-                    for hash in live_refs {
-                        set.insert(hash);
-                    }
-                }
-                Err(err) => {
-                    tracing::warn!(
-                        "cas refcount read failed, falling back to nlink-only prune: {err}"
-                    );
-                    return prune_unlinked_files_under(cas_root, dry_run);
-                }
+    // The DB must ALREADY exist — `Database::open` is open-OR-CREATE: on a
+    // missing store.db it would silently build a FRESH empty refset, and
+    // pruning against zero claims would delete every live warm-cache blob
+    // (exactly the failure mode P0-C exists to prevent). A missing DB is
+    // indistinguishable from a lost refset — refuse.
+    // (DB phải ĐÃ TỒN TẠI — `Database::open` là open-HOẶC-CREATE: với
+    // store.db mất, nó âm thầm dựng refset MỚI RỖNG, và prune theo 0
+    // claim sẽ xóa mọi blob warm-cache đang sống (đúng chế độ hỏng mà
+    // P0-C tồn tại để chặn). DB vắng không phân biệt được với refset
+    // bị mất — từ chối.)
+    let db_path = store_root.join("store.db");
+    if !db_path.exists() {
+        return Err(anyhow::anyhow!(
+            "store database missing for prune ({}); refusing to build an empty \
+             refset — run `mgc store doctor` first",
+            db_path.display()
+        ));
+    }
+
+    let live: HashSet<String> = match mgc_store::Database::open(&db_path) {
+        Ok(db) => match db.list_cas_live_refs() {
+            Ok(live_refs) => live_refs.into_iter().collect(),
+            // Refcount unreadable on a healthy-looking DB (corrupt table,
+            // locked, I/O error) — refuse: nlink is NOT a source of truth
+            // after the export-to-independent-copy switch.
+            // (Refcount không đọc được trên DB trông khỏe (bảng hỏng, bị
+            // khóa, lỗi I/O) — từ chối: nlink KHÔNG còn là nguồn chân lý
+            // sau khi export chuyển sang bản sao độc lập.)
+            Err(err) => {
+                return Err(anyhow::anyhow!(
+                    "cannot read CAS refcount for prune (store.db: {err}); \
+                     refusing to prune by nlink — run `mgc store doctor`"
+                ));
             }
-            set
+        },
+        // DB missing/corrupt/unopenable — refuse to prune. Pruning without
+        // refcounts would delete live warm-cache blobs (they are plain
+        // files with nlink 1 now).
+        // (DB mất/hỏng/không mở được — từ chối prune. Prune không có
+        // refcount sẽ xóa blob warm-cache đang sống (giờ chỉ là file
+        // thường nlink 1).)
+        Err(err) => {
+            return Err(anyhow::anyhow!(
+                "store database unavailable for prune ({err}); refusing to \
+                 prune by nlink — run `mgc store doctor` first"
+            ));
         }
-        Err(_) => return prune_unlinked_files_under(cas_root, dry_run),
     };
 
-    // A blob is prunable when the DB has no live claim for it AND no live
-    // tree still hardlinks it (nlink outer safety net).
-    // (Blob xóa được khi DB không còn claim sống VÀ không cây nào còn
-    //  hardlink tới — nlink là lưới an toàn ngoài.)
+    // A blob is prunable when the DB has no live claim for it.
+    // (Blob xóa được khi DB không còn claim sống nào cho nó.)
     let mut pruned = 0usize;
     let mut directories = Vec::new();
     for entry in WalkDir::new(cas_root)
@@ -410,9 +555,6 @@ fn prune_cas_blobs_under(cas_root: &Path, store_root: &Path, dry_run: bool) -> R
             .map(|name| name.split('.').next().unwrap_or(name).to_string())
             .unwrap_or_default();
         if live.contains(&blob_hash) {
-            continue;
-        }
-        if !file_has_no_external_hardlinks(entry.path()) {
             continue;
         }
         pruned += 1;

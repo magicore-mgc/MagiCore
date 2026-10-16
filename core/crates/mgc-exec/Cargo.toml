@@ -2,15 +2,41 @@
 name = "mgc-exec"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Exec passthrough + allowlist + audit sanitizer (MagiCore)"
-
 [dependencies]
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+mgc-crypto = { workspace = true }
+
+# libc: group-signals for the timeout process-tree kill (kill(-pgid)) —
+# already a workspace dependency elsewhere; no new external crate added.
+# Unix-only so the Windows build links nothing new.
+# (libc: group-signal cho kill process-tree theo timeout (kill(-pgid)) —
+# đã là workspace dependency ở chỗ khác; không thêm crate ngoài mới.
+# Chỉ unix để build Windows không link thêm gì.)
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+sysinfo = { version = "0.38.4", default-features = false, features = ["system"] }
+
+[target.'cfg(windows)'.dependencies]
+sha2 = { workspace = true }
+sysinfo = { version = "0.38.4", default-features = false, features = ["system"] }
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Console",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
+
+[dev-dependencies]
+tempfile = { workspace = true }
 
 [[test]]
 name = "test_allowlist"
@@ -23,6 +49,34 @@ path = "tests/sanitizer.rs"
 [[test]]
 name = "test_run"
 path = "tests/run.rs"
+
+[[test]]
+name = "test_policy"
+path = "tests/policy.rs"
+
+[[test]]
+name = "test_compat_runner"
+path = "tests/compat_runner.rs"
+
+[[test]]
+name = "test_policy_manifest"
+path = "tests/policy_manifest.rs"
+
+[[test]]
+name = "test_parallel"
+path = "tests/parallel.rs"
+
+[[test]]
+name = "test_spawn_profile"
+path = "tests/spawn_profile.rs"
+
+[[test]]
+name = "test_shutdown"
+path = "tests/shutdown.rs"
+
+[[test]]
+name = "test_consultation"
+path = "tests/consultation.rs"
 
 [lints]
 workspace = true

@@ -1,10 +1,39 @@
 /// .npmrc parser — chuẩn npm, mgc tự parse (không chạy npm CLI).
-/// (npmrc reader — sys-mgc/01 §3; env expansion ${VAR} + $VAR)
+/// Read npmrc and expand environment placeholders — đọc npmrc và khai triển biến môi trường.
 use anyhow::Result;
 use std::collections::HashMap;
 use std::path::Path;
 
-#[derive(Debug, Clone, Default)]
+use std::fmt;
+
+/// Never Debug-print tokens: counts and hosts only, values stay out of logs.
+/// (Không bao giờ Debug-print token: chỉ số lượng và host.)
+impl fmt::Debug for NpmRc {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("NpmRc")
+            .field("registry", &self.registry)
+            .field("scope_registries", &self.scope_registries)
+            .field(
+                "auth_token_hosts",
+                &self.auth_tokens.keys().collect::<Vec<_>>(),
+            )
+            .field(
+                "basic_auth_hosts",
+                &self.basic_auth.keys().collect::<Vec<_>>(),
+            )
+            .finish()
+    }
+}
+
+/// A borrowed token and its selected HTTP scope; no Debug token output.
+/// Không tách scope khỏi credential khi chuyển tới native downloader.
+pub struct NpmCredential<'a> {
+    pub token: &'a String,
+    pub scope: url::Url,
+}
+
+#[derive(Clone, Default)]
 pub struct NpmRc {
     /// registry=URL (registry mặc định)
     pub registry: Option<String>,
@@ -28,6 +57,18 @@ impl NpmRc {
         }
         let project_npmrc = project_dir.join(".npmrc");
         if project_npmrc.exists() {
+            // A planted symlink here would pull foreign files (e.g. another
+            // user's tokens) into auth resolution — refuse, don't follow.
+            // (Symlink trong project có thể kéo file ngoài vào auth.)
+            if std::fs::symlink_metadata(&project_npmrc)
+                .map(|metadata| metadata.file_type().is_symlink())
+                .unwrap_or(false)
+            {
+                anyhow::bail!(
+                    "project .npmrc '{}' must not be a symlink",
+                    project_npmrc.display()
+                );
+            }
             combined.merge(Self::parse(&std::fs::read_to_string(&project_npmrc)?)?);
         }
         Ok(combined)
@@ -90,6 +131,94 @@ impl NpmRc {
         }
     }
 
+    /// Select URL-scoped credentials; equivalent conflicting scopes fail explicitly.
+    /// Chọn token theo host/port/path cụ thể nhất; lỗi không chứa giá trị credential.
+    /// Legacy value-only lookup; native transport must use the scoped result.
+    /// Giữ API token-only cho caller cũ; đường request mới phải giữ cả scope.
+    pub fn token_for_url_checked(&self, registry_url: &str) -> Result<Option<&String>> {
+        Ok(self
+            .credential_for_url_checked(registry_url)?
+            .map(|credential| credential.token))
+    }
+
+    pub fn credential_for_url_checked(
+        &self,
+        registry_url: &str,
+    ) -> Result<Option<NpmCredential<'_>>> {
+        let target = url::Url::parse(registry_url)
+            .map_err(|_| anyhow::anyhow!("invalid registry URL for credential scope matching"))?;
+        if !matches!(target.scheme(), "https" | "http")
+            || !target.username().is_empty()
+            || target.password().is_some()
+        {
+            return Err(anyhow::anyhow!(
+                "invalid registry URL for credential scope matching"
+            ));
+        }
+        // Reject malformed credential scopes instead of silently widening them.
+        // Query/fragment trong scope không được biến thành quyền gửi token ở path khác.
+        for key in self.auth_tokens.keys() {
+            let scoped = url::Url::parse(&format!(
+                "{}://{}/",
+                target.scheme(),
+                key.trim_start_matches('/').trim_end_matches('/')
+            ))
+            .map_err(|_| anyhow::anyhow!("invalid registry credential scope"))?;
+            if scoped.host_str().is_none()
+                || !scoped.username().is_empty()
+                || scoped.password().is_some()
+                || scoped.query().is_some()
+                || scoped.fragment().is_some()
+            {
+                return Err(anyhow::anyhow!("invalid registry credential scope"));
+            }
+        }
+        let candidates: Vec<_> = self
+            .auth_tokens
+            .iter()
+            .filter_map(|(key, token)| {
+                let scoped = url::Url::parse(&format!(
+                    "{}://{}/",
+                    target.scheme(),
+                    key.trim_start_matches('/').trim_end_matches('/')
+                ))
+                .ok()?;
+                if !scoped.username().is_empty()
+                    || scoped.password().is_some()
+                    || scoped.host_str() != target.host_str()
+                    || scoped.port_or_known_default() != target.port_or_known_default()
+                {
+                    return None;
+                }
+                let prefix = scoped.path();
+                let exact = prefix.trim_end_matches('/');
+                if target.path() != exact && !target.path().starts_with(prefix) {
+                    return None;
+                }
+                Some((prefix.len(), token, scoped))
+            })
+            .collect();
+        let Some(longest) = candidates.iter().map(|(length, _, _)| *length).max() else {
+            return Ok(None);
+        };
+        let mut matching = candidates
+            .iter()
+            .filter(|(length, _, _)| *length == longest)
+            .map(|(_, token, scope)| (*token, scope));
+        let selected = matching
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("invalid registry credential match state"))?;
+        if matching.any(|(token, _)| token != selected.0) {
+            return Err(anyhow::anyhow!(
+                "conflicting credentials for equivalent registry scopes"
+            ));
+        }
+        Ok(Some(NpmCredential {
+            token: selected.0,
+            scope: selected.1.clone(),
+        }))
+    }
+
     /// Token cho một registry host (vd: registry.npmjs.org).
     pub fn token_for(&self, host: &str) -> Option<&String> {
         self.auth_tokens.get(&Self::normalize_host(host))
@@ -112,12 +241,68 @@ impl NpmRc {
 
     /// Ghi `//host/:_authToken=TOKEN` vào file .npmrc (thay dòng cũ nếu có).
     /// (login flow — lưu token sau `mgc login` / `mgc registry user add`)
+    ///
+    /// Security: refuses symlinked paths (a planted link would redirect a
+    /// live token outside the project) and creates the file `0600` on
+    /// Unix, mirroring the keyring writer. Existing files keep their
+    /// content; only the token line is replaced.
+    /// (Từ chối path symlink; file mới `0600` trên Unix như keyring.)
     pub fn save_auth_token(npmrc_path: &Path, host: &str, token: &str) -> Result<()> {
+        let registry_url = format!("https://{host}/");
+        Self::save_auth_token_for_registry_url(npmrc_path, &registry_url, token)
+    }
+
+    /// Save a token with the registry's host and path scope instead of widening it to the full host.
+    /// Lưu token theo cả host lẫn path để không mở rộng credential sang registry khác cùng host.
+    pub fn save_auth_token_for_registry_url(
+        npmrc_path: &Path,
+        registry_url: &str,
+        token: &str,
+    ) -> Result<()> {
         use std::fs;
         use std::io::Write;
 
-        let host_key = format!("//{}/:_authToken", Self::normalize_host(host));
-        let new_line = format!("{}={}", host_key, token);
+        let mut scope = url::Url::parse(registry_url)
+            .map_err(|_| anyhow::anyhow!("invalid registry URL for auth token scope"))?;
+        if !matches!(scope.scheme(), "http" | "https")
+            || scope.host_str().is_none()
+            || !scope.username().is_empty()
+            || scope.password().is_some()
+            || scope.query().is_some()
+            || scope.fragment().is_some()
+        {
+            anyhow::bail!("invalid registry URL for auth token scope");
+        }
+        if token.is_empty()
+            || token
+                .bytes()
+                .any(|byte| byte.is_ascii_whitespace() || byte.is_ascii_control())
+        {
+            anyhow::bail!("invalid registry auth token");
+        }
+        let mut path = scope.path().to_owned();
+        if !path.ends_with('/') {
+            path.push('/');
+        }
+        scope.set_path(&path);
+        let scoped_authority = scope
+            .as_str()
+            .strip_prefix("https:")
+            .or_else(|| scope.as_str().strip_prefix("http:"))
+            .ok_or_else(|| anyhow::anyhow!("invalid registry URL for auth token scope"))?;
+        let auth_scope = format!("{scoped_authority}:_authToken");
+
+        if fs::symlink_metadata(npmrc_path)
+            .map(|metadata| metadata.file_type().is_symlink())
+            .unwrap_or(false)
+        {
+            anyhow::bail!(
+                "refusing to write auth token through symlink '{}'",
+                npmrc_path.display()
+            );
+        }
+
+        let new_line = format!("{auth_scope}={token}");
 
         let mut lines: Vec<String> = Vec::new();
         if npmrc_path.exists() {
@@ -125,7 +310,7 @@ impl NpmRc {
             let mut replaced = false;
             for raw in content.lines() {
                 let line = raw.trim_end();
-                if line.starts_with(&format!("{}=", host_key)) {
+                if line.starts_with(&format!("{auth_scope}=")) {
                     lines.push(new_line.clone());
                     replaced = true;
                 } else {
@@ -144,8 +329,21 @@ impl NpmRc {
             out.push_str(&line);
             out.push('\n');
         }
-        let mut f = fs::File::create(npmrc_path)?;
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut f = options.open(npmrc_path)?;
         f.write_all(out.as_bytes())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let permissions = std::fs::Permissions::from_mode(0o600);
+            std::fs::set_permissions(npmrc_path, permissions)?;
+        }
         Ok(())
     }
 }

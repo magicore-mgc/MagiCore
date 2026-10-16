@@ -1,12 +1,29 @@
 //! Registry command — mgc registry serve / user add / user rm (10-task-plan Phase 3)
 //! (Lệnh registry: serve server, quản lý user — add/rm)
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use clap::{Args, Subcommand};
+use mgc_config::npmrc::NpmRc;
 use tracing_subscriber::EnvFilter;
 
 /// Default local registry URL for user management (RULE §13: port chứa 4·3·1·5)
 const DEFAULT_REGISTRY: &str = "http://127.0.0.1:4315";
+
+/// Apply a core namespace only to OCI bindings; preserve existing npm/PyPI names.
+/// Chỉ thêm namespace core cho binding OCI; giữ nguyên tên npm/PyPI hiện hữu.
+fn effective_trusted_binding_package(
+    protocol: &str,
+    core: Option<&str>,
+    package: &str,
+) -> Result<String> {
+    if protocol == "oci"
+        && let Some(core) = core
+    {
+        return mgc_registry_server::trusted::core_scoped_oci_repository(core, package)
+            .map_err(|_| anyhow::anyhow!("invalid core-scoped OCI repository"));
+    }
+    Ok(package.to_owned())
+}
 
 #[derive(Args, Debug, Clone)]
 pub struct RegistryArgs {
@@ -37,6 +54,30 @@ pub enum RegistryCmd {
             help = "blob storage: \"local\" or \"s3://bucket/prefix\" (ITEM 5)"
         )]
         storage: Option<String>,
+        #[arg(long = "oidc-issuer", env = "MAGICORE_REGISTRY_OIDC_ISSUER")]
+        oidc_issuers: Vec<String>,
+        #[arg(long, env = "MAGICORE_REGISTRY_OIDC_AUDIENCE")]
+        oidc_audience: Option<String>,
+        /// Comma-separated peer IPs of TLS proxies allowed to assert X-Forwarded-Proto.
+        /// Danh sách IP peer proxy TLS được phép xác nhận X-Forwarded-Proto, phân tách bằng dấu phẩy.
+        #[arg(
+            long,
+            env = "MAGICORE_REGISTRY_TRUSTED_PROXY_IPS",
+            value_delimiter = ','
+        )]
+        trusted_proxy_ips: Vec<std::net::IpAddr>,
+    },
+    /// Bind a package to a trusted CI repository (requires admin token).
+    /// Ràng buộc package với repository CI đáng tin (cần admin token).
+    Trust {
+        package: String,
+        repository: String,
+        #[arg(long, value_parser = ["npm", "pypi", "oci"], default_value = "npm")]
+        protocol: String,
+        #[arg(long, default_value = DEFAULT_REGISTRY)]
+        registry: String,
+        #[arg(long, env = "MAGICORE_REGISTRY_ADMIN_TOKEN")]
+        admin_token: Option<String>,
     },
     /// Manage registry users
     User {
@@ -50,8 +91,8 @@ pub enum UserCmd {
     /// Create a user, print the token
     Add {
         name: String,
-        #[arg(long, help = "password (prompt if omitted)")]
-        password: Option<String>,
+        #[arg(long, help = "read password from stdin; otherwise prompt without echo")]
+        password_stdin: bool,
         #[arg(long = "scope", help = "package scope patterns, vd: @magicore/*")]
         scopes: Vec<String>,
         #[arg(
@@ -81,7 +122,7 @@ pub enum UserCmd {
     },
 }
 
-pub async fn run(args: RegistryArgs) -> Result<()> {
+pub async fn run(args: RegistryArgs, core: Option<&str>) -> Result<()> {
     match args.cmd {
         RegistryCmd::Serve {
             host,
@@ -92,6 +133,9 @@ pub async fn run(args: RegistryArgs) -> Result<()> {
             rate_limit,
             upstream,
             storage,
+            oidc_issuers,
+            oidc_audience,
+            trusted_proxy_ips,
         } => {
             let _ = tracing_subscriber::fmt()
                 .with_env_filter(
@@ -107,17 +151,30 @@ pub async fn run(args: RegistryArgs) -> Result<()> {
                 rate_limit_rps: rate_limit,
                 upstream,
                 storage,
+                oidc_issuers,
+                oidc_audience,
+                trusted_proxy_ips,
             })
             .await
+        }
+        RegistryCmd::Trust {
+            package,
+            repository,
+            protocol,
+            registry,
+            admin_token,
+        } => {
+            let package = effective_trusted_binding_package(&protocol, core, &package)?;
+            trust_publisher(&package, &repository, &protocol, &registry, admin_token).await
         }
         RegistryCmd::User { cmd } => match cmd {
             UserCmd::Add {
                 name,
-                password,
+                password_stdin,
                 scopes,
                 role,
                 registry,
-            } => user_add(&name, password, &scopes, &role, &registry).await,
+            } => user_add(&name, password_stdin, &scopes, &role, &registry).await,
             UserCmd::Rm {
                 name,
                 registry,
@@ -132,51 +189,82 @@ pub async fn run(args: RegistryArgs) -> Result<()> {
     }
 }
 
+async fn trust_publisher(
+    package: &str,
+    repository: &str,
+    protocol: &str,
+    registry: &str,
+    admin_token: Option<String>,
+) -> Result<()> {
+    let admin_token = admin_token.ok_or_else(crate::error::trusted_registry_admin_required)?;
+    let parsed_registry =
+        url::Url::parse(registry).map_err(|_| crate::error::trusted_registry_url_invalid())?;
+    if !parsed_registry.username().is_empty()
+        || parsed_registry.password().is_some()
+        || parsed_registry.query().is_some()
+        || parsed_registry.fragment().is_some()
+    {
+        return Err(crate::error::trusted_registry_url_invalid());
+    }
+    let local_http = parsed_registry.scheme() == "http"
+        && parsed_registry.host_str().is_some_and(|host| {
+            host == "localhost"
+                || host
+                    .parse::<std::net::IpAddr>()
+                    .is_ok_and(|address| address.is_loopback())
+        });
+    if parsed_registry.scheme() != "https" && !local_http {
+        return Err(crate::error::trusted_registry_requires_https());
+    }
+    let url = format!(
+        "{}/-/v1/trusted-publish/bindings",
+        registry.trim_end_matches('/')
+    );
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(15))
+        .build()?;
+    let response = client
+        .put(url)
+        .bearer_auth(admin_token)
+        .json(&serde_json::json!({
+            "protocol": protocol,
+            "package": package,
+            "repository": repository,
+        }))
+        .send()
+        .await?;
+    if !response.status().is_success() {
+        return Err(crate::error::trusted_binding_failed(
+            response.status().as_u16(),
+        ));
+    }
+    println!("Trusted {protocol} publisher bound: {package} ← {repository}");
+    Ok(())
+}
+
 async fn user_add(
     name: &str,
-    password: Option<String>,
+    password_stdin: bool,
     scopes: &[String],
     role: &str,
     registry: &str,
 ) -> Result<()> {
-    let password = match password {
-        Some(p) => p,
-        None => {
-            print!("Password for {}: ", name);
-            std::io::Write::flush(&mut std::io::stdout())?;
-            let mut line = String::new();
-            std::io::stdin().read_line(&mut line)?;
-            line.trim().to_string()
-        }
-    };
-
-    let url = format!(
-        "{}/-/user/org.couchdb.user:{}",
-        registry.trim_end_matches('/'),
-        name
-    );
-    let body = serde_json::json!({
-        "name": name,
-        "password": password,
-        "email": "",
-        "scopes": scopes,
-        "role": role
-    });
-    let client = reqwest::Client::new();
-    let resp = client.put(&url).json(&body).send().await?;
-    let status = resp.status();
-    let text = resp.text().await?;
-    if !status.is_success() {
-        bail!("Add user failed: {} - {}", status, text);
-    }
-    let json: serde_json::Value = serde_json::from_str(&text)?;
-    let token = json["token"]
-        .as_str()
-        .ok_or_else(|| crate::error::no_token_in_response(&text))?;
-    println!("User {} created. Token: {}", name, token);
+    let password = crate::commands::login::read_password(password_stdin, "Password")?;
+    let token = crate::commands::login::create_registry_user(
+        registry,
+        name,
+        &password,
+        &serde_json::json!({ "email": "", "scopes": scopes, "role": role }),
+    )
+    .await?;
+    let npmrc_path = dirs::home_dir()
+        .ok_or_else(crate::error::no_home_dir)?
+        .join(".npmrc");
+    NpmRc::save_auth_token_for_registry_url(&npmrc_path, registry, &token)?;
     println!(
-        "Set it in .npmrc via: mgc login --username {} --password <pw>",
-        name
+        "User created; registry token saved to {}",
+        npmrc_path.display()
     );
     Ok(())
 }
@@ -228,3 +316,7 @@ async fn revoke_token(token: &str, registry: &str, admin_token: Option<String>) 
     println!("Token revoked");
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "test/mod.rs"]
+mod tests;

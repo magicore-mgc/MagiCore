@@ -1,7 +1,8 @@
 #![allow(clippy::unwrap_used)]
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use mgc_iot_adapter::{detect_framework, IotFramework};
+use criterion::{Criterion, criterion_group, criterion_main};
+use mgc_iot_adapter::{IotFramework, detect_framework};
 use std::fs;
+use std::hint::black_box;
 use tempfile::tempdir;
 
 fn bench_iot_framework_detection(c: &mut Criterion) {

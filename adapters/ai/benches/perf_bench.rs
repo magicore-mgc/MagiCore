@@ -1,7 +1,8 @@
 //! AI adapter performance benchmark
 //! Benchmark hiệu suất adapter AI
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 use std::time::Duration;
 
 /// Benchmark cache operations (10 packages)

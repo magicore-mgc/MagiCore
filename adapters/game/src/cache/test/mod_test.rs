@@ -7,13 +7,15 @@ use super::*;
 #[test]
 fn test_cache_dir() {
     let dir = cache_dir(GameEngine::Godot).unwrap();
-    assert!(dir.to_string_lossy().contains("mgc/game/godot"));
+    assert!(dir.ends_with("cache/game/godot"));
+    assert!(dir.starts_with(mgc_platform::paths::mgc_data_dir().join("cache/game")));
 }
 
 #[test]
 fn test_cache_dir_unity() {
     let dir = cache_dir(GameEngine::Unity).unwrap();
-    assert!(dir.to_string_lossy().contains("mgc/game/unity"));
+    assert!(dir.ends_with("cache/game/unity"));
+    assert!(dir.starts_with(mgc_platform::paths::mgc_data_dir().join("cache/game")));
 }
 
 #[test]

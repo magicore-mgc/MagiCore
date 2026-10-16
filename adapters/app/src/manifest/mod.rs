@@ -20,6 +20,14 @@ pub fn parse_manifest(language: AppLanguage, project_root: &Path) -> MgResult<Ma
         AppLanguage::ReactNative => react_native::parse_package_json(project_root),
         AppLanguage::ObjC => flutter::parse_podfile(project_root), // ObjC uses CocoaPods
         AppLanguage::Multi => parse_multi_manifest(project_root),
+        AppLanguage::Maui | AppLanguage::Tauri => Err(mgc_types::MgError::Unsupported {
+            core: "app",
+            capability: "parse-manifest",
+            guidance: format!(
+                "{} is detected as an app project, but MagiCore does not yet parse its dependency manifest",
+                language.as_str()
+            ),
+        }),
     }
 }
 
@@ -47,13 +55,11 @@ fn parse_multi_manifest(project_root: &Path) -> MgResult<Manifest> {
         return react_native::parse_package_json(project_root);
     }
 
-    // Fallback: empty manifest with project name
-    let name = project_root
-        .file_name()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| "app".to_string());
-
-    Ok(Manifest::new(&name, mgc_types::Ecosystem::App))
+    Err(mgc_types::MgError::Unsupported {
+        core: "app",
+        capability: "parse-multi-manifest",
+        guidance: "no supported app dependency manifest was detected; refusing to return an empty dependency graph".to_string(),
+    })
 }
 
 /// Write manifest back to file.
@@ -70,6 +76,14 @@ pub fn write_manifest(
         AppLanguage::ReactNative => react_native::write_package_json(project_root, manifest),
         AppLanguage::ObjC => flutter::write_podfile(project_root, manifest),
         AppLanguage::Multi => write_multi_manifest(project_root, manifest),
+        AppLanguage::Maui | AppLanguage::Tauri => Err(mgc_types::MgError::Unsupported {
+            core: "app",
+            capability: "write-manifest",
+            guidance: format!(
+                "{} dependency manifest writes are not implemented by MagiCore",
+                language.as_str()
+            ),
+        }),
     }
 }
 
@@ -94,5 +108,9 @@ fn write_multi_manifest(project_root: &Path, manifest: &Manifest) -> MgResult<()
         return react_native::write_package_json(project_root, manifest);
     }
 
-    Ok(())
+    Err(mgc_types::MgError::Unsupported {
+        core: "app",
+        capability: "write-multi-manifest",
+        guidance: "no supported app dependency manifest was detected; refusing to report a successful no-op write".to_string(),
+    })
 }

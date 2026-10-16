@@ -5,4 +5,4 @@ mode = "single-core"
 primary_core = "web"
 no_default_features = true
 features = ["web"]
-install_hint = "brew install magicore-web  |  curl -fsSL https://raw.githubusercontent.com/mingd-153/MagiCore/main/scripts/install-from-gh.sh | bash -s -- --package magicore-web"
+install_hint = "Install a published GitHub release: bash scripts/install-from-gh.sh --package magicore-web --version <published-version> --dir <bin-directory>"

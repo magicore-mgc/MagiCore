@@ -1,5 +1,5 @@
 //! Engine binaries cache management.
-//! Cache Godot/Unity binaries in ~/.cache/mgc/game/
+//! Cache Godot/Unity binaries in MGC_DATA_DIR/cache/game/.
 
 use crate::engine::GameEngine;
 use mgc_types::{MgError, MgResult};
@@ -7,12 +7,8 @@ use std::path::PathBuf;
 
 /// Get cache directory for game engines
 pub fn cache_dir(engine: GameEngine) -> MgResult<PathBuf> {
-    let home =
-        dirs::home_dir().ok_or_else(|| MgError::Other("Cannot determine home directory".into()))?;
-
-    let cache_path = home
-        .join(".cache")
-        .join("mgc")
+    let cache_path = mgc_platform::paths::mgc_data_dir()
+        .join("cache")
         .join("game")
         .join(engine.as_str());
 

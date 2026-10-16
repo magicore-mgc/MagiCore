@@ -30,6 +30,8 @@ fn test_hash_hex_roundtrip() {
     let hex = hash.to_hex();
     let parsed = Blake3Hash::from_hex(&hex).unwrap();
     assert_eq!(hash, parsed);
+    let uppercase = Blake3Hash::from_hex(&hex.to_uppercase()).unwrap();
+    assert_eq!(hash, uppercase);
 }
 
 #[test]
@@ -47,6 +49,13 @@ fn test_hex_dos_protection() {
     let result = Blake3Hash::from_hex(&evil);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("too long"));
+}
+
+#[test]
+fn test_hex_rejects_unicode_without_panicking() {
+    for input in ["€0", "0€", "a€b"] {
+        assert!(Blake3Hash::from_hex(input).is_err(), "accepted {input:?}");
+    }
 }
 
 #[test]

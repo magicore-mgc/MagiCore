@@ -5,6 +5,10 @@ use crate::registry::Registry;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+/// Default minimum release age for supply-chain quarantine, in hours.
+/// Tuổi phát hành mặc định để cách ly chuỗi cung ứng, tính bằng giờ.
+pub const DEFAULT_MIN_RELEASE_AGE_HOURS: u64 = 24;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectExecutionConfig {
     #[serde(default = "default_execution_architecture")]
@@ -130,6 +134,232 @@ pub struct ProjectConfig {
     /// Security config (mgc.toml [security]) — min_release_age per ecosystem
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub security: Option<SecurityConfig>,
+    /// Lock config (mgc.toml [lock]) — signature policy, writer lock
+    /// timeouts (V1.2 lock v4).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lock: Option<LockConfig>,
+    /// Trust roots (mgc.toml [trust]) — key ids accepted in `require` mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trust: Option<TrustConfig>,
+    /// Compatibility opt-ins (mgc.toml [compat]) — explicit escape hatches.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compat: Option<CompatConfig>,
+    /// Registry/index sources (mgc.toml [[sources]]) — multi-index
+    /// source-selection policy (design §5).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sources: Option<Vec<SourceConfig>>,
+    /// Lifecycle script policy (mgc.toml [scripts]) — committed,
+    /// reviewable per-package allow/deny + default policy. Merges with
+    /// the machine-local trust DB (deny wins everywhere).
+    /// (Policy script lifecycle commit được — hợp nhất với trust DB.)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scripts: Option<ScriptsPolicy>,
+    /// Native script grammar pin (mgc.toml [script]) — Spec rev4 §4.
+    /// Unknown versions fail closed in both directions (new MGC reading an
+    /// old pin, old MGC meeting a new pin); absence falls back to the
+    /// stable per-ecosystem default.
+    /// (Ghim grammar script native (mgc.toml [script]) — Spec rev4 §4.
+    /// Version lạ fail-closed cả hai chiều; vắng thì dùng default ổn định.)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub script: Option<ScriptGrammarConfig>,
+}
+
+/// Exact pre-operation snapshot of MagiCore-owned project identity files.
+/// Snapshot nguyên byte các file định danh project do MGC sở hữu.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectIdentitySnapshot {
+    marker: Option<String>,
+    config: Option<String>,
+}
+
+/// Capture the marker and project config before running untrusted lifecycle hooks.
+/// Chụp marker và cấu hình trước khi chạy lifecycle hook không đáng tin.
+pub fn snapshot_project_identity(project_root: &Path) -> anyhow::Result<ProjectIdentitySnapshot> {
+    Ok(ProjectIdentitySnapshot {
+        marker: read_regular_project_text(
+            &project_root.join(ProjectConfig::CORE_MARKER_FILE),
+            "core marker",
+        )?,
+        config: read_regular_project_text(&project_root.join("mgc.toml"), "project config")?,
+    })
+}
+
+/// Check the marker bytes and canonical configured core against a snapshot.
+/// So marker nguyên byte và core canonical trong config khớp snapshot.
+pub fn project_identity_matches_snapshot(
+    project_root: &Path,
+    snapshot: &ProjectIdentitySnapshot,
+) -> anyhow::Result<bool> {
+    let marker = read_regular_project_text(
+        &project_root.join(ProjectConfig::CORE_MARKER_FILE),
+        "core marker",
+    )?;
+    if marker != snapshot.marker {
+        return Ok(false);
+    }
+    let current_config =
+        read_regular_project_text(&project_root.join("mgc.toml"), "project config")?;
+    let current_core = ecosystem_from_config(current_config.as_deref())?;
+    let expected_core = ecosystem_from_config(snapshot.config.as_deref())?;
+    Ok(current_core.as_deref().map(ProjectConfig::canonical_core)
+        == expected_core.as_deref().map(ProjectConfig::canonical_core))
+}
+
+/// Restore identity files atomically after a lifecycle hook changes ownership.
+/// Refuses symlink/special-file targets and reports every failed restoration.
+/// Khôi phục atomic file identity sau khi hook đổi ownership; từ chối symlink/file đặc biệt.
+pub fn restore_project_identity(
+    project_root: &Path,
+    snapshot: &ProjectIdentitySnapshot,
+) -> anyhow::Result<()> {
+    let mut failures = Vec::new();
+    for (path, content, label) in [
+        (
+            project_root.join("mgc.toml"),
+            snapshot.config.as_deref(),
+            "project config",
+        ),
+        (
+            project_root.join(ProjectConfig::CORE_MARKER_FILE),
+            snapshot.marker.as_deref(),
+            "core marker",
+        ),
+    ] {
+        let result = read_regular_project_text(&path, label).and_then(|current| {
+            let unchanged = if label == "project config" {
+                match (
+                    ecosystem_from_config(current.as_deref()),
+                    ecosystem_from_config(content),
+                ) {
+                    (Ok(current), Ok(expected)) => {
+                        current.as_deref().map(ProjectConfig::canonical_core)
+                            == expected.as_deref().map(ProjectConfig::canonical_core)
+                    }
+                    _ => false,
+                }
+            } else {
+                current.as_deref() == content
+            };
+            if unchanged {
+                return Ok(());
+            }
+            match content {
+                Some(content) => atomic_write_project_config(&path, content.as_bytes()),
+                None => remove_regular_project_identity_file(&path),
+            }
+        });
+        if let Err(error) = result {
+            failures.push(format!("restore {label} '{}': {error}", path.display()));
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        anyhow::bail!(
+            "project identity restoration failed: {}",
+            failures.join("; ")
+        )
+    }
+}
+
+fn remove_regular_project_identity_file(path: &Path) -> anyhow::Result<()> {
+    if ensure_regular_project_config(path)?.is_none() {
+        return Ok(());
+    }
+    std::fs::remove_file(path)?;
+    #[cfg(unix)]
+    if let Some(parent) = path.parent() {
+        std::fs::File::open(parent)?.sync_all()?;
+    }
+    Ok(())
+}
+
+/// Lifecycle script policy — `[scripts] policy/allow/deny`.
+/// npm parity (approve-scripts/deny-scripts) in committed form: the local
+/// trust DB stays machine-private, this file is reviewed like code.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ScriptsPolicy {
+    /// Default for packages with scripts but no explicit entry:
+    /// `allow` (current behavior), `deny`, or `prompt` (deny + hint).
+    /// (Mặc định cho package chưa có entry.)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy: Option<String>,
+    /// Explicitly allowed package names (exact or `name@version`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allow: Vec<String>,
+    /// Explicitly denied package names (exact or `name@version`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deny: Vec<String>,
+}
+
+/// Native script grammar pin — `mgc.toml [script] grammar` (Spec rev4 §4).
+/// Ghim grammar script native — `mgc.toml [script] grammar` (Spec rev4 §4).
+///
+/// Versioned per script/core family (e.g. `web-script-v1`); adding a
+/// previously-rejected construct is a compatible extension, reinterpreting a
+/// previously-accepted script requires a new version + migration.
+/// (Version theo họ script/core (vd `web-script-v1`); thêm cú pháp từng bị
+/// từ chối là mở rộng tương thích, đổi nghĩa script đã chạy được cần version
+/// mới + migration.)
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ScriptGrammarConfig {
+    /// Pinned grammar version (e.g. `"web-script-v1"`).
+    /// Version grammar được ghim (vd `"web-script-v1"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grammar: Option<String>,
+}
+
+impl ProjectConfig {
+    /// Resolve the effective script grammar: explicit pin wins, otherwise the
+    /// stable per-ecosystem default. Unknown pins are returned as-is so the
+    /// caller can fail closed with the exact version string.
+    /// (Xác định grammar hiệu lực: pin tường minh thắng, còn lại dùng default
+    /// ổn định theo ecosystem. Pin lạ trả nguyên để caller fail-closed đúng
+    /// version đó.)
+    pub fn script_grammar(&self) -> String {
+        if let Some(pinned) = self.script.as_ref().and_then(|s| s.grammar.clone()) {
+            return pinned;
+        }
+        default_script_grammar(&self.ecosystem)
+    }
+}
+
+/// Stable default grammar per ecosystem family (Spec rev4 §4).
+/// Grammar mặc định ổn định theo họ ecosystem (Spec rev4 §4).
+pub fn default_script_grammar(ecosystem: &str) -> String {
+    match ecosystem {
+        "ai" => "ai-script-v1".to_string(),
+        "app" => "app-script-v1".to_string(),
+        "lib" => "lib-script-v1".to_string(),
+        "game" => "game-script-v1".to_string(),
+        "iot" => "iot-script-v1".to_string(),
+        "cloud" | "clo" => "cloud-script-v1".to_string(),
+        "cicd" => "cicd-script-v1".to_string(),
+        "hardware" => "hardware-script-v1".to_string(),
+        _ => "web-script-v1".to_string(),
+    }
+}
+
+/// Write-target lockfile schema for new locks, shared by every adapter
+/// write path (one rule, no per-lane drift): v4 only with explicit
+/// `mgc.toml [lock] schema = "4"` (the documented `"v4"` spelling also
+/// works); absent means v3; anything else fails closed.
+/// (Schema lockfile đích ghi cho lock mới, dùng chung mọi đường ghi
+/// adapter (một luật, không lệch lane): chỉ v4 khi tường minh;
+/// vắng nghĩa là v3; còn lại fail-closed.)
+pub fn lock_schema_is_v4(project_root: &std::path::Path) -> anyhow::Result<bool> {
+    let schema = ProjectConfig::load(project_root)?
+        .and_then(|config| config.lock)
+        .and_then(|lock| lock.schema)
+        .unwrap_or_else(|| "3".to_string());
+    let normalized = schema.strip_prefix('v').unwrap_or(&schema);
+    match normalized {
+        "4" => Ok(true),
+        "3" => Ok(false),
+        _ => anyhow::bail!(
+            "mgc.toml [lock] schema = \"{schema}\" is not supported (expected \"3\" or \"4\")"
+        ),
+    }
 }
 
 /// AI core config — `[ai] framework` (python-agent/mcp-server).
@@ -229,6 +459,12 @@ impl ProjectConfig {
             app: None,
             ai: None,
             security: None,
+            lock: None,
+            trust: None,
+            compat: None,
+            sources: None,
+            scripts: None,
+            script: None,
         }
     }
 
@@ -248,6 +484,9 @@ impl ProjectConfig {
                     .map(|f| match f.as_str() {
                         "typescript" | "ts" => "ts",
                         "python" | "py" => "python",
+                        "go" | "golang" => "go",
+                        "dotnet" | "csharp" | "c#" => "dotnet",
+                        "java" | "maven" => "java",
                         _ => "rust",
                     })
                     .unwrap_or("rust")
@@ -359,33 +598,71 @@ impl ProjectConfig {
             app,
             ai,
             security: None,
+            lock: None,
+            trust: None,
+            compat: None,
+            sources: None,
+            scripts: None,
+            script: None,
         }
     }
 
     /// Load from project root (mgc.toml)
     pub fn load(project_root: &Path) -> Result<Option<Self>, anyhow::Error> {
         let path = project_root.join("mgc.toml");
-        if !path.exists() {
+        let Some(content) = read_regular_project_text(&path, "project config")? else {
             return Ok(None);
+        };
+        let document: toml::Value = toml::from_str(&content)?;
+        let mut config: Self = toml::from_str(&content)?;
+        // Omitted execution metadata follows the same core defaults as project creation.
+        // Thiếu bảng execution dùng default theo core; pin tường minh giữ nguyên.
+        if document.get("execution").is_none() {
+            config.execution = default_execution_for(&config.ecosystem, &config.features);
         }
-        let content = std::fs::read_to_string(&path)?;
-        Ok(Some(toml::from_str(&content)?))
+        Ok(Some(config))
     }
 
     /// Save to project root (mgc.toml)
     pub fn save(&self, project_root: &Path) -> Result<(), anyhow::Error> {
+        let desired_core = Self::canonical_core(&self.ecosystem);
+        // Claim the project core before writing config so a save from another
+        // core cannot replace either the marker or the existing mgc.toml.
+        // (Ghi nhận core trước để save từ core khác không thể thay marker hay mgc.toml.)
+        Self::ensure_core_marker_at(project_root, &desired_core)?;
         let path = project_root.join("mgc.toml");
         let content = toml::to_string_pretty(self)?;
-        std::fs::write(path, content)?;
-        self.write_core_marker(project_root)?;
+        atomic_write_project_config(&path, content.as_bytes())?;
         Ok(())
     }
 
-    // ── Core signature marker (T9a — chống nhầm core, user 2026-08-19) ──
+    fn ensure_mgc_config_core_compatible(
+        project_root: &Path,
+        desired_core: &str,
+    ) -> Result<(), anyhow::Error> {
+        let path = project_root.join("mgc.toml");
+        if ensure_regular_project_config(&path)?.is_none() {
+            return Ok(());
+        }
+        let Some(existing) = Self::load(project_root)? else {
+            return Ok(());
+        };
+        let existing_core = Self::canonical_core(&existing.ecosystem);
+        if existing_core != desired_core {
+            anyhow::bail!(
+                "Project is already configured as core '{}'; refusing to replace it with '{}'. Core reassignment is not supported by this version.",
+                existing_core,
+                desired_core,
+            );
+        }
+        Ok(())
+    }
+
+    // ── Plain-text core identity marker (T9a — chống nhầm core) ──
     // Marker file luôn đi kèm mgc.toml; sinh trong save() — mọi path (init,
     // wizard, create-*) nhận marker tự động.
 
-    /// Core signature marker file name (const tập trung — RULE §12).
+    /// Plain-text core identity marker file name — not a cryptographic signature.
     pub const CORE_MARKER_FILE: &str = ".mgc.core";
 
     /// Core names accepted by the marker (chuẩn hóa "cloud" → "clo").
@@ -394,16 +671,12 @@ impl ProjectConfig {
     ];
 
     /// Canonicalize a core name (trim, lowercase, alias mapping).
-    fn canonical_core(name: &str) -> String {
+    pub(crate) fn canonical_core(name: &str) -> String {
         let n = name.trim().to_ascii_lowercase();
-        if n == "cloud" {
-            "clo".to_string()
-        } else {
-            n
-        }
+        if n == "cloud" { "clo".to_string() } else { n }
     }
 
-    fn is_known_core(name: &str) -> bool {
+    pub(crate) fn is_known_core(name: &str) -> bool {
         Self::KNOWN_CORES.contains(&name)
     }
 
@@ -411,13 +684,36 @@ impl ProjectConfig {
     ///
     /// - None: marker file does not exist.
     /// - Err: marker exists but the core name is unknown/empty (fail-closed —
-    ///   never guess a wrong core from a broken signature).
+    ///   never guess a wrong core from a malformed marker).
     pub fn read_core_marker(project_root: &Path) -> Result<Option<String>, anyhow::Error> {
-        let path = project_root.join(Self::CORE_MARKER_FILE);
-        if !path.exists() {
+        let Some(core) = Self::read_core_marker_identity(project_root)? else {
+            // A missing marker is ordinary for an unclaimed legacy project,
+            // but it must not bypass an existing trust anchor after rename/delete.
+            // (Marker vắng vẫn hợp lệ với project cũ chưa claim, nhưng không được
+            // né anchor sẵn có bằng cách đổi tên/xóa marker.)
+            crate::attestation::enforce_missing_marker_attestation(project_root)?;
             return Ok(None);
-        }
-        let content = std::fs::read_to_string(&path)?;
+        };
+        // Cryptographic anchor check runs last: plain-text agreement is
+        // necessary but not sufficient against deliberate marker edits.
+        // (Kiểm tra anchor mật mã chạy cuối: khớp plain-text là cần
+        // nhưng chưa đủ trước sửa marker có chủ đích.)
+        crate::attestation::enforce_live_attestation(project_root, &core)?;
+        Ok(Some(core))
+    }
+
+    /// Parse and cross-check project core identity without enforcing its
+    /// attestation. The attestation verifier uses this to compare the signed
+    /// core with the live marker without recursively invoking itself.
+    /// (Đọc và đối chiếu identity core mà không enforce attestation; verifier
+    /// dùng hàm này để tránh gọi đệ quy.)
+    pub(crate) fn read_core_marker_identity(
+        project_root: &Path,
+    ) -> Result<Option<String>, anyhow::Error> {
+        let path = project_root.join(Self::CORE_MARKER_FILE);
+        let Some(content) = read_regular_project_text(&path, "core marker")? else {
+            return Ok(None);
+        };
         let first_line = content
             .lines()
             .next()
@@ -426,21 +722,135 @@ impl ProjectConfig {
         let core = Self::canonical_core(first_line);
         if core.is_empty() || !Self::is_known_core(&core) {
             anyhow::bail!(
-                "'{}' has an invalid core signature '{}'. Expected one of: {}. Fix the file or run 'mgc init --signature <core>'.",
+                "'{}' has an invalid core marker '{}'. Expected one of: {}. Repair the marker file manually before running core-aware commands.",
                 path.display(),
                 first_line,
                 Self::KNOWN_CORES.join(", "),
             );
         }
+        Self::validate_marker_matches_project_config(project_root, &core)?;
         Ok(Some(core))
+    }
+
+    /// Reject a marker that disagrees with the persisted project identity.
+    /// Từ chối marker lệch với identity đã lưu trong cấu hình project.
+    fn validate_marker_matches_project_config(
+        project_root: &Path,
+        marker: &str,
+    ) -> Result<(), anyhow::Error> {
+        if ensure_regular_project_config(&project_root.join("mgc.toml"))?.is_none() {
+            return Ok(());
+        }
+        let configured = Self::read_to_string_ecosystem(project_root)?
+            .ok_or_else(|| anyhow::anyhow!("project config is missing its ecosystem"))?;
+        let configured = Self::canonical_core(&configured);
+        if !Self::is_known_core(&configured) {
+            anyhow::bail!(
+                "project config has unknown core '{}'; refusing to trust core marker '{}'",
+                configured,
+                marker,
+            );
+        }
+        if configured != marker {
+            anyhow::bail!(
+                "core marker '{}' conflicts with mgc.toml core '{}'; core reassignment is not supported by this version",
+                marker,
+                configured,
+            );
+        }
+        Ok(())
     }
 
     /// Write core marker file (1 line plain text + optional comment).
     pub fn write_core_marker(&self, project_root: &Path) -> Result<(), anyhow::Error> {
-        Self::write_core_marker_at(project_root, &self.ecosystem)
+        Self::ensure_core_marker_at(project_root, &self.ecosystem)
     }
 
-    /// Write marker for an arbitrary core name (dùng cho `mgc init --signature`).
+    /// Claim an absent marker or verify an existing marker has the same core.
+    /// Nhận ownership nếu marker chưa có; marker khác core luôn bị từ chối.
+    pub fn ensure_core_marker_at(project_root: &Path, core: &str) -> Result<(), anyhow::Error> {
+        let canonical = Self::canonical_core(core);
+        if !Self::is_known_core(&canonical) {
+            anyhow::bail!(
+                "Unknown core '{}'. Expected one of: {}.",
+                core,
+                Self::KNOWN_CORES.join(", "),
+            );
+        }
+        // Keep the compatibility check in the shared ownership primitive so
+        // every public entry point (including `write_core_marker`) is unable
+        // to override an existing mgc.toml core identity.
+        // (Đặt kiểm tra ở primitive chung để mọi API public đều không thể ghi đè core.)
+        Self::ensure_mgc_config_core_compatible(project_root, &canonical)?;
+        std::fs::create_dir_all(project_root)?;
+        let path = project_root.join(Self::CORE_MARKER_FILE);
+        match Self::read_core_marker(project_root)? {
+            Some(existing) if existing == canonical => return Ok(()),
+            Some(existing) => anyhow::bail!(
+                "Project is already marked as core '{}'; refusing to replace it with '{}'. Core reassignment is not supported by this version.",
+                existing,
+                canonical,
+            ),
+            None => {}
+        }
+
+        // Publish a fully written marker with a no-replace hard link. Creating
+        // the destination first and filling it afterward exposed an empty or
+        // partial identity file if the process was killed between those steps.
+        // (Publish marker đã ghi hoàn chỉnh bằng hard link không-ghi-đè; tránh
+        // marker rỗng/nửa chừng nếu process bị kill.)
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        let temp_path = parent.join(format!(
+            ".{}.claim.{}.{}",
+            Self::CORE_MARKER_FILE,
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        let result = (|| -> anyhow::Result<()> {
+            let mut options = std::fs::OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+            }
+            let mut file = options.open(&temp_path)?;
+            use std::io::Write;
+            file.write_all(format!("{canonical}\n").as_bytes())?;
+            file.sync_all()?;
+            match std::fs::hard_link(&temp_path, &path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    return match Self::read_core_marker(project_root)? {
+                        Some(existing) if existing == canonical => Ok(()),
+                        Some(existing) => anyhow::bail!(
+                            "Project is already marked as core '{}'; refusing to replace it with '{}'.",
+                            existing,
+                            canonical,
+                        ),
+                        None => anyhow::bail!(
+                            "Core marker '{}' changed while claiming project ownership; retry the command.",
+                            path.display(),
+                        ),
+                    };
+                }
+                Err(error) => return Err(error.into()),
+            }
+            #[cfg(unix)]
+            std::fs::File::open(parent)?.sync_all()?;
+            Ok(())
+        })();
+        let cleanup = std::fs::remove_file(&temp_path);
+        if let Err(error) = result {
+            let _ = cleanup;
+            return Err(error);
+        }
+        cleanup?;
+        Ok(())
+    }
+
+    /// Write a core marker only when it agrees with any existing project config.
+    /// Chỉ ghi marker khi nhất quán với cấu hình project hiện có.
     pub fn write_core_marker_at(project_root: &Path, core: &str) -> Result<(), anyhow::Error> {
         let canonical = Self::canonical_core(core);
         if !Self::is_known_core(&canonical) {
@@ -451,51 +861,266 @@ impl ProjectConfig {
             );
         }
         std::fs::create_dir_all(project_root)?;
-        let path = project_root.join(Self::CORE_MARKER_FILE);
-        std::fs::write(path, format!("{canonical}\n"))?;
-        Ok(())
+        Self::ensure_core_marker_at(project_root, &canonical)
     }
 
-    /// Collect distinct cores detected from project signature files.
-    fn detect_signatures(project_root: &Path) -> Vec<String> {
-        let mut cores: Vec<String> = Vec::new();
-        if project_root.join("package.json").exists() {
-            cores.push("web".to_string());
+    /// Collect distinct cores detected from project manifests.
+    /// Nhận diện core từ manifest chuẩn; chữ ký framework cụ thể thắng file ngôn ngữ chung.
+    fn detect_signatures(project_root: &Path) -> Result<Vec<String>, anyhow::Error> {
+        let mut cores = std::collections::BTreeSet::new();
+        let has_cloud_marker = ["cdk.json", "Pulumi.yaml", "Pulumi.yml", "wrangler.toml"]
+            .iter()
+            .try_fold(false, |found, name| {
+                Ok::<_, anyhow::Error>(found || signature_file_exists(&project_root.join(name))?)
+            })?
+            || has_regular_extension_file(project_root, "tf")?;
+        let has_game_marker = signature_file_exists(&project_root.join("project.godot"))?
+            || signature_file_exists_in_project(
+                project_root,
+                Path::new("ProjectSettings/ProjectVersion.txt"),
+            )?
+            || has_regular_extension_file(project_root, "uproject")?;
+        let has_iot_marker = signature_file_exists(&project_root.join("platformio.ini"))?
+            || signature_file_exists(&project_root.join("west.yml"))?;
+
+        // Framework-specific project files disambiguate common package manifests.
+        // (Manifest framework cụ thể giúp phân biệt package manifest đa dụng.)
+        if has_cloud_marker {
+            cores.insert("clo".to_string());
         }
-        if project_root.join("Cargo.toml").exists() {
-            cores.push("lib".to_string());
+        if has_game_marker {
+            cores.insert("game".to_string());
         }
-        if project_root.join("pyproject.toml").exists() {
-            cores.push("ai".to_string());
+        if has_iot_marker {
+            cores.insert("iot".to_string());
         }
-        if project_root.join("pubspec.yaml").exists() {
-            cores.push("app".to_string());
+
+        if signature_file_exists(&project_root.join("package.json"))? && !has_cloud_marker {
+            let path = project_root.join("package.json");
+            let content =
+                read_regular_project_text(&path, "package manifest")?.ok_or_else(|| {
+                    anyhow::anyhow!("package manifest disappeared during core detection")
+                })?;
+            let manifest: serde_json::Value = serde_json::from_str(&content)?;
+            if let Some(core) = node_manifest_core_hint(&manifest)? {
+                cores.insert(core);
+            } else {
+                cores.insert("web".to_string());
+            }
         }
-        if project_root.join("Package.swift").exists() {
-            cores.push("app".to_string());
+        if signature_file_exists(&project_root.join("Cargo.toml"))? {
+            let manifest =
+                read_regular_project_text(&project_root.join("Cargo.toml"), "Cargo manifest")?
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Cargo manifest disappeared during core detection")
+                    })?;
+            let value: toml::Value = toml::from_str(&manifest)?;
+            let has_bevy = has_named_dependency(&value, &["bevy"]);
+            let has_esp32 = has_named_dependency(
+                &value,
+                &["esp-idf-hal", "esp-idf-sys", "esp-hal", "esp32-hal"],
+            );
+            if has_bevy {
+                cores.insert("game".to_string());
+            }
+            if has_esp32 {
+                cores.insert("iot".to_string());
+            }
+            if !has_bevy && !has_esp32 && !has_game_marker && !has_iot_marker {
+                cores.insert("lib".to_string());
+            }
         }
-        cores.sort();
-        cores.dedup();
-        cores
+        if signature_file_exists(&project_root.join("pyproject.toml"))? {
+            let content =
+                read_regular_project_text(&project_root.join("pyproject.toml"), "Python manifest")?
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Python manifest disappeared during core detection")
+                    })?;
+            let value: toml::Value = toml::from_str(&content)?;
+            cores.insert(if python_declares_web_framework(&value) {
+                "web".to_string()
+            } else if python_declares_ai_framework(&value) {
+                "ai".to_string()
+            } else {
+                "lib".to_string()
+            });
+        }
+        if signature_file_exists(&project_root.join("pubspec.yaml"))?
+            || signature_file_exists(&project_root.join("Package.swift"))?
+        {
+            cores.insert("app".to_string());
+        }
+        if signature_file_exists(&project_root.join("go.mod"))? {
+            let content = read_regular_project_text(&project_root.join("go.mod"), "Go manifest")?
+                .ok_or_else(|| {
+                anyhow::anyhow!("Go manifest disappeared during core detection")
+            })?;
+            cores.insert(
+                if text_contains_any(
+                    &content,
+                    &[
+                        "github.com/gin-gonic/gin",
+                        "github.com/labstack/echo",
+                        "github.com/gofiber/fiber",
+                        "github.com/go-chi/chi",
+                        "github.com/gorilla/mux",
+                    ],
+                ) {
+                    "web".to_string()
+                } else {
+                    "lib".to_string()
+                },
+            );
+        }
+        let mut java_manifests = Vec::new();
+        for name in ["pom.xml", "build.gradle", "build.gradle.kts"] {
+            if signature_file_exists(&project_root.join(name))? {
+                java_manifests.push(name);
+            }
+        }
+        if !java_manifests.is_empty() {
+            let mut java_cores = std::collections::BTreeSet::new();
+            for name in java_manifests {
+                let content = read_regular_project_text(&project_root.join(name), "JVM manifest")?
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("JVM manifest disappeared during core detection")
+                    })?;
+                if text_contains_any(
+                    &content,
+                    &[
+                        "spring-boot-starter-web",
+                        "spring-boot-starter-webflux",
+                        "io.quarkus",
+                        "quarkus-rest",
+                    ],
+                ) {
+                    java_cores.insert("web");
+                } else if text_contains_any(
+                    &content,
+                    &["com.android.application", "com.android.tools.build:gradle"],
+                ) {
+                    java_cores.insert("app");
+                } else {
+                    java_cores.insert("lib");
+                }
+            }
+            cores.extend(java_cores.into_iter().map(str::to_string));
+        }
+        if !has_game_marker {
+            for manifest in files_with_extension(project_root, "csproj")? {
+                let content = read_regular_project_text(&manifest, ".NET project manifest")?
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(".NET manifest disappeared during core detection")
+                    })?;
+                let lower = content.to_ascii_lowercase();
+                if lower.contains("microsoft.net.sdk.maui")
+                    || lower.contains("<usemaui>true</usemaui>")
+                {
+                    cores.insert("app".to_string());
+                } else if lower.contains("microsoft.net.sdk.web") {
+                    cores.insert("web".to_string());
+                } else {
+                    cores.insert("lib".to_string());
+                }
+            }
+        }
+
+        // Wrangler and common CI files are used by both Cloud and CI/CD projects.
+        // Require the persisted marker instead of guessing between those cores.
+        if signature_file_exists(&project_root.join("wrangler.toml"))? {
+            cores.insert("cicd".to_string());
+            cores.insert("clo".to_string());
+        }
+
+        Ok(cores.into_iter().collect())
+    }
+
+    /// Read explicit core declarations embedded in supported package manifests.
+    /// Đọc khai báo core tường minh trong manifest trước khi suy luận từ tên file.
+    fn detect_declared_manifest_core(project_root: &Path) -> Result<Option<String>, anyhow::Error> {
+        let mut cores = std::collections::BTreeSet::new();
+        let package_manifest = project_root.join("package.json");
+        if signature_file_exists(&package_manifest)?
+            && let Some(content) = read_regular_project_text(&package_manifest, "package manifest")?
+        {
+            let value: serde_json::Value = serde_json::from_str(&content)?;
+            if let Some(core) = value
+                .get("magicore")
+                .and_then(|value| value.get("core"))
+                .and_then(serde_json::Value::as_str)
+            {
+                cores.insert(Self::canonical_core(core));
+            }
+        }
+        let cargo_manifest = project_root.join("Cargo.toml");
+        if signature_file_exists(&cargo_manifest)?
+            && let Some(content) = read_regular_project_text(&cargo_manifest, "Cargo manifest")?
+        {
+            let value: toml::Value = toml::from_str(&content)?;
+            if let Some(core) = value
+                .get("package")
+                .and_then(|value| value.get("metadata"))
+                .and_then(|value| value.get("magicore"))
+                .and_then(|value| value.get("core"))
+                .and_then(toml::Value::as_str)
+            {
+                cores.insert(Self::canonical_core(core));
+            }
+        }
+        let python_manifest = project_root.join("pyproject.toml");
+        if signature_file_exists(&python_manifest)?
+            && let Some(content) = read_regular_project_text(&python_manifest, "Python manifest")?
+        {
+            let value: toml::Value = toml::from_str(&content)?;
+            if let Some(core) = value
+                .get("tool")
+                .and_then(|value| value.get("magicore"))
+                .and_then(|value| value.get("core"))
+                .and_then(toml::Value::as_str)
+            {
+                cores.insert(Self::canonical_core(core));
+            }
+        }
+        if cores.len() > 1 {
+            anyhow::bail!(
+                "conflicting MagiCore core declarations in project manifests: {}. Set one authoritative '{}' marker or mgc.toml ecosystem.",
+                cores.into_iter().collect::<Vec<_>>().join(", "),
+                Self::CORE_MARKER_FILE,
+            );
+        }
+        if let Some(core) = cores.into_iter().next() {
+            if !Self::is_known_core(&core) {
+                anyhow::bail!(
+                    "manifest declares unknown MagiCore core '{}'; use a supported core in '{}' or mgc.toml",
+                    core,
+                    Self::CORE_MARKER_FILE,
+                );
+            }
+            return Ok(Some(core));
+        }
+        Ok(None)
     }
 
     /// Detect ecosystem with T9a priority: marker → mgc.toml → signatures.
     ///
-    /// Err = ambiguous: multiple signature files pointing at different cores
+    /// Err = ambiguous: multiple ecosystem manifests point at different cores
     /// and no marker (fail-closed — never guess, RULE §9.3).
     pub fn detect_core(project_root: &Path) -> Result<Option<String>, anyhow::Error> {
         if let Some(marker) = Self::read_core_marker(project_root)? {
             return Ok(Some(marker));
         }
-        if project_root.join("mgc.toml").exists() {
-            return Ok(Self::read_to_string_ecosystem(project_root));
+        if ensure_regular_project_config(&project_root.join("mgc.toml"))?.is_some() {
+            return Self::read_to_string_ecosystem(project_root);
         }
-        let signatures = Self::detect_signatures(project_root);
+        if let Some(core) = Self::detect_declared_manifest_core(project_root)? {
+            return Ok(Some(core));
+        }
+        let signatures = Self::detect_signatures(project_root)?;
         match signatures.len() {
             0 => Ok(None),
             1 => Ok(Some(signatures[0].clone())),
             _ => anyhow::bail!(
-                "Ambiguous project core in '{}': multiple signatures ({}) but no '{}'. Run 'mgc init --signature <core>' to mark the core explicitly.",
+                "Ambiguous project core in '{}': multiple ecosystem manifests ({}) but no '{}'. Run 'mgc init --signature <core>' to write a plain-text core marker explicitly.",
                 project_root.display(),
                 signatures.join(", "),
                 Self::CORE_MARKER_FILE,
@@ -503,41 +1128,35 @@ impl ProjectConfig {
         }
     }
 
-    /// Legacy detect (kept for tests): detect_core result flattened, marker
-    /// first, else mgc.toml, else first signature. Luồng mới dùng detect_core.
-    pub fn auto_detect(project_root: &Path) -> Option<String> {
-        Self::detect_core(project_root).ok().flatten()
+    /// Detect the project core without hiding malformed or conflicting identity errors.
+    /// Phát hiện core nhưng không biến marker hỏng/xung đột thành kết quả không tìm thấy.
+    pub fn auto_detect(project_root: &Path) -> Result<Option<String>, anyhow::Error> {
+        Self::detect_core(project_root)
     }
 
     /// Read `[ecosystem]` from an existing mgc.toml (multi/app/adapter config priority).
-    fn read_to_string_ecosystem(project_root: &Path) -> Option<String> {
-        let content = std::fs::read_to_string(project_root.join("mgc.toml")).ok()?;
-        let v: toml::Value = toml::from_str(&content).ok()?;
-        v.get("ecosystem")
-            .and_then(|e| e.as_str())
-            .map(String::from)
+    fn read_to_string_ecosystem(project_root: &Path) -> Result<Option<String>, anyhow::Error> {
+        let Some(content) =
+            read_regular_project_text(&project_root.join("mgc.toml"), "project config")?
+        else {
+            return Ok(None);
+        };
+        ecosystem_from_config(Some(&content))
     }
 
-    /// Find project root by looking for mgc.toml / .mgc.core / package.json /
-    /// Cargo.toml.
+    /// Find the nearest project root from a marker/config or language manifest.
     ///
     /// - `mgc.toml` + `.mgc.core` checked in CWD and ALL parent directories
     ///   (monorepo support — T9a signature leo parent).
-    /// - `package.json` / `Cargo.toml` etc. checked in CWD ONLY.
+    /// - Known language/framework manifests are checked from CWD to the nearest parent.
     pub fn find_project_root(from: &Path) -> Option<PathBuf> {
-        if from.join(Self::CORE_MARKER_FILE).exists()
-            || from.join("mgc.toml").exists()
-            || from.join("package.json").exists()
-            || from.join("Cargo.toml").exists()
-            || from.join("Package.swift").exists()
-            || from.join("pyproject.toml").exists()
-        {
+        if has_project_anchor(from) {
             return Some(from.to_path_buf());
         }
 
         let mut current = from.parent();
         while let Some(dir) = current {
-            if dir.join(Self::CORE_MARKER_FILE).exists() || dir.join("mgc.toml").exists() {
+            if has_project_anchor(dir) {
                 return Some(dir.to_path_buf());
             }
             current = dir.parent();
@@ -547,13 +1166,550 @@ impl ProjectConfig {
     }
 }
 
+fn ecosystem_from_config(content: Option<&str>) -> anyhow::Result<Option<String>> {
+    let Some(content) = content else {
+        return Ok(None);
+    };
+    let value: toml::Value = toml::from_str(content)?;
+    Ok(value
+        .get("ecosystem")
+        .and_then(|ecosystem| ecosystem.as_str())
+        .map(String::from))
+}
+
+/// Return metadata only for an existing regular config file. Symlinks and
+/// special files are refused before project identity is read or mutated.
+/// Chỉ trả metadata của config file thường; từ chối symlink/file đặc biệt.
+fn ensure_regular_project_config(path: &Path) -> anyhow::Result<Option<std::fs::Metadata>> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    if metadata.file_type().is_symlink() {
+        anyhow::bail!("project config '{}' must not be a symlink", path.display());
+    }
+    if !metadata.is_file() {
+        anyhow::bail!("project config '{}' must be a regular file", path.display());
+    }
+    Ok(Some(metadata))
+}
+
+/// Read a project identity/configuration file from a no-follow handle.
+/// Path metadata is checked for clear diagnostics, then the opened handle is
+/// checked again so a final-component symlink swap cannot redirect the read.
+/// Đọc file identity/config từ handle no-follow; kiểm tra lại metadata handle
+/// để symlink swap ở thành phần cuối không thể đổi đích đọc.
+/// Read a regular project file without following the final path component.
+/// Symlinks, reparse points, and special files are rejected. Callers should
+/// parse the returned text with the format-specific parser they own.
+/// Đọc file thường trong project, không đi theo path component cuối.
+pub fn read_regular_project_text(path: &Path, label: &str) -> anyhow::Result<Option<String>> {
+    use std::io::Read;
+
+    const MAX_PROJECT_TEXT_BYTES: u64 = 10 * 1024 * 1024;
+
+    let path_metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    if path_metadata.file_type().is_symlink() {
+        anyhow::bail!("{label} '{}' must not be a symlink", path.display());
+    }
+    if !path_metadata.is_file() {
+        anyhow::bail!("{label} '{}' must be a regular file", path.display());
+    }
+
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+        options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    }
+    let file = options.open(path).map_err(|error| {
+        anyhow::anyhow!(
+            "open {label} '{}' without following links: {error}",
+            path.display()
+        )
+    })?;
+    let opened_metadata = file.metadata()?;
+    if !opened_metadata.is_file() {
+        anyhow::bail!("{label} '{}' is not a regular file", path.display());
+    }
+    if opened_metadata.len() > MAX_PROJECT_TEXT_BYTES {
+        anyhow::bail!(
+            "{label} '{}' exceeds the {} byte safety limit",
+            path.display(),
+            MAX_PROJECT_TEXT_BYTES
+        );
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+        if opened_metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            anyhow::bail!("{label} '{}' must not be a reparse point", path.display());
+        }
+    }
+
+    let mut content = String::new();
+    file.take(MAX_PROJECT_TEXT_BYTES + 1)
+        .read_to_string(&mut content)?;
+    if content.len() as u64 > MAX_PROJECT_TEXT_BYTES {
+        anyhow::bail!(
+            "{label} '{}' exceeds the {} byte safety limit",
+            path.display(),
+            MAX_PROJECT_TEXT_BYTES
+        );
+    }
+    Ok(Some(content))
+}
+
+/// A project signature is only recognized when it is a regular file owned
+/// by the project tree; symlinked or special-file signatures fail closed.
+/// Chỉ nhận signature là file thường trong project; symlink/file đặc biệt bị từ chối.
+fn signature_file_exists(path: &Path) -> anyhow::Result<bool> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            anyhow::bail!(
+                "project signature '{}' must not be a symlink",
+                path.display()
+            )
+        }
+        Ok(metadata) if metadata.is_file() => Ok(true),
+        Ok(_) => anyhow::bail!(
+            "project signature '{}' must be a regular file",
+            path.display()
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// Check a nested signature while refusing symlinked parent directories.
+/// Kiểm tra signature lồng nhau và từ chối thư mục cha là symlink.
+fn signature_file_exists_in_project(root: &Path, relative: &Path) -> anyhow::Result<bool> {
+    use std::path::Component;
+
+    let components = relative.components().collect::<Vec<_>>();
+    if components.is_empty()
+        || components
+            .iter()
+            .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        anyhow::bail!("project signature path must be a normalized relative path");
+    }
+
+    let mut path = root.to_path_buf();
+    for component in components.iter().take(components.len() - 1) {
+        path.push(component.as_os_str());
+        let metadata = match std::fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error.into()),
+        };
+        if metadata.file_type().is_symlink() {
+            anyhow::bail!(
+                "project signature parent '{}' must not be a symlink",
+                path.display()
+            );
+        }
+        if !metadata.is_dir() {
+            anyhow::bail!(
+                "project signature parent '{}' must be a directory",
+                path.display()
+            );
+        }
+    }
+    let Some(last) = components.last() else {
+        return Ok(false);
+    };
+    path.push(last.as_os_str());
+    signature_file_exists(&path)
+}
+
+/// Match known framework coordinates without interpreting version syntax.
+/// Nhận diện tọa độ framework phổ biến, không phân tích constraint phiên bản.
+fn text_contains_any(content: &str, markers: &[&str]) -> bool {
+    let lower = content.to_ascii_lowercase();
+    markers
+        .iter()
+        .any(|marker| lower.contains(&marker.to_ascii_lowercase()))
+}
+
+/// Known Node framework markers used for conservative project-core inference.
+/// Dấu framework Node được dùng để suy luận core dự án theo hướng bảo thủ.
+const NODE_CORE_MARKERS: &[(&[&str], &str)] = &[
+    (
+        &["react-native", "expo", "@capacitor/core", "electron"],
+        "app",
+    ),
+    (
+        &["phaser", "pixi.js", "@babylonjs/core", "playcanvas"],
+        "game",
+    ),
+    (&["johnny-five", "firmata", "espruino"], "iot"),
+    (
+        &[
+            "@anthropic-ai/sdk",
+            "@google/generative-ai",
+            "@langchain/core",
+            "langchain",
+            "openai",
+            "@tensorflow/tfjs",
+        ],
+        "ai",
+    ),
+    (
+        &[
+            "@angular/core",
+            "@remix-run/react",
+            "@sveltejs/kit",
+            "astro",
+            "express",
+            "fastify",
+            "hono",
+            "koa",
+            "next",
+            "nuxt",
+            "react",
+            "react-dom",
+            "svelte",
+            "vue",
+        ],
+        "web",
+    ),
+    (
+        &["@pulumi/pulumi", "cdk", "serverless", "sst", "wrangler"],
+        "clo",
+    ),
+    (&["@actions/core", "@actions/github", "probot"], "cicd"),
+];
+
+/// Infer a Node project's core from unambiguous framework dependencies and CLI metadata.
+/// Suy luận core Node từ dependency framework rõ ràng và metadata CLI.
+fn node_manifest_core_hint(manifest: &serde_json::Value) -> anyhow::Result<Option<String>> {
+    let dependencies = [
+        "dependencies",
+        "devDependencies",
+        "optionalDependencies",
+        "peerDependencies",
+    ]
+    .into_iter()
+    .filter_map(|section| manifest.get(section).and_then(serde_json::Value::as_object));
+    let names = dependencies
+        .flat_map(|section| section.keys().map(|name| name.to_ascii_lowercase()))
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut detected = NODE_CORE_MARKERS
+        .iter()
+        .filter(|(_, core)| *core != "web")
+        .filter(|(markers, _)| markers.iter().any(|name| names.contains(*name)))
+        .map(|(_, core)| *core)
+        .collect::<std::collections::BTreeSet<_>>();
+    let explicit_web_marker = NODE_CORE_MARKERS
+        .iter()
+        .find(|(_, core)| *core == "web")
+        .is_some_and(|(markers, _)| {
+            markers
+                .iter()
+                .filter(|name| **name != "react" && **name != "react-dom")
+                .any(|name| names.contains(*name))
+        });
+    if explicit_web_marker || (detected.is_empty() && names.contains("react")) {
+        detected.insert("web");
+    }
+    if detected.len() > 1 {
+        anyhow::bail!(
+            "ambiguous package.json framework dependencies identify multiple MagiCore cores ({}); declare one core in package.json under 'magicore.core' or in '{}'",
+            detected.into_iter().collect::<Vec<_>>().join(", "),
+            ProjectConfig::CORE_MARKER_FILE,
+        );
+    }
+    if let Some(core) = detected.into_iter().next() {
+        return Ok(Some(core.to_string()));
+    }
+    if manifest.get("bin").is_some_and(|value| !value.is_null()) {
+        return Ok(Some("lib".to_string()));
+    }
+    Ok(None)
+}
+
+/// Inspect only dependency sections used by common Python project metadata.
+/// Chỉ xét dependency section chuẩn của metadata Python thường dùng.
+fn python_declares_web_framework(manifest: &toml::Value) -> bool {
+    python_declares_named_dependency(
+        manifest,
+        &[
+            "django",
+            "fastapi",
+            "flask",
+            "starlette",
+            "sanic",
+            "tornado",
+            "bottle",
+        ],
+    )
+}
+
+fn python_declares_ai_framework(manifest: &toml::Value) -> bool {
+    python_declares_named_dependency(
+        manifest,
+        &[
+            "accelerate",
+            "anthropic",
+            "autogen-agentchat",
+            "catboost",
+            "cohere",
+            "crewai",
+            "diffusers",
+            "dspy-ai",
+            "flax",
+            "google-genai",
+            "google-generativeai",
+            "haystack-ai",
+            "jax",
+            "keras",
+            "langchain",
+            "lightgbm",
+            "litellm",
+            "llama-index",
+            "ollama",
+            "openai",
+            "peft",
+            "pydantic-ai",
+            "pytorch",
+            "scikit-learn",
+            "semantic-kernel",
+            "sentence-transformers",
+            "tensorflow",
+            "torch",
+            "transformers",
+            "vllm",
+            "xgboost",
+        ],
+    )
+}
+
+fn python_declares_named_dependency(manifest: &toml::Value, packages: &[&str]) -> bool {
+    fn contains_framework(value: &toml::Value, packages: &[&str]) -> bool {
+        match value {
+            toml::Value::String(spec) => {
+                let name = spec
+                    .split(['[', ';', '=', '<', '>', '~', '!', ' '])
+                    .next()
+                    .unwrap_or_default()
+                    .trim()
+                    .to_ascii_lowercase()
+                    .replace('_', "-");
+                packages.contains(&name.as_str())
+            }
+            toml::Value::Array(items) => {
+                items.iter().any(|item| contains_framework(item, packages))
+            }
+            toml::Value::Table(table) => table.iter().any(|(name, value)| {
+                let normalized = name.to_ascii_lowercase().replace('_', "-");
+                packages.contains(&normalized.as_str()) || contains_framework(value, packages)
+            }),
+            _ => false,
+        }
+    }
+
+    let project = manifest.get("project");
+    let tool = manifest.get("tool");
+    [
+        project.and_then(|value| value.get("dependencies")),
+        project.and_then(|value| value.get("optional-dependencies")),
+        tool.and_then(|value| value.get("poetry"))
+            .and_then(|value| value.get("dependencies")),
+        tool.and_then(|value| value.get("pdm"))
+            .and_then(|value| value.get("dependencies")),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|value| contains_framework(value, packages))
+}
+
+/// Detect project anchors without following directory-entry symlinks.
+/// Tìm dấu mốc project ở thư mục gần nhất, không đi theo symlink thư mục.
+fn has_project_anchor(root: &Path) -> bool {
+    const DIRECT: &[&str] = &[
+        ProjectConfig::CORE_MARKER_FILE,
+        "mgc.toml",
+        "package.json",
+        "Cargo.toml",
+        "pyproject.toml",
+        "pubspec.yaml",
+        "Package.swift",
+        "go.mod",
+        "pom.xml",
+        "build.gradle",
+        "build.gradle.kts",
+        "project.godot",
+        "platformio.ini",
+        "west.yml",
+        "Pulumi.yaml",
+        "Pulumi.yml",
+        "cdk.json",
+        "wrangler.toml",
+        "ProjectSettings/ProjectVersion.txt",
+    ];
+    DIRECT.iter().any(|name| root.join(name).exists())
+        || directory_has_extension_anchor(root, "tf")
+        || directory_has_extension_anchor(root, "csproj")
+        || directory_has_extension_anchor(root, "uproject")
+}
+
+/// Check a filename extension at the project root for root discovery.
+/// Kiểm tra đuôi file ở root để tìm project mà không đọc nội dung.
+fn directory_has_extension_anchor(root: &Path, extension: &str) -> bool {
+    std::fs::read_dir(root).is_ok_and(|entries| {
+        entries.flatten().any(|entry| {
+            let path = entry.path();
+            path.extension()
+                .and_then(|value| value.to_str())
+                .is_some_and(|value| value.eq_ignore_ascii_case(extension))
+                && entry
+                    .file_type()
+                    .is_ok_and(|kind| kind.is_file() || kind.is_symlink())
+        })
+    })
+}
+
+/// Check dependency tables, including Cargo workspace and target-specific tables.
+/// Kiểm tra dependency table kể cả workspace và cấu hình theo target.
+fn has_named_dependency(manifest: &toml::Value, names: &[&str]) -> bool {
+    fn in_table(value: &toml::Value, names: &[&str]) -> bool {
+        let Some(table) = value.as_table() else {
+            return false;
+        };
+        let has_dependency = ["dependencies", "dev-dependencies", "build-dependencies"]
+            .iter()
+            .filter_map(|section| table.get(*section).and_then(toml::Value::as_table))
+            .any(|dependencies| {
+                dependencies.iter().any(|(name, spec)| {
+                    names.contains(&name.as_str())
+                        || spec
+                            .get("package")
+                            .and_then(toml::Value::as_str)
+                            .is_some_and(|package| names.contains(&package))
+                })
+            });
+        has_dependency
+            || ["workspace", "target"]
+                .iter()
+                .filter_map(|section| table.get(*section))
+                .any(|nested| in_table(nested, names))
+    }
+
+    in_table(manifest, names)
+}
+
+/// Find a regular root-level manifest by extension, rejecting a matching symlink.
+/// Tìm manifest thường theo extension và từ chối file khớp là symlink.
+fn has_regular_extension_file(root: &Path, extension: &str) -> anyhow::Result<bool> {
+    Ok(!files_with_extension(root, extension)?.is_empty())
+}
+
+/// Collect regular root-level manifests by extension, rejecting matching symlinks.
+/// Thu thập manifest thường theo extension và từ chối file khớp là symlink.
+fn files_with_extension(root: &Path, extension: &str) -> anyhow::Result<Vec<PathBuf>> {
+    let entries = match std::fs::read_dir(root) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error.into()),
+    };
+    let mut files = Vec::new();
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        if !path
+            .extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|value| value.eq_ignore_ascii_case(extension))
+        {
+            continue;
+        }
+        let file_type = entry.file_type()?;
+        if file_type.is_symlink() {
+            anyhow::bail!(
+                "project signature '{}' must not be a symlink",
+                path.display()
+            );
+        }
+        if file_type.is_file() {
+            files.push(path);
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
+/// Publish `mgc.toml` through a unique same-directory staging file. Replacing
+/// the path atomically avoids truncation and never follows a swapped symlink.
+/// Publish `mgc.toml` qua staging file cùng thư mục, atomic, không truncate.
+fn atomic_write_project_config(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+    use std::io::Write;
+
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| anyhow::anyhow!("project config path has no file name"))?;
+    let metadata = ensure_regular_project_config(path)?;
+    let temp_path = parent.join(format!(
+        ".{}.tmp.{}.{}",
+        file_name.to_string_lossy(),
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+
+    let result = (|| -> anyhow::Result<()> {
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+        }
+        let mut file = options.open(&temp_path)?;
+        if let Some(metadata) = &metadata {
+            file.set_permissions(metadata.permissions())?;
+        }
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        ensure_regular_project_config(path)?;
+        mgc_lockfile::atomic::atomic_replace_file(&temp_path, path)?;
+        #[cfg(unix)]
+        std::fs::File::open(parent)?.sync_all()?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temp_path);
+    }
+    result
+}
+
 /// Security config — `[security] min_release_age` per ecosystem (quarantine guard).
 /// Bảo mật — `[security] min_release_age` theo ecosystem (guard cách ly).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SecurityConfig {
-    /// Minimum release age in seconds (global default) — Tuổi tối thiểu gói phát hành (mặc định toàn cục)
+    /// Minimum release age in HOURS (global default) — Tuổi tối thiểu gói phát hành, tính bằng GIỜ (mặc định toàn cục)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_release_age: Option<u64>,
+    /// When true, versions with missing/unparsable registry timestamps
+    /// are KEPT (fail-open) — escape hatch for private registries that
+    /// omit `time`. Default false: unstamped versions are rejected with
+    /// a clear error naming the package (fail-closed).
+    /// (Cho phép version thiếu timestamp — escape hatch cho registry nội bộ.)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_missing_time: Option<bool>,
 
     /// Per-ecosystem min_release_age overrides — Ghi đè min_release_age theo ecosystem
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -579,6 +1735,31 @@ pub struct SecurityConfig {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cicd: Option<u64>,
+
+    /// Per-core minimum release age for hardware artifact lanes.
+    /// Tuổi phát hành tối thiểu riêng cho lane artifact hardware.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hardware: Option<u64>,
+
+    /// Explicit per-ecosystem unsigned-artifact escape (`"*" rejected —
+    /// see `unsigned_artifact_allowed`). Wired into lanes in Phase C;
+    /// today the resolver denies unsigned artifacts unconditionally.
+    /// (Escape artifact-không-chữ-ký per-ecosystem tường minh.)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_unsigned_artifacts: Option<Vec<String>>,
+}
+
+/// Check an unsigned-artifact escape list (`mgc.toml [security]
+/// allow_unsigned_artifacts`, mirrored by `MGC_ALLOW_UNSIGNED_ARTIFACTS`
+/// comma env): explicit per-ecosystem opt-outs only — `"*"` is rejected
+/// as a value (a global opt-out must be a deliberate empty-vs-absent
+/// decision at the call site, never a wildcard in config).
+/// (Kiểm tra danh sách escape artifact-không-chữ-ký: chỉ opt-out
+/// per-ecosystem tường minh — từ chối `"*"`.)
+pub fn unsigned_artifact_allowed(allowed: &[String], ecosystem: &str) -> bool {
+    allowed
+        .iter()
+        .any(|entry| entry.trim().eq_ignore_ascii_case(ecosystem))
 }
 
 impl SecurityConfig {
@@ -591,9 +1772,211 @@ impl SecurityConfig {
             "lib" => self.lib.or(self.min_release_age),
             "game" => self.game.or(self.min_release_age),
             "iot" => self.iot.or(self.min_release_age),
-            "cloud" => self.cloud.or(self.min_release_age),
+            "cloud" | "clo" => self.cloud.or(self.min_release_age),
             "cicd" => self.cicd.or(self.min_release_age),
+            "hardware" => self.hardware.or(self.min_release_age),
             _ => self.min_release_age,
         }
     }
+}
+
+/// Load only the `[security]` table from mgc.toml, including minimal configs.
+/// Chỉ nạp bảng `[security]` từ mgc.toml, kể cả config tối giản.
+pub fn load_security_config(project_root: &Path) -> Result<Option<SecurityConfig>, anyhow::Error> {
+    let path = project_root.join("mgc.toml");
+    let Some(text) = read_regular_project_text(&path, "project config")? else {
+        return Ok(None);
+    };
+    let document: toml::Value = toml::from_str(&text)?;
+    let Some(value) = document.get("security") else {
+        return Ok(None);
+    };
+    Ok(Some(value.clone().try_into()?))
+}
+
+/// Lock config — `mgc.toml [lock]` (V1.2 lock v4: signature policy +
+/// writer-lock timeouts). All fields optional; absences fall back to
+/// environment-aware defaults (policy.rs).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LockConfig {
+    /// Signature policy: `off` | `warn` | `require`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy: Option<String>,
+    /// Writer-lock acquire timeout in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acquire_timeout_ms: Option<u64>,
+    /// Stale-temp grace period in seconds before cleanup may unlink.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tmp_grace_secs: Option<u64>,
+    /// Lockfile schema newly written locks target: `"3"` (default) or
+    /// `"4"`. Readers accept every schema either way; this only chooses
+    /// the write target. Anything else fails closed with a clear error.
+    /// (Schema lockfile cho lock mới ghi: `"3"` (mặc định) hoặc `"4"`.
+    /// Reader nhận mọi schema; đây chỉ chọn đích ghi. Giá trị khác
+    /// fail-closed với lỗi rõ.)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema: Option<String>,
+}
+
+/// Trust roots — `mgc.toml [trust]`: key ids accepted when the lock
+/// policy is `require` (local keyrings never qualify on their own).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TrustConfig {
+    /// Accepted signing key ids (8-byte BLAKE3 hex).
+    #[serde(default)]
+    pub keys: Vec<String>,
+}
+
+/// Compatibility opt-ins — `mgc.toml [compat]`: explicit escape hatches
+/// (default-deny everything else).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CompatConfig {
+    /// Allow git-dependency resolution at all (Swift git-only deps).
+    #[serde(default)]
+    pub allow_git_deps: bool,
+    /// Host allowlist for git dependencies.
+    #[serde(default)]
+    pub git_hosts: Vec<String>,
+}
+
+/// Registry/index source — `mgc.toml [[sources]]` (design §5
+/// multi-index source-selection policy).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SourceConfig {
+    /// Stable id referenced by lockfile source_id.
+    pub id: String,
+    /// Base URL.
+    pub url: String,
+    /// Ecosystem served (`python`, `npm`, …).
+    #[serde(default)]
+    pub ecosystem: String,
+    /// Lower number wins among equal-specificity claims.
+    #[serde(default)]
+    pub priority: u64,
+    /// Name patterns claimed (`*`, `corp-*`, `@corp/*`, exact).
+    #[serde(default)]
+    pub claims: Vec<String>,
+    /// Private/internal source (never overridden by public ones).
+    #[serde(default)]
+    pub trusted: bool,
+    /// Exact hosts allowed when trusted.
+    #[serde(default)]
+    pub allow_hosts: Vec<String>,
+    /// Private CIDRs allowed when trusted.
+    #[serde(default)]
+    pub allow_cidrs: Vec<String>,
+    /// URL schemes allowed when trusted.
+    #[serde(default)]
+    pub allow_protocols: Vec<String>,
+}
+
+/// True when a package (by `name` or `name@version`) is listed in a
+/// policy entry list. Shared by `ScriptsPolicy::decide` and
+/// `decide_scripts` so matching semantics cannot drift.
+/// (Package có trong danh sách không — dùng chung mọi nơi.)
+pub fn policy_lists(entries: &[String], name: &str, version: &str) -> bool {
+    entries.iter().any(|e| {
+        let entry = e.trim();
+        entry == name || entry == format!("{name}@{version}").as_str()
+    })
+}
+
+impl ScriptsPolicy {
+    /// Committed file-policy decision for one package: deny wins, then
+    /// allow, else no opinion. Single canonical rule shared by the
+    /// install gate and `trust pending` so they can never disagree.
+    /// (Quyết định policy file chuẩn duy nhất cho gate install và trust pending.)
+    pub fn decide(&self, name: &str, version: &str) -> Option<(bool, &'static str)> {
+        if policy_lists(&self.deny, name, version) {
+            return Some((false, "mgc.toml [scripts] deny"));
+        }
+        if policy_lists(&self.allow, name, version) {
+            return Some((true, "mgc.toml [scripts] allow"));
+        }
+        match self.policy.as_deref() {
+            Some("deny") | Some("prompt") => Some((false, "mgc.toml [scripts] policy")),
+            // Explicit `policy = "allow"` allows everything not denied
+            // above (documented behavior — absence of the key means "no
+            // opinion", an explicit allow-all is a deliberate choice).
+            // (`policy = "allow"` tường minh cho phép tất cả.)
+            Some("allow") => Some((true, "mgc.toml [scripts] policy")),
+            _ => None,
+        }
+    }
+}
+
+/// One merged lifecycle-script decision for a package, combining the
+/// committed file policy and the machine-local trust DB. Deny wins from
+/// EITHER source; then allow from either source; otherwise undecided
+/// (the caller maps undecided to its own default: skip-with-hint on
+/// install, pending-review on `trust pending`).
+/// (Một quyết định gộp duy nhất — deny luôn thắng.)
+pub enum ScriptVerdict {
+    /// Scripts must not run (reason names the winning deny source).
+    Deny(&'static str),
+    /// Scripts may run (reason names the winning allow source).
+    Allow(&'static str),
+    /// Neither source has an opinion.
+    Undecided,
+}
+
+/// Single function used by the install gate AND `trust pending` — two
+/// call sites can never drift again.
+/// (Hàm duy nhất cho gate install VÀ trust pending.)
+pub fn decide_scripts(
+    name: &str,
+    version: &str,
+    file_policy: Option<&ScriptsPolicy>,
+    db_policy: Option<&str>,
+    blanket_scripts: bool,
+) -> ScriptVerdict {
+    // Deny from either source wins outright (a file allow must NEVER
+    // override a DB deny — that drift shipped once and is covered by a
+    // regression test).
+    // (Deny thắng mọi nguồn — file allow không bao giờ ghi đè DB deny.)
+    let file_deny = file_policy
+        .map(|policy| policy_lists(&policy.deny, name, version))
+        .unwrap_or(false);
+    if file_deny {
+        return ScriptVerdict::Deny("mgc.toml [scripts] deny");
+    }
+    if db_policy == Some("denied") {
+        return ScriptVerdict::Deny("mgc trust deny");
+    }
+    if let Some((allowed, reason)) = file_policy.and_then(|policy| policy.decide(name, version)) {
+        if allowed {
+            return ScriptVerdict::Allow(reason);
+        }
+        return ScriptVerdict::Deny(reason);
+    }
+    match db_policy {
+        Some("approved") => ScriptVerdict::Allow("mgc trust approve"),
+        _ if blanket_scripts => ScriptVerdict::Allow("default policy"),
+        _ => ScriptVerdict::Undecided,
+    }
+}
+
+/// Load ONLY the `[scripts]` table from a project mgc.toml, tolerating
+/// minimal files that full `ProjectConfig::load` rejects (it requires
+/// name/ecosystem). Returns `Ok(None)` when no table exists, `Err` with
+/// a precise reason when the file/table is present but broken — callers
+/// must surface the error (a silent None would drop a deny policy).
+/// (Đọc riêng bảng `[scripts]` — file hỏng thì lỗi rõ, không im lặng.)
+pub fn load_scripts_table(project_root: &std::path::Path) -> Result<Option<ScriptsPolicy>, String> {
+    let path = project_root.join("mgc.toml");
+    let Some(text) = read_regular_project_text(&path, "project config")
+        .map_err(|e| format!("cannot read {}: {e}", path.display()))?
+    else {
+        return Ok(None);
+    };
+    let value: toml::Value =
+        toml::from_str(&text).map_err(|e| format!("invalid TOML in {}: {e}", path.display()))?;
+    let Some(table) = value.get("scripts") else {
+        return Ok(None);
+    };
+    let json = serde_json::to_value(table)
+        .map_err(|e| format!("invalid [scripts] table in {}: {e}", path.display()))?;
+    serde_json::from_value::<ScriptsPolicy>(json)
+        .map(Some)
+        .map_err(|e| format!("invalid [scripts] table in {}: {e}", path.display()))
 }

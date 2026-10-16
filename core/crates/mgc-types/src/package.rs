@@ -27,17 +27,30 @@ impl PackageName {
             return Err(MgError::InvalidPackageName(name));
         }
         let slash_count = trimmed.chars().filter(|&c| c == '/').count();
-        if slash_count > 1 {
-            return Err(MgError::InvalidPackageName(name));
-        }
-        if slash_count == 1 {
-            let parts: Vec<&str> = trimmed.splitn(2, '/').collect();
-            if !parts[0].starts_with('@') || parts[0].len() < 2 || parts[1].is_empty() {
+        if trimmed.starts_with('@') {
+            // npm-style scope: exactly ONE slash with a real scope+id.
+            // Scope kiểu npm: đúng MỘT slash với scope+id thật.
+            if slash_count != 1 {
                 return Err(MgError::InvalidPackageName(name));
             }
+            let parts: Vec<&str> = trimmed.splitn(2, '/').collect();
+            if parts[0].len() < 2 || parts[1].is_empty() {
+                return Err(MgError::InvalidPackageName(name));
+            }
+        } else if trimmed.ends_with('/') {
+            return Err(MgError::InvalidPackageName(name));
         }
+        // Multi-slash WITHOUT a scope is the repo-path form used by
+        // non-npm ecosystems (OSV SwiftURL: github.com/owner/repo) —
+        // a legitimate identifier, not a path (cache layers sanitize
+        // before any path join; mgc-exec blocks traversal separately).
+        // Nhiều slash KHÔNG scope là dạng đường dẫn repo của ecosystem
+        // ngoài npm (OSV SwiftURL: github.com/owner/repo) — định danh
+        // hợp lệ, không phải path (tầng cache sanitize trước khi ghép
+        // path; mgc-exec chặn traversal riêng).
         if trimmed.chars().any(|c| {
-            !c.is_ascii_alphanumeric() && !matches!(c, '@' | '/' | '-' | '_' | '.' | '!' | '~')
+            !c.is_ascii_alphanumeric()
+                && !matches!(c, '@' | '/' | '-' | '_' | '.' | '!' | '~' | ':')
         }) {
             return Err(MgError::InvalidPackageName(name));
         }
@@ -175,6 +188,14 @@ pub struct DependencySpec {
     pub dev: bool,
     pub optional: bool,
     pub peer: bool,
+    /// Registry features selected for this dependency (Cargo only today).
+    /// Feature registry được chọn cho dependency (hiện chỉ Cargo dùng).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub features: Vec<String>,
+    /// Whether registry default features are enabled (Cargo only today).
+    /// Có bật feature mặc định của registry hay không (hiện chỉ Cargo dùng).
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub default_features: bool,
 }
 
 impl DependencySpec {
@@ -185,19 +206,30 @@ impl DependencySpec {
             dev: false,
             optional: false,
             peer: false,
+            features: Vec::new(),
+            default_features: true,
         }
     }
 
     pub fn parse(input: &str) -> MgResult<Self> {
-        if let Some(idx) = input.rfind('@') {
-            if idx > 0 {
-                let name = PackageName::new(&input[..idx])?;
-                let range = VersionRange::parse(&input[idx + 1..])?;
-                return Ok(Self::new(name, range));
-            }
+        // let-chain edition 2024 — gộp điều kiện theo clippy 1.98.
+        if let Some(idx) = input.rfind('@')
+            && idx > 0
+        {
+            let name = PackageName::new(&input[..idx])?;
+            let range = VersionRange::parse(&input[idx + 1..])?;
+            return Ok(Self::new(name, range));
         }
         Ok(Self::new(PackageName::new(input)?, VersionRange::star()))
     }
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
 }
 
 fn match_single_range(range: &str, version: &Version) -> bool {
@@ -210,59 +242,76 @@ fn match_single_range(range: &str, version: &Version) -> bool {
         .next()
         .and_then(|s| Version::parse(s).ok())
     {
-        return version == &target;
+        return version.precedence_cmp(&target) == std::cmp::Ordering::Equal;
     }
     if let Some(target) = range.strip_prefix('^').and_then(|s| Version::parse(s).ok()) {
-        return version.major == target.major && version >= &target;
+        // Caret follows semver 0.x rules: ^1.2.3 := >=1.2.3 <2.0.0,
+        // ^0.2.3 := >=0.2.3 <0.3.0, ^0.0.3 := =0.0.3. The old
+        // major-only check accepted e.g. 0.28.2 for ^0.25.0.
+        // (Caret đúng semver 0.x.)
+        if target.major > 0 {
+            return version.major == target.major
+                && version.precedence_cmp(&target) != std::cmp::Ordering::Less;
+        }
+        if target.minor > 0 {
+            return version.major == 0
+                && version.minor == target.minor
+                && version.precedence_cmp(&target) != std::cmp::Ordering::Less;
+        }
+        return version.major == 0
+            && version.minor == 0
+            && version.patch == target.patch
+            && version.precedence_cmp(&target) != std::cmp::Ordering::Less;
     }
     if let Some(target) = range.strip_prefix('~').and_then(|s| Version::parse(s).ok()) {
         return version.major == target.major
             && version.minor == target.minor
-            && version >= &target;
+            && version.precedence_cmp(&target) != std::cmp::Ordering::Less;
     }
     // Enhanced: Handle wildcard ranges with comparison operators (>=22.x, <=24.x)
-    if range.starts_with(">=")
+    // let-chain edition 2024 — gộp điều kiện theo clippy 1.98.
+    if (range.starts_with(">=")
         || range.starts_with("<=")
         || range.starts_with('>')
-        || range.starts_with('<')
+        || range.starts_with('<'))
+        && let Some((low, high)) = parse_wildcard_bounds(range)
     {
-        if let Some((low, high)) = parse_wildcard_bounds(range) {
-            // For >= and >, check lower bound; for <= and <, check upper bound
-            if range.starts_with(">=") {
-                return version >= &low;
-            } else if range.starts_with(">") {
-                return version > &low;
-            } else if range.starts_with("<=") {
-                return version < &high;
-            } else if range.starts_with("<") {
-                return version < &low;
-            }
+        // For >= and >, check lower bound; for <= and <, check upper bound
+        if range.starts_with(">=") {
+            return version.precedence_cmp(&low) != std::cmp::Ordering::Less;
+        } else if range.starts_with(">") {
+            return version.precedence_cmp(&low) == std::cmp::Ordering::Greater;
+        } else if range.starts_with("<=") {
+            return version.precedence_cmp(&high) == std::cmp::Ordering::Less;
+        } else if range.starts_with("<") {
+            return version.precedence_cmp(&low) == std::cmp::Ordering::Less;
         }
     }
     if let Some(target) = range
         .strip_prefix(">=")
         .and_then(|s| Version::parse(s).ok())
     {
-        return version >= &target;
+        return version.precedence_cmp(&target) != std::cmp::Ordering::Less;
     }
     if let Some(target) = range
         .strip_prefix("<=")
         .and_then(|s| Version::parse(s).ok())
     {
-        return version <= &target;
+        return version.precedence_cmp(&target) != std::cmp::Ordering::Greater;
     }
     if let Some(target) = range.strip_prefix('>').and_then(|s| Version::parse(s).ok()) {
-        return version > &target;
+        return version.precedence_cmp(&target) == std::cmp::Ordering::Greater;
     }
     if let Some(target) = range.strip_prefix('<').and_then(|s| Version::parse(s).ok()) {
-        return version < &target;
+        return version.precedence_cmp(&target) == std::cmp::Ordering::Less;
     }
     // x-range wildcard: 12.x, 12.3.x, x
     if let Some((low, high)) = parse_wildcard_bounds(range) {
-        return version >= &low && version < &high;
+        return version.precedence_cmp(&low) != std::cmp::Ordering::Less
+            && version.precedence_cmp(&high) == std::cmp::Ordering::Less;
     }
     Version::parse(range)
-        .map(|target| version == &target)
+        .map(|target| version.precedence_cmp(&target) == std::cmp::Ordering::Equal)
         .unwrap_or(false)
 }
 
@@ -369,7 +418,8 @@ fn match_compound_range(range: &str, version: &Version) -> bool {
 
     // Hyphen range: "1 - 2" → >=1.0.0 <=2.0.0, "1.2.3 - 2.3.4" → >=1.2.3 <=2.3.4
     if let Some((low, high)) = parse_hyphen_range(trimmed) {
-        return version >= &low && version <= &high;
+        return version.precedence_cmp(&low) != std::cmp::Ordering::Less
+            && version.precedence_cmp(&high) != std::cmp::Ordering::Greater;
     }
 
     let mut parts = Vec::new();

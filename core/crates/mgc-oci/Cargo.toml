@@ -2,11 +2,11 @@
 name = "mgc-oci"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "OCI client (MagiCore)"
-
 [dependencies]
 mgc-http = { workspace = true }
 mgc-types = { workspace = true }

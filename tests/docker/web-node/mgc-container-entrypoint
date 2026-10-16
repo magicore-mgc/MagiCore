@@ -1,0 +1,6 @@
+#!/bin/sh
+# Replay the project lock into the mounted MGC data volume.
+# Phát lại lock của project vào volume MGC được mount.
+set -eu
+mgc install-web --frozen
+exec mgc "$@"

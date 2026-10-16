@@ -1,4 +1,4 @@
-//! C9 — app scaffold: kotlin/swift/flutter + multi-platform (KMP shared).
+//! App scaffold fallbacks for supported framework lanes.
 
 use std::path::Path;
 
@@ -30,28 +30,192 @@ impl AppProcessor {
                 write_file(
                     &target.join("Package.swift"),
                     &format!(
-                        "// swift-tools-version: 5.9\nimport PackageDescription\n\nlet package = Package(\n    name: \"{}\",\n    targets: [.executableTarget(name: \"{}\")]\n)\n",
-                        name, name
+                        "// swift-tools-version: 5.9\nimport PackageDescription\n\nlet package = Package(\n    name: \"{}\",\n    targets: [\n        .executableTarget(name: \"MagiCoreApp\"),\n        .testTarget(name: \"MagiCoreAppTests\", dependencies: [\"MagiCoreApp\"])\n    ]\n)\n",
+                        name
                     ),
                 )?;
                 write_file(
-                    &target.join("Sources").join(name).join("main.swift"),
-                    "print(\"MagiCore Swift app scaffold\")\n",
+                    &target.join("Sources").join("MagiCoreApp").join("App.swift"),
+                    "public func greeting() -> String {\n    \"MagiCore Swift app scaffold\"\n}\n\n@main\nstruct MagiCoreApp {\n    static func main() {\n        print(greeting())\n    }\n}\n",
+                )?;
+                write_file(
+                    &target
+                        .join("Tests")
+                        .join("MagiCoreAppTests")
+                        .join("AppTests.swift"),
+                    "import XCTest\n@testable import MagiCoreApp\n\nfinal class AppTests: XCTestCase {\n    func testGreeting() {\n        XCTAssertEqual(greeting(), \"MagiCore Swift app scaffold\")\n    }\n}\n",
                 )?;
             }
-            _ => {
+            "maui" => {
+                let slug = slugify(name);
+                write_file(
+                    &target.join(format!("{slug}.csproj")),
+                    "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    <TargetFrameworks>net8.0-android;net8.0-ios;net8.0-maccatalyst</TargetFrameworks>\n    <OutputType>Exe</OutputType>\n    <RootNamespace>MagiCoreApp</RootNamespace>\n    <UseMaui>true</UseMaui>\n    <SingleProject>true</SingleProject>\n    <ImplicitUsings>enable</ImplicitUsings>\n    <Nullable>enable</Nullable>\n  </PropertyGroup>\n</Project>\n",
+                )?;
+                write_file(
+                    &target.join("MauiProgram.cs"),
+                    "using Microsoft.Maui;\nusing Microsoft.Maui.Hosting;\n\nnamespace MagiCoreApp;\n\npublic static class MauiProgram\n{\n    public static MauiApp CreateMauiApp() => MauiApp.CreateBuilder()\n        .UseMauiApp<App>()\n        .Build();\n}\n",
+                )?;
+                write_file(
+                    &target.join("App.xaml"),
+                    "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n<Application xmlns=\"http://schemas.microsoft.com/dotnet/2021/maui\"\n             xmlns:x=\"http://schemas.microsoft.com/winfx/2009/xaml\"\n             x:Class=\"MagiCoreApp.App\">\n  <Application.Resources />\n</Application>\n",
+                )?;
+                write_file(
+                    &target.join("App.xaml.cs"),
+                    "namespace MagiCoreApp;\n\npublic partial class App : Application\n{\n    public App()\n    {\n        InitializeComponent();\n        MainPage = new MainPage();\n    }\n}\n",
+                )?;
+                write_file(
+                    &target.join("MainPage.xaml"),
+                    "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n<ContentPage xmlns=\"http://schemas.microsoft.com/dotnet/2021/maui\"\n             xmlns:x=\"http://schemas.microsoft.com/winfx/2009/xaml\"\n             x:Class=\"MagiCoreApp.MainPage\">\n  <VerticalStackLayout Padding=\"24\">\n    <Label Text=\"MagiCore MAUI app\" FontSize=\"24\" />\n  </VerticalStackLayout>\n</ContentPage>\n",
+                )?;
+                write_file(
+                    &target.join("MainPage.xaml.cs"),
+                    "namespace MagiCoreApp;\n\npublic partial class MainPage : ContentPage\n{\n    public MainPage() => InitializeComponent();\n}\n",
+                )?;
+            }
+            "tauri" => {
+                let slug = slugify(name);
+                let identifier = format!("dev.magicore.{}", slug.replace('-', "."));
+                let tauri_config = serde_json::json!({
+                    "productName": name,
+                    "version": "0.1.0",
+                    "identifier": identifier,
+                    "build": {
+                        "devUrl": "http://localhost:1420",
+                        "frontendDist": "../dist"
+                    },
+                    "app": {
+                        "windows": [{ "title": name, "width": 800, "height": 600 }],
+                        "security": { "csp": null }
+                    },
+                    "bundle": { "active": true, "targets": "all" }
+                });
+                write_file(
+                    &target.join("package.json"),
+                    &format!(
+                        "{{\n  \"name\": \"{slug}\",\n  \"private\": true,\n  \"version\": \"0.1.0\",\n  \"scripts\": {{ \"build\": \"vite build\", \"dev\": \"vite --host 127.0.0.1 --port 1420 --strictPort\" }},\n  \"devDependencies\": {{ \"vite\": \"^6.0.0\" }}\n}}\n"
+                    ),
+                )?;
+                write_file(
+                    &target.join("index.html"),
+                    "<!doctype html>\n<html><head><meta charset=\"UTF-8\"><title>MagiCore Tauri</title></head><body><main id=\"app\"></main><script type=\"module\" src=\"/src/main.js\"></script></body></html>\n",
+                )?;
+                write_file(
+                    &target.join("src/main.js"),
+                    "document.querySelector('#app').innerHTML = '<h1>MagiCore Tauri app</h1><p>Frontend scaffold ready.</p>';\n",
+                )?;
+                write_file(
+                    &target.join("dist/index.html"),
+                    "<!doctype html>\n<html><head><meta charset=\"UTF-8\"><title>MagiCore Tauri</title></head><body><main><h1>MagiCore Tauri app</h1></main></body></html>\n",
+                )?;
+                write_file(
+                    &target.join("src-tauri/Cargo.toml"),
+                    &format!(
+                        "[package]\nname = \"{slug}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[build-dependencies]\ntauri-build = {{ version = \"2\" }}\n\n[dependencies]\ntauri = {{ version = \"2\" }}\n\n[features]\ncustom-protocol = [\"tauri/custom-protocol\"]\n"
+                    ),
+                )?;
+                write_file(
+                    &target.join("src-tauri/build.rs"),
+                    "fn main() { tauri_build::build() }\n",
+                )?;
+                write_file(
+                    &target.join("src-tauri/src/main.rs"),
+                    "#![cfg_attr(not(debug_assertions), windows_subsystem = \"windows\")]\n\nfn main() {\n    tauri::Builder::default()\n        .run(tauri::generate_context!())\n        .expect(\"failed to run Tauri application\");\n}\n",
+                )?;
+                write_file(
+                    &target.join("src-tauri/tauri.conf.json"),
+                    &format!("{}\n", serde_json::to_string_pretty(&tauri_config)?),
+                )?;
+            }
+            "react-native" => {
+                let slug = slugify(name);
+                let package = serde_json::json!({
+                    "name": slug,
+                    "version": "0.1.0",
+                    "private": true,
+                    "main": "index.js",
+                    "scripts": {
+                        "start": "expo start",
+                        "android": "expo start --android",
+                        "ios": "expo start --ios",
+                        "web": "expo start --web"
+                    },
+                    "dependencies": {
+                        "expo": "~57.0.27",
+                        "expo-status-bar": "~57.0.1",
+                        "react": "19.2.3",
+                        "react-native": "0.86.3"
+                    }
+                });
+                let app_config = serde_json::json!({
+                    "expo": {
+                        "name": name,
+                        "slug": slug,
+                        "version": "0.1.0",
+                        "orientation": "portrait",
+                        "ios": { "supportsTablet": true }
+                    }
+                });
+                write_file(
+                    &target.join("package.json"),
+                    &format!("{}\n", serde_json::to_string_pretty(&package)?),
+                )?;
+                write_file(
+                    &target.join("app.json"),
+                    &format!("{}\n", serde_json::to_string_pretty(&app_config)?),
+                )?;
+                write_file(
+                    &target.join("index.js"),
+                    "import { registerRootComponent } from 'expo';\nimport App from './App';\n\nregisterRootComponent(App);\n",
+                )?;
+                write_file(
+                    &target.join("App.js"),
+                    "import { StatusBar } from 'expo-status-bar';\nimport { StyleSheet, Text, View } from 'react-native';\n\nexport default function App() {\n  return (\n    <View style={styles.container}>\n      <Text style={styles.title}>MagiCore React Native app</Text>\n      <Text>Expo project scaffold is ready.</Text>\n      <StatusBar style=\"auto\" />\n    </View>\n  );\n}\n\nconst styles = StyleSheet.create({\n  container: { flex: 1, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', padding: 24 },\n  title: { fontSize: 24, fontWeight: '600', marginBottom: 8 },\n});\n",
+                )?;
+            }
+            "flutter" => {
                 write_file(
                     &target.join("pubspec.yaml"),
                     &format!(
-                        "name: {}\ndescription: MagiCore Flutter app\nversion: 0.1.0\n",
-                        slugify(name)
+                        "name: {}\ndescription: MagiCore Flutter app\npublish_to: none\nversion: 0.1.0+1\nenvironment:\n  sdk: '>=3.4.0 <4.0.0'\ndependencies:\n  flutter:\n    sdk: flutter\ndev_dependencies:\n  flutter_test:\n    sdk: flutter\nflutter:\n  uses-material-design: true\n",
+                        slugify(name).replace('-', "_")
                     ),
                 )?;
                 write_file(
                     &target.join("lib").join("main.dart"),
-                    "void main() {\n  print('MagiCore Flutter app scaffold');\n}\n",
+                    "import 'package:flutter/material.dart';\n\nvoid main() => runApp(const MagiCoreApp());\n\nclass MagiCoreApp extends StatelessWidget {\n  const MagiCoreApp({super.key});\n\n  @override\n  Widget build(BuildContext context) {\n    return const MaterialApp(\n      home: Scaffold(body: Center(child: Text('MagiCore Flutter app'))),\n    );\n  }\n}\n",
+                )?;
+                write_file(
+                    &target.join("test").join("widget_test.dart"),
+                    "import 'package:flutter_test/flutter_test.dart';\n\nimport '../lib/main.dart';\n\nvoid main() {\n  testWidgets('renders the MagiCore app', (tester) async {\n    await tester.pumpWidget(const MagiCoreApp());\n    expect(find.text('MagiCore Flutter app'), findsOneWidget);\n  });\n}\n",
+                )?;
+                // Flutter web platform dir (P0 finding, 2026-09-12):
+                // `flutter build web` requires web/ to exist — without
+                // it the build exits 2 ("does not have a web platform
+                // directory"). The scaffold ships the minimal standard
+                // web entry so create→install→test→build(web) runs on
+                // plain CI runners (no Android SDK / Xcode needed).
+                // Thư mục nền tảng web Flutter (P0 finding): `flutter
+                // build web` yêu cầu web/ tồn tại — thiếu nó build exit
+                // 2. Scaffold mang web entry chuẩn tối thiểu để
+                // create→install→test→build(web) chạy trên runner CI
+                // thường (không cần Android SDK / Xcode).
+                write_file(
+                    &target.join("web").join("index.html"),
+                    &format!(
+                        "<!DOCTYPE html>\n<html>\n<head>\n  <base href=\"$FLUTTER_BASE_HREF\">\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>{name}</title>\n</head>\n<body>\n  <script src=\"flutter_bootstrap.js\" async></script>\n</body>\n</html>\n"
+                    ),
+                )?;
+                write_file(
+                    &target.join("web").join("manifest.json"),
+                    &format!(
+                        "{{\n  \"name\": \"{name}\",\n  \"short_name\": \"{name}\",\n  \"start_url\": \"/\",\n  \"display\": \"standalone\",\n  \"background_color\": \"#ffffff\",\n  \"theme_color\": \"#ffffff\",\n  \"description\": \"A MagiCore Flutter app\"\n}}\n"
+                    ),
                 )?;
             }
+            other => anyhow::bail!(
+                "unsupported app framework '{other}'; supported values are flutter, kotlin, swift, react-native, maui, and tauri (multi is handled by the app scaffold command)"
+            ),
         }
 
         Ok(())
@@ -102,7 +266,13 @@ impl AppProcessor {
             ),
         )?;
         write_file(
-            &target.join("android").join("app").join("src").join("main").join("kotlin").join("Main.kt"),
+            &target
+                .join("android")
+                .join("app")
+                .join("src")
+                .join("main")
+                .join("kotlin")
+                .join("Main.kt"),
             "package {pkg}.android\n\nimport {pkg}.Shared\n\nfun main() {\n    println(Shared.hello())\n}\n",
         )?;
 

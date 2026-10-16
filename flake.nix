@@ -1,6 +1,6 @@
-# Nix flake for hermetic development environment
+# Nix development environment and package for the current Cargo workspace.
 {
-  description = "MagiCore development environment";
+  description = "MagiCore development environment and CLI package";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -22,46 +22,80 @@
         rust-toolchain = pkgs.rust-bin.stable.latest.default.override {
           extensions = [ "rust-src" "rustfmt" "clippy" ];
         };
+
+        rust-platform = pkgs.makeRustPlatform {
+          cargo = rust-toolchain;
+          rustc = rust-toolchain;
+        };
+
+        workspace = builtins.fromTOML (builtins.readFile ./Cargo.toml);
       in {
         devShells.default = pkgs.mkShell {
           name = "magicore-dev";
-          buildInputs = with pkgs; [
+          packages = with pkgs; [
             rust-toolchain
-            cargo
-            bazel_7
+            go
+            nodejs_24
             protobuf
-            nodejs_20
             pkg-config
             openssl
+            zlib
           ];
 
-          SHELL_HOOK = ''
-            export RUSTUP_TOOLCHAIN=stable
-            export BAZEL_VERSION=7.4.0
-            echo "MagiCore development environment ready!"
-            echo "Available commands:"
-            echo "  cargo check --workspace"
-            echo "  cargo test --workspace"
-            echo "  bazel build //..."
-            echo "  bazel test //..."
+          shellHook = ''
+            echo "MagiCore Rust workspace ready (minimum Rust 1.94)."
+            echo "Available commands: cargo check --workspace; cargo test --workspace"
           '';
         };
 
-        packages.default = pkgs.stdenv.mkDerivation {
-          name = "magicore";
+        packages.default = rust-platform.buildRustPackage {
+          pname = "mgc";
+          version = workspace.workspace.package.version;
           src = self;
-          nativeBuildInputs = with pkgs; [
-            cargo
-            bazel_7
-            rust-toolchain
-          ];
-          buildPhase = ''
-            bazel build //crates/magicore-cli:magicore
+          cargoLock.lockFile = ./Cargo.lock;
+          buildAndTestSubdir = "cli";
+          nativeBuildInputs = with pkgs; [ go pkg-config stdenv.cc ];
+          buildInputs = with pkgs; [ openssl zlib ];
+          # Go's default build cache lives under HOME, which is not writable
+          # in a Nix sandbox. esbuild-rs compiles its vendored c-archive from
+          # a Cargo build script, so point that cache at the writable build
+          # temp directory before Cargo starts compiling dependencies.
+          preBuild = ''
+            export GOCACHE="$TMPDIR/go-build-cache"
+            mkdir -p "$GOCACHE"
+            test -w "$GOCACHE"
+            go env GOOS GOARCH CGO_ENABLED CC GOCACHE
+            cat > "$TMPDIR/mgc-go-carchive-smoke.go" <<'EOF'
+            package main
+
+            import "C"
+
+            //export MgcGoArchiveSmoke
+            func MgcGoArchiveSmoke() {}
+
+            func main() {}
+            EOF
+            go build -buildmode=c-archive -o "$TMPDIR/mgc-go-carchive-smoke.a" "$TMPDIR/mgc-go-carchive-smoke.go"
+            test -s "$TMPDIR/mgc-go-carchive-smoke.a"
           '';
-          installPhase = ''
-            mkdir -p $out/bin
-            cp bazel-bin/crates/magicore-cli/magicore $out/bin/
-          '';
+          # esbuild-rs builds its vendored Go bridge as a C archive. Pin Go's
+          # target and cgo compiler explicitly inside the sandbox; serialize
+          # that Go compile to avoid competing with Cargo for memory.
+          env = {
+            CGO_ENABLED = "1";
+            GOOS = if pkgs.stdenv.hostPlatform.isDarwin then "darwin" else "linux";
+            GOARCH = if pkgs.stdenv.hostPlatform.isAarch64 then "arm64" else "amd64";
+            CC = "${pkgs.stdenv.cc}/bin/cc";
+            GOFLAGS = "-p=1";
+          };
+          # Workspace tests run in the regular CI matrix with their toolchains.
+          doCheck = false;
+
+          meta = {
+            description = "MagiCore package manager CLI";
+            mainProgram = "mgc";
+            platforms = pkgs.lib.platforms.unix;
+          };
         };
       });
 }

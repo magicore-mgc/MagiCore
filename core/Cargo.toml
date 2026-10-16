@@ -1,3 +1,170 @@
+# Nested workspace for core crates (members: crates/*).
+# The [workspace.package] + [workspace.dependencies] tables exist so
+# `*.workspace = true` inheritance resolves when cargo walks UP from
+# core/crates/* (e.g. trybuild compile-fail projects under target/tests).
+# Root workspace members claim these crates via the `core/crates/*` glob;
+# this nested manifest must stay valid on its own either way.
+#
+# Workspace lồng cho các crate core (members: crates/*). Bảng
+# [workspace.package] + [workspace.dependencies] để inheritance
+# `*.workspace = true` resolve được khi cargo đi LÊN từ core/crates/*
+# (vd project compile-fail của trybuild dưới target/tests). Root workspace
+# claim các crate này qua glob `core/crates/*`; manifest lồng dù sao cũng
+# phải tự hợp lệ.
+
 [workspace]
 members = ["crates/*"]
 resolver = "2"
+
+[workspace.package]
+version = "1.1.0-rc.10"
+edition = "2024"
+rust-version = "1.94"
+license = "MIT"
+repository = "https://github.com/mingd-153/MagiCore"
+authors = ["MagiCore Contributors"]
+
+[workspace.dependencies]
+# Internal crates
+mgc-types = { path = "crates/mgc-types" }
+mgc-audit = { path = "crates/mgc-audit" }
+mgc-config = { path = "crates/mgc-config" }
+mgc-crypto = { path = "crates/mgc-crypto" }
+mgc-cache = { path = "crates/mgc-cache" }
+mgc-http = { path = "crates/mgc-http" }
+mgc-fetcher = { path = "crates/mgc-fetcher" }
+mgc-lockfile = { path = "crates/mgc-lockfile" }
+mgc-sbom = { path = "crates/mgc-sbom" }
+mgc-resolver = { path = "crates/mgc-resolver" }
+mgc-store = { path = "crates/mgc-store" }
+mgc-ui = { path = "crates/mgc-ui" }
+mgc-adapter-base = { path = "crates/mgc-adapter-base" }
+mgc-platform = { path = "crates/mgc-platform" }
+mgc-plugin = { path = "crates/mgc-plugin" }
+mgc-search = { path = "crates/mgc-search" }
+mgc-workspace = { path = "crates/mgc-workspace" }
+mgc-pack = { path = "crates/mgc-pack" }
+mgc-publish = { path = "crates/mgc-publish" }
+mgc-oci = { path = "crates/mgc-oci" }
+mgc-registry-server = { path = "crates/mgc-registry-server" }
+mgc-exec = { path = "crates/mgc-exec" }
+mgc-oidc = { path = "crates/mgc-oidc" }
+which = "8.0.6"
+
+# External deps (for mgc-http, mgc-oci, etc.)
+http = { version = "1.5.0", features = [] }
+bytes = { version = "1.12.1" }
+
+# Async runtime
+tokio = { version = "1.53.3", features = ["full"] }
+async-trait = "0.1.92"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["fmt", "env-filter"] }
+
+# HTTP
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "stream", "gzip", "rustls", "http2"] }
+url = "2.5.8"
+object_store = { version = "0.14.2", features = ["aws"] }
+axum = { version = "0.8.9", features = ["ws", "multipart"] }
+tower-http = { version = "0.7.1", features = ["fs", "cors", "trace", "compression-full"] }
+notify = "8.2.0"
+
+# Serialization
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+serde_yaml = { package = "serde_yaml_ng", version = "0.10.0" }
+toml = "1.1.8"
+toml_edit = "0.25.17"
+quick-xml = "0.42.0"
+rmp-serde = "1.3.1"
+
+# CLI
+clap = { version = "4.6.7", features = ["derive", "env"] }
+clap_complete = "4.6.11"
+indicatif = "0.18.6"
+console = "0.16.6"
+colored = "3.1.1"
+dialoguer = "0.12.0"
+
+# TUI
+ratatui = "0.30.2"
+crossterm = "0.29.0"
+
+# Crypto
+sha2 = "0.11.1"
+blake3 = "1.8.7"
+hex = "0.4.3"
+base64 = "0.23.1"
+
+# Error handling
+thiserror = "2.0.21"
+anyhow = "1.0.104"
+futures-util = "0.3.34"
+regex = "1.13.1"
+libc = "0.2.190"
+
+# Bundler (native Rust)
+# Exact pin (P0-3): compiled-cache COMPILER_VERSION must match the resolved
+# version — the drift gate test in cli enforces const ↔ Cargo.lock parity.
+# Ghim chính xác (P0-3): COMPILER_VERSION của compiled-cache phải khớp
+# version resolve — test drift gate ở cli cưỡng chế const ↔ Cargo.lock.
+esbuild-rs = "=0.13.8"
+# NOTE (P0-3): the root Cargo.toml workspace table carries the REAL pin
+# the CLI compiles against (cli resolves `esbuild-rs = { workspace = true }`
+# from the ROOT workspace, not this nested one). This duplicate exists so
+# the standalone-core workspace cannot drift either. Both pins must move
+# together with COMPILER_VERSION in cli/src/bundler/dev_server.rs.
+# (LƯU Ý (P0-3): bảng workspace root Cargo.toml mới mang pin THẬT mà cli
+# compile (cli resolve từ workspace ROOT, không phải workspace lồng này).
+# Bản trùng này để workspace core độc lập cũng không trôi. Cả hai pin phải
+# cập nhật cùng COMPILER_VERSION trong dev_server.rs.)
+glob = "0.3.4"
+mime_guess = "2.0.5"
+
+# Concurrency
+dashmap = "6.2.1"
+rayon = "1.12.0"
+parking_lot = "0.12.5"
+pretty_assertions = "1.4.1"
+tempfile = "3.27.0"
+criterion = { version = "0.8.2", features = ["async_tokio"] }
+mockito = "1.7.2"
+# Compile-fail regression harness (private-field invariant tests, P0-1).
+# Bộ test compile-fail (invariant field private, P0-1).
+trybuild = "1.0"
+
+# Storage / files
+# SQLx 0.9 uses libsqlite3-sys <0.38; 0.39 is the newest compatible release.
+rusqlite = { version = "0.39.0", features = ["bundled"] }
+walkdir = "2.5"
+dirs = "7.0.0"
+fs2 = "0.4.3"
+lru = "0.18.5"
+ignore = "0.4.33"
+sha1 = "0.11.0"
+
+# Compression
+tar = "0.4.46"
+flate2 = { version = "1.1.10", features = ["zlib"] }
+zip = { version = "9.0.3", default-features = false, features = ["deflate"] }
+async-compression = { version = "0.4.50", features = ["tokio", "gzip"] }
+
+# Utilities
+semver = "1.0.28"
+time = { version = "0.3.55", features = ["parsing", "formatting"] }
+chrono = { version = "0.4.45", features = ["serde"] }
+uuid = { version = "1.28.0", features = ["v4", "serde"] }
+
+
+[workspace.lints.rust]
+# Mirror of the root workspace lint policy (see root Cargo.toml for the
+# full bilingual rationale) — the nested core workspace enforces the same
+# unsafe_code discipline on its own.
+# (Bản sao policy lint của root workspace — xem root Cargo.toml cho giải
+# trình song ngữ đầy đủ — workspace core lồng cũng áp cùng kỷ luật.)
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"
