@@ -32,4 +32,3 @@ def validate_lane_claims(state: GateState, context: LaneContext) -> None:
         state.failures.append(
             f"{label} install_owner = {owner} — a native-PM claim lane must be native-engine"
         )
-

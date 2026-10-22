@@ -18,4 +18,3 @@ Add-Content -Path $env:GITHUB_PATH -Value $swiftRuntimeBin -Encoding utf8
 $env:SDKROOT = $sdkRoot
 $env:Path = "$swiftBin;$swiftRuntimeBin;$env:Path"
 & (Join-Path $swiftBin "swift.exe") --version
-

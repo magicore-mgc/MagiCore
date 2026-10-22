@@ -68,4 +68,3 @@ fn flag_beats_everything_in_precedence() {
     );
     unsafe_env_remove("MGC_LOCK_POLICY");
 }
-

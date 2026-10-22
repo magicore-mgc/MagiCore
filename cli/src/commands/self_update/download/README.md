@@ -7,4 +7,3 @@ Enforce byte quotas for small documents and streamed archives.
 
 - `mod.rs` declares this owner and its exports.
 - `download.rs` contains this responsibility.
-

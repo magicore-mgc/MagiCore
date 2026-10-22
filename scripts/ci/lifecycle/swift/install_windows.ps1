@@ -20,4 +20,3 @@ Add-Content -Path $env:GITHUB_PATH -Value $swiftBin -Encoding utf8
 Add-Content -Path $env:GITHUB_PATH -Value $swiftRuntimeBin -Encoding utf8
 Write-Host "Swift runtime directory: $swiftRuntimeBin"
 & (Join-Path $swiftBin "swift.exe") --version
-

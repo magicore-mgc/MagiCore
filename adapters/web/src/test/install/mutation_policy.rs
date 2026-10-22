@@ -26,4 +26,3 @@ async fn direct_web_adapter_mutations_fail_closed_without_touching_manifest() {
     );
     assert!(!dir.path().join(".magicore").exists());
 }
-

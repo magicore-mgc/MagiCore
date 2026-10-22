@@ -7,4 +7,3 @@ Chọn phiên bản phát hành được yêu cầu hoặc tag mới nhất.
 
 - `mod.rs` declares this owner and its exports.
 - `version.rs` contains this responsibility.
-

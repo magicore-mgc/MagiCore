@@ -64,4 +64,3 @@ fn current_directory_failures_keep_the_io_source() {
     let source = Error::source(&error).expect("current-directory source is retained");
     assert_eq!(source.to_string(), "current directory unavailable");
 }
-

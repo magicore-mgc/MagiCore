@@ -13,7 +13,7 @@ impl RegistryStore {
     ) -> Result<Vec<crate::model::SearchResultItem>> {
         let rows = sqlx::query(
             r#"
-            SELECT name, description FROM packages 
+            SELECT name, description FROM packages
             WHERE name LIKE ? AND private = 0
             LIMIT ? OFFSET ?
         "#,

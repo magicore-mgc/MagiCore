@@ -86,4 +86,3 @@ fn web_writer_persists_owner_scoped_roots_and_versioned_peer_edges() {
         Some(["react@18.2.0".to_string()].as_slice())
     );
 }
-

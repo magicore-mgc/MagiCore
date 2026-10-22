@@ -7,4 +7,3 @@ Map the host and build variant to release artifact coordinates.
 
 - `mod.rs` declares this owner and its exports.
 - `platform.rs` contains this responsibility.
-

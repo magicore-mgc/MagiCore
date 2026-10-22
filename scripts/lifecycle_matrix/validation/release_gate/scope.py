@@ -23,4 +23,3 @@ def validate_scope(state: GateState) -> None:
             f"missing={sorted(state.release_scope - state.seen)}, "
             f"unexpected={sorted(state.seen - state.release_scope)}"
         )
-

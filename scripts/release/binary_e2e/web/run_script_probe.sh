@@ -54,4 +54,3 @@ if [[ "$run_port_closed" != true ]]; then
   cat run.log >&2 || true
   exit 1
 fi
-

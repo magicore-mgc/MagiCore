@@ -10,4 +10,3 @@ if [[ "${RUNNER_OS}" == "macOS" ]]; then
   echo "SDKROOT=${SDKROOT}" >> "${GITHUB_ENV}"
 fi
 cargo build --release --locked --bin mgc
-

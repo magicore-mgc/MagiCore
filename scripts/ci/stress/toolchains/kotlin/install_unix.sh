@@ -26,4 +26,3 @@ if [[ ! -x "${compiler_bin}/kotlinc" ]]; then
 fi
 echo "${compiler_bin}" >> "${GITHUB_PATH}"
 "${compiler_bin}/kotlinc" -version
-

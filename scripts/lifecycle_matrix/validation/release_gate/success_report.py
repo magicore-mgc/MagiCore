@@ -56,4 +56,3 @@ def report_success(state: GateState) -> None:
             "Native-PM claim withheld pending complete runtime evidence: "
             + ", ".join(_lane_name(lane) for lane in unqualified)
         )
-

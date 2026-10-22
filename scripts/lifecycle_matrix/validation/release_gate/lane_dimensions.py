@@ -67,4 +67,3 @@ def validate_lane_dimensions(state: GateState, context: LaneContext) -> None:
                 for name in required_failures
             )
         )
-

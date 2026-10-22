@@ -7,4 +7,3 @@ Quản lý kiểu dữ liệu phiên upload OCI và hợp đồng field serde. D
 This DTO is not currently wired into the file-upload resume flow; the source behavior is recorded in the parent upload report.
 
 DTO hiện chưa được nối vào luồng resume upload file; trạng thái source được ghi ở báo cáo owner cha.
-

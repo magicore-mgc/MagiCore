@@ -7,4 +7,3 @@ Gộp trust root và phân giải chính sách unsigned theo fail-closed.
 
 - `mod.rs` declares this owner and its exports.
 - `provenance.rs` contains this responsibility.
-

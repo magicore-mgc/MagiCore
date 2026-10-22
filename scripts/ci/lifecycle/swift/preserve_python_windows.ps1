@@ -14,4 +14,3 @@ if (!(Test-Path -LiteralPath $preservedPython -PathType Leaf)) { throw "Preserve
 $preservedVersion = & $preservedPython --version
 if ($preservedVersion -notmatch '^Python 3\.10\.') { throw "Preserved Swift Python must be 3.10.x; found $preservedVersion" }
 Add-Content -Path $env:GITHUB_ENV -Value "MGC_SWIFT_PYTHON_BIN=$pythonBin" -Encoding utf8
-

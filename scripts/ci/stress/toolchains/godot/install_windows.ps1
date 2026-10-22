@@ -14,4 +14,3 @@ $godotExe = Join-Path $installDir 'godot.exe'
 Copy-Item -Path $godotSource.FullName -Destination $godotExe -Force
 Add-Content -Path $env:GITHUB_PATH -Value $installDir -Encoding utf8
 & $godotExe --headless --version
-

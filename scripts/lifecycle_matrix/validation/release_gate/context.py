@@ -22,4 +22,3 @@ def prepare_gate(data: dict) -> GateState:
         framework_catalog_errors(data.get("framework_catalog"), data["lanes"])
     )
     return state
-

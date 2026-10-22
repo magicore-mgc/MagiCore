@@ -71,4 +71,3 @@ fn migration_normalizes_native_sha256_hex_without_changing_digest() {
         );
     }
 }
-

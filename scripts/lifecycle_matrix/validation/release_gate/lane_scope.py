@@ -51,4 +51,3 @@ def prepare_lane(state: GateState, lane: dict) -> LaneContext | None:
             f"{label} required_dimensions differ from the source contract"
         )
     return LaneContext(lane, key, label, scope_out, source_required)
-

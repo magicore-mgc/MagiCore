@@ -165,4 +165,3 @@ async fn test_install_repairs_broken_store_links_when_shared_packages_are_delete
         "export default 'react';"
     );
 }
-

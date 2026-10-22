@@ -124,4 +124,3 @@ async fn npm_optional_peer_dependencies_are_not_auto_installed() {
     assert_eq!(names, ["required-plugin", "required-runtime"]);
     server.await.unwrap();
 }
-

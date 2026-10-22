@@ -34,4 +34,3 @@ fn shadow_directory_creation_refuses_a_preexisting_symlink()
     assert_eq!(fs::read_to_string(protected_file)?, "do not overwrite");
     Ok(())
 }
-

@@ -53,4 +53,3 @@ async fn test_resolve_populates_tarball_url_and_integrity_from_shared_metadata()
     );
     assert_eq!(graph.packages[0].integrity, "sha512-c2hhcmVk");
 }
-

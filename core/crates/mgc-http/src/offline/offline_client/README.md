@@ -7,4 +7,3 @@ Quản lý đọc cache theo TTL, cảnh báo metadata cũ, chặn thao tác ghi
 Tests are nearest to the owner under test/. The old three test bodies are moved here without changing their assertions.
 
 Test đặt gần owner trong test/. Ba test cũ được chuyển đến đây và giữ nguyên assertion.
-

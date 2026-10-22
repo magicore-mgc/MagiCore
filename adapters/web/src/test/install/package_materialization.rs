@@ -304,4 +304,3 @@ async fn test_install_materializes_scoped_package() {
             .exists()
     );
 }
-

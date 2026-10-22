@@ -14,4 +14,3 @@ def report_failures(state: GateState) -> None:
     for annotation in github_actions_error_annotations(state.failures):
         print(annotation)
     print(f"LIFECYCLE NON-REGRESSION BLOCKED: {len(state.failures)} gate failures")
-

@@ -34,4 +34,3 @@ kotlinc -version 2>&1 | grep -F "2.4.21"
 terraform version | head -1 | grep -F "1.16.6"
 godot --headless --version | grep -F "4.7.2"
 zig version | grep -F "0.17.0"
-

@@ -7,4 +7,3 @@ Coordinate the verified release-to-install sequence.
 
 - `mod.rs` declares this owner and its exports.
 - `self_update.rs` contains this responsibility.
-

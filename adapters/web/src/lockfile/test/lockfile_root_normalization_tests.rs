@@ -67,4 +67,3 @@ fn web_root_normalization_preserves_a_unique_locked_root_version() {
         .collect();
     assert_eq!(root_ids, vec![older]);
 }
-

@@ -11,4 +11,3 @@ $compilerLauncher = Join-Path $compilerBin 'kotlinc.bat'
 if (!(Test-Path -LiteralPath $compilerLauncher -PathType Leaf)) { throw 'Kotlin compiler launcher is missing from the verified archive' }
 Add-Content -Path $env:GITHUB_PATH -Value $compilerBin -Encoding utf8
 & $compilerLauncher -version
-

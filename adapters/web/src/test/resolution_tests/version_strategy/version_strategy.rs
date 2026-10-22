@@ -94,4 +94,3 @@ fn test_preferred_registry_version_prefers_stable_over_prerelease() {
         Some("4.4.3")
     );
 }
-

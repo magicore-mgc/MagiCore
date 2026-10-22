@@ -93,4 +93,3 @@ fn web_root_normalization_collapses_duplicate_direct_versions() {
         .collect();
     assert_eq!(root_ids, vec![newer]);
 }
-

@@ -51,4 +51,3 @@ fn signed_lock_verifies_and_trust_roots_gate_require() {
     ));
     assert!(enforce_policy(&report, LockPolicyMode::Warn, &[]).is_ok());
 }
-

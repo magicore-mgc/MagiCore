@@ -12,4 +12,3 @@ for expected in \
     exit 1
   fi
 done
-

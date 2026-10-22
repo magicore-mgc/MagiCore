@@ -152,4 +152,3 @@ fn signature_over_wrong_digest_fails() {
     // rejected at math stage in every mode (no report to enforce).
     assert!(verify_v4_math(&lock).is_err());
 }
-

@@ -84,4 +84,3 @@ fn web_writer_leaves_an_unchanged_signed_lock_byte_identical() {
         mgc_lockfile::VerificationStatus::Valid
     );
 }
-

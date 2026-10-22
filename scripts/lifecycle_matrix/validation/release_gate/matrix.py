@@ -15,4 +15,3 @@ def validate_lanes(state: GateState) -> None:
             continue
         validate_lane_dimensions(state, context)
         validate_lane_claims(state, context)
-

@@ -310,4 +310,3 @@ async fn test_install_retries_flaky_tarball_download() {
     assert_eq!(summary.added, vec![react]);
     assert!(dir.path().join("node_modules/react/index.js").exists());
 }
-

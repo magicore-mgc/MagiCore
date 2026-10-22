@@ -43,4 +43,3 @@ fn v4_file_verifier_rejects_oversized_lockfiles() {
         "verifier must enforce the lockfile size cap"
     );
 }
-

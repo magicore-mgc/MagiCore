@@ -45,4 +45,3 @@ if [[ "$rc" -ne 0 && "$rc" -ne 1 ]]; then
   exit 1
 fi
 unset MGC_AUDIT_STRICT
-

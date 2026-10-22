@@ -25,4 +25,3 @@ class LaneContext:
     label: str
     scope_out: bool
     source_required: tuple[str, ...] | None
-

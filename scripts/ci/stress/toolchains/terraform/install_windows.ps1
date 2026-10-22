@@ -8,4 +8,3 @@ if ($actualSha256 -ne $expectedSha256) { throw "Terraform archive SHA-256 mismat
 Expand-Archive -Path $archivePath -DestinationPath $installDir -Force
 Add-Content -Path $env:GITHUB_PATH -Value $installDir -Encoding utf8
 & (Join-Path $installDir 'terraform.exe') version
-

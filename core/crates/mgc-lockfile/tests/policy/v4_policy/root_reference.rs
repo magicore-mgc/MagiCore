@@ -106,4 +106,3 @@ fn v4_verifier_rejects_malformed_qualified_root_pin() {
 
     assert!(verify_v4_math(&lock).is_err());
 }
-

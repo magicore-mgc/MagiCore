@@ -11,4 +11,3 @@ if (!$gccBin) { throw 'GCC and G++ are missing from the hosted runner' }
 Add-Content -Path $env:GITHUB_PATH -Value $gccBin -Encoding utf8
 & (Join-Path $gccBin 'gcc.exe') --version
 & (Join-Path $gccBin 'g++.exe') --version
-

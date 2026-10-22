@@ -10,4 +10,3 @@ shutil.copy2(source, destination)
 with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as environment:
     environment.write(f"MGC_STRESS_CLI_SNAPSHOT={destination}\n")
 PYTHON
-

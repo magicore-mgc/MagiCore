@@ -7,4 +7,3 @@ Khai báo manifest release có chữ ký và tọa độ từng artifact.
 
 - `mod.rs` declares this owner and its exports.
 - `types.rs` contains this responsibility.
-

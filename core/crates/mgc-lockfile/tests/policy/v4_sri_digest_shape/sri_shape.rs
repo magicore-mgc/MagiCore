@@ -38,4 +38,3 @@ fn rejects_invalid_base64_and_noncanonical_padding_bits() {
         );
     }
 }
-

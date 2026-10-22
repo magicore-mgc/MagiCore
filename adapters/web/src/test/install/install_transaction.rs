@@ -190,4 +190,3 @@ async fn test_install_failure_does_not_materialize_partial_node_modules() {
     assert_eq!(parsed.version, "3");
     assert_eq!(parsed.packages.len(), 2);
 }
-

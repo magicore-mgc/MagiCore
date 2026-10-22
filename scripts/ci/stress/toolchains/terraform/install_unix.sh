@@ -38,4 +38,3 @@ PY
 unzip -q "${archive_path}" -d "${install_dir}"
 echo "${install_dir}" >> "${GITHUB_PATH}"
 "${install_dir}/terraform" version
-

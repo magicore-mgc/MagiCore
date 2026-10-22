@@ -45,4 +45,3 @@ chmod +x "${godot_source}"
 ln -s "${godot_source}" "${install_dir}/godot"
 echo "${install_dir}" >> "${GITHUB_PATH}"
 "${install_dir}/godot" --headless --version
-

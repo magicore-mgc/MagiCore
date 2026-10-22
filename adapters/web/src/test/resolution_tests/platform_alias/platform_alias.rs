@@ -199,4 +199,3 @@ async fn web_graph_keeps_codex_platform_alias_reachable() {
         "root package does not point to its platform alias"
     );
 }
-
