@@ -1,4 +1,5 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
+#![cfg_attr(test, allow(clippy::duplicate_mod))]
 //! mgc-ai-adapter — AI ecosystem adapter for MagiCore.
 //! AI core hỗ trợ Python Agent và MCP Server qua module rõ trách nhiệm.
 

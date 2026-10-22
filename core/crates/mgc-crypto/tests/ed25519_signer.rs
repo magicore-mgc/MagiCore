@@ -10,8 +10,9 @@ use ring::signature::Ed25519KeyPair;
 #[test]
 fn test_sign_verify_roundtrip() {
     let rng = SystemRandom::new();
-    let pkcs8_bytes = Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
-    let signer = Ed25519Signer::from_pkcs8(pkcs8_bytes.as_ref()).unwrap();
+    let pkcs8_bytes = Ed25519KeyPair::generate_pkcs8(&rng).expect("test operation must succeed");
+    let signer =
+        Ed25519Signer::from_pkcs8(pkcs8_bytes.as_ref()).expect("test operation must succeed");
 
     let message = b"test message";
     let signature = signer.sign(message);
@@ -23,8 +24,9 @@ fn test_sign_verify_roundtrip() {
 #[test]
 fn test_verify_wrong_message_fails() {
     let rng = SystemRandom::new();
-    let pkcs8_bytes = Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
-    let signer = Ed25519Signer::from_pkcs8(pkcs8_bytes.as_ref()).unwrap();
+    let pkcs8_bytes = Ed25519KeyPair::generate_pkcs8(&rng).expect("test operation must succeed");
+    let signer =
+        Ed25519Signer::from_pkcs8(pkcs8_bytes.as_ref()).expect("test operation must succeed");
 
     let message = b"test message";
     let signature = signer.sign(message);
@@ -37,8 +39,9 @@ fn test_verify_wrong_message_fails() {
 #[test]
 fn test_sign_string() {
     let rng = SystemRandom::new();
-    let pkcs8_bytes = Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
-    let signer = Ed25519Signer::from_pkcs8(pkcs8_bytes.as_ref()).unwrap();
+    let pkcs8_bytes = Ed25519KeyPair::generate_pkcs8(&rng).expect("test operation must succeed");
+    let signer =
+        Ed25519Signer::from_pkcs8(pkcs8_bytes.as_ref()).expect("test operation must succeed");
 
     let message = "hello world";
     let signature = signer.sign_string(message);
@@ -50,25 +53,27 @@ fn test_sign_string() {
 #[test]
 fn test_signature_base64_roundtrip() {
     let rng = SystemRandom::new();
-    let pkcs8_bytes = Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
-    let signer = Ed25519Signer::from_pkcs8(pkcs8_bytes.as_ref()).unwrap();
+    let pkcs8_bytes = Ed25519KeyPair::generate_pkcs8(&rng).expect("test operation must succeed");
+    let signer =
+        Ed25519Signer::from_pkcs8(pkcs8_bytes.as_ref()).expect("test operation must succeed");
 
     let signature = signer.sign(b"test");
 
     let b64 = signature.to_base64();
-    let parsed = Ed25519Signature::from_base64(&b64).unwrap();
+    let parsed = Ed25519Signature::from_base64(&b64).expect("test operation must succeed");
     assert_eq!(signature, parsed);
 }
 
 #[test]
 fn test_public_key_base64_roundtrip() {
     let rng = SystemRandom::new();
-    let pkcs8_bytes = Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
-    let signer = Ed25519Signer::from_pkcs8(pkcs8_bytes.as_ref()).unwrap();
+    let pkcs8_bytes = Ed25519KeyPair::generate_pkcs8(&rng).expect("test operation must succeed");
+    let signer =
+        Ed25519Signer::from_pkcs8(pkcs8_bytes.as_ref()).expect("test operation must succeed");
 
     let public_key = signer.public_key();
 
     let b64 = public_key.to_base64();
-    let parsed = Ed25519PublicKey::from_base64(&b64).unwrap();
+    let parsed = Ed25519PublicKey::from_base64(&b64).expect("test operation must succeed");
     assert_eq!(public_key, parsed);
 }

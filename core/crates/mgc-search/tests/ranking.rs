@@ -21,14 +21,15 @@ fn test_rank_results_exact_match() {
             downloads: Some(10_000_000),
             stars: None,
             updated: "1 week ago".to_string(),
-            quality: Some(95.0),
+            quality: Some(0.95),
         },
         score: 0.0,
     }];
 
     rank_results(&mut results, &context, "zod");
 
-    // Exact match (100) + context (50) + downloads (~14) + freshness (8) + quality (9.5) = ~181
+    // Exact match (100) + context (50) + downloads (~14) + freshness (8) + quality (9.5) = ~181.
+    // Khớp chính xác (100) + context (50) + tải (~14) + độ mới (8) + quality (9.5) = ~181.
     assert!(results[0].score > 170.0);
     assert!(results[0].score < 190.0);
 }
@@ -94,7 +95,7 @@ fn test_rank_results_context_boost() {
                 downloads: Some(5000),
                 stars: None,
                 updated: "2 years ago".to_string(),
-                quality: Some(50.0),
+                quality: Some(0.5),
             },
             score: 0.0,
         },
@@ -135,7 +136,7 @@ fn test_rank_results_sorting() {
                 downloads: Some(100_000_000),
                 stars: None,
                 updated: "1 day ago".to_string(),
-                quality: Some(100.0),
+                quality: Some(1.0),
             },
             score: 0.0,
         },
@@ -147,4 +148,49 @@ fn test_rank_results_sorting() {
     // Kết quả nên được sắp xếp theo điểm giảm dần
     assert!(results[0].score > results[1].score);
     assert_eq!(results[0].name, "high-score");
+}
+
+#[test]
+fn ranking_keeps_scores_finite_and_uses_documented_quality_scale() {
+    let context = ProjectContext {
+        core: "web".to_string(),
+        signatures: vec!["package.json".to_string()],
+    };
+    let result_with_quality = |quality| SearchResult {
+        name: "pkg".to_string(),
+        registry: Registry::Npm,
+        full_path: "pkg".to_string(),
+        version: "1.0.0".to_string(),
+        description: "test package".to_string(),
+        metadata: ResultMetadata {
+            downloads: Some(0),
+            stars: Some(0),
+            updated: "unknown".to_string(),
+            quality,
+        },
+        score: 0.0,
+    };
+    let mut results = vec![
+        result_with_quality(Some(0.95)),
+        result_with_quality(Some(f32::NAN)),
+        result_with_quality(Some(1.5)),
+    ];
+
+    rank_results(&mut results, &context, "missing");
+
+    assert!(results.iter().all(|result| result.score.is_finite()));
+    let valid = results
+        .iter()
+        .find(|result| result.metadata.quality == Some(0.95))
+        .expect("valid npm quality result is retained");
+    let nan = results
+        .iter()
+        .find(|result| result.metadata.quality.is_some_and(f32::is_nan))
+        .expect("non-finite npm quality result is retained");
+    let out_of_range = results
+        .iter()
+        .find(|result| result.metadata.quality == Some(1.5))
+        .expect("out-of-range npm quality result is retained");
+    assert!((valid.score - nan.score - 9.5).abs() < 1e-6);
+    assert_eq!(nan.score, out_of_range.score);
 }

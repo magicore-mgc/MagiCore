@@ -1,0 +1,18 @@
+"""Lifecycle capability matrix source package."""
+
+from __future__ import annotations
+
+from importlib import import_module
+
+_EXPORTS = {'ADAPTER_REGISTRY_CAPABILITIES': '.api', 'ALL_DEPENDENCY_OPERATIONS': '.api', 'ALL_DIMENSIONS': '.api', 'ALL_STATUSES': '.api', 'CLI_NATIVE_DEPENDENCY_ROUTES': '.api', 'COMMAND_OUTPUT_EXCERPT_LIMIT': '.api', 'DEPENDENCY_OWNER_VOCABULARY': '.api', 'FRAMEWORK_QUALIFICATION_EVIDENCE': '.api', 'LANES': '.api', 'LANE_RELEASE_SCOPE_OUT_REASONS': '.api', 'LANE_REQUIRED_DIMENSIONS': '.api', 'LIFECYCLE_OWNER_VALUES': '.api', 'LIFECYCLE_STEP_OWNER_DEFAULTS': '.api', 'LIFECYCLE_VERDICTS': '.api', 'NATIVE_INSTALL_PIPELINE_OPERATIONS': '.api', 'NATIVE_LIFECYCLE_OWNER_EVIDENCE': '.api', 'NATIVE_OPERATIONS_EXCEPT_GC': '.api', 'NATIVE_OPERATIONS_EXCEPT_GC_AND_OFFLINE': '.api', 'NATIVE_PM_REQUIRED_DIMENSIONS': '.api', 'NATIVE_PM_USER_OPERATIONS': '.api', 'NATIVE_USER_OPERATION_LANES': '.api', 'PASS_STATUSES': '.api', 'PLATFORM_EVIDENCE_OS_NAMES': '.api', 'PLATFORM_EVIDENCE_PATH': '.api', 'PLATFORM_EVIDENCE_PROMOTION_THRESHOLD': '.api', 'PLATFORM_EVIDENCE_RELEASE_SCOPE': '.api', 'PULUMI_LIFECYCLE_STACK': '.api', 'RECOVERY_PHASE': '.api', 'RECOVERY_READY_TIMEOUT_S': '.api', 'REPOSITORY_ROOT': '.api', 'REQUIRED_OWNER_OPERATIONS': '.api', 'SCAFFOLD_MARKERS': '.api', 'SCHEMA_VERSION': '.api', 'STATUS_FAILED': '.api', 'STATUS_MANAGED': '.api', 'STATUS_NATIVE': '.api', 'STATUS_PLAIN': '.api', 'STATUS_UNSUPPORTED': '.api', 'STATUS_UNVERIFIED': '.api', 'STEP_TIMEOUT_DEFAULT_S': '.api', '_dir_nonempty': '.api', '_fail': '.api', '_lockfile_candidates': '.api', '_lockfile_entry_count': '.api', '_materialize_marker': '.api', '_owner_pass_status': '.api', '_platform_evidence_load': '.api', '_platform_evidence_write': '.api', '_recovery_probe': '.api', 'check_dep_gate_consistency': '.api', 'command_output_excerpt': '.api', 'evidence_commit_error': '.api', 'flutter_sdk_home_directory': '.api', 'flutter_sdk_pub_cache_directory': '.api', 'framework_catalog_errors': '.api', 'github_actions_annotation_escape': '.api', 'github_actions_error_annotations': '.api', 'lifecycle_environment': '.api', 'lifecycle_failure_excerpt': '.api', 'lifecycle_lane_owner_contract_errors': '.api', 'lifecycle_owner_for': '.api', 'lifecycle_pass_status': '.api', 'lifecycle_platform_name': '.api', 'lifecycle_source_matches': '.api', 'lifecycle_status_for_owner': '.api', 'lifecycle_status_owner_matches': '.api', 'lifecycle_step_environment': '.api', 'lifecycle_working_tree_clean': '.api', 'main': '.api', 'mgc_add_python_test_build_tools': '.api', 'native_pm_claim_errors': '.api', 'native_pm_claim_scope': '.api', 'native_pm_lane_errors': '.api', 'native_pm_supported': '.api', 'native_pm_unavailable_verdict': '.api', 'platform_evidence_errors': '.api', 'print_dependency_owner_summary': '.api', 'pulumi_local_environment': '.api', 'record_platform_green': '.api', 'recovery_environment': '.api', 'release_scope_out_reason': '.api', 'required_dimensions_for_lane': '.api', 'reset_platform_counter': '.api', 'run_lane': '.api', 'run_text_capture': '.api', 'scaffold_language_matches': '.api', 'swift_toolchain_environment': '.api', 'validate_adapter_consistency': '.api', 'validate_dep_gate_consistency': '.api', 'validate_dependency_owners': '.api', 'validate_lane_owners': '.api', 'validate_lane_registry': '.api'}
+__all__ = list(_EXPORTS)
+
+def __getattr__(name: str):
+    try:
+        module_name = _EXPORTS[name]
+    except KeyError as error:
+        raise AttributeError(name) from error
+    module = import_module(module_name, __name__)
+    value = getattr(module, name)
+    globals()[name] = value
+    return value

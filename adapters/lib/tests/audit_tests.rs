@@ -59,11 +59,13 @@ async fn audit_python_without_a_resolved_lock_is_unverified_not_clean() {
     ));
 }
 
-// NOTE: audit với cargo-audit cài thật được cover bởi parser fixture test
-// (fixture captured từ `cargo audit --json` thật — RUSTSEC-2023-0071);
-// chạy tool thật vẫn là manual QA vì phụ thuộc advisory DB sống.
-// (Real-tool audits stay manual QA: they depend on live advisory DBs; the
-// parser itself is regression-tested with a captured real fixture.)
+// Production Rust audit reads Cargo.lock and queries MGC's native OSV route.
+// These fixtures exercise only compatibility parsing for captured
+// `cargo-audit --json`; they do not launch cargo-audit or prove live OSV
+// matching.
+// Audit Rust production đọc Cargo.lock và gọi route OSV native của MGC.
+// Fixture chỉ kiểm tra parser tương thích `cargo-audit --json`, không chạy
+// cargo-audit và không chứng minh kết quả khớp advisory OSV trực tuyến.
 
 #[test]
 fn audit_rust_with_invalid_project_dir() {

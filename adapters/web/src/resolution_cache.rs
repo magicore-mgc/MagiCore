@@ -1,35 +1,15 @@
 // Resolution cache keys for core-web — stable hashing of dependency inputs.
 // Khóa cache resolution của core-web — tránh phụ thuộc thứ tự trong manifest.
 use mgc_types::Manifest;
-use sha2::{Digest, Sha256};
 
+// COMPAT facade (S10a/P03) — real owner lives in `mgc-js-service::resolve`.
+// Moved verbatim (S10a, behavior byte-identical): `manifest_resolution_cache_key`.
+// Facade tương thích (S10a/P03) — owner thật nằm ở `mgc-js-service::resolve`.
+// Callers / Bên gọi — web-internal: `resolve_inner` shared-cache key
+// (`lib.rs`) + re-export (`lib.rs`); unit tests (`test/unit_tests.rs` five
+// sites). Blessed-interim external: none (private cache key — S06 §3/D014
+// external callers use manifest/audit lanes, retarget in S08).
+// TODO(S10-cleanup): remove this facade after S10 migrates the last callers.
 pub fn manifest_resolution_cache_key(manifest: &Manifest, registry_url: &str) -> String {
-    let mut entries = Vec::new();
-    for (group, deps) in manifest.dep_groups() {
-        for dep in deps {
-            entries.push(format!(
-                "{}\0{}\0{}\0{}\0{}\0{}",
-                group,
-                dep.name.as_str(),
-                dep.range.as_str(),
-                dep.dev,
-                dep.optional,
-                dep.peer
-            ));
-        }
-    }
-    entries.sort_unstable();
-
-    let mut hasher = Sha256::new();
-    // v3 invalidates graphs built from metadata cache records that discarded
-    // peerDependenciesMeta before the metadata cache schema was versioned.
-    // v3 loại graph sinh từ metadata cache cũ đã làm rơi peerDependenciesMeta.
-    hasher.update(b"magicore-web-resolution-v3\0");
-    hasher.update(registry_url.trim_end_matches('/').as_bytes());
-    hasher.update(b"\0");
-    for entry in entries {
-        hasher.update(entry.as_bytes());
-        hasher.update(b"\0");
-    }
-    hex::encode(hasher.finalize())
+    mgc_js_service::resolve::manifest_resolution_cache_key(manifest, registry_url)
 }

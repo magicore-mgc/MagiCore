@@ -1,0 +1,32 @@
+[package]
+name = "mgc-js-service"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Shared JS/npm service seed for MagiCore (manifest IO, registry policy, advisory primitives)"
+[dependencies]
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+url = { workspace = true }
+uuid = { workspace = true }
+libc = { workspace = true }
+mgc-types = { workspace = true }
+mgc-adapter-base = { workspace = true }
+mgc-lockfile = { workspace = true }
+mgc-platform = { workspace = true }
+mgc-resolver = { workspace = true }
+hex = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[[test]]
+name = "manifest"
+path = "tests/manifest.rs"
+
+[lints]
+workspace = true

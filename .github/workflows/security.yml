@@ -13,23 +13,15 @@ on:
       - "**/Cargo.toml"
       - ".github/workflows/security.yml"
       - "osv-scanner.toml"
-      - "adapters/web/src/audit.rs"
-      - "adapters/web/src/test/**"
-      - "adapters/lib/src/audit/**"
-      - "adapters/lib/tests/**"
-      - "adapters/app/src/audit/**"
-      - "adapters/app/tests/**"
-      - "cli/src/commands/audit/**"
-      - "cli/src/commands/compat.rs"
-      - "cli/src/error/**"
-      - "cli/tests/audit_cli_e2e.rs"
-      - "cli/tests/native_engine_spawn_audit.rs"
-      - "cli/tests/test_runner_security.rs"
-      - "core/crates/mgc-types/src/adapter.rs"
-      - "core/crates/mgc-types/tests/adapter_test.rs"
-      - "core/crates/mgc-audit/**"
-      - "core/crates/mgc-exec/src/run.rs"
-      - "core/crates/mgc-exec/src/allowlist.rs"
+      - "adapters/**"
+      - "cli/src/**"
+      - "cli/tests/**"
+      - "core/crates/**"
+      - "scripts/dependency_delegation_audit/**"
+      - "scripts/lifecycle_matrix/**"
+      - "scripts/audit_dependency_delegation.py"
+      - "scripts/lifecycle_capability_matrix.py"
+      - "scripts/test_security_workflow_paths.py"
   push:
     paths:
       - "Cargo.lock"
@@ -37,23 +29,15 @@ on:
       - "**/Cargo.toml"
       - ".github/workflows/security.yml"
       - "osv-scanner.toml"
-      - "adapters/web/src/audit.rs"
-      - "adapters/web/src/test/**"
-      - "adapters/lib/src/audit/**"
-      - "adapters/lib/tests/**"
-      - "adapters/app/src/audit/**"
-      - "adapters/app/tests/**"
-      - "cli/src/commands/audit/**"
-      - "cli/src/commands/compat.rs"
-      - "cli/src/error/**"
-      - "cli/tests/audit_cli_e2e.rs"
-      - "cli/tests/native_engine_spawn_audit.rs"
-      - "cli/tests/test_runner_security.rs"
-      - "core/crates/mgc-types/src/adapter.rs"
-      - "core/crates/mgc-types/tests/adapter_test.rs"
-      - "core/crates/mgc-audit/**"
-      - "core/crates/mgc-exec/src/run.rs"
-      - "core/crates/mgc-exec/src/allowlist.rs"
+      - "adapters/**"
+      - "cli/src/**"
+      - "cli/tests/**"
+      - "core/crates/**"
+      - "scripts/dependency_delegation_audit/**"
+      - "scripts/lifecycle_matrix/**"
+      - "scripts/audit_dependency_delegation.py"
+      - "scripts/lifecycle_capability_matrix.py"
+      - "scripts/test_security_workflow_paths.py"
   workflow_dispatch:
 
 # Replace superseded validation runs on the same ref. — Hủy lượt kiểm cũ khi ref có lượt mới.
@@ -151,7 +135,7 @@ jobs:
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-      - name: Install Gradle (pinned — Kotlin success E2E, P2 2026-09-10)
+      - name: Install Gradle (pinned — Kotlin no-delegation sentinel)
         run: |
           GRADLE_VERSION="9.8.1"
           cd /tmp && curl -sSLO "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" \
@@ -166,7 +150,7 @@ jobs:
           gradle --version | rg -i 'gradle' | head -2
       - name: Run audit CLI E2E (tools required — no silent skips)
         run: cargo test -p mgc --test audit_cli_e2e --locked -- --test-threads=1 --nocapture
-      - name: Run app-adapter audit tests (Kotlin success E2E via real gradle)
+      - name: Run Kotlin audit boundary tests (unsupported + no-delegation sentinel)
         run: cargo test -p mgc-app-adapter --test audit_tests audit_kotlin --locked -- --nocapture
       - name: Process-spawn audit (native engine — no rival runtime spawns)
         # Tech Lead #7 2026-09-10: CI proves mgc test/run/build/dev never

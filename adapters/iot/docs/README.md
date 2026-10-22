@@ -9,7 +9,8 @@ Detects ESP32 Rust, PlatformIO, and Zephyr and provides board/target metadata, s
 
 ## Source map
 
-- [`adapter.rs`](../src/adapter.rs)
+- [`adapter/mod.rs`](../src/adapter/mod.rs)
+- [`adapter/adapter.rs`](../src/adapter/adapter.rs)
 - [`framework.rs`](../src/framework.rs)
 - [`scaffold/mod.rs`](../src/scaffold/mod.rs)
 - [`flash/mod.rs`](../src/flash/mod.rs)

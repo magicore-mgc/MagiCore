@@ -12,7 +12,7 @@ Owns shared project/user config models, registry chains, npmrc credential/regist
 - [`lib.rs`](../src/lib.rs)
 - [`project.rs`](../src/project.rs)
 - [`chain.rs`](../src/chain.rs)
-- [`npmrc.rs`](../src/npmrc.rs)
+- [npmrc owner module](../src/npmrc/README.md)
 - [`attestation.rs`](../src/attestation.rs)
 
 ## Handoff and review

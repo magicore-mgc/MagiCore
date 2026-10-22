@@ -149,7 +149,10 @@ async fn go_resolves_graph_with_ziphash_and_materializes_cache() {
         .await;
 
     let protocol = GoModProtocol::with_sum_base(&server.url(), &server.url());
-    let entry = protocol.resolve("example.com/pkg", "1.2.3").await.unwrap();
+    let entry = protocol
+        .resolve("example.com/pkg", "1.2.3")
+        .await
+        .expect("test operation must succeed");
     assert_eq!(entry.version, "1.2.3");
     // Pinned exact version won over 1.2.2 and the pseudo-version.
     // (Version ghim chính xác thắng 1.2.2 và pseudo-version.)
@@ -192,14 +195,21 @@ async fn go_resolves_graph_with_ziphash_and_materializes_cache() {
     );
 
     // Download + verify against the proxy ziphash (sha256).
-    let files = protocol.download_module(&entry).await.unwrap();
-    protocol.verify(&entry, &files.zip).unwrap();
+    let files = protocol
+        .download_module(&entry)
+        .await
+        .expect("test operation must succeed");
+    protocol
+        .verify(&entry, &files.zip)
+        .expect("test operation must succeed");
     ziphash_mock.assert_async().await;
     zip_mock.assert_async().await;
 
     // Materialize into a GOMODCACHE layout — GOPROXY=off readable.
-    let cache = tempfile::tempdir().unwrap();
-    let zip_path = protocol.materialize(&entry, &files, cache.path()).unwrap();
+    let cache = tempfile::tempdir().expect("test operation must succeed");
+    let zip_path = protocol
+        .materialize(&entry, &files, cache.path())
+        .expect("test operation must succeed");
     assert_eq!(
         zip_path,
         cache
@@ -221,7 +231,7 @@ async fn go_resolves_graph_with_ziphash_and_materializes_cache() {
             .path()
             .join("cache/download/example.com/pkg/@v/v1.2.3.ziphash"),
     )
-    .unwrap();
+    .expect("test operation must succeed");
     // Independent Hash1 vector: sorted per-file SHA-256 lines, then base64 SHA-256.
     // Vector tính riêng theo chuẩn Go; không dùng helper production làm oracle.
     assert_eq!(
@@ -231,7 +241,7 @@ async fn go_resolves_graph_with_ziphash_and_materializes_cache() {
     assert_ne!(stored_hash.trim(), sha256_hex(&zip_bytes));
     let mut malformed = files.clone();
     malformed.zip = b"not a zip".to_vec();
-    let rejected_cache = tempfile::tempdir().unwrap();
+    let rejected_cache = tempfile::tempdir().expect("test operation must succeed");
     assert!(
         protocol
             .materialize(&entry, &malformed, rejected_cache.path())
@@ -257,8 +267,10 @@ async fn go_sumdb_dirhash_fallback_verifies_and_fails_closed() {
     ]);
     // Compute the REAL sumdb dirhash of the zip for the mocked record.
     // (Tính dirhash sumdb THẬT của zip cho bản ghi mock.)
-    let entries = mgc_resolver::protocols::zip_reader::read_zip_entries(&zip_bytes).unwrap();
-    let h1 = mgc_resolver::protocols::go::dirhash_zip(&entries).unwrap();
+    let entries = mgc_resolver::protocols::zip_reader::read_zip_entries(&zip_bytes)
+        .expect("test operation must succeed");
+    let h1 =
+        mgc_resolver::protocols::go::dirhash_zip(&entries).expect("test operation must succeed");
 
     server
         .mock("GET", "/example.com/sum/@v/list")
@@ -299,7 +311,10 @@ async fn go_sumdb_dirhash_fallback_verifies_and_fails_closed() {
         .await;
 
     let protocol = GoModProtocol::with_sum_base(&server.url(), &server.url());
-    let entry = protocol.resolve("example.com/sum", "*").await.unwrap();
+    let entry = protocol
+        .resolve("example.com/sum", "*")
+        .await
+        .expect("test operation must succeed");
     assert_eq!(entry.version, "0.1.0");
     assert!(entry.sha256.is_empty(), "sumdb path must not fake a sha256");
     assert!(
@@ -313,7 +328,9 @@ async fn go_sumdb_dirhash_fallback_verifies_and_fails_closed() {
 
     // Genuine zip verifies through the h1 directory hash.
     // (Zip nguyên bản được xác minh qua directory hash h1.)
-    protocol.verify(&entry, &zip_bytes).unwrap();
+    protocol
+        .verify(&entry, &zip_bytes)
+        .expect("test operation must succeed");
 
     // Tampered payload fails closed with Integrity — flip a byte inside the
     // first entry's stored data (located via the local header, not a fixed
@@ -324,12 +341,14 @@ async fn go_sumdb_dirhash_fallback_verifies_and_fails_closed() {
     let first_local = zip_bytes
         .windows(4)
         .position(|w| w == b"PK\x03\x04")
-        .unwrap();
+        .expect("test operation must succeed");
     let name_len =
         u16::from_le_bytes([zip_bytes[first_local + 26], zip_bytes[first_local + 27]]) as usize;
     let data_idx = first_local + 30 + name_len + 2;
     tampered[data_idx] ^= 0xFF;
-    let err = protocol.verify(&entry, &tampered).unwrap_err();
+    let err = protocol
+        .verify(&entry, &tampered)
+        .expect_err("test operation must fail");
     assert!(matches!(err, mgc_types::MgError::Integrity(_)), "{err:?}");
 }
 
@@ -370,7 +389,10 @@ async fn go_latest_fallback_and_range_selection() {
         .await;
 
     let protocol = GoModProtocol::with_sum_base(&server.url(), &server.url());
-    let entry = protocol.resolve("example.com/only", "*").await.unwrap();
+    let entry = protocol
+        .resolve("example.com/only", "*")
+        .await
+        .expect("test operation must succeed");
     assert_eq!(entry.version, "0.3.1");
 
     // Range that does not match the latest version fails closed.
@@ -388,7 +410,7 @@ fn materialized_go_module_imports_with_real_sdk_without_rewriting_hash() {
         std::path::Path::new(&sdk).is_file(),
         "Go SDK executable is missing"
     );
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("test operation must succeed");
     let gomod = b"module example.com/pkg\ngo 1.21\n";
     let zip = build_module_zip(&[
         ("example.com/pkg@v1.2.3/go.mod", gomod.as_slice()),
@@ -411,25 +433,29 @@ fn materialized_go_module_imports_with_real_sdk_without_rewriting_hash() {
         extra_markers: vec![],
     };
     let protocol = GoModProtocol::from_env();
-    protocol.verify(&entry, &files.zip).unwrap();
+    protocol
+        .verify(&entry, &files.zip)
+        .expect("test operation must succeed");
     let cache = root.path().join("modules");
-    let zip_path = protocol.materialize(&entry, &files, &cache).unwrap();
+    let zip_path = protocol
+        .materialize(&entry, &files, &cache)
+        .expect("test operation must succeed");
     let hash_path = zip_path.with_extension("ziphash");
-    let before = std::fs::read(&hash_path).unwrap();
+    let before = std::fs::read(&hash_path).expect("test operation must succeed");
     assert_eq!(before, b"h1:bg40Pl8hXM1h5nYr/dKdz2D7lBOBkGzSsFhpsZht/qY=");
     std::fs::write(
         root.path().join("go.mod"),
         "module example.com/probe\ngo 1.21\nrequire example.com/pkg v1.2.3\n",
     )
-    .unwrap();
+    .expect("test operation must succeed");
     // Independent sums cover both the zip content and the go.mod artifact.
     // Sum tính độc lập cho zip và go.mod; không cho SDK fetch hoặc sửa manifest.
-    std::fs::write(root.path().join("go.sum"), "example.com/pkg v1.2.3 h1:bg40Pl8hXM1h5nYr/dKdz2D7lBOBkGzSsFhpsZht/qY=\nexample.com/pkg v1.2.3/go.mod h1:P80OUskPLmuRx31utNM9j/sgmpvOrZ/ta6nccuJ2wHM=\n").unwrap();
+    std::fs::write(root.path().join("go.sum"), "example.com/pkg v1.2.3 h1:bg40Pl8hXM1h5nYr/dKdz2D7lBOBkGzSsFhpsZht/qY=\nexample.com/pkg v1.2.3/go.mod h1:P80OUskPLmuRx31utNM9j/sgmpvOrZ/ta6nccuJ2wHM=\n").expect("test operation must succeed");
     std::fs::write(
         root.path().join("main.go"),
         "package main\nimport(\"fmt\";\"example.com/pkg\")\nfunc main(){fmt.Println(pkg.Marker)}\n",
     )
-    .unwrap();
+    .expect("test operation must succeed");
     let output = std::process::Command::new(sdk)
         .args(["run", "-mod=readonly", "main.go"])
         .current_dir(root.path())
@@ -441,14 +467,17 @@ fn materialized_go_module_imports_with_real_sdk_without_rewriting_hash() {
         .env("GOENV", "off")
         .env("CGO_ENABLED", "0")
         .output()
-        .unwrap();
+        .expect("test operation must succeed");
     assert!(
         output.status.success(),
         "Go cached import failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(String::from_utf8_lossy(&output.stdout).contains("MGC_GO_IMPORTED"));
-    assert_eq!(std::fs::read(hash_path).unwrap(), before);
+    assert_eq!(
+        std::fs::read(hash_path).expect("test operation must succeed"),
+        before
+    );
 }
 
 #[test]
@@ -458,13 +487,17 @@ fn go_dirhash_rejects_newline_names_instead_of_hashing_ambiguous_lines() {
         name: "example.com/pkg@v1.2.3/bad\nname.go".into(),
         data: b"package pkg\n".to_vec(),
     };
-    let error = dirhash_zip(&[entry]).unwrap_err();
+    let error = dirhash_zip(&[entry]).expect_err("test operation must fail");
     assert!(error.to_string().contains("newlines"));
     let ordinary = ZipEntry {
         name: "example.com/pkg@v1.2.3/ordinary.go".into(),
         data: b"package pkg\n".to_vec(),
     };
-    assert!(dirhash_zip(&[ordinary]).unwrap().starts_with("h1:"));
+    assert!(
+        dirhash_zip(&[ordinary])
+            .expect("test operation must succeed")
+            .starts_with("h1:")
+    );
 }
 
 #[test]
@@ -486,7 +519,7 @@ fn go_materializer_rejects_escaping_coordinates_before_cache_writes() {
         ("example.com/pkg", "1.2.3\\escaped"),
         ("example.com//pkg", "1.2.3"),
     ] {
-        let root = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().expect("test operation must succeed");
         let entry = ResolvedEntry {
             name: module.into(),
             version: version.into(),
@@ -497,13 +530,18 @@ fn go_materializer_rejects_escaping_coordinates_before_cache_writes() {
         };
         let error = protocol
             .materialize(&entry, &files, root.path())
-            .unwrap_err();
+            .expect_err("test operation must fail");
         assert!(
             error
                 .to_string()
                 .contains("unsafe Go module cache coordinates")
         );
-        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+        assert_eq!(
+            std::fs::read_dir(root.path())
+                .expect("test operation must succeed")
+                .count(),
+            0
+        );
     }
 }
 
@@ -554,17 +592,23 @@ async fn go_resolves_multiple_roots_with_minimum_version_selection_and_cycles() 
         ("example.test/a".to_string(), "1.0.0".to_string()),
         ("example.test/b".to_string(), "1.0.0".to_string()),
     ];
-    let entries = protocol.resolve_graph_roots(&roots).await.unwrap();
+    let entries = protocol
+        .resolve_graph_roots(&roots)
+        .await
+        .expect("test operation must succeed");
     let mut reversed_roots = roots;
     reversed_roots.reverse();
-    let reversed_entries = protocol.resolve_graph_roots(&reversed_roots).await.unwrap();
+    let reversed_entries = protocol
+        .resolve_graph_roots(&reversed_roots)
+        .await
+        .expect("test operation must succeed");
     assert_eq!(entries, reversed_entries);
     assert_eq!(entries.len(), 5);
     assert_eq!(
         entries
             .iter()
             .find(|entry| entry.name == "example.test/shared")
-            .unwrap()
+            .expect("test operation must succeed")
             .version,
         "1.2.0"
     );
@@ -588,7 +632,7 @@ async fn go_resolution_rejects_release_metadata_for_another_version() {
     let error = protocol
         .resolve("example.test/wrong", "1.2.3")
         .await
-        .unwrap_err();
+        .expect_err("test operation must fail");
     assert!(
         error.to_string().contains("release metadata identifies"),
         "unexpected error: {error}"
@@ -606,7 +650,7 @@ async fn go_exact_incompatible_version_is_resolved_and_preserved() {
     let entry = protocol
         .resolve("example.test/legacy", "3.2.2+incompatible")
         .await
-        .unwrap();
+        .expect("test operation must succeed");
     assert_eq!(entry.version, "3.2.2+incompatible");
     assert!(entry.artifact_url.ends_with("v3.2.2+incompatible.zip"));
 }
@@ -664,11 +708,17 @@ async fn go_download_rejects_changed_mod_metadata_after_resolution() {
         .await;
 
     let protocol = GoModProtocol::with_sum_base(&server.url(), &server.url());
-    let entry = protocol.resolve(module, version).await.unwrap();
+    let entry = protocol
+        .resolve(module, version)
+        .await
+        .expect("test operation must succeed");
     assert!(entry.extra_markers.iter().any(|marker| {
         marker == &format!("go-mod-sha256:{}", sha256_hex(original_mod.as_bytes()))
     }));
-    let error = protocol.download_module(&entry).await.unwrap_err();
+    let error = protocol
+        .download_module(&entry)
+        .await
+        .expect_err("test operation must fail");
     assert!(
         error
             .to_string()

@@ -1,0 +1,2 @@
+mod create_adapter_for_scoped;
+pub use create_adapter_for_scoped::create_adapter_for_scoped;

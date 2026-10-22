@@ -173,6 +173,50 @@ fn every_claimed_web_js_framework_runs_add_update_remove_and_install() {
             None,
         );
         let project = project_root.path().join(&name);
+        match framework {
+            "astro" => {
+                let source = std::fs::read_to_string(project.join("src/pages/index.astro"))
+                    .expect("native Astro scaffold must include its page source");
+                assert!(source.contains("MagiCore + Astro"));
+                let manifest: serde_json::Value =
+                    serde_json::from_slice(&std::fs::read(project.join("package.json")).unwrap())
+                        .unwrap();
+                assert!(manifest["dependencies"]["astro"].is_string());
+            }
+            "fastify" => {
+                let source = std::fs::read_to_string(project.join("src/server.ts"))
+                    .expect("native Fastify scaffold must include its server source");
+                assert!(source.contains("/api/health"));
+                let manifest: serde_json::Value =
+                    serde_json::from_slice(&std::fs::read(project.join("package.json")).unwrap())
+                        .unwrap();
+                assert!(manifest["dependencies"]["fastify"].is_string());
+                assert!(manifest["devDependencies"]["tsx"].is_string());
+            }
+            "hono" => {
+                let source = std::fs::read_to_string(project.join("src/index.ts"))
+                    .expect("native Hono scaffold must include its server source");
+                assert!(source.contains("/api/health"));
+                let manifest: serde_json::Value =
+                    serde_json::from_slice(&std::fs::read(project.join("package.json")).unwrap())
+                        .unwrap();
+                assert!(manifest["dependencies"]["hono"].is_string());
+                assert!(manifest["dependencies"]["@hono/node-server"].is_string());
+            }
+            "trpc" => {
+                let source = std::fs::read_to_string(project.join("src/index.ts"))
+                    .expect("native tRPC scaffold must include its server source");
+                assert!(source.contains("createExpressMiddleware"));
+                assert!(source.contains("/api/health"));
+                assert!(source.contains("export type AppRouter"));
+                let manifest: serde_json::Value =
+                    serde_json::from_slice(&std::fs::read(project.join("package.json")).unwrap())
+                        .unwrap();
+                assert!(manifest["dependencies"]["@trpc/server"].is_string());
+                assert!(manifest["dependencies"]["express"].is_string());
+            }
+            _ => {}
+        }
         // Keep the generated framework identity while isolating package operations
         // from unrelated template dependencies.
         std::fs::write(

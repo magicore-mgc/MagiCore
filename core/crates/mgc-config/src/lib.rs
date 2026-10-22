@@ -1,7 +1,9 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
 pub mod attestation;
+#[path = "chain.rs"]
 pub mod chain;
+#[path = "hooks.rs"]
 pub mod hooks;
 pub mod npmrc;
 pub mod project;

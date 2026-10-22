@@ -15,6 +15,9 @@ futures-util = { workspace = true }
 # Ủy quyền web cho lane JS của aggregate RN (npm bulk advisory — cùng
 # pipeline với core web; không vòng: web không phụ thuộc app).
 mgc-web-adapter = { path = "../web" }
+# Shared JS/npm service (S08/D014): manifest IO + registry default owner.
+# Service JS/npm dùng chung: chủ sở hữu manifest IO + registry default.
+mgc-js-service = { workspace = true }
 # Core crates (W1-W6 support)
 mgc-types = { path = "../../core/crates/mgc-types" }
 mgc-crypto = { workspace = true }
@@ -40,6 +43,7 @@ toml.workspace = true
 toml_edit.workspace = true
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
+thiserror.workspace = true
 
 # Crypto
 sha2 = { workspace = true }

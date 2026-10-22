@@ -21,7 +21,7 @@ pub async fn install(
         crate::commands::dep_gate::DepOp::Install,
         compat_runtime.as_deref(),
     )?;
-    let adapter = shared::cloud_adapter(&root)?;
+    let adapter = crate::commands::core::cloud::adapter(&root)?;
     if dry_run {
         if !packages.is_empty() {
             mgc_ui::info(&format!(

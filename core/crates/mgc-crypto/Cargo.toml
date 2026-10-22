@@ -36,11 +36,9 @@ harness = false
 path = "benches/crypto_perf.rs"
 
 [dependencies]
-# BLAKE3 hasher with SIMD support (AVX2, AVX-512, NEON)
-blake3 = { workspace = true, features = ["rayon", "mmap"] }
-
-# Memory mapping for fast file hashing
-memmap2 = "0.9.11"
+# BLAKE3 hasher with SIMD support (AVX2, AVX-512, NEON).
+# File hashing uses bounded-memory streaming; no mmap feature is required.
+blake3 = { workspace = true, features = ["rayon"] }
 
 # Ed25519 signing/verification (ring = fast, well-audited)
 ring = "0.17.14"
@@ -75,3 +73,6 @@ tempfile = { workspace = true }
 default = []
 # SIMD features (auto-detected by blake3 crate)
 simd = []
+
+[lints]
+workspace = true

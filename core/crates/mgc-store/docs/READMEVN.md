@@ -13,7 +13,8 @@ Triển khai package store bền vững dựa trên CAS, integrity, lifecycle/ca
 - [`cas/mod.rs`](../src/cas/mod.rs)
 - [`database.rs`](../src/database.rs)
 - [`index.rs`](../src/index.rs)
-- [`layout.rs`](../src/layout.rs)
+- [`layout/README.md`](../src/layout/README.md)
+- [`layout/layout.rs`](../src/layout/layout.rs)
 
 ## Bàn giao và review
 

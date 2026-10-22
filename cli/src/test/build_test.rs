@@ -266,8 +266,7 @@ fn tool_unavailable_true_for_nonsense_tool() {
 
 #[test]
 // SAFETY (edition 2024): `env::set_var` is unsafe — this test mutates
-// PATH/PATHEXT with a unique probe name, restoring both vars after
-// (repo-wide test env convention: install_test.rs).
+// PATH/PATHEXT with a unique probe name and restores both vars after.
 #[allow(unsafe_code)]
 fn tool_unavailable_honors_pathext_wrappers() {
     // P0#4 Windows: a `<tool>.bat` shim counts as present when PATHEXT
@@ -701,6 +700,19 @@ fn framework_build_script_maps_remix_without_preserve_symlinks() {
     );
     assert!(args.iter().any(|arg| arg.contains("node_modules")));
     assert_eq!(args.last().unwrap(), "vite:build");
+
+    fs::write(bin_dir.join("react-router"), "").unwrap();
+    let react_router = map_framework_build_script(dir.path(), &["react-router", "build"], None)
+        .unwrap()
+        .unwrap();
+    let args = react_router
+        .1
+        .iter()
+        .map(|value| value.to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(react_router.0, Path::new("node"));
+    assert!(args.iter().any(|arg| arg.contains("node_modules")));
+    assert_eq!(args.last().unwrap(), "build");
 }
 
 #[test]
@@ -780,4 +792,21 @@ fn compat_runner_exempts_declared_manager_in_build_chain() {
     let err =
         map_framework_build_chain(dir.path(), "npm run build:all", &compat, None).unwrap_err();
     assert!(err.to_string().contains("npm"));
+}
+
+#[test]
+fn nest_build_uses_project_cli_instead_of_browser_bundler() {
+    let dir = tempfile::tempdir().unwrap();
+    let bin = dir.path().join("node_modules/.bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::write(bin.join("nest"), "// fixture").unwrap();
+    let (program, args, _) = map_framework_build_script(dir.path(), &["nest", "build"], None)
+        .unwrap()
+        .expect("Nest build must use the installed framework compiler");
+    assert_eq!(program, std::path::PathBuf::from("node"));
+    assert_eq!(args.last().unwrap(), "build");
+    assert!(
+        args.iter()
+            .any(|arg| arg.to_string_lossy().contains("nest"))
+    );
 }

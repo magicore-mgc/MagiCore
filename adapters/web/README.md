@@ -77,7 +77,7 @@ Shared cache hygiene:
 
 ## Integration
 
-Each command routes through `cli/src/commands/core/web.rs` which creates a `WebAdapter` and delegates to `shared.rs` for common logic (add, remove, list, update, install).
+Each command routes through `cli/src/commands/core/web/web.rs` which creates a `WebAdapter` and delegates to `shared.rs` for common logic (add, remove, list, update, install).
 
 Single-core web builds expose the bare web surface:
 

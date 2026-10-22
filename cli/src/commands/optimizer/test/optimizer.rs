@@ -6,22 +6,6 @@ use std::fs;
 use tempfile::tempdir;
 
 #[test]
-fn test_hardware_detect_returns_valid_info() {
-    // Environment-independent shape assertions: arch/os are known; CPU and
-    // RAM may be Unknown where the OS does not expose them. Unknown resources
-    // must not be converted into fabricated tuning inputs.
-    // (CPU/RAM có thể Unknown; không biến giá trị thiếu thành số đo giả.)
-    let hw = HardwareInfo::detect();
-    assert!(hw.cpu_cores.is_some_and(|cores| cores > 0));
-    assert!(!hw.arch.is_empty());
-    assert!(!hw.os.is_empty());
-    match hw.total_memory_gb {
-        Some(gb) => assert!(gb > 0, "detected RAM must be positive, got {gb}"),
-        None => assert_eq!(hw.profile, SystemProfile::Constrained),
-    }
-}
-
-#[test]
 fn test_generate_optimizations_for_web_core() {
     let dir = tempdir().unwrap();
     let project_root = dir.path();
@@ -77,38 +61,6 @@ fn test_generate_optimizations_for_game_core() {
     assert!(files.len() >= 2);
     // Rust lib adapter should generate Cargo profile config
     assert!(files.iter().any(|f| f.content.contains("jobs")));
-}
-
-#[test]
-fn test_profile_for_unknown_ram_degrades_to_constrained() {
-    // Unknown RAM must never tune from a guessed size: even a 64-core
-    // machine degrades to Constrained when memory cannot be measured.
-    // (RAM unknown không bao giờ tuning từ số đoán: máy 64 core cũng hạ
-    // về Constrained khi không đo được RAM.)
-    assert_eq!(
-        HardwareInfo::profile_for(Some(64), None),
-        SystemProfile::Constrained
-    );
-    assert_eq!(
-        HardwareInfo::profile_for(Some(8), Some(16)),
-        SystemProfile::HighPerformance
-    );
-    assert_eq!(
-        HardwareInfo::profile_for(Some(4), Some(8)),
-        SystemProfile::Standard
-    );
-    assert_eq!(
-        HardwareInfo::profile_for(Some(2), Some(4)),
-        SystemProfile::Constrained
-    );
-}
-
-#[test]
-fn test_profile_for_unknown_cpu_degrades_to_constrained() {
-    assert_eq!(
-        HardwareInfo::profile_for(None, Some(128)),
-        SystemProfile::Constrained
-    );
 }
 
 #[test]
@@ -222,92 +174,6 @@ fn test_hash_guard_prevents_overwriting_user_custom_file() {
 }
 
 #[test]
-fn test_linux_sysfs_gpu_probe_uses_native_pci_metadata() {
-    use std::path::Path;
-
-    let dir = tempdir().unwrap();
-    let devices = dir.path().join("bus/pci/devices");
-    let nvidia = devices.join("0000:01:00.0");
-    let intel = devices.join("0000:00:02.0");
-    let network = devices.join("0000:00:1f.6");
-    for path in [&nvidia, &intel, &network] {
-        fs::create_dir_all(path).unwrap();
-    }
-    fs::write(nvidia.join("class"), "0x030000\n").unwrap();
-    fs::write(nvidia.join("vendor"), "0x10de\n").unwrap();
-    fs::write(nvidia.join("device"), "0x2684\n").unwrap();
-    fs::write(nvidia.join("product_name"), "NVIDIA GeForce RTX 4090\n").unwrap();
-    fs::write(intel.join("class"), "0x030000\n").unwrap();
-    fs::write(intel.join("vendor"), "0x8086\n").unwrap();
-    fs::write(intel.join("device"), "0x9a49\n").unwrap();
-    fs::write(network.join("class"), "0x020000\n").unwrap();
-    fs::write(network.join("vendor"), "0x8086\n").unwrap();
-    fs::write(network.join("device"), "0x1234\n").unwrap();
-
-    let (detected, status) = HardwareInfo::parse_linux_sysfs_gpus(Path::new(&devices));
-    assert_eq!(status, GpuDetectionStatus::Available);
-    assert_eq!(
-        detected.len(),
-        2,
-        "non-display PCI devices must be excluded"
-    );
-    assert!(detected.iter().any(|gpu| {
-        gpu.name == "NVIDIA GeForce RTX 4090" && gpu.vendor.as_deref() == Some("nvidia")
-    }));
-    assert!(detected.iter().any(|gpu| {
-        gpu.name == "Intel GPU (PCI 8086:9a49)" && gpu.vendor.as_deref() == Some("intel")
-    }));
-    assert!(detected.iter().all(|gpu| gpu.vram_mb.is_none()));
-}
-
-#[test]
-fn test_empty_readable_pci_inventory_is_a_measured_zero() {
-    use std::path::Path;
-
-    let dir = tempdir().unwrap();
-    let (gpus, status) = HardwareInfo::parse_linux_sysfs_gpus(Path::new(dir.path()));
-    assert!(gpus.is_empty());
-    assert_eq!(status, GpuDetectionStatus::Available);
-}
-
-#[test]
-fn test_unreadable_pci_inventory_is_not_reported_as_zero() {
-    use std::path::Path;
-
-    let dir = tempdir().unwrap();
-    let missing_root = dir.path().join("missing");
-    let (gpus, status) = HardwareInfo::parse_linux_sysfs_gpus(Path::new(&missing_root));
-    assert!(gpus.is_empty());
-    assert_eq!(status, GpuDetectionStatus::Unavailable);
-}
-
-#[test]
-fn test_incomplete_pci_inventory_does_not_emit_a_zero_count() {
-    use std::path::Path;
-
-    let dir = tempdir().unwrap();
-    let device = dir.path().join("0000:00:02.0");
-    fs::create_dir_all(&device).unwrap();
-    fs::write(device.join("class"), "0x030000\n").unwrap();
-    fs::write(device.join("vendor"), "malformed\n").unwrap();
-    fs::write(device.join("device"), "0x9a49\n").unwrap();
-
-    let (gpus, status) = HardwareInfo::parse_linux_sysfs_gpus(Path::new(dir.path()));
-    assert!(gpus.is_empty());
-    assert_eq!(status, GpuDetectionStatus::Partial);
-    let hw = HardwareInfo {
-        cpu_cores: Some(4),
-        arch: "x86_64".to_string(),
-        os: "linux".to_string(),
-        total_memory_gb: Some(8),
-        profile: SystemProfile::Standard,
-        gpus,
-        gpu_detection_status: status,
-    };
-    assert!(!gpu_env_file(&hw).content.contains("MGC_GPU_COUNT="));
-}
-
-#[test]
 fn test_gpu_env_file_zero_and_measured() {
     use super::detect::{GpuDetectionStatus, GpuInfo, HardwareInfo, SystemProfile};
     use super::generators::gpu_env_file;
@@ -397,112 +263,6 @@ fn test_gpu_env_sanitizes_control_characters_without_key_injection() {
             .contains("MGC_GPU_0_VENDOR=nvidia  UNEXPECTED=1\n")
     );
     assert!(!output.content.contains("\nUNEXPECTED=1\n"));
-}
-
-#[test]
-fn test_meminfo_parser_fixtures_macos_linux_windows() {
-    // Fixture parser RAM đa nền tảng (không gọi subprocess/syscall).
-    // (Cross-platform RAM parser fixtures — no subprocess.)
-    use super::detect::HardwareInfo;
-    // macOS sysctl bytes.
-    assert_eq!(
-        HardwareInfo::parse_sysctl_memsize_bytes("17179869184\n"),
-        Some(17179869184)
-    );
-    assert_eq!(
-        HardwareInfo::parse_sysctl_memsize_bytes("not-a-number\n"),
-        None
-    );
-    assert_eq!(HardwareInfo::parse_sysctl_memsize_bytes(""), None);
-    // Linux meminfo.
-    let meminfo = "MemTotal:       16384000 kB\nMemFree:         8000000 kB\n";
-    assert_eq!(HardwareInfo::parse_meminfo_kb(meminfo), Some(16384000));
-    assert_eq!(
-        HardwareInfo::parse_meminfo_kb("MemTotal:       2097152 kB\n"),
-        Some(2097152)
-    );
-    assert_eq!(HardwareInfo::parse_meminfo_kb("MemFree: 1 kB\n"), None);
-    assert_eq!(HardwareInfo::parse_meminfo_kb(""), None);
-    assert_eq!(
-        HardwareInfo::parse_meminfo_kb("MemTotal: garbage kB\n"),
-        None
-    );
-    assert_eq!(
-        HardwareInfo::parse_cgroup_memory_limit_bytes("8589934592\n"),
-        Some(8589934592)
-    );
-    assert_eq!(HardwareInfo::parse_cgroup_memory_limit_bytes("max\n"), None);
-    assert_eq!(HardwareInfo::parse_cgroup_memory_limit_bytes("0\n"), None);
-    assert_eq!(
-        HardwareInfo::parse_cgroup_memory_limit_bytes("9223372036854771712\n"),
-        None
-    );
-    // Unknown platform RAM degrades without inventing a measurement.
-    // (RAM không đọc được thì hạ cấp, không tự tạo số đo.)
-    assert_eq!(
-        HardwareInfo::profile_for(Some(16), None),
-        SystemProfile::Constrained
-    );
-    assert_eq!(
-        HardwareInfo::profile_for(Some(8), Some(16)),
-        SystemProfile::HighPerformance
-    );
-    assert_eq!(
-        HardwareInfo::profile_for(Some(4), Some(8)),
-        SystemProfile::Standard
-    );
-    assert_eq!(
-        HardwareInfo::profile_for(Some(2), Some(4)),
-        SystemProfile::Constrained
-    );
-}
-
-#[test]
-fn test_linux_cgroup_memory_limit_reads_nested_process_membership() {
-    use std::path::Path;
-
-    let dir = tempdir().unwrap();
-    let cgroup_root = dir.path().join("sys/fs/cgroup");
-    let nested = cgroup_root.join("system.slice/mgc.scope");
-    fs::create_dir_all(&nested).unwrap();
-    fs::write(nested.join("memory.max"), "4294967296\n").unwrap();
-
-    assert_eq!(
-        HardwareInfo::linux_cgroup_memory_limit_bytes_at(
-            Path::new(&cgroup_root),
-            "0::/system.slice/mgc.scope\n"
-        ),
-        Some(4294967296)
-    );
-    assert_eq!(
-        HardwareInfo::linux_cgroup_memory_limit_bytes_at(
-            Path::new(&cgroup_root),
-            "0::/../../outside\n"
-        ),
-        None
-    );
-}
-
-#[test]
-fn test_linux_cgroup_memory_limit_uses_effective_ancestor_limit() {
-    use std::path::Path;
-
-    let dir = tempdir().unwrap();
-    let cgroup_root = dir.path().join("sys/fs/cgroup");
-    let parent = cgroup_root.join("tenant");
-    let nested = parent.join("worker");
-    fs::create_dir_all(&nested).unwrap();
-    fs::write(parent.join("memory.max"), "8589934592\n").unwrap();
-    fs::write(nested.join("memory.max"), "max\n").unwrap();
-    fs::write(cgroup_root.join("memory.max"), "17179869184\n").unwrap();
-
-    assert_eq!(
-        HardwareInfo::linux_cgroup_memory_limit_bytes_at(
-            Path::new(&cgroup_root),
-            "0::/tenant/worker\n"
-        ),
-        Some(8589934592)
-    );
 }
 
 #[test]

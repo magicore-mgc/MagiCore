@@ -12,7 +12,7 @@ Triển khai vòng đời npm/Node.js: nhận diện, resolve, registry, kiểm 
 - [`lib.rs`](../src/lib.rs)
 - [`install/mod.rs`](../src/install/mod.rs)
 - [`provider.rs`](../src/provider.rs)
-- [`supply_chain.rs`](../src/supply_chain.rs)
+- [supply-chain owner](../src/supply_chain/README.md)
 
 ## Bàn giao và review
 

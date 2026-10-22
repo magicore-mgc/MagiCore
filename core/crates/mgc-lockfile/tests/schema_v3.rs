@@ -90,8 +90,8 @@ fn v3_roundtrip_preserves_all_new_fields() {
 
     // Serialize (v3 writer) → parse back (v2/v3 gate) → every new field intact.
     // Serialize (writer v3) → parse ngược (cổng v2/v3) → mọi field mới nguyên vẹn.
-    let encoded = to_toml(&lock).unwrap();
-    let decoded = parse_lockfile(&encoded).unwrap();
+    let encoded = to_toml(&lock).expect("test operation must succeed");
+    let decoded = parse_lockfile(&encoded).expect("test operation must succeed");
     assert_eq!(decoded, lock);
 }
 
@@ -101,10 +101,12 @@ fn v2_lockfile_parses_with_v3_defaults() {
     // field falls back to its serde default.
     // File v2 vẫn đọc được: version "2" qua cổng gate và mọi field v3 về
     // mặc định serde.
-    let lock = parse_lockfile(V2_TOML).unwrap();
+    let lock = parse_lockfile(V2_TOML).expect("test operation must succeed");
     assert_eq!(lock.version, "2");
 
-    let pkg = lock.get_package("react").unwrap();
+    let pkg = lock
+        .get_package("react")
+        .expect("test operation must succeed");
     assert_eq!(pkg.owner_core, None);
     assert_eq!(pkg.ecosystem, EcosystemTag::Other);
     assert_eq!(pkg.registry, None);
@@ -145,7 +147,7 @@ fn v2_json_payload_parses_with_v3_defaults() {
         ]
     }"#;
 
-    let lock: Lockfile = serde_json::from_str(json_v2).unwrap();
+    let lock: Lockfile = serde_json::from_str(json_v2).expect("test operation must succeed");
     assert_eq!(lock.version, "2");
     assert_eq!(lock.packages.len(), 1);
     assert_eq!(lock.packages[0].ecosystem, EcosystemTag::Other);
@@ -155,9 +157,12 @@ fn v2_json_payload_parses_with_v3_defaults() {
 
 #[test]
 fn migration_v2_to_v3_fills_other_ecosystem_and_registry_import_provenance() {
-    assert_eq!(detect_lockfile_version(V2_TOML).unwrap(), 2);
+    assert_eq!(
+        detect_lockfile_version(V2_TOML).expect("test operation must succeed"),
+        2
+    );
 
-    let lock = parse_lockfile(V2_TOML).unwrap();
+    let lock = parse_lockfile(V2_TOML).expect("test operation must succeed");
     let migrated = migrate_v2_to_v3(lock);
 
     assert_eq!(migrated.version, LOCKFILE_SCHEMA_VERSION);
@@ -168,7 +173,10 @@ fn migration_v2_to_v3_fills_other_ecosystem_and_registry_import_provenance() {
     assert_eq!(pkg.ecosystem, EcosystemTag::Other);
     // Empty provenance is filled with the registry-import kind.
     // Provenance trống được điền kind registry-import.
-    let provenance = pkg.provenance.as_ref().unwrap();
+    let provenance = pkg
+        .provenance
+        .as_ref()
+        .expect("test operation must succeed");
     assert_eq!(provenance.source_kind, SOURCE_KIND_REGISTRY_IMPORT);
     assert_eq!(provenance.tool, None);
     assert_eq!(provenance.imported_from, None);
@@ -223,8 +231,10 @@ fn export_skeletons_route_by_ecosystem() {
 
     // Cargo.lock: only the rust pin, mapped to Cargo's registry source shape.
     // Cargo.lock: chỉ pin rust, ánh xạ sang shape registry source của Cargo.
-    let cargo =
-        String::from_utf8(export_canonical(&lock, ExportTarget::CargoLock).unwrap()).unwrap();
+    let cargo = String::from_utf8(
+        export_canonical(&lock, ExportTarget::CargoLock).expect("test operation must succeed"),
+    )
+    .expect("test operation must succeed");
     assert!(cargo.contains("[[package]]"));
     assert!(cargo.contains("name = \"serde\""));
     assert!(cargo.contains("version = \"1.0.219\""));
@@ -234,16 +244,21 @@ fn export_skeletons_route_by_ecosystem() {
 
     // requirements.txt: `name==version` for python only.
     // requirements.txt: `name==version` chỉ cho python.
-    let reqs =
-        String::from_utf8(export_canonical(&lock, ExportTarget::RequirementsTxt).unwrap()).unwrap();
+    let reqs = String::from_utf8(
+        export_canonical(&lock, ExportTarget::RequirementsTxt)
+            .expect("test operation must succeed"),
+    )
+    .expect("test operation must succeed");
     assert!(reqs.contains("numpy==1.26.4"));
     assert!(!reqs.contains("serde=="));
     assert!(!reqs.contains("react=="));
 
     // package-lock.json: parseable JSON, lockfileVersion 3, web pin present.
     // package-lock.json: JSON parse được, lockfileVersion 3, có pin web.
-    let pkg_lock = export_canonical(&lock, ExportTarget::PackageLock).unwrap();
-    let doc: serde_json::Value = serde_json::from_slice(&pkg_lock).unwrap();
+    let pkg_lock =
+        export_canonical(&lock, ExportTarget::PackageLock).expect("test operation must succeed");
+    let doc: serde_json::Value =
+        serde_json::from_slice(&pkg_lock).expect("test operation must succeed");
     assert_eq!(doc["lockfileVersion"].as_i64(), Some(3));
     assert_eq!(
         doc["packages"]["node_modules/react"]["version"].as_str(),
@@ -253,7 +268,10 @@ fn export_skeletons_route_by_ecosystem() {
 
     // go.sum: comment-only skeleton — nothing parseable leaks out.
     // go.sum: skeleton chỉ toàn comment — không lọt dòng parse được ra ngoài.
-    let go_sum = String::from_utf8(export_canonical(&lock, ExportTarget::GoSum).unwrap()).unwrap();
+    let go_sum = String::from_utf8(
+        export_canonical(&lock, ExportTarget::GoSum).expect("test operation must succeed"),
+    )
+    .expect("test operation must succeed");
     assert!(go_sum.contains("skeleton — go toolchain regenerates"));
     for line in go_sum.lines() {
         assert!(
@@ -279,7 +297,8 @@ fn export_fails_closed_on_empty_version() {
     // silent skip — the version comes out as an empty pin otherwise).
     // Pin đúng ecosystem nhưng thiếu version phải fail rõ ràng (không skip
     // âm thầm — nếu không sẽ ra pin rỗng version).
-    let err = export_canonical(&lock, ExportTarget::CargoLock).unwrap_err();
+    let err =
+        export_canonical(&lock, ExportTarget::CargoLock).expect_err("test operation must fail");
     assert!(err.to_string().contains("empty version"), "{err}");
 }
 
@@ -302,25 +321,34 @@ fn ownership_ledger_loads_deduped_entries() {
   ]
 }"#;
 
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("test operation must succeed");
     let path = dir.path().join("dependencyDelegationAudit.json");
-    std::fs::write(&path, ledger).unwrap();
+    std::fs::write(&path, ledger).expect("test operation must succeed");
 
-    let entries = load_ownership_ledger(&path).unwrap();
+    let entries = load_ownership_ledger(&path).expect("test operation must succeed");
     // (game, delegated, cargo) appears twice → deduped to one entry.
     // (game, delegated, cargo) xuất hiện 2 lần → khử trùng lặp còn 1.
     assert_eq!(entries.len(), 3);
 
-    let game = entries.iter().find(|e| e.core == "game").unwrap();
+    let game = entries
+        .iter()
+        .find(|e| e.core == "game")
+        .expect("test operation must succeed");
     assert_eq!(game.owner, "delegated");
     assert_eq!(game.tool.as_deref(), Some("cargo"));
     assert_eq!(game.documented_at, "2026-09-16T10:36:03Z");
 
-    let ai = entries.iter().find(|e| e.core == "ai").unwrap();
+    let ai = entries
+        .iter()
+        .find(|e| e.core == "ai")
+        .expect("test operation must succeed");
     assert_eq!(ai.owner, "delegated");
     assert_eq!(ai.tool.as_deref(), Some("pip"));
 
-    let web = entries.iter().find(|e| e.core == "web").unwrap();
+    let web = entries
+        .iter()
+        .find(|e| e.core == "web")
+        .expect("test operation must succeed");
     assert_eq!(web.owner, "mgc-native");
     assert_eq!(web.tool.as_deref(), Some("deno"));
 }
@@ -334,13 +362,13 @@ fn ownership_ledger_fails_closed_on_unknown_status() {
   ]
 }"#;
 
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("test operation must succeed");
     let path = dir.path().join("dependencyDelegationAudit.json");
-    std::fs::write(&path, ledger).unwrap();
+    std::fs::write(&path, ledger).expect("test operation must succeed");
 
     // Unknown/failed statuses must never be certified into the lock snapshot.
     // Status lạ/hỏng không bao giờ được xác nhận vào ảnh chụp trong lock.
-    let err = load_ownership_ledger(&path).unwrap_err();
+    let err = load_ownership_ledger(&path).expect_err("test operation must fail");
     assert!(
         err.to_string().contains("unknown delegation ledger status"),
         "{err}"
@@ -348,7 +376,7 @@ fn ownership_ledger_fails_closed_on_unknown_status() {
 }
 
 #[test]
-fn ownership_gate_requires_registry_or_delegated_provenance() {
+fn ownership_gate_requires_complete_source_provenance() {
     // Case 1: rust pin with neither registry nor provenance → gate fails.
     // Case 1: pin rust thiếu cả registry lẫn provenance → gate chặn.
     let mut lock = Lockfile::new();
@@ -398,8 +426,26 @@ fn ownership_gate_requires_registry_or_delegated_provenance() {
     lock.add_package(delegated);
     assert!(verify_ownership_completeness(&lock).is_ok());
 
-    // Case 4: v2-era `other` package stays exempt.
-    // Case 4: package `other` thời v2 vẫn được miễn.
+    // Case 4: a known imported lockfile source is preserved without inventing a registry URL.
+    // Case 4: nguồn lockfile import đã biết vẫn giữ được mà không bịa URL registry.
+    let mut lock = Lockfile::new();
+    let mut imported = Package::new(
+        "imported".to_string(),
+        "1.0.0".to_string(),
+        String::new(),
+        String::new(),
+    );
+    imported.ecosystem = EcosystemTag::Web;
+    imported.provenance = Some(Provenance {
+        source_kind: SOURCE_KIND_REGISTRY_IMPORT.to_string(),
+        tool: None,
+        imported_from: Some("bun.lock".to_string()),
+    });
+    lock.add_package(imported);
+    assert!(verify_ownership_completeness(&lock).is_ok());
+
+    // Case 5: v2-era `other` package stays exempt.
+    // Case 5: package `other` thời v2 vẫn được miễn.
     let mut lock = Lockfile::new();
     lock.add_package(Package::new(
         "left-pad".to_string(),

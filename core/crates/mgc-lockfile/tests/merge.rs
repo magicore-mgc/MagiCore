@@ -26,7 +26,7 @@ fn merge3_keeps_both_additions() {
     let base = lock(&[]);
     let ours = lock(&[pkg("a", "1.0.0")]);
     let theirs = lock(&[pkg("b", "2.0.0")]);
-    let out = merge3(&base, &ours, &theirs).unwrap();
+    let out = merge3(&base, &ours, &theirs).expect("test operation must succeed");
     assert_eq!(out.packages.len(), 2);
     let names: Vec<_> = out.packages.iter().map(|p| p.name.as_str()).collect();
     assert!(names.contains(&"a") && names.contains(&"b"));
@@ -41,7 +41,7 @@ fn merge3_preserves_same_name_packages_owned_by_distinct_cores() {
     lib.owner_core = Some("lib".to_string());
     lib.ecosystem = mgc_lockfile::EcosystemTag::Python;
 
-    let out = merge3(&lock(&[]), &lock(&[ai]), &lock(&[lib])).unwrap();
+    let out = merge3(&lock(&[]), &lock(&[ai]), &lock(&[lib])).expect("test operation must succeed");
 
     assert_eq!(out.packages.len(), 2);
     assert!(
@@ -63,7 +63,8 @@ fn merge3_refuses_ambiguous_multi_version_entries_instead_of_dropping_one() {
     let mut two = one.clone();
     two.version = "2.0.0".to_string();
 
-    let err = merge3(&lock(&[]), &lock(&[one, two]), &lock(&[])).unwrap_err();
+    let err =
+        merge3(&lock(&[]), &lock(&[one, two]), &lock(&[])).expect_err("test operation must fail");
 
     assert_eq!(err.name, "shared");
     assert!(err.to_string().contains("conflict"));
@@ -74,7 +75,7 @@ fn merge3_keeps_common_changed_version() {
     let base = lock(&[pkg("a", "1.0.0")]);
     let ours = lock(&[pkg("a", "1.1.0")]);
     let theirs = lock(&[pkg("a", "1.1.0")]);
-    let out = merge3(&base, &ours, &theirs).unwrap();
+    let out = merge3(&base, &ours, &theirs).expect("test operation must succeed");
     assert_eq!(out.packages.len(), 1);
     assert_eq!(out.packages[0].version, "1.1.0");
 }
@@ -84,7 +85,7 @@ fn merge3_takes_single_side_bump() {
     let base = lock(&[pkg("a", "1.0.0")]);
     let ours = lock(&[pkg("a", "1.0.0")]); // giữ nguyên
     let theirs = lock(&[pkg("a", "2.0.0")]); // bump
-    let out = merge3(&base, &ours, &theirs).unwrap();
+    let out = merge3(&base, &ours, &theirs).expect("test operation must succeed");
     assert_eq!(out.packages[0].version, "2.0.0");
 }
 
@@ -93,7 +94,7 @@ fn merge3_conflicts_on_divergent_versions() {
     let base = lock(&[pkg("a", "1.0.0")]);
     let ours = lock(&[pkg("a", "1.1.0")]);
     let theirs = lock(&[pkg("a", "2.0.0")]);
-    let err = merge3(&base, &ours, &theirs).unwrap_err();
+    let err = merge3(&base, &ours, &theirs).expect_err("test operation must fail");
     assert!(err.to_string().contains("conflict"), "{err}");
     assert_eq!(err.name, "a");
 }
@@ -103,7 +104,7 @@ fn merge3_removal_wins_when_other_side_unchanged() {
     let base = lock(&[pkg("a", "1.0.0"), pkg("b", "1.0.0")]);
     let ours = lock(&[pkg("b", "1.0.0")]); // removed a
     let theirs = lock(&[pkg("a", "1.0.0"), pkg("b", "1.0.0")]);
-    let out = merge3(&base, &ours, &theirs).unwrap();
+    let out = merge3(&base, &ours, &theirs).expect("test operation must succeed");
     assert_eq!(out.packages.len(), 1);
     assert_eq!(out.packages[0].name, "b");
 }
@@ -113,7 +114,7 @@ fn merge3_keeps_bump_over_other_side_removal() {
     let base = lock(&[pkg("a", "1.0.0")]);
     let ours = lock(&[]); // removed a
     let theirs = lock(&[pkg("a", "2.0.0")]); // bumped a → bump thắng removal
-    let out = merge3(&base, &ours, &theirs).unwrap();
+    let out = merge3(&base, &ours, &theirs).expect("test operation must succeed");
     assert_eq!(out.packages.len(), 1);
     assert_eq!(out.packages[0].version, "2.0.0");
 }
@@ -166,6 +167,6 @@ fn conflict_markers_resolve_to_union_when_sides_parse() {
 #[test]
 fn plain_lockfile_has_no_markers_returns_none() {
     let plain = lock(&[pkg("a", "1.0.0")]);
-    let text = serialize_lockfile(&plain).unwrap();
+    let text = serialize_lockfile(&plain).expect("test operation must succeed");
     assert!(resolve_git_conflict_markers(&text).is_none());
 }

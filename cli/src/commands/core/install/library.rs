@@ -44,7 +44,7 @@ pub async fn install(
         &compat,
         Some(&root.join(".magicore").join("exec.log")),
     )?;
-    let adapter = shared::lib_adapter(&root)?;
+    let adapter = crate::commands::core::lib::adapter(&root)?;
     shared::install_with_adapter(
         &*adapter,
         &root,

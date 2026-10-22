@@ -8,6 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Breaking
+- `mgc-store::Database::conn()` is now crate-private so downstream production crates cannot mutate SQLite store state through a raw connection. Consumers must use explicit `Database` operations; test fixtures can opt into the existing `test-util` feature and call `conn_for_tests()`.
+
+### Added
+- `Database::cas_integrity_counts()` returns typed orphan-claim and duplicate-promoted-generation counts from one read-only snapshot query for store diagnostics.
+- `PackageCache::open_tarball()` exposes a no-follow regular-file handle for bounded-memory cache consumers; `get_tarball()` remains available for compatibility.
+
+### Fixed
+- Package cache metadata names `.` and `..` are escaped before path construction, preventing lexical parent-segment traversal outside the configured cache root.
+- Package cache names that can collide across separators or OS path rules now use versioned BLAKE3 directories. Unsafe or non-roundtripping versions use a field-encoded hash namespace, preventing traversal from malformed prerelease text and aliases between different version structs with the same display string. Common lowercase names and ASCII-safe roundtripping version paths remain stable. Existing scoped/non-portable and unsafe-version entries are not migrated and may be refetched; symlink-parent hardening and ecosystem-aware cache identity remain open.
+
+### Changed
+- Web package cache hits now verify SRI through bounded-memory readers and pass a no-follow opened file handle through marker construction and extraction instead of materializing the full cached tarball in a `Vec`.
+
 ## [1.1.0-rc.10] - 2026-10-10
 
 ### Added

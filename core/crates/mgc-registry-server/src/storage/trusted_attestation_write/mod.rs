@@ -1,0 +1,2 @@
+mod trusted_attestation_write;
+pub use trusted_attestation_write::TrustedAttestationInput;

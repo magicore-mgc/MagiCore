@@ -10,7 +10,7 @@ use mgc_registry_server::{
     AppState,
     auth::AuthService,
     model::Package,
-    storage::RegistryStore,
+    storage::{RegistryStore, TrustedAttestationInput, TrustedOciManifestInput},
     trusted::{self, TrustedPublishingConfig},
 };
 use std::{collections::HashMap, sync::Arc};
@@ -496,18 +496,21 @@ async fn pypi_and_oci_manifest_are_atomic_with_public_attestation_records() {
     let manifest_sha256 = hex::encode(Sha256::digest(manifest));
     let manifest_digest = format!("sha256:{manifest_sha256}");
     store
-        .put_trusted_oci_manifest(
-            "oci:acme/models/worker",
-            "acme/models/worker",
-            "latest",
-            manifest,
-            &manifest_digest,
-            &manifest_sha256,
-            &claims(),
-            &key,
-            1,
-            serde_json::json!({"public": "oci"}),
-        )
+        .put_trusted_oci_manifest(TrustedOciManifestInput {
+            repo: "acme/models/worker",
+            reference: "latest",
+            manifest_bytes: manifest,
+            attestation: TrustedAttestationInput {
+                package: "oci:acme/models/worker",
+                version: "latest",
+                registry_digest: &manifest_digest,
+                artifact_sha256: &manifest_sha256,
+                claims: &claims(),
+                key: &key,
+                expected_binding_generation: 1,
+                sigstore_bundle: serde_json::json!({"public": "oci"}),
+            },
+        })
         .await
         .unwrap();
     assert!(

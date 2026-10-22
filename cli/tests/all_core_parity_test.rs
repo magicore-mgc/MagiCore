@@ -58,13 +58,20 @@ fn test_all_core_parity_online_web_and_native_core_processors() {
         String::from_utf8_lossy(&web_output.stderr)
     );
     assert!(
-        web_output_text.contains("create: installing initializer create-vite@latest through MagiCore"),
+        web_output_text
+            .contains("create: installing initializer create-vite@latest through MagiCore"),
         "web/vanilla did not run the creator through the MagiCore create flow: {web_output_text}"
     );
     let provenance = fs::read_to_string(workspace_path.join("test-web/.mgc-provenance.json"))
         .expect("web generator provenance");
     assert!(provenance.contains("npm:create-vite@"));
-    assert!(provenance.contains("#template=vanilla-ts"));
+    // Canonical provenance schema is `npm:<pkg>@<resolved>#generator=<bin>:<tpl>`
+    // (emitted by `run_create_initializer`); it names the exact initializer binary
+    // plus template, which the older `#template=` form could not express.
+    // Schema provenance chuẩn là `npm:<pkg>@<resolved>#generator=<bin>:<tpl>` (do
+    // `run_create_initializer` ghi); nó nêu đúng binary initializer và template,
+    // điều mà dạng `#template=` cũ không diễn đạt được.
+    assert!(provenance.contains("#generator=vite:vanilla-ts"));
     assert!(!provenance.contains("npm:create-vite@latest"));
     assert!(
         workspace_path.join("test-web/index.html").exists(),

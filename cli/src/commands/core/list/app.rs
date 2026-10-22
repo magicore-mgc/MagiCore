@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-use crate::commands::core::install::app::{language, project_root};
+use crate::commands::core::app::{language, project_root};
 
 pub async fn list(compat_runtime: Option<String>) -> Result<()> {
     let root = project_root()?;
@@ -14,14 +14,13 @@ pub async fn list(compat_runtime: Option<String>) -> Result<()> {
             | mgc_app_adapter::AppLanguage::Swift
             | mgc_app_adapter::AppLanguage::ReactNative
     ) {
-        return Err(crate::error::native_dependency_engine_unavailable(
-            "app",
+        return Err(crate::commands::core::app::native_lifecycle_error(
             lang.ecosystem(),
             "list",
         ));
     }
-    let adapter =
-        mgc_app_adapter::adapter_for(&root).ok_or_else(crate::error::app_project_not_detected)?;
+    let adapter = mgc_app_adapter::adapter_for(&root)
+        .ok_or_else(crate::commands::core::app::project_not_detected_error)?;
     crate::commands::dep_gate::gate_native_adapter(
         &crate::commands::dep_gate::DepContext::new(
             "app",

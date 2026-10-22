@@ -9,8 +9,11 @@ on:
       - "core/**"
       - "adapters/**"
       - "stress-test/**"
+      - "scripts/ci/stress/**"
+      - "scripts/ci/toolchains/**"
       - ".github/workflows/stress-matrix.yml"
       - ".github/workflows/release.yml"
+      - ".github/workflows/release-*.yml"
   push:
     branches: [main, "fix/**"]
     paths:
@@ -18,8 +21,11 @@ on:
       - "core/**"
       - "adapters/**"
       - "stress-test/**"
+      - "scripts/ci/stress/**"
+      - "scripts/ci/toolchains/**"
       - ".github/workflows/stress-matrix.yml"
       - ".github/workflows/release.yml"
+      - ".github/workflows/release-*.yml"
   workflow_dispatch:
 
 permissions:
@@ -79,54 +85,11 @@ jobs:
       - name: Set up Kotlin compiler for Kotlin runtime probes (Linux/macOS)
         if: runner.os != 'Windows'
         shell: bash
-        run: |
-          set -euo pipefail
-          archive_name="kotlin-compiler-2.4.21.zip"
-          expected_sha256="7cc140e76daf416a0424a5557f99afd7ca89ebd463ea1101261e3e01c33e75cd"
-          archive_path="${RUNNER_TEMP}/${archive_name}"
-          install_dir="${RUNNER_TEMP}/kotlin-compiler"
-          mkdir -p "${install_dir}"
-          curl --fail --location --retry 3 --silent --show-error \
-            "https://github.com/JetBrains/kotlin/releases/download/v2.4.21/${archive_name}" \
-            --output "${archive_path}"
-          python - "${archive_path}" "${expected_sha256}" <<'PY'
-          import hashlib
-          import pathlib
-          import sys
-
-          archive = pathlib.Path(sys.argv[1])
-          expected = sys.argv[2]
-          actual = hashlib.sha256(archive.read_bytes()).hexdigest()
-          if actual != expected:
-              raise SystemExit(f"Kotlin compiler archive SHA-256 mismatch: {actual}")
-          PY
-          unzip -q "${archive_path}" -d "${install_dir}"
-          compiler_bin="${install_dir}/kotlinc/bin"
-          if [[ ! -x "${compiler_bin}/kotlinc" ]]; then
-            echo "Kotlin compiler launcher is missing from the verified archive" >&2
-            exit 1
-          fi
-          echo "${compiler_bin}" >> "${GITHUB_PATH}"
-          "${compiler_bin}/kotlinc" -version
-
+        run: bash scripts/ci/stress/toolchains/kotlin/install_unix.sh
       - name: Set up Kotlin compiler for Kotlin runtime probes (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          $archiveName = 'kotlin-compiler-2.4.21.zip'
-          $archivePath = Join-Path $env:RUNNER_TEMP $archiveName
-          $installDir = Join-Path $env:RUNNER_TEMP 'kotlin-compiler'
-          $expectedSha256 = '7cc140e76daf416a0424a5557f99afd7ca89ebd463ea1101261e3e01c33e75cd'
-          Invoke-WebRequest -Uri "https://github.com/JetBrains/kotlin/releases/download/v2.4.21/$archiveName" -OutFile $archivePath
-          $actualSha256 = (Get-FileHash -Path $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($actualSha256 -ne $expectedSha256) { throw "Kotlin compiler archive SHA-256 mismatch: $actualSha256" }
-          Expand-Archive -Path $archivePath -DestinationPath $installDir -Force
-          $compilerBin = Join-Path $installDir 'kotlinc\bin'
-          $compilerLauncher = Join-Path $compilerBin 'kotlinc.bat'
-          if (!(Test-Path -LiteralPath $compilerLauncher -PathType Leaf)) { throw 'Kotlin compiler launcher is missing from the verified archive' }
-          Add-Content -Path $env:GITHUB_PATH -Value $compilerBin -Encoding utf8
-          & $compilerLauncher -version
-
+        run: ./scripts/ci/stress/toolchains/kotlin/install_windows.ps1
       - name: Set up PHP for PHP runtime probes
         if: runner.os != 'macOS'
         uses: shivammathur/setup-php@4424c9aab975b57bd706ee5a39c6b4334d6e4f60 # 2.40.0
@@ -139,14 +102,7 @@ jobs:
       - name: Set up PHP for PHP runtime probes (macOS)
         if: runner.os == 'macOS'
         shell: bash
-        run: |
-          set -euo pipefail
-          brew update
-          brew install php
-          php_bin="$(brew --prefix php)/bin"
-          echo "${php_bin}" >> "${GITHUB_PATH}"
-          "${php_bin}/php" --version
-
+        run: bash scripts/ci/stress/toolchains/php/install_macos.sh
       - name: Set up .NET for C# runtime probes
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
@@ -166,154 +122,23 @@ jobs:
       - name: Set up Terraform for HCL syntax probes (Linux/macOS)
         if: runner.os != 'Windows'
         shell: bash
-        run: |
-          set -euo pipefail
-          case "$(uname -s):$(uname -m)" in
-            Linux:x86_64)
-              archive_platform="linux_amd64"
-              expected_sha256="38034b38d03096399a7a1264a14561a8029b2b496fd1f169452656e53968f1b7"
-              ;;
-            Darwin:arm64)
-              archive_platform="darwin_arm64"
-              expected_sha256="85e1bc78ab45bdc5f82a7bac3929e37d072834a584d22583a2498dc67bb624cd"
-              ;;
-            Darwin:x86_64)
-              archive_platform="darwin_amd64"
-              expected_sha256="794a36c3f7ebf6c58f2089c226068a539d1705ba358a5679b51671c8dc7ebc7b"
-              ;;
-            *)
-              echo "No pinned Terraform archive exists for this runner architecture" >&2
-              exit 1
-              ;;
-          esac
-          archive_name="terraform_1.16.6_${archive_platform}.zip"
-          archive_path="${RUNNER_TEMP}/${archive_name}"
-          install_dir="${RUNNER_TEMP}/terraform-cli"
-          mkdir -p "${install_dir}"
-          curl --fail --location --retry 3 --silent --show-error \
-            "https://releases.hashicorp.com/terraform/1.16.6/${archive_name}" \
-            --output "${archive_path}"
-          python - "${archive_path}" "${expected_sha256}" <<'PY'
-          import hashlib
-          import pathlib
-          import sys
-
-          archive = pathlib.Path(sys.argv[1])
-          expected = sys.argv[2]
-          actual = hashlib.sha256(archive.read_bytes()).hexdigest()
-          if actual != expected:
-              raise SystemExit(f"Terraform archive SHA-256 mismatch: {actual}")
-          PY
-          unzip -q "${archive_path}" -d "${install_dir}"
-          echo "${install_dir}" >> "${GITHUB_PATH}"
-          "${install_dir}/terraform" version
-
+        run: bash scripts/ci/stress/toolchains/terraform/install_unix.sh
       - name: Set up Terraform for HCL syntax probes (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          $archiveName = 'terraform_1.16.6_windows_amd64.zip'
-          $archivePath = Join-Path $env:RUNNER_TEMP $archiveName
-          $installDir = Join-Path $env:RUNNER_TEMP 'terraform-cli'
-          $expectedSha256 = '6ea2c186e0e76a113af30fbcdcf7a4b4c70756317994a04929e5c90b9e94b1df'
-          Invoke-WebRequest -Uri "https://releases.hashicorp.com/terraform/1.16.6/$archiveName" -OutFile $archivePath
-          $actualSha256 = (Get-FileHash -Path $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($actualSha256 -ne $expectedSha256) { throw "Terraform archive SHA-256 mismatch: $actualSha256" }
-          Expand-Archive -Path $archivePath -DestinationPath $installDir -Force
-          Add-Content -Path $env:GITHUB_PATH -Value $installDir -Encoding utf8
-          & (Join-Path $installDir 'terraform.exe') version
-
+        run: ./scripts/ci/stress/toolchains/terraform/install_windows.ps1
       - name: Set up Godot for GDScript runtime probes (Linux/macOS)
         if: runner.os != 'Windows'
         shell: bash
-        run: |
-          set -euo pipefail
-          case "${RUNNER_OS}" in
-            Linux)
-              archive_name="Godot_v4.7.2-stable_linux.x86_64.zip"
-              expected_sha512="9aa00f7a605200940bce3027a567b782f49bd8e940dd06ae9e987bd65aee1b1467edd56ed84fcdcbdd44354bf613bdbb4e5d2913e925850368e150c59ed54c65"
-              ;;
-            macOS)
-              archive_name="Godot_v4.7.2-stable_macos.universal.zip"
-              expected_sha512="38aa16e5bba2083941fc5b3e54be0089bd4cc35e32415f5b9fd9a8a6a7b9818255d44532ea8ef94b5aef56c4b407c2d634fa4f657e4ebe681ebbf59b7bac69ca"
-              ;;
-            *)
-              echo "Unsupported runner OS for pinned Godot archive" >&2
-              exit 1
-              ;;
-          esac
-          archive_path="${RUNNER_TEMP}/${archive_name}"
-          extract_dir="${RUNNER_TEMP}/godot-extract"
-          install_dir="${RUNNER_TEMP}/godot-bin"
-          mkdir -p "${extract_dir}" "${install_dir}"
-          curl --fail --location --retry 3 --silent --show-error \
-            "https://github.com/godotengine/godot-builds/releases/download/4.7.2-stable/${archive_name}" \
-            --output "${archive_path}"
-          python - "${archive_path}" "${expected_sha512}" <<'PY'
-          import hashlib
-          import pathlib
-          import sys
-
-          archive = pathlib.Path(sys.argv[1])
-          expected = sys.argv[2]
-          actual = hashlib.sha512(archive.read_bytes()).hexdigest()
-          if actual != expected:
-              raise SystemExit(f"Godot archive SHA-512 mismatch: {actual}")
-          PY
-          unzip -q "${archive_path}" -d "${extract_dir}"
-          if [[ "${RUNNER_OS}" == "macOS" ]]; then
-            godot_source="$(find "${extract_dir}" -path '*/Godot.app/Contents/MacOS/Godot' -type f -print -quit)"
-          else
-            godot_source="$(find "${extract_dir}" -maxdepth 2 -type f -name 'Godot_v4.7.2-stable_linux.x86_64' -print -quit)"
-          fi
-          if [[ -z "${godot_source}" ]]; then
-            echo "Godot executable is missing from the verified archive" >&2
-            exit 1
-          fi
-          chmod +x "${godot_source}"
-          ln -s "${godot_source}" "${install_dir}/godot"
-          echo "${install_dir}" >> "${GITHUB_PATH}"
-          "${install_dir}/godot" --headless --version
-
+        run: bash scripts/ci/stress/toolchains/godot/install_unix.sh
       - name: Set up Godot for GDScript runtime probes (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          $archiveName = 'Godot_v4.7.2-stable_win64.exe.zip'
-          $archivePath = Join-Path $env:RUNNER_TEMP $archiveName
-          $extractDir = Join-Path $env:RUNNER_TEMP 'godot-extract'
-          $installDir = Join-Path $env:RUNNER_TEMP 'godot-bin'
-          $expectedSha512 = '83decd58fdf67b9d657958a1ae6bf1929c20785315a81effe245874cdc57acb709bf868e00778a96984338c1b29dafdb453c6847747694621c6ecf5da2259993'
-          New-Item -ItemType Directory -Force -Path $extractDir, $installDir | Out-Null
-          Invoke-WebRequest -Uri "https://github.com/godotengine/godot-builds/releases/download/4.7.2-stable/$archiveName" -OutFile $archivePath
-          $actualSha512 = (Get-FileHash -Path $archivePath -Algorithm SHA512).Hash.ToLowerInvariant()
-          if ($actualSha512 -ne $expectedSha512) { throw "Godot archive SHA-512 mismatch: $actualSha512" }
-          Expand-Archive -Path $archivePath -DestinationPath $extractDir -Force
-          $godotSource = Get-ChildItem -Path $extractDir -Recurse -Filter 'Godot_v4.7.2-stable_win64.exe' | Select-Object -First 1
-          if ($null -eq $godotSource) { throw 'Godot executable is missing from the verified archive' }
-          $godotExe = Join-Path $installDir 'godot.exe'
-          Copy-Item -Path $godotSource.FullName -Destination $godotExe -Force
-          Add-Content -Path $env:GITHUB_PATH -Value $installDir -Encoding utf8
-          & $godotExe --headless --version
-
+        run: ./scripts/ci/stress/toolchains/godot/install_windows.ps1
       - name: Exposing the Windows GCC toolchain
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          $gccCommand = Get-Command gcc.exe -CommandType Application -ErrorAction SilentlyContinue
-          $gccCandidates = @('C:\mingw64\bin', 'C:\msys64\mingw64\bin', 'C:\msys64\ucrt64\bin')
-          if ($gccCommand) {
-            $gccCandidates = @((Split-Path -Parent $gccCommand.Source)) + $gccCandidates
-          }
-          $gccBin = $gccCandidates | Where-Object {
-            (Test-Path -LiteralPath (Join-Path $_ 'gcc.exe') -PathType Leaf) -and
-            (Test-Path -LiteralPath (Join-Path $_ 'g++.exe') -PathType Leaf)
-          } | Select-Object -First 1
-          if (!$gccBin) { throw 'GCC and G++ are missing from the hosted runner' }
-          Add-Content -Path $env:GITHUB_PATH -Value $gccBin -Encoding utf8
-          & (Join-Path $gccBin 'gcc.exe') --version
-          & (Join-Path $gccBin 'g++.exe') --version
-
+        run: ./scripts/ci/stress/toolchains/gcc/expose_windows.ps1
       - name: Set up Flutter and Dart for app runtime probes
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
@@ -322,22 +147,7 @@ jobs:
       - name: Import Swift.org signing keys (Linux)
         if: runner.os == 'Linux'
         shell: bash
-        run: |
-          set -euo pipefail
-          curl --fail --location \
-            --retry 3 --retry-all-errors --retry-delay 1 --retry-max-time 180 \
-            --connect-timeout 15 --max-time 60 --silent --show-error --compressed \
-            https://www.swift.org/keys/all-keys.asc | gpg --batch --import -
-          for expected in \
-            E813C892820A6FA13755B268F167DF1ACF9CE069 \
-            52BB7E3DE28A71BE22EC05FFEF80A866B47A981F; do
-            actual="$(gpg --batch --with-colons --fingerprint "$expected" | awk -F: '$1 == "fpr" { print $10; exit }')"
-            if [[ "$actual" != "$expected" ]]; then
-              echo "Expected official Swift signing key $expected was not imported" >&2
-              exit 1
-            fi
-          done
-
+        run: bash scripts/ci/toolchains/swift/import_signing_keys_linux.sh
       - name: Set up Swift toolchain (Linux/macOS)
         if: runner.os != 'Windows'
         uses: swift-actions/setup-swift@364295d9c23900ce04d4e5cc708387921b4e50f9 # v3.0.0-beta.1
@@ -347,28 +157,7 @@ jobs:
       - name: Set up Swift toolchain (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
-        run: |
-          winget install --id Swift.Toolchain --exact --source winget --scope user --version 6.4.1 --accept-source-agreements --accept-package-agreements
-          if ($LASTEXITCODE -ne 0) { throw "WinGet failed to install Swift 6.4.1" }
-          $swiftRoot = Join-Path $env:LOCALAPPDATA "Programs\Swift\Toolchains"
-          $toolchain = Get-ChildItem -Path $swiftRoot -Directory | Where-Object { $_.Name -like "6.4.1*" } | Select-Object -First 1
-          if ($null -eq $toolchain) { throw "Swift 6.4.1 toolchain directory was not installed" }
-          $swiftBin = Join-Path $toolchain.FullName "usr\bin"
-          if (!(Test-Path (Join-Path $swiftBin "swift.exe"))) { throw "Swift executable is missing from the installed toolchain" }
-          $swiftRuntimeVersion = $toolchain.Name -replace '\+.*$', ''
-          $swiftRuntimeBin = Join-Path (Split-Path -Parent $swiftRoot) "Runtimes\$swiftRuntimeVersion\usr\bin"
-          if (!(Test-Path -LiteralPath (Join-Path $swiftRuntimeBin "swiftCore.dll") -PathType Leaf)) { throw "Swift runtime DLL is missing: $swiftRuntimeBin" }
-          $sdkRoot = [Environment]::GetEnvironmentVariable('SDKROOT', 'User')
-          if ([string]::IsNullOrWhiteSpace($sdkRoot) -or !(Test-Path -LiteralPath $sdkRoot -PathType Container)) { throw "Swift installer did not configure a usable User SDKROOT: $sdkRoot" }
-          Add-Content -Path $env:GITHUB_ENV -Value "SDKROOT=$sdkRoot" -Encoding utf8
-          Add-Content -Path $env:GITHUB_PATH -Value $swiftBin -Encoding utf8
-          Add-Content -Path $env:GITHUB_PATH -Value $swiftRuntimeBin -Encoding utf8
-          # Workflow exports apply to later steps; the current probe needs them now.
-          # Export workflow chỉ có hiệu lực step sau; probe hiện tại cần env trực tiếp.
-          $env:SDKROOT = $sdkRoot
-          $env:Path = "$swiftBin;$swiftRuntimeBin;$env:Path"
-          & (Join-Path $swiftBin "swift.exe") --version
-
+        run: ./scripts/ci/stress/toolchains/swift/install_windows.ps1
       - name: Restore Python runtime after Swift installer (Windows)
         if: matrix.os == 'windows-latest'
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -377,44 +166,7 @@ jobs:
 
       - name: Verify language probe toolchains
         shell: bash
-        run: |
-          set -euo pipefail
-          runtime_tools=(bash node bun deno python go dart rustc cargo swift java dotnet php kotlinc terraform godot zig)
-          case "${RUNNER_OS}" in
-            macOS)
-              runtime_tools+=(clang clang++)
-              ;;
-            Linux|Windows)
-              runtime_tools+=(gcc g++)
-              ;;
-            *)
-              echo "Unsupported runner OS for language probes: ${RUNNER_OS}" >&2
-              exit 1
-              ;;
-          esac
-          for executable in "${runtime_tools[@]}"; do
-            if ! command -v "${executable}" >/dev/null 2>&1; then
-              echo "Required language probe tool is missing from PATH: ${executable}" >&2
-              exit 1
-            fi
-          done
-          test "$(node --version)" = "v26.12.0"
-          deno --version | head -1 | grep -F "deno 2.9.7"
-          rustc --version | grep -F "rustc 1.99.0"
-          go version | grep -F "go1.27.2"
-          python --version 2>&1 | grep -F "Python 3.15.0" || python3 --version 2>&1 | grep -F "Python 3.15.0"
-          java_version="$(java -version 2>&1)"
-          printf '%s\n' "$java_version"
-          grep -F 'build 27+35' <<< "$java_version"
-          dotnet --version | grep -F "10.0.402"
-          php --version | head -1 | grep -F "8.5.11"
-          flutter --version | head -1 | grep -F "3.47.7"
-          swift --version | head -1 | grep -F "6.4.1"
-          kotlinc -version 2>&1 | grep -F "2.4.21"
-          terraform version | head -1 | grep -F "1.16.6"
-          godot --headless --version | grep -F "4.7.2"
-          zig version | grep -F "0.17.0"
-
+        run: bash scripts/ci/stress/toolchains/verification/verify_all.sh
       - name: Cache Cargo
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
@@ -423,36 +175,10 @@ jobs:
 
       - name: Build optimized release MagiCore CLI
         shell: bash
-        run: |
-          set -euo pipefail
-          if [[ "${RUNNER_OS}" == "macOS" ]]; then
-            # Swift probes must not replace the Apple C compiler used by Go's C archive.
-            # Probe Swift không được đổi compiler C dùng để build thư viện Go của esbuild.
-            export CC="$(xcrun --toolchain default --find clang)"
-            export CXX="$(xcrun --toolchain default --find clang++)"
-            export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
-            echo "CC=${CC}" >> "${GITHUB_ENV}"
-            echo "CXX=${CXX}" >> "${GITHUB_ENV}"
-            echo "SDKROOT=${SDKROOT}" >> "${GITHUB_ENV}"
-          fi
-          cargo build --release --locked --bin mgc
-
+        run: bash scripts/ci/stress/cli/build_release.sh
       - name: Freeze the full-core release CLI for lifecycle and evidence
         shell: bash
-        run: |
-          python - <<'PYTHON'
-          import os
-          import shutil
-          from pathlib import Path
-
-          source = Path("target/release/mgc.exe" if os.name == "nt" else "target/release/mgc")
-          destination = Path(os.environ["RUNNER_TEMP"]) / "mgc-stress-binary" / source.name
-          destination.parent.mkdir(parents=True, exist_ok=True)
-          shutil.copy2(source, destination)
-          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as environment:
-              environment.write(f"MGC_STRESS_CLI_SNAPSHOT={destination}\n")
-          PYTHON
-
+        run: bash -e -o pipefail scripts/ci/stress/cli/snapshot_release.sh
       - name: Verify native dependency firewall on every runner OS
         run: cargo test --locked -p mgc --test dep_gate_canary -- --test-threads=1
         timeout-minutes: 15
@@ -500,23 +226,7 @@ jobs:
 
       - name: Verify Go readonly execution with cold compiler caches
         shell: bash
-        run: |
-          go_sdk_path="$(python3 - <<'PYTHON'
-          import pathlib
-          import shutil
-          executable = shutil.which('go')
-          if not executable or not pathlib.Path(executable).is_file():
-              raise SystemExit('Real Go SDK executable is missing')
-          print(pathlib.Path(executable).resolve())
-          PYTHON
-          )"
-          export MGC_E2E_GO_BINARY="$go_sdk_path"
-          cargo test --locked -p mgc-exec --test test_run \
-            real_go_readonly_run_survives_cold_compiler_processes \
-            -- --ignored --test-threads=1
-          cargo test --locked -p mgc-resolver --test test_protocols_go \
-            materialized_go_module_imports_with_real_sdk_without_rewriting_hash \
-            -- --ignored --test-threads=1
+        run: bash -e -o pipefail scripts/ci/stress/lanes/go/verify_readonly_execution.sh
         timeout-minutes: 10
 
       # Qualify the Web Go compiler route on every supported runner OS.
@@ -527,24 +237,7 @@ jobs:
 
       - name: Verify App-only offline packages import with real Dart
         shell: bash
-        run: |
-          dart_sdk_path="$(python3 - <<'PYTHON'
-          import os
-          import pathlib
-          import shutil
-          flutter = shutil.which('flutter')
-          if not flutter:
-              raise SystemExit('Flutter SDK is missing')
-          dart = pathlib.Path(flutter).resolve().parent / 'cache' / 'dart-sdk' / 'bin' / ('dart.exe' if os.name == 'nt' else 'dart')
-          if not dart.is_file():
-              raise SystemExit('Real Dart SDK executable is missing')
-          print(dart)
-          PYTHON
-          )"
-          export MGC_E2E_DART_BINARY="$dart_sdk_path"
-          cargo test --locked --no-default-features --features app -p mgc \
-            --test app_native_install_e2e flutter_offline_replay_imports_package_with_real_dart \
-            -- --ignored --test-threads=1
+        run: bash -e -o pipefail scripts/ci/stress/lanes/app/verify_dart_offline_import.sh
         timeout-minutes: 20
 
       - name: Run all dedicated frontend lifecycle E2Es, even after a lane fails
@@ -552,32 +245,7 @@ jobs:
         env:
           MGC_TEST_CLI_BINARY: ${{ env.MGC_STRESS_CLI_SNAPSHOT }}
           MGC_STRESS_LIFECYCLE_EVIDENCE: ${{ runner.temp }}/mgc-framework-lifecycle.jsonl
-        run: |
-          set -euo pipefail
-          if [[ "${RUNNER_OS}" == "Windows" ]]; then
-            export MGC_TEST_DIRECT_PRODUCT=1
-          fi
-          set +e
-          failed=0
-          for target in \
-            web_fw_fe_angular \
-            web_fw_fe_astro \
-            web_fw_fe_nextjs \
-            web_fw_fe_react_vite \
-            web_fw_fe_remix \
-            web_fw_fe_sveltekit \
-            web_fw_fe_vue_vite
-          do
-            echo "::group::${target}"
-            cargo test --locked -p mgc --test "${target}" -- --test-threads=1
-            result=$?
-            echo "::endgroup::"
-            if [[ "${result}" -ne 0 ]]; then
-              echo "FAILED: ${target} (exit ${result})"
-              failed=1
-            fi
-          done
-          exit "${failed}"
+        run: bash scripts/ci/stress/lanes/web/run_frontend_lifecycle.sh
         timeout-minutes: 90
 
       - name: Run native test-runner security, optimizer, and audit E2E suites

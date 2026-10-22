@@ -6,7 +6,7 @@ use tempfile::TempDir;
 
 fn write_lock(dir: &std::path::Path, name: &str, content: &str) -> std::path::PathBuf {
     let path = dir.join(name);
-    std::fs::write(&path, content).unwrap();
+    std::fs::write(&path, content).expect("test operation must succeed");
     path
 }
 
@@ -43,10 +43,10 @@ const NPM_V3: &str = r#"{
 
 #[test]
 fn npm_v3_imports_packages_and_root_level_edges() {
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let path = write_lock(tmp.path(), "package-lock.json", NPM_V3);
 
-    let (lock, report) = import_file(&path).unwrap();
+    let (lock, report) = import_file(&path).expect("test operation must succeed");
     assert_eq!(report.source_file, "package-lock.json");
 
     // link entry không có version bị bỏ; root "" bị bỏ
@@ -60,7 +60,11 @@ fn npm_v3_imports_packages_and_root_level_edges() {
     let names: Vec<_> = lock.packages.iter().map(|p| p.name.as_str()).collect();
     assert_eq!(names, vec!["@scope/pkg", "bar", "bar", "foo"]);
 
-    let foo = lock.packages.iter().find(|p| p.name == "foo").unwrap();
+    let foo = lock
+        .packages
+        .iter()
+        .find(|p| p.name == "foo")
+        .expect("test operation must succeed");
     assert_eq!(foo.version, "1.2.3");
     assert_eq!(foo.integrity, "sha512-AAAAfoo");
     // edge chỉ khi lookup thấy đúng node_modules/<dep> ở cấp gốc
@@ -71,14 +75,14 @@ fn npm_v3_imports_packages_and_root_level_edges() {
 fn npm_unknown_newer_version_imports_by_shape_with_warning() {
     // Chính sách: KHÔNG pin version PM (họ bump liên tục) — shape đúng là import được,
     // version chưa test chỉ sinh cảnh báo.
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let path = write_lock(
         tmp.path(),
         "package-lock.json",
         r#"{ "lockfileVersion": 99, "packages": {
           "node_modules/x": { "version": "1.0.0", "resolved": "https://r.example/x.tgz", "integrity": "sha512-x" } } }"#,
     );
-    let (_, report) = import_file(&path).unwrap();
+    let (_, report) = import_file(&path).expect("test operation must succeed");
     assert_eq!(report.packages, 1);
     assert!(
         report.warnings.iter().any(|w| w.contains("99")),
@@ -89,21 +93,21 @@ fn npm_unknown_newer_version_imports_by_shape_with_warning() {
 
 #[test]
 fn npm_known_version_has_no_warnings() {
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let path = write_lock(tmp.path(), "package-lock.json", NPM_V3);
-    let (_, report) = import_file(&path).unwrap();
+    let (_, report) = import_file(&path).expect("test operation must succeed");
     assert!(report.warnings.is_empty(), "{:?}", report.warnings);
 }
 
 #[test]
 fn npm_missing_packages_map_rejected_by_structure() {
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let path = write_lock(
         tmp.path(),
         "package-lock.json",
         r#"{ "lockfileVersion": 1, "dependencies": { "foo": { "version": "1.0.0" } } }"#,
     );
-    let err = import_file(&path).unwrap_err();
+    let err = import_file(&path).expect_err("test operation must fail");
     assert!(err.to_string().contains("'packages' map"), "{err}");
 }
 
@@ -126,16 +130,20 @@ packages:
 
 #[test]
 fn pnpm_v9_imports_with_integrity_and_exact_edges() {
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let path = write_lock(tmp.path(), "pnpm-lock.yaml", PNPM_V9);
 
-    let (lock, report) = import_file(&path).unwrap();
+    let (lock, report) = import_file(&path).expect("test operation must succeed");
     assert_eq!(report.packages, 2);
     assert!(
         report.warnings.is_empty(),
         "'9.0' đã tested → không cảnh báo"
     );
-    let chalk = lock.packages.iter().find(|p| p.name == "chalk").unwrap();
+    let chalk = lock
+        .packages
+        .iter()
+        .find(|p| p.name == "chalk")
+        .expect("test operation must succeed");
     assert_eq!(chalk.version, "5.3.0");
     assert_eq!(chalk.integrity, "sha512-dITSchalk");
     // edge exact "4.3.0" giữ lại; "9.9.9" không có trong tập → bỏ
@@ -145,14 +153,14 @@ fn pnpm_v9_imports_with_integrity_and_exact_edges() {
         .packages
         .iter()
         .find(|p| p.name == "ansi-styles")
-        .unwrap();
+        .expect("test operation must succeed");
     assert_eq!(styles.version, "4.3.0", "hậu tố (such@range) phải được cắt");
     assert_eq!(styles.integrity, "sha512-ZB123pnpm");
 }
 
 #[test]
 fn pnpm_unknown_version_imports_by_shape_with_warning() {
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let path = write_lock(
         tmp.path(),
         "pnpm-lock.yaml",
@@ -162,7 +170,7 @@ packages:
     resolution: {integrity: sha512-x}
 "#,
     );
-    let (_, report) = import_file(&path).unwrap();
+    let (_, report) = import_file(&path).expect("test operation must succeed");
     assert_eq!(report.packages, 1);
     assert!(
         report.warnings.iter().any(|w| w.contains("10.0")),
@@ -179,7 +187,7 @@ fn pnpm_two_documents_uses_project_graph_not_env() {
     // document is reported, never silently merged.
     // (File hai document: parse đơn-doc âm thầm trả document ĐẦU (env).
     // mgc parse mọi document và nhập CUỐI (graph project).)
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let path = write_lock(
         tmp.path(),
         "pnpm-lock.yaml",
@@ -214,7 +222,7 @@ packages:
 snapshots: {}
 "#,
     );
-    let (lock, report) = import_file(&path).unwrap();
+    let (lock, report) = import_file(&path).expect("test operation must succeed");
     assert!(
         lock.packages.iter().any(|p| p.name == "react"),
         "project graph must be imported: {:?}",
@@ -236,13 +244,13 @@ snapshots: {}
 
 #[test]
 fn pnpm_missing_packages_map_rejected() {
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let path = write_lock(
         tmp.path(),
         "pnpm-lock.yaml",
         "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies: {}\n",
     );
-    let err = import_file(&path).unwrap_err();
+    let err = import_file(&path).expect_err("test operation must fail");
     assert!(err.to_string().contains("'packages' map"), "{err}");
 }
 
@@ -264,21 +272,25 @@ left-pad@1.3.0:
 
 #[test]
 fn yarn_classic_imports_scoped_and_plain() {
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let path = write_lock(tmp.path(), "yarn.lock", YARN_CLASSIC);
 
-    let (lock, report) = import_file(&path).unwrap();
+    let (lock, report) = import_file(&path).expect("test operation must succeed");
     assert_eq!(report.packages, 2);
 
     let scoped = lock
         .packages
         .iter()
         .find(|p| p.name == "@scope/lib")
-        .unwrap();
+        .expect("test operation must succeed");
     assert_eq!(scoped.version, "1.2.3");
     assert_eq!(scoped.integrity, "sha512-Yscoped");
 
-    let plain = lock.packages.iter().find(|p| p.name == "left-pad").unwrap();
+    let plain = lock
+        .packages
+        .iter()
+        .find(|p| p.name == "left-pad")
+        .expect("test operation must succeed");
     assert_eq!(plain.version, "1.3.0");
     assert_eq!(
         plain.resolved,
@@ -288,13 +300,13 @@ fn yarn_classic_imports_scoped_and_plain() {
 
 #[test]
 fn yarn_berry_metadata_rejected() {
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let path = write_lock(
         tmp.path(),
         "yarn.lock",
         "__metadata:\n  version: 10\n\"a@npm:1\":\n  version: 1.0.0\n",
     );
-    let err = import_file(&path).unwrap_err();
+    let err = import_file(&path).expect_err("test operation must fail");
     assert!(err.to_string().contains("berry"), "{err}");
 }
 
@@ -311,52 +323,59 @@ const BUN_JSON: &str = r#"{
 
 #[test]
 fn bun_json_imports_array_entries() {
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let path = write_lock(tmp.path(), "bun.lock", BUN_JSON);
 
-    let (lock, report) = import_file(&path).unwrap();
+    let (lock, report) = import_file(&path).expect("test operation must succeed");
     assert_eq!(report.packages, 3);
 
-    let zod = lock.packages.iter().find(|p| p.name == "zod").unwrap();
+    let zod = lock
+        .packages
+        .iter()
+        .find(|p| p.name == "zod")
+        .expect("test operation must succeed");
     assert_eq!(zod.version, "3.22.4");
     assert_eq!(zod.resolved, "https://registry.example/zod-3.22.4.tgz");
     assert_eq!(zod.integrity, "sha512-bunZod");
 
     // entry thiếu tarball/integrity vẫn nhập với chuỗi rỗng
-    let kit = lock.packages.iter().find(|p| p.name == "@x/kit").unwrap();
+    let kit = lock
+        .packages
+        .iter()
+        .find(|p| p.name == "@x/kit")
+        .expect("test operation must succeed");
     assert_eq!(kit.version, "0.2.0");
     assert_eq!(kit.resolved, "");
 }
 
 #[test]
 fn bun_comments_rejected_with_clear_error() {
-    // P0-3 (2026-09-10): bun writer emits JSONC — comments are now
-    // STRIPPED before parsing; only genuinely broken payloads error out.
-    // Writer bun ghi JSONC — comment giờ được cắt trước parse; chỉ
-    // payload thật sự hỏng mới báo lỗi.
-    let tmp = TempDir::new().unwrap();
+    // Comments are stripped before parsing; an incomplete document must
+    // still fail with the importer’s JSONC diagnostic.
+    // Comment được cắt trước khi parse; tài liệu thiếu vẫn phải báo lỗi JSONC.
+    let tmp = TempDir::new().expect("test operation must succeed");
     let path = write_lock(
         tmp.path(),
         "bun.lock",
-        "{\n  // comment\n  \"packages\": {}\n,}",
+        "{\n  // comment\n  \"packages\": {\n",
     );
 
-    let err = import_file(&path).unwrap_err();
-    assert!(err.to_string().contains("not valid"), "{err}");
+    let err = import_file(&path).expect_err("test operation must fail");
+    assert!(err.to_string().contains("not valid JSONC"), "{err}");
 }
 
 #[test]
 fn bun_jsonc_trailing_commas_and_comments_import() {
     // Real bun writer shape: JSONC trailing comma + line comment —
     // import phải chấp nhận (P0-3: fixture migration bun thật).
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let path = write_lock(
         tmp.path(),
         "bun.lock",
         "{\n  \"lockfileVersion\": 1,\n  // writer comment\n  \"packages\": {\n    \"lodash\": [\"lodash@4.17.20\", \"\", {}, \"sha512-x\"],\n  }\n}",
     );
 
-    let (lock, report) = import_file(&path).unwrap();
+    let (lock, report) = import_file(&path).expect("test operation must succeed");
     assert_eq!(report.packages, 1);
     assert_eq!(lock.packages[0].name, "lodash");
     assert_eq!(lock.packages[0].version, "4.17.20");
@@ -364,14 +383,14 @@ fn bun_jsonc_trailing_commas_and_comments_import() {
 
 #[test]
 fn bun_rejects_unknown_lockfile_version() {
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let path = write_lock(
         tmp.path(),
         "bun.lock",
         r#"{"lockfileVersion":3,"packages":{"x":["x@1.0.0"]}}"#,
     );
 
-    let err = import_file(&path).unwrap_err();
+    let err = import_file(&path).expect_err("test operation must fail");
     assert!(err.to_string().contains("lockfileVersion 3"), "{err}");
 }
 
@@ -379,7 +398,7 @@ fn bun_rejects_unknown_lockfile_version() {
 
 #[test]
 fn detect_lists_existing_files_in_priority_order() {
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     write_lock(tmp.path(), "yarn.lock", YARN_CLASSIC);
     write_lock(tmp.path(), "package-lock.json", NPM_V3);
 
@@ -390,21 +409,21 @@ fn detect_lists_existing_files_in_priority_order() {
 
 #[test]
 fn import_into_lockfile_prefers_npm_over_yarn() {
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     write_lock(tmp.path(), "yarn.lock", YARN_CLASSIC);
     write_lock(tmp.path(), "package-lock.json", NPM_V3);
 
-    let (_, report) = import_into_lockfile(tmp.path()).unwrap();
+    let (_, report) = import_into_lockfile(tmp.path()).expect("test operation must succeed");
     assert_eq!(report.source_file, "package-lock.json");
 }
 
 #[test]
 fn imported_output_is_deterministic_sorted() {
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let path = write_lock(tmp.path(), "package-lock.json", NPM_V3);
 
-    let (a, _) = import_file(&path).unwrap();
-    let (b, _) = import_file(&path).unwrap();
+    let (a, _) = import_file(&path).expect("test operation must succeed");
+    let (b, _) = import_file(&path).expect("test operation must succeed");
     // generated_at luôn khác nhau nên so phần nội dung quyết định
     assert_eq!(
         a.packages, b.packages,
@@ -419,7 +438,7 @@ fn imported_output_is_deterministic_sorted() {
 #[test]
 fn pnpm_registry_path_dep_spec_resolves_edge() {
     // deps value dạng registry path "/name@ver" cũng phải dựng được edge
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let path = write_lock(
         tmp.path(),
         "pnpm-lock.yaml",
@@ -433,15 +452,19 @@ packages:
       a: /a@1.0.0
 "#,
     );
-    let (lock, _) = import_file(&path).unwrap();
-    let b = lock.packages.iter().find(|p| p.name == "b").unwrap();
+    let (lock, _) = import_file(&path).expect("test operation must succeed");
+    let b = lock
+        .packages
+        .iter()
+        .find(|p| p.name == "b")
+        .expect("test operation must succeed");
     assert_eq!(b.dependencies, vec!["a@1.0.0".to_string()]);
 }
 
 #[test]
 fn npm_same_name_version_dedupes() {
     // root-level và nested trùng (name,version) → chỉ giữ 1
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let path = write_lock(
         tmp.path(),
         "package-lock.json",
@@ -453,19 +476,19 @@ fn npm_same_name_version_dedupes() {
   }
 }"#,
     );
-    let (_, report) = import_file(&path).unwrap();
+    let (_, report) = import_file(&path).expect("test operation must succeed");
     assert_eq!(report.packages, 1, "trùng (name,version) phải dedupe");
 }
 
 #[test]
 fn yarn_multi_spec_header_uses_first() {
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let path = write_lock(
         tmp.path(),
         "yarn.lock",
         "\"multi@^1, multi@^2\":\n  version \"1.5.0\"\n  resolved \"https://r.example/multi.tgz\"\n",
     );
-    let (lock, report) = import_file(&path).unwrap();
+    let (lock, report) = import_file(&path).expect("test operation must succeed");
     assert_eq!(report.packages, 1);
     assert_eq!(lock.packages[0].name, "multi");
     assert_eq!(lock.packages[0].version, "1.5.0");
@@ -489,13 +512,17 @@ const DENO_V5: &str = r#"{
 fn deno_lock_imports_npm_pins_with_integrity() {
     // P0-3: `mgc import deno` — npm map vào Package chuẩn (name, version,
     // integrity), JSR giữ tiền tố "jsr:" để audit báo skipped trung thực.
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let path = write_lock(tmp.path(), "deno.lock", DENO_V5);
 
-    let (lock, report) = import_file(&path).unwrap();
+    let (lock, report) = import_file(&path).expect("test operation must succeed");
     assert_eq!(report.packages, 3);
 
-    let lodash = lock.packages.iter().find(|p| p.name == "lodash").unwrap();
+    let lodash = lock
+        .packages
+        .iter()
+        .find(|p| p.name == "lodash")
+        .expect("test operation must succeed");
     assert_eq!(lodash.version, "4.17.20");
     assert_eq!(lodash.integrity, "sha512-denoldash");
 
@@ -503,7 +530,7 @@ fn deno_lock_imports_npm_pins_with_integrity() {
         .packages
         .iter()
         .find(|p| p.name == "@scope/kit")
-        .unwrap();
+        .expect("test operation must succeed");
     assert_eq!(kit.version, "0.2.0");
 
     let jsr = lock
@@ -517,19 +544,19 @@ fn deno_lock_imports_npm_pins_with_integrity() {
 #[test]
 fn deno_lock_missing_npm_map_rejected_by_structure() {
     // Fail-closed: deno.lock thiếu map "npm" (schema lạ) → từ chối đoán.
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let path = write_lock(tmp.path(), "deno.lock", r#"{"version": "5", "jsr": {}}"#);
 
-    let err = import_file(&path).unwrap_err();
+    let err = import_file(&path).expect_err("test operation must fail");
     assert!(err.to_string().contains("no 'npm' map"), "{err}");
 }
 
 #[test]
 fn deno_lock_invalid_json_rejected() {
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let path = write_lock(tmp.path(), "deno.lock", "{ not json");
 
-    let err = import_file(&path).unwrap_err();
+    let err = import_file(&path).expect_err("test operation must fail");
     assert!(err.to_string().contains("not valid JSON"), "{err}");
 }
 
@@ -539,7 +566,7 @@ fn deno_lock_invalid_json_rejected() {
 /// peer/platform metadata must never be misread as package dependencies.
 #[test]
 fn bun_import_preserves_dependency_edges_and_records_skips() {
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let path = write_lock(
         tmp.path(),
         "bun.lock",
@@ -558,7 +585,7 @@ fn bun_import_preserves_dependency_edges_and_records_skips() {
         }"#,
     );
 
-    let (lock, report) = import_file(&path).unwrap();
+    let (lock, report) = import_file(&path).expect("test operation must succeed");
     // Only the valid npm pin became a package.
     // Chỉ pin npm hợp lệ thành package.
     assert_eq!(report.packages, 1);
@@ -599,7 +626,7 @@ fn bun_import_preserves_dependency_edges_and_records_skips() {
 /// skipped kèm lý do không-map-được-npm.
 #[test]
 fn deno_import_preserves_root_edges_and_lists_jsr_skips() {
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let path = write_lock(
         tmp.path(),
         "deno.lock",
@@ -612,10 +639,14 @@ fn deno_import_preserves_root_edges_and_lists_jsr_skips() {
 }"#,
     );
 
-    let (lock, report) = import_file(&path).unwrap();
+    let (lock, report) = import_file(&path).expect("test operation must succeed");
     assert_eq!(report.packages, 2); // lodash (npm) + jsr:@std/bytes
 
-    let lodash = lock.packages.iter().find(|p| p.name == "lodash").unwrap();
+    let lodash = lock
+        .packages
+        .iter()
+        .find(|p| p.name == "lodash")
+        .expect("test operation must succeed");
     // Root pins are the ROOT GRAPH — the package itself must carry NO
     // self-edge (the old bug turned "root depends on lodash" into
     // "lodash depends on npm:lodash@4.17.20").
@@ -645,7 +676,7 @@ fn deno_import_preserves_root_edges_and_lists_jsr_skips() {
         .packages
         .iter()
         .find(|p| p.name == "jsr:@std/bytes")
-        .unwrap();
+        .expect("test operation must succeed");
     assert_eq!(jsr.version, "0.224.0");
 
     // JSR mapped-but-unauditable is EXPLICITLY skipped with a reason.
@@ -666,12 +697,12 @@ fn deno_import_preserves_root_edges_and_lists_jsr_skips() {
 #[test]
 fn bun_import_is_deterministic() {
     let payload = "{\n  \"packages\": {\n    \"b\": [\"b@2.0.0\", \"\", {\"a\": \"a@^1\"}, \"sha512-B\"],\n    \"a\": [\"a@1.0.0\", \"https://r/a.tgz\", {}, \"sha512-A\"],\n  }\n}";
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let p1 = write_lock(tmp.path(), "bun.lock", payload);
-    let (lock1, _) = import_file(&p1).unwrap();
-    let tmp2 = TempDir::new().unwrap();
+    let (lock1, _) = import_file(&p1).expect("test operation must succeed");
+    let tmp2 = TempDir::new().expect("test operation must succeed");
     let p2 = write_lock(tmp2.path(), "bun.lock", payload);
-    let (lock2, _) = import_file(&p2).unwrap();
+    let (lock2, _) = import_file(&p2).expect("test operation must succeed");
     assert_eq!(lock1.packages, lock2.packages);
 }
 
@@ -691,56 +722,72 @@ fn bun_import_is_deterministic() {
 #[test]
 fn real_bun_lockfile_imports() {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/bun.lock");
-    let (lock, report) = import_file(&path).unwrap();
+    let (lock, report) = import_file(&path).expect("test operation must succeed");
 
     // The pinned packages (debug, ms, left-pad) must import with the REAL
     // integrities the writer recorded — verbatim, never synthesized.
     // Tất cả package ghim phải giữ nguyên integrity writer đã ghi.
     assert_eq!(report.packages, 3);
-    let debug = lock.get_package("debug").unwrap();
+    let debug = lock
+        .get_package("debug")
+        .expect("test operation must succeed");
     assert_eq!(debug.version, "4.4.3");
     assert_eq!(debug.dependencies, vec!["ms"]);
     assert!(debug.integrity.starts_with("sha512-"));
-    let ms = lock.get_package("ms").unwrap();
+    let ms = lock.get_package("ms").expect("test operation must succeed");
     assert_eq!(ms.version, "2.1.3");
     assert!(
         ms.integrity.starts_with("sha512-"),
         "real integrity missing: {}",
         ms.integrity
     );
-    let left_pad = lock.get_package("left-pad").unwrap();
+    let left_pad = lock
+        .get_package("left-pad")
+        .expect("test operation must succeed");
     assert_eq!(left_pad.version, "1.3.0");
     assert!(left_pad.integrity.starts_with("sha512-"));
 }
 
 #[test]
 fn real_bun_v1_lockfile_imports() {
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let fixture = include_str!("fixtures/bun-v1.lock.fixture");
     let path = write_lock(tmp.path(), "bun.lock", fixture);
-    let (lock, report) = import_file(&path).unwrap();
+    let (lock, report) = import_file(&path).expect("test operation must succeed");
 
     assert_eq!(report.packages, 2);
-    assert_eq!(lock.get_package("ms").unwrap().version, "2.1.3");
-    assert_eq!(lock.get_package("left-pad").unwrap().version, "1.3.0");
+    assert_eq!(
+        lock.get_package("ms")
+            .expect("test operation must succeed")
+            .version,
+        "2.1.3"
+    );
+    assert_eq!(
+        lock.get_package("left-pad")
+            .expect("test operation must succeed")
+            .version,
+        "1.3.0"
+    );
 }
 
 #[test]
 fn real_pnpm_12_lockfile_imports_packages_and_integrity() {
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("test operation must succeed");
     let fixture = include_str!("fixtures/pnpm-lock.yaml.fixture");
     let path = write_lock(tmp.path(), "pnpm-lock.yaml", fixture);
-    let (lock, report) = import_file(&path).unwrap();
+    let (lock, report) = import_file(&path).expect("test operation must succeed");
 
     assert_eq!(report.packages, 2);
     assert!(report.warnings.is_empty(), "{:?}", report.warnings);
-    let ms = lock.get_package("ms").unwrap();
+    let ms = lock.get_package("ms").expect("test operation must succeed");
     assert_eq!(ms.version, "2.1.3");
     assert_eq!(
         ms.integrity,
         "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA=="
     );
-    let left_pad = lock.get_package("left-pad").unwrap();
+    let left_pad = lock
+        .get_package("left-pad")
+        .expect("test operation must succeed");
     assert_eq!(left_pad.version, "1.3.0");
     assert_eq!(
         left_pad.integrity,
@@ -752,14 +799,16 @@ fn real_pnpm_12_lockfile_imports_packages_and_integrity() {
 fn real_deno_lockfile_imports_root_graph() {
     let path =
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/deno.lock");
-    let (lock, report) = import_file(&path).unwrap();
+    let (lock, report) = import_file(&path).expect("test operation must succeed");
 
     // npm pin imports with the REAL integrity; jsr pin survives with
     // its prefix and is listed as skipped (no npm advisory mapping).
     // Pin npm import với integrity THẬT; pin jsr sống sót với tiền tố
     // và được liệt kê skipped (không map được advisory npm).
     assert_eq!(report.packages, 2); // lodash (npm) + jsr:@std/bytes
-    let lodash = lock.get_package("lodash").unwrap();
+    let lodash = lock
+        .get_package("lodash")
+        .expect("test operation must succeed");
     assert_eq!(lodash.version, "4.17.20");
     assert!(
         lodash.integrity.starts_with("sha512-"),

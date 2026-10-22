@@ -20,7 +20,7 @@ Dùng [codebaseRoadmap.md](codebaseRoadmap.md) làm chỉ mục đường dẫn;
 | <code>adapters/</code> | Adapter theo nhóm ecosystem/core: ai, app, cicd, cloud, game, hardware, iot, lib, web. |
 | <code>cli/src/</code>, <code>cli/tests/</code>, <code>cli/embedded/</code> | CLI, test tích hợp của CLI và tài nguyên nhúng. |
 | <code>tools/</code> | Công cụ workspace và công cụ bị loại khỏi workspace; đối chiếu Cargo.toml. |
-| <code>templates/</code> | Template nguồn; tại snapshot 2026-10-06 chỉ thấy <code>templates/web/</code>. |
+| Hybrid creation | CLI gọi initializer chính thức qua package runtime; cây README-only <code>templates/</code> đã được user yêu cầu xóa 2026-10-21. Native/fullstack migration còn đang làm. |
 | <code>tests/e2e/</code>, <code>tests/fixtures/</code> | E2E cấp workspace và fixtures. |
 | <code>scripts/</code>, <code>ci/</code>, <code>.github/workflows/</code> | Script kiểm tra, evidence CI và workflow. |
 | <code>benchmark/</code>, <code>assets/</code>, <code>data/</code>, <code>deploy/</code>, <code>packaging/</code> | Khu vực benchmark, asset, runtime data, cấu hình deploy và phân phối. |

@@ -1,8 +1,11 @@
 //! mgc-registry-server — private registry server (MagiCore)
 //! /npm + /v2 endpoints, private-only (404 for public), client-side scoping.
 //! Private registry server exposed by the separate mgc-registry binary — registry riêng tư chạy trong binary mgc-registry.
+// Test fixtures use unwrap for setup/assertion failures; production code keeps the workspace lint.
+#![cfg_attr(test, allow(clippy::unwrap_used))]
 
 pub mod auth;
+mod credential_security;
 pub mod model;
 pub mod npm;
 pub mod oci;
@@ -28,7 +31,7 @@ pub(crate) fn peer_address(peer: OptionalPeerAddress) -> Option<std::net::Socket
     peer.map(|axum::Extension(axum::extract::ConnectInfo(address))| address)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RegistryServerConfig {
     pub host: String,
     pub port: u16,

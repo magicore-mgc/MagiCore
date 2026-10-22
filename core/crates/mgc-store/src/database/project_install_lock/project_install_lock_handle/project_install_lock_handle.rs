@@ -1,0 +1,103 @@
+//! Cross-process file-lock handle for one project install.
+//! Handle file lock liên tiến trình cho một lần install project.
+use super::super::super::errors::CasGenerationError;
+
+/// Project-level exclusive install lock (Gate 11-A item 7). File:
+/// `<store>/locks/install-<digest>.lock` — digest = blake3 of the
+/// canonical project root, so every spelling of one project maps to one
+/// lock file. ACQUISITION CONTRACT (P3 comment fix, fresh-context
+/// review 2026-09-15): this is a TRY-lock — a second concurrent install
+/// FAILS FAST with a typed error (the old doc claimed "blocks (with
+/// retry)", which the code never did; the honest contract is fail-fast,
+/// matching production package managers' install-lock UX).
+/// (Khóa install độc quyền mức project. File:
+/// `<store>/locks/install-<digest>.lock` — digest = blake3 của project
+/// root chuẩn hóa, mọi cách viết một project ánh xạ một file lock. HỢP
+/// ĐỒNG LẤY KHÓA: đây là TRY-lock — install song song thứ hai FAIL NGAY
+/// với lỗi có type (doc cũ claim "chặn (kèm retry)" trong khi code
+/// chưa bao giờ làm vậy; hợp đồng trung thực là fail-fast, khớp UX
+/// install-lock của package manager production.)
+pub struct ProjectInstallLock {
+    file: std::fs::File,
+    path: std::path::PathBuf,
+}
+
+impl ProjectInstallLock {
+    /// Lock file root — the store's locks/ directory (Layout::locks_dir).
+    /// RULE §12 (no hardcode): the base honors MAGICORE_STORE_ROOT /
+    /// default_store_root().
+    /// (Root của file lock — thư mục locks/ của store (Layout::locks_dir).
+    /// RULE §12: base tôn trọng MAGICORE_STORE_ROOT / default_store_root().)
+    fn locks_root() -> std::path::PathBuf {
+        crate::default_store_root().join("locks")
+    }
+
+    /// Acquire against the DEFAULT store root (production path).
+    /// (Lấy khóa theo store root MẶC ĐỊNH (đường production).)
+    pub(in crate::database::database::project_install_lock) fn acquire(
+        project_root: &str,
+    ) -> std::result::Result<Self, CasGenerationError> {
+        Self::acquire_at(&Self::locks_root(), project_root)
+    }
+
+    /// Acquire against an explicit locks root — the seam that keeps
+    /// tests hermetic (no global env mutation, no user-store touch) and
+    /// lets embedders place the lock elsewhere.
+    /// (Lấy khóa theo root locks tường minh — đường giữ test kín (không
+    /// đổi env toàn cục, không chạm store user) và cho embedder đặt
+    /// lock ở nơi khác.)
+    pub fn acquire_at(
+        root: &std::path::Path,
+        project_root: &str,
+    ) -> std::result::Result<Self, CasGenerationError> {
+        Self::acquire_impl(root, project_root)
+    }
+
+    fn acquire_impl(
+        root: &std::path::Path,
+        project_root: &str,
+    ) -> std::result::Result<Self, CasGenerationError> {
+        std::fs::create_dir_all(root).map_err(|e| {
+            CasGenerationError::Io(format!("create locks dir '{}': {e}", root.display()))
+        })?;
+        // Digest via the shared crypto crate — mgc-store does not depend on
+        // blake3 directly (dependency discipline, no duplicate hashers).
+        // (Digest qua crate crypto dùng chung — mgc-store không phụ thuộc
+        // blake3 trực tiếp (kỷ luật dependency, không nhân đôi hasher).)
+        let digest = mgc_crypto::Blake3Hasher::hash_string(project_root).to_hex();
+        let path = root.join(format!("install-{digest}.lock"));
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&path)
+            .map_err(|e| CasGenerationError::Io(format!("open lock '{}': {e}", path.display())))?;
+        fs2::FileExt::try_lock_exclusive(&file).map_err(|e| {
+            CasGenerationError::Io(format!(
+                "another install holds the project lock \
+                 ('{}' — concurrent installs of one project are serialized): {e}",
+                path.display()
+            ))
+        })?;
+        Ok(Self { file, path })
+    }
+}
+
+impl std::fmt::Debug for ProjectInstallLock {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProjectInstallLock")
+            .field("path", &self.path)
+            .finish()
+    }
+}
+
+impl Drop for ProjectInstallLock {
+    fn drop(&mut self) {
+        fs2::FileExt::unlock(&self.file).ok();
+        // The lock FILE stays — a zero-byte lock file is the standard
+        // pattern (flock on the inode); removing it on drop re-opens the
+        // rename race on POSIX.
+        // (File lock GIỮ NGUYÊN — file lock 0-byte là pattern chuẩn (flock
+        // trên inode); xóa nó lúc drop mở lại race rename trên POSIX.)
+    }
+}

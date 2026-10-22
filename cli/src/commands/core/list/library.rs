@@ -27,6 +27,6 @@ pub async fn list(compat_runtime: Option<String>) -> Result<()> {
         &compat,
         Some(&root.join(".magicore").join("exec.log")),
     )?;
-    let adapter = shared::lib_adapter(&root)?;
+    let adapter = crate::commands::core::lib::adapter(&root)?;
     shared::list(&*adapter, &root).await
 }

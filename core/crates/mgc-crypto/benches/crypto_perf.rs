@@ -25,8 +25,10 @@ fn bench_blake3_hash(c: &mut Criterion) {
 
 fn bench_ed25519_sign(c: &mut Criterion) {
     let rng = SystemRandom::new();
-    let pkcs8_bytes = Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
-    let signer = Ed25519Signer::from_pkcs8(pkcs8_bytes.as_ref()).unwrap();
+    let pkcs8_bytes = Ed25519KeyPair::generate_pkcs8(&rng)
+        .expect("OS randomness should produce an Ed25519 benchmark key");
+    let signer = Ed25519Signer::from_pkcs8(pkcs8_bytes.as_ref())
+        .expect("generated Ed25519 benchmark key should parse");
 
     let message = b"hello world message for signing";
 
@@ -37,8 +39,10 @@ fn bench_ed25519_sign(c: &mut Criterion) {
 
 fn bench_ed25519_verify(c: &mut Criterion) {
     let rng = SystemRandom::new();
-    let pkcs8_bytes = Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
-    let signer = Ed25519Signer::from_pkcs8(pkcs8_bytes.as_ref()).unwrap();
+    let pkcs8_bytes = Ed25519KeyPair::generate_pkcs8(&rng)
+        .expect("OS randomness should produce an Ed25519 benchmark key");
+    let signer = Ed25519Signer::from_pkcs8(pkcs8_bytes.as_ref())
+        .expect("generated Ed25519 benchmark key should parse");
 
     let message = b"hello world message for verification";
     let signature = signer.sign(message);
@@ -51,7 +55,7 @@ fn bench_ed25519_verify(c: &mut Criterion) {
                 black_box(message),
                 black_box(&signature),
             )
-            .unwrap()
+            .expect("signature from the benchmark key should verify")
         });
     });
 }

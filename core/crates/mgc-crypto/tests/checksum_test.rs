@@ -23,10 +23,10 @@ fn test_checksum_adler32_different_inputs_differ() {
 
 #[test]
 fn test_verify_adler32_match() {
-    assert!(verify_adler32(b"hello", 0x062c0215).unwrap());
+    assert!(verify_adler32(b"hello", 0x062c0215).expect("test operation must succeed"));
 }
 
 #[test]
 fn test_verify_adler32_mismatch() {
-    assert!(!verify_adler32(b"hello", 0).unwrap());
+    assert!(!verify_adler32(b"hello", 0).expect("test operation must succeed"));
 }

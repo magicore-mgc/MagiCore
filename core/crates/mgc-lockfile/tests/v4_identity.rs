@@ -61,7 +61,7 @@ fn peer_context_digest_is_order_independent_and_stable() {
 
 #[test]
 fn target_tuple_parses_strict_triples() {
-    let parsed = TargetTuple::parse("linux-x86_64-gnu").unwrap();
+    let parsed = TargetTuple::parse("linux-x86_64-gnu").expect("test operation must succeed");
     assert_eq!(parsed.canonical(), "linux-x86_64-gnu");
     assert!(TargetTuple::parse("linux-x86_64").is_none());
     assert!(TargetTuple::parse("linux--gnu").is_none());
@@ -122,8 +122,18 @@ fn specific_claim_beats_catch_all_fallback() {
         ),
         source("pypi", "https://pypi.org/simple", 100, &["*"], false),
     ];
-    assert_eq!(select_source("corp-foo", &sources).unwrap().id, "internal");
-    assert_eq!(select_source("requests", &sources).unwrap().id, "pypi");
+    assert_eq!(
+        select_source("corp-foo", &sources)
+            .expect("test operation must succeed")
+            .id,
+        "internal"
+    );
+    assert_eq!(
+        select_source("requests", &sources)
+            .expect("test operation must succeed")
+            .id,
+        "pypi"
+    );
 }
 
 #[test]
@@ -133,7 +143,7 @@ fn equal_specificity_across_sources_is_ambiguous() {
         source("b", "https://b.example/simple", 20, &["corp-*"], false),
     ];
     assert_eq!(
-        select_source("corp-foo", &sources).unwrap_err(),
+        select_source("corp-foo", &sources).expect_err("test operation must fail"),
         SourceSelectionError::AmbiguousSource {
             package: "corp-foo".to_string()
         }
@@ -146,7 +156,12 @@ fn fallback_priority_breaks_catch_all_ties() {
         source("mirror", "https://mirror.example/simple", 50, &["*"], false),
         source("pypi", "https://pypi.org/simple", 100, &["*"], false),
     ];
-    assert_eq!(select_source("requests", &sources).unwrap().id, "mirror");
+    assert_eq!(
+        select_source("requests", &sources)
+            .expect("test operation must succeed")
+            .id,
+        "mirror"
+    );
 }
 
 #[test]
@@ -156,7 +171,7 @@ fn duplicate_fallback_priority_is_ambiguous() {
         source("b", "https://b.example/simple", 100, &["*"], false),
     ];
     assert_eq!(
-        select_source("requests", &sources).unwrap_err(),
+        select_source("requests", &sources).expect_err("test operation must fail"),
         SourceSelectionError::AmbiguousFallback {
             package: "requests".to_string()
         }
@@ -171,7 +186,7 @@ fn unclaimed_sources_with_tied_fallback_priority_are_ambiguous() {
     ];
 
     assert_eq!(
-        select_source("requests", &sources).unwrap_err(),
+        select_source("requests", &sources).expect_err("test operation must fail"),
         SourceSelectionError::AmbiguousFallback {
             package: "requests".to_string(),
         }
@@ -185,7 +200,12 @@ fn unclaimed_source_with_unique_lowest_priority_is_selected() {
         source("backup", "https://backup.example/simple", 20, &[], false),
     ];
 
-    assert_eq!(select_source("requests", &sources).unwrap().id, "mirror");
+    assert_eq!(
+        select_source("requests", &sources)
+            .expect("test operation must succeed")
+            .id,
+        "mirror"
+    );
 }
 
 #[test]
@@ -198,7 +218,7 @@ fn public_fallback_loses_to_any_trusted_match() {
         source("pypi", "https://pypi.org/simple", 50, &["*"], false),
     ];
     assert_eq!(
-        select_source("requests", &sources).unwrap_err(),
+        select_source("requests", &sources).expect_err("test operation must fail"),
         SourceSelectionError::PublicOverridePrivate {
             package: "requests".to_string(),
             source: "pypi".to_string(),
@@ -218,7 +238,12 @@ fn trusted_specific_always_wins_outright() {
         ),
         source("pypi", "https://pypi.org/simple", 100, &["*"], false),
     ];
-    assert_eq!(select_source("corp-foo", &tied).unwrap().id, "internal");
+    assert_eq!(
+        select_source("corp-foo", &tied)
+            .expect("test operation must succeed")
+            .id,
+        "internal"
+    );
     let both_specific = vec![
         source(
             "internal",
@@ -237,7 +262,7 @@ fn trusted_specific_always_wins_outright() {
     ];
     // Same max specificity (exact) on two sources → ambiguous first.
     assert!(matches!(
-        select_source("corp-foo", &both_specific).unwrap_err(),
+        select_source("corp-foo", &both_specific).expect_err("test operation must fail"),
         SourceSelectionError::AmbiguousSource { .. }
     ));
 }

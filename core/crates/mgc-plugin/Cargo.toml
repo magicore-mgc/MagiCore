@@ -15,3 +15,6 @@ tokio = { workspace = true }
 [[test]]
 name = "registry"
 path = "tests/registry.rs"
+
+[lints]
+workspace = true

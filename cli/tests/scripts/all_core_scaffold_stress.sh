@@ -202,7 +202,7 @@ verify_file "lib/ts: .mgc.core marker" "test-lib-ts/.mgc.core"
 
 # Verify the online creator and provenance, and ensure no embedded framework leaf was cached.
 # Xác minh generator online cùng provenance; bảo đảm framework leaf không bị cache từ binary.
-verify_content "web/vanilla: MGC dlx provenance" "test-web-vanilla/.mgc-provenance.json" 'npm:create-vite@[0-9]+\.[0-9]+\.[0-9]+#template=vanilla-ts'
+verify_content "web/vanilla: MGC create provenance" "test-web-vanilla/.mgc-provenance.json" 'npm:create-vite@[0-9]+\.[0-9]+\.[0-9]+#generator=vite:vanilla-ts'
 TOTAL=$((TOTAL + 1))
 echo "Test $TOTAL: web/vanilla framework leaf is not embedded in the template cache"
 if [ ! -e "$MGC_TEMPLATES_DIR/web/frontend/vanilla" ]; then

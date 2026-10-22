@@ -2,18 +2,25 @@
 //! Port cố định per core từ bảng tập trung `dev_port.rs` (RULE §13 — hoán vị 4·3·1·5).
 
 #[cfg(feature = "ai")]
+#[path = "ai/mod.rs"]
 pub mod ai;
 #[cfg(feature = "app")]
+#[path = "app/mod.rs"]
 pub mod app;
 #[cfg(feature = "cicd")]
+#[path = "cicd/mod.rs"]
 pub mod cicd;
 #[cfg(feature = "clo")]
+#[path = "clo/mod.rs"]
 pub mod clo;
+#[cfg(feature = "game")]
+#[path = "game/mod.rs"]
+pub(crate) mod game;
 #[cfg(feature = "iot")]
+#[path = "iot/mod.rs"]
 pub mod iot;
+#[path = "web/mod.rs"]
 pub mod web;
 
-// Router `run`/`run_with_port`/`run_multi` đã bị loại: dispatch live
-// (dispatch/common.rs → commands::dev::run) gọi trực tiếp từng dev::<core>;
-// bảng port trung tâm giờ được tiêu thụ tại commands::dev::run + web::dev_targets.
-// Removed legacy routers: live dispatch calls each dev subcommand directly.
+// Router chung nằm tại commands::dev; các module tại đây sở hữu lifecycle theo core.
+// Shared routing lives in commands::dev; this tree owns per-core lifecycles.

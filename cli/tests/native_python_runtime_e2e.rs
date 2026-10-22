@@ -107,6 +107,7 @@ fn mgc_run_exposes_only_verified_mgc_python_materialization_to_python() {
     );
     lib_package.ecosystem = EcosystemTag::Python;
     lib_package.owner_core = Some("lib".into());
+    lib_package.registry = Some("https://pypi.org".into());
     lock.add_package(lib_package);
     let mut ai_package = Package::new(
         "mgc-runtime-probe".into(),
@@ -116,6 +117,7 @@ fn mgc_run_exposes_only_verified_mgc_python_materialization_to_python() {
     );
     ai_package.ecosystem = EcosystemTag::Python;
     ai_package.owner_core = Some("ai".into());
+    ai_package.registry = Some("https://pypi.org".into());
     lock.add_package(ai_package);
     std::fs::write(
         project.path().join("mgc.lock"),

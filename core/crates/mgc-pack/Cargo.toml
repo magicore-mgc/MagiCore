@@ -13,6 +13,7 @@ flate2 = { workspace = true }
 sha1 = { workspace = true }
 sha2 = { workspace = true }
 ignore = { workspace = true }
+mgc-platform = { workspace = true }
 anyhow = { workspace = true }
 serde_json = { workspace = true }
 hex = { workspace = true }
@@ -23,7 +24,7 @@ tempfile = { workspace = true }
 # Test riêng — test/ folder (RULE §5: cấm #[cfg(test)] trong src/)
 [[test]]
 name = "test_ignore"
-path = "tests/ignore.rs"
+path = "src/ignore/test/ignore.rs"
 
 [[test]]
 name = "test_manifest"

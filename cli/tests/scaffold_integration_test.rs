@@ -5,14 +5,8 @@
 use mgc::scaffold::spec::{CoreKind, parse_scaffold_spec};
 
 #[test]
-fn all_core_scaffold_rejects_corrupted_cache_without_fallback() {
+fn native_core_scaffold_rejects_corrupted_cache_without_fallback() {
     for (command, framework, layer, enabled) in [
-        (
-            "create-web",
-            "vanilla",
-            "web/shared/partials/base",
-            cfg!(feature = "web"),
-        ),
         (
             "create-ai",
             "python-agent",
@@ -166,4 +160,43 @@ fn test_normalize_uppercase_framework() {
 fn test_normalize_underscore_framework() {
     let spec = parse_scaffold_spec(CoreKind::App, "react_native@0.73.0").unwrap();
     assert_eq!(spec.normalized_name, "react-native");
+}
+
+// An unrelated legacy template cache must not gate official initialization.
+// Cache template cũ không được chặn luồng hybrid dùng generator chính thức.
+#[test]
+#[cfg(feature = "web")]
+fn hybrid_web_create_ignores_legacy_template_cache() {
+    let root = tempfile::tempdir().unwrap();
+    let home = root.path().join("home");
+    let templates = home.join("templates");
+    let entry = templates.join("web/shared/partials/base");
+    std::fs::create_dir_all(entry.parent().unwrap()).unwrap();
+    std::fs::write(&entry, b"unused-legacy-cache").unwrap();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_mgc"))
+        .args(["create-web", "vanilla", "hybrid-project"])
+        .current_dir(root.path())
+        .env("HOME", &home)
+        .env("USERPROFILE", &home)
+        .env("MGC_DATA_DIR", home.join("data"))
+        .env("MGC_CACHE_DIR", home.join("cache"))
+        .env("MGC_TEMPLATES_DIR", &templates)
+        .env("MAGICORE_STORE_ROOT", home.join("store"))
+        .env("MGC_NPM_REGISTRY", "http://127.0.0.1:4315")
+        .output()
+        .unwrap();
+    let diagnostic = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        diagnostic.contains("official 'create-vite' initializer"),
+        "Hybrid initializer was not selected: {diagnostic}"
+    );
+    assert!(
+        !diagnostic.contains("refusing unsafe, linked, or non-directory template cache path"),
+        "Unused legacy cache blocked hybrid creation: {diagnostic}"
+    );
+    assert_eq!(std::fs::read(&entry).unwrap(), b"unused-legacy-cache");
 }

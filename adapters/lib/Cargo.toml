@@ -21,6 +21,9 @@ mgc-config = { workspace = true }
 mgc-store = { workspace = true }
 mgc-platform = { workspace = true }
 mgc-resolver = { workspace = true }
+# Shared Python service (S09a; facade-compat target): workspace-owned dep (D010).
+# Service Python dùng chung (S09a; đích facade tương thích): dep thuộc workspace (D010).
+mgc-python-service = { workspace = true }
 mgc-web-adapter = { path = "../web" }
 base64 = { workspace = true }
 mgc-ui = { workspace = true }

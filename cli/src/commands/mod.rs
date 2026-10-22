@@ -11,15 +11,18 @@ mod compat_test;
 pub mod completion;
 pub mod config;
 pub mod core;
+pub(crate) mod core_catalog;
 pub mod dedupe;
 /// CLI command implementations
 pub mod definitions;
+#[path = "dep_gate/mod.rs"]
 pub mod dep_gate;
 pub mod dev;
 pub mod dlx;
 pub mod docs;
 pub mod doctor;
 pub mod exec;
+#[path = "framework_records.rs"]
 pub mod framework_records;
 pub mod freshness;
 pub mod hooks;
@@ -28,6 +31,7 @@ pub mod info;
 pub mod init;
 pub mod install;
 pub mod launcher_policy;
+#[path = "login/mod.rs"]
 pub mod login;
 pub mod mcp;
 pub mod migrate;
@@ -43,7 +47,9 @@ pub(crate) mod python_runtime;
 pub mod registry;
 pub mod remove;
 pub mod run;
+pub(crate) mod safe_filesystem;
 pub mod sbom;
+#[path = "search/mod.rs"]
 pub mod search;
 pub mod self_update;
 pub mod sign_release;
@@ -55,5 +61,6 @@ pub mod template;
 pub mod test;
 pub mod tool;
 pub mod trust;
+#[path = "web_registry_config/mod.rs"]
 pub mod web_registry_config;
 pub mod workspace;

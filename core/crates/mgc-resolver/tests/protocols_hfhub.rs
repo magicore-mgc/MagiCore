@@ -56,7 +56,10 @@ async fn hfhub_resolve_lists_lfs_and_blob_files_sorted() {
         .await;
 
     let protocol = HfHubProtocol::new(&base);
-    let resolution = protocol.resolve_model("org/demo", COMMIT).await.unwrap();
+    let resolution = protocol
+        .resolve_model("org/demo", COMMIT)
+        .await
+        .expect("test operation must succeed");
     assert_eq!(resolution.commit, COMMIT);
     // Directories skipped; files sorted by path.
     assert_eq!(resolution.files.len(), 2);
@@ -70,9 +73,16 @@ async fn hfhub_resolve_lists_lfs_and_blob_files_sorted() {
 
     // Download + verify roundtrip on the LFS file; tampered bytes fail.
     let file = &resolution.files[1];
-    let downloaded = protocol.download_file(file).await.unwrap();
-    protocol.verify_file(file, &downloaded).unwrap();
-    let err = protocol.verify_file(file, b"TAMPERED").unwrap_err();
+    let downloaded = protocol
+        .download_file(file)
+        .await
+        .expect("test operation must succeed");
+    protocol
+        .verify_file(file, &downloaded)
+        .expect("test operation must succeed");
+    let err = protocol
+        .verify_file(file, b"TAMPERED")
+        .expect_err("test operation must fail");
     assert!(matches!(err, mgc_types::MgError::Integrity(_)), "{err:?}");
 }
 
@@ -88,8 +98,12 @@ async fn hfhub_blob_fallback_verifies_without_lfs() {
         git_blob_sha1: git_blob_sha1(bytes),
         url: "http://127.0.0.1:9/x".to_string(),
     };
-    protocol.verify_file(&file, bytes).unwrap();
-    let err = protocol.verify_file(&file, b"{}").unwrap_err();
+    protocol
+        .verify_file(&file, bytes)
+        .expect("test operation must succeed");
+    let err = protocol
+        .verify_file(&file, b"{}")
+        .expect_err("test operation must fail");
     assert!(matches!(err, mgc_types::MgError::Integrity(_)), "{err:?}");
 }
 
@@ -113,7 +127,7 @@ async fn hfhub_traversal_path_in_tree_fails_closed() {
     let err = protocol
         .resolve_model("org/demo", COMMIT)
         .await
-        .unwrap_err();
+        .expect_err("test operation must fail");
     assert!(err.to_string().contains("escapes the repo"), "{err}");
 }
 
@@ -121,7 +135,10 @@ async fn hfhub_traversal_path_in_tree_fails_closed() {
 async fn hfhub_revision_must_be_exact_commit() {
     let protocol = HfHubProtocol::new("http://127.0.0.1:9");
     for bad in ["main", "v1.0", "abc123", ""] {
-        let err = protocol.resolve_model("org/demo", bad).await.unwrap_err();
+        let err = protocol
+            .resolve_model("org/demo", bad)
+            .await
+            .expect_err("test operation must fail");
         assert!(
             err.to_string().contains("exact 40-hex commit"),
             "branch/tag revision must fail closed: {err}"
@@ -140,7 +157,10 @@ async fn hfhub_model_id_rejects_traversal_and_urls() {
         "https://x/y",
         "org/demo ",
     ] {
-        let err = protocol.resolve_model(bad, COMMIT).await.unwrap_err();
+        let err = protocol
+            .resolve_model(bad, COMMIT)
+            .await
+            .expect_err("test operation must fail");
         assert!(
             err.to_string().contains("invalid model id"),
             "{bad:?}: {err}"

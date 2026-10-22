@@ -202,8 +202,11 @@ async fn nuget_service_index_probe_and_full_resolve_verify_materialize() {
 
     let protocol = NuGetProtocol::from_service_index(&format!("{base}/v3/index.json"))
         .await
-        .unwrap();
-    let entry = protocol.resolve("Demo.Lib", "13.0.3").await.unwrap();
+        .expect("test operation must succeed");
+    let entry = protocol
+        .resolve("Demo.Lib", "13.0.3")
+        .await
+        .expect("test operation must succeed");
     assert_eq!(entry.version, "13.0.3");
     assert!(
         entry.sha256.is_empty(),
@@ -238,18 +241,23 @@ async fn nuget_service_index_probe_and_full_resolve_verify_materialize() {
         ]
     );
 
-    let downloaded = protocol.download(&entry).await.unwrap();
-    protocol.verify(&entry, &downloaded).unwrap();
+    let downloaded = protocol
+        .download(&entry)
+        .await
+        .expect("test operation must succeed");
+    protocol
+        .verify(&entry, &downloaded)
+        .expect("test operation must succeed");
     nupkg_mock.assert_async().await;
 
     // Global-packages materialization: nupkg + extracted content + sha512
     // sidecar.
     // (Materialize global-packages: nupkg + nội dung giải nén + sidecar
     // sha512.)
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("test operation must succeed");
     let nupkg_path = protocol
         .materialize(&entry, &downloaded, root.path())
-        .unwrap();
+        .expect("test operation must succeed");
     assert_eq!(
         nupkg_path,
         root.path().join("demo.lib/13.0.3/Demo.Lib.13.0.3.nupkg")
@@ -270,7 +278,7 @@ async fn nuget_service_index_probe_and_full_resolve_verify_materialize() {
         root.path()
             .join("demo.lib/13.0.3/Demo.Lib.13.0.3.nupkg.sha512"),
     )
-    .unwrap();
+    .expect("test operation must succeed");
     assert_eq!(sidecar, sha512_b64);
 }
 
@@ -307,8 +315,13 @@ async fn nuget_tampered_nupkg_fails_closed_and_unlisted_never_selected() {
         .await;
 
     let protocol = NuGetProtocol::with_bases(&format!("{base}/reg"), &format!("{base}/flat"));
-    let entry = protocol.resolve("Bad.Pkg", "1.0.0").await.unwrap();
-    let err = protocol.verify(&entry, &nupkg).unwrap_err();
+    let entry = protocol
+        .resolve("Bad.Pkg", "1.0.0")
+        .await
+        .expect("test operation must succeed");
+    let err = protocol
+        .verify(&entry, &nupkg)
+        .expect_err("test operation must fail");
     assert!(matches!(err, mgc_types::MgError::Integrity(_)), "{err:?}");
 
     // An unlisted-only version set fails closed on resolve (the page leaf
@@ -322,7 +335,10 @@ async fn nuget_tampered_nupkg_fails_closed_and_unlisted_never_selected() {
         ))
         .create_async()
         .await;
-    let err = protocol.resolve("Bad.Pkg", "1.0.0").await.unwrap_err();
+    let err = protocol
+        .resolve("Bad.Pkg", "1.0.0")
+        .await
+        .expect_err("test operation must fail");
     assert!(matches!(err, mgc_types::MgError::Integrity(_)), "{err:?}");
     unlisted_mock.assert_async().await;
 }
@@ -364,7 +380,10 @@ async fn nuget_minimum_version_selection_with_float_range() {
     // (1.0.5), never the newest.
     // (Resolve minimum-version của NuGet: float 1.* → bản thấp nhất khớp
     // (1.0.5), không bao giờ bản mới nhất.)
-    let entry = protocol.resolve("Float.Pkg", "1.*").await.unwrap();
+    let entry = protocol
+        .resolve("Float.Pkg", "1.*")
+        .await
+        .expect("test operation must succeed");
     assert_eq!(entry.version, "1.0.5");
     assert!(entry.deps.is_empty());
 }
@@ -430,7 +449,10 @@ async fn nuget_divergent_tfm_groups_fail_closed() {
         multi_tfm_nuspec("net6.dep", "1.0.0", "net48.dep", "2.0.0"),
     )
     .await;
-    let err = protocol.resolve("Multi.Tfm", "9.9.9").await.unwrap_err();
+    let err = protocol
+        .resolve("Multi.Tfm", "9.9.9")
+        .await
+        .expect_err("test operation must fail");
     let message = err.to_string();
     assert!(
         message.contains("net6.0") && message.contains("net48"),
@@ -450,7 +472,10 @@ async fn nuget_identical_tfm_groups_merge_honestly() {
         multi_tfm_nuspec("shared.dep", "1.0.0", "shared.dep", "1.0.0"),
     )
     .await;
-    let entry = protocol.resolve("Multi.Tfm", "9.9.9").await.unwrap();
+    let entry = protocol
+        .resolve("Multi.Tfm", "9.9.9")
+        .await
+        .expect("test operation must succeed");
     assert!(
         entry
             .extra_markers

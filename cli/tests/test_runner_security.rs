@@ -124,6 +124,72 @@ fn test_package_json_script_executes_through_native_runner() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn package_script_runs_owned_local_tool_but_still_denies_package_managers() {
+    use std::os::unix::fs::PermissionsExt;
+    let project = TempDir::new().expect("temporary project");
+    let root = project.path().to_path_buf();
+    let bin = root.join("node_modules/.bin");
+    fs::create_dir_all(&bin).expect("create local binary directory");
+    for name in ["vitest", "npm"] {
+        let path = bin.join(name);
+        fs::write(&path, "#!/bin/sh\nprintf 'OWNED_TEST_RUNNER_OK\\n'\n")
+            .expect("write local test runner");
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("set executable mode");
+    }
+    fs::write(
+        root.join("package.json"),
+        r#"{"name":"runner-project","version":"1.0.0","scripts":{"test":"vitest run"}}"#,
+    )
+    .expect("write test script");
+
+    let output = run_mgc(&["run", "test"], Some(&root));
+    assert!(
+        output.status.success(),
+        "local runner failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("OWNED_TEST_RUNNER_OK"));
+
+    fs::write(
+        root.join("package.json"),
+        r#"{"name":"runner-project","version":"1.0.0","scripts":{"test":"npm install"}}"#,
+    )
+    .expect("write forbidden package-manager script");
+    let output = run_mgc(&["run", "test"], Some(&root));
+    assert!(!output.status.success());
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("OWNED_TEST_RUNNER_OK"));
+}
+
+#[cfg(unix)]
+#[test]
+fn package_script_rejects_local_tool_linked_outside_project() {
+    use std::os::unix::{fs::PermissionsExt, fs::symlink};
+    let project = TempDir::new().expect("temporary project");
+    let outside = TempDir::new().expect("external fixture");
+    let root = project.path().to_path_buf();
+    let external_tool = outside.path().join("vitest");
+    fs::write(
+        &external_tool,
+        "#!/bin/sh\nprintf 'EXTERNAL_RUNNER_EXECUTED\\n'\n",
+    )
+    .expect("write external runner");
+    fs::set_permissions(&external_tool, fs::Permissions::from_mode(0o755))
+        .expect("set external executable mode");
+    fs::create_dir_all(root.join("node_modules/.bin")).expect("create local bin directory");
+    symlink(external_tool, root.join("node_modules/.bin/vitest")).expect("link external runner");
+    fs::write(
+        root.join("package.json"),
+        r#"{"name":"runner-project","version":"1.0.0","scripts":{"test":"vitest run"}}"#,
+    )
+    .expect("write project manifest");
+
+    let output = run_mgc(&["run", "test"], Some(&root));
+    assert!(!output.status.success());
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("EXTERNAL_RUNNER_EXECUTED"));
+}
+
 #[test]
 fn test_npm_forbidden_in_install_scope() {
     // TEST: Package manager (npm) should be FORBIDDEN in Install scope

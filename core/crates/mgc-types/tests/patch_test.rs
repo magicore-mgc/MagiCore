@@ -1,35 +1,28 @@
-#![cfg(test)]
-#![allow(clippy::unwrap_used)]
+//! Verify the stable public paths for shared patch contracts.
+//! Kiểm tra các public path ổn định của contract patch dùng chung.
 
 use mgc_types::package::VersionRange;
-use mgc_types::patch::{LockPatch, PatchKind, PatchSpec};
+use mgc_types::patch::{
+    LockPatch as ModuleLockPatch, PatchKind as ModulePatchKind, PatchSpec as ModulePatchSpec,
+};
+use mgc_types::{LockPatch, PatchKind, PatchSpec};
 
 #[test]
-fn patch_spec_serializes() {
-    let vr = VersionRange::parse("^1.0.0").unwrap();
-    let spec = PatchSpec::new(
+fn crate_root_and_module_paths_export_the_same_patch_types() {
+    let module_spec: ModulePatchSpec = PatchSpec::new(
         "react".into(),
-        vr,
+        VersionRange::star(),
         "patches/react.patch".into(),
         "sha256-abc".into(),
     );
-    let json = serde_json::to_string(&spec).unwrap();
-    assert!(json.contains("react"));
-    assert!(json.contains("sha256-abc"));
-    let back: PatchSpec = serde_json::from_str(&json).unwrap();
-    assert_eq!(back.kind, PatchKind::Diff);
-}
-
-#[test]
-fn lock_patch_serializes() {
-    let lp = LockPatch::new(
+    let module_kind: ModulePatchKind = PatchKind::Diff;
+    let module_lock: ModuleLockPatch = LockPatch::new(
         "react".into(),
         "1.0.0".into(),
         "sha256-def".into(),
         "2026-01-01T00:00:00Z".into(),
     );
-    let json = serde_json::to_string(&lp).unwrap();
-    let back: LockPatch = serde_json::from_str(&json).unwrap();
-    assert_eq!(back.name, "react");
-    assert_eq!(back.sha256, "sha256-def");
+
+    assert_eq!(module_spec.kind, module_kind);
+    assert_eq!(module_lock.name, "react");
 }

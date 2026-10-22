@@ -274,3 +274,234 @@ async fn deps_bundle_of_a_real_package_serves_nonempty_js() {
     server.abort();
     server.await.ok();
 }
+
+/// Hidden files stay private while public files and well-known assets work.
+/// File ẩn vẫn riêng tư, còn file public và well-known vẫn dùng được.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn source_route_blocks_hidden_and_external_targets() {
+    let site = AdversarialSite::new();
+    std::fs::write(site.root.join(".env"), "TOP-SECRET-HIDDEN-ROOT").unwrap();
+    std::fs::create_dir_all(site.root.join(".git")).unwrap();
+    std::fs::write(site.root.join(".git/config"), "TOP-SECRET-GIT-CONFIG").unwrap();
+
+    let public_file = site.root.join("public/logo.txt");
+    std::fs::create_dir_all(public_file.parent().unwrap()).unwrap();
+    std::fs::write(&public_file, "public-logo-marker").unwrap();
+    let well_known = site.root.join("public/.well-known/security.txt");
+    std::fs::create_dir_all(well_known.parent().unwrap()).unwrap();
+    std::fs::write(&well_known, "contact=security@example.invalid").unwrap();
+
+    #[cfg(unix)]
+    {
+        let alias = site.root.join("public/outside-secret.txt");
+        std::os::unix::fs::symlink(&site._secret_path, &alias).unwrap();
+    }
+
+    let port = free_port();
+    let server_root = site.root.clone();
+    let server = tokio::spawn(async move {
+        let config = DevServerConfig {
+            root: server_root,
+            entry: "src/main.ts".into(),
+            host: "localhost".to_string(),
+            port,
+        };
+        MgDevServer::new(config).serve().await
+    });
+    wait_ready(port).await;
+
+    for path in ["/.env", "/.git/config"] {
+        let response = reqwest::get(format!("http://127.0.0.1:{port}{path}"))
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = response.text().await.unwrap();
+        assert_eq!(status, reqwest::StatusCode::FORBIDDEN);
+        assert!(
+            !body.contains("TOP-SECRET"),
+            "hidden file response must not contain secret content"
+        );
+    }
+
+    let public = reqwest::get(format!("http://127.0.0.1:{port}/logo.txt"))
+        .await
+        .unwrap();
+    assert!(public.status().is_success());
+    assert_eq!(public.text().await.unwrap(), "public-logo-marker");
+
+    let well_known = reqwest::get(format!("http://127.0.0.1:{port}/.well-known/security.txt"))
+        .await
+        .unwrap();
+    assert!(well_known.status().is_success());
+    assert_eq!(
+        well_known.text().await.unwrap(),
+        "contact=security@example.invalid"
+    );
+
+    #[cfg(unix)]
+    {
+        let outside = reqwest::get(format!("http://127.0.0.1:{port}/outside-secret.txt"))
+            .await
+            .unwrap();
+        let status = outside.status();
+        let body = outside.text().await.unwrap();
+        assert_eq!(status, reqwest::StatusCode::FORBIDDEN);
+        assert!(
+            !body.contains(&site.secret_marker),
+            "external symlink response must not contain outside-root bytes"
+        );
+    }
+
+    server.abort();
+    server.await.ok();
+}
+
+/// The root HTML route must apply the same project boundary as wildcard files.
+/// Route HTML root phải áp dụng cùng ranh giới project như wildcard file.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn index_route_does_not_follow_external_symlinks() {
+    let site = AdversarialSite::new();
+    std::fs::remove_file(site.root.join("index.html")).unwrap();
+    let outside_index = site._tmp.path().join("outside-index.html");
+    std::fs::write(&outside_index, "INDEX-OUTSIDE-ROOT-SECRET").unwrap();
+    std::os::unix::fs::symlink(&outside_index, site.root.join("index.html")).unwrap();
+
+    let port = free_port();
+    let server_root = site.root.clone();
+    let server = tokio::spawn(async move {
+        let config = DevServerConfig {
+            root: server_root,
+            entry: "src/main.ts".into(),
+            host: "localhost".to_string(),
+            port,
+        };
+        MgDevServer::new(config).serve().await
+    });
+    wait_ready(port).await;
+
+    let response = reqwest::get(format!("http://127.0.0.1:{port}/"))
+        .await
+        .unwrap();
+    assert!(response.status().is_success());
+    let body = response.text().await.unwrap();
+    assert!(body.contains("<title>site</title>"));
+    assert!(!body.contains("INDEX-OUTSIDE-ROOT-SECRET"));
+
+    server.abort();
+    server.await.ok();
+}
+
+/// A package manifest must not turn the dependency route into a file reader.
+/// Manifest package không được biến dependency route thành reader file tùy ý.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn deps_route_rejects_manifest_entries_outside_package_root() {
+    let site = AdversarialSite::new();
+    let pkg_dir = site.root.join("node_modules/untrusted-dep");
+    std::fs::create_dir_all(&pkg_dir).unwrap();
+    std::fs::write(
+        pkg_dir.join("package.json"),
+        r#"{ "name": "untrusted-dep", "main": "../../../outside-entry.js" }"#,
+    )
+    .unwrap();
+    let outside_entry = site._tmp.path().join("outside-entry.js");
+    std::fs::write(&outside_entry, "OUTSIDE-PACKAGE-ENTRY-SECRET").unwrap();
+
+    let port = free_port();
+    let server_root = site.root.clone();
+    let server = tokio::spawn(async move {
+        let config = DevServerConfig {
+            root: server_root,
+            entry: "src/main.ts".into(),
+            host: "localhost".to_string(),
+            port,
+        };
+        MgDevServer::new(config).serve().await
+    });
+    wait_ready(port).await;
+
+    let response = reqwest::get(format!(
+        "http://127.0.0.1:{port}/@magicore/deps/untrusted-dep"
+    ))
+    .await
+    .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);
+    let body = response.text().await.unwrap();
+    assert!(!body.contains("OUTSIDE-PACKAGE-ENTRY-SECRET"));
+
+    server.abort();
+    server.await.ok();
+}
+
+/// Package subpath files must resolve through the actual dependency route.
+/// File subpath phải resolve qua dependency route thật.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn deps_route_bundles_unscoped_package_subpath_files() {
+    let site = AdversarialSite::new();
+    let subpath_dir = site.root.join("node_modules/lodash/fp");
+    std::fs::create_dir_all(&subpath_dir).unwrap();
+    std::fs::write(
+        subpath_dir.join("map.js"),
+        "export const mgcSubpath = 'resolved-subpath';",
+    )
+    .unwrap();
+
+    let port = free_port();
+    let server_root = site.root.clone();
+    let server = tokio::spawn(async move {
+        let config = DevServerConfig {
+            root: server_root,
+            entry: "src/main.ts".into(),
+            host: "localhost".to_string(),
+            port,
+        };
+        MgDevServer::new(config).serve().await
+    });
+    wait_ready(port).await;
+
+    let response = reqwest::get(format!(
+        "http://127.0.0.1:{port}/@magicore/deps/lodash/fp/map.js"
+    ))
+    .await
+    .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    assert!(response.text().await.unwrap().contains("resolved-subpath"));
+
+    server.abort();
+    server.await.ok();
+}
+
+/// Missing-package diagnostics must keep names as JavaScript data.
+/// Diagnostic package thiếu phải giữ tên dưới dạng dữ liệu JavaScript.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn deps_route_escapes_unusual_package_names_in_javascript_errors() {
+    let site = AdversarialSite::new();
+    std::fs::create_dir_all(site.root.join("node_modules")).unwrap();
+    let port = free_port();
+    let server_root = site.root.clone();
+    let server = tokio::spawn(async move {
+        let config = DevServerConfig {
+            root: server_root,
+            entry: "src/main.ts".into(),
+            host: "localhost".to_string(),
+            port,
+        };
+        MgDevServer::new(config).serve().await
+    });
+    wait_ready(port).await;
+
+    let response = reqwest::get(format!(
+        "http://127.0.0.1:{port}/@magicore/deps/x%27);alert(1);"
+    ))
+    .await
+    .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);
+    let body = response.text().await.unwrap();
+    assert_eq!(
+        body,
+        r#"console.error('[MgDevServer] Failed to bundle dependency:', "x');alert(1);");"#
+    );
+
+    server.abort();
+    server.await.ok();
+}

@@ -66,8 +66,8 @@ fn sri_of(rng: &mut Lcg) -> String {
 fn random_graph(rng: &mut Lcg, lane: usize, size: usize) -> ResolvedGraph {
     let mut ids = Vec::new();
     for _ in 0..size {
-        let id =
-            PackageId::parse(&format!("{}@{}", node_name(rng, lane), version_of(rng))).unwrap();
+        let id = PackageId::parse(&format!("{}@{}", node_name(rng, lane), version_of(rng)))
+            .expect("test operation must succeed");
         if !ids.contains(&id) {
             ids.push(id);
         }

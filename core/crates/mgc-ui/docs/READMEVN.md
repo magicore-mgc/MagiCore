@@ -5,20 +5,28 @@
 
 ## Chức năng
 
-Cung cấp primitive giao diện terminal: help, progress bar/spinner, prompt, table, output trạng thái/thông tin và quiet mode. Crate sở hữu presentation dùng lại, không sở hữu policy command/nghiệp vụ.
+Cung cấp primitive giao diện terminal: help, progress bar/spinner, prompt, table, output trạng thái và quiet mode. Crate sở hữu presentation dùng lại, không sở hữu policy command hay nghiệp vụ.
 
 ## Sơ đồ source
 
-- [`lib.rs`](../src/lib.rs)
-- [`help.rs`](../src/help.rs)
-- [`progress.rs`](../src/progress.rs)
-- [`prompt.rs`](../src/prompt.rs)
-- [`table.rs`](../src/table.rs)
+- [facade source](../src/README.md)
+- [crate exports](../src/lib.rs)
+- [banner owner](../src/banner/README.md)
+- [command-style owner](../src/command_style/README.md)
+- [help owner](../src/help/README.md)
+- [install-summary owner](../src/install_summary/README.md)
+- [next-steps owner](../src/next_steps/README.md)
+- [progress owner](../src/progress/README.md)
+- [quiet-state owner](../src/quiet/README.md)
+- [section owner](../src/section/README.md)
+- [status-message owner](../src/status/README.md)
+- [prompt owner](../src/prompt/README.md)
+- [table owner](../src/table/README.md)
 
 ## Bàn giao và review
 
-Giữ output terminal tiếng Anh theo RULE.md; bảo toàn quiet/non-TTY, tránh báo thành công cũ/gây hiểu nhầm khi lỗi.
+Giữ output terminal tiếng Anh theo RULE.md và bảo toàn quiet/non-TTY. Presentation không xác nhận capability của command, cũng không thay thế diagnostic của engine.
 
 ## Xác minh
 
-Sau khi sửa code, chạy test crate từ repo root bằng `cargo test -p mgc-ui`. Với thay đổi chỉ có tài liệu, kiểm tra link, ngôn ngữ và Git ignore thay vì chạy test workspace không liên quan.
+Batch source-first đã viết test nhưng trạng thái vẫn NOT_RUN. Sau khi đóng toàn bộ source và dung lượng máy dùng dưới 80 GB, chạy test gần owner cùng cargo test -p mgc-ui.

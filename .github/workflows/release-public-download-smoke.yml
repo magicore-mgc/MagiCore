@@ -1,0 +1,152 @@
+# Release job owner. / Owner riêng cho job phát hành.
+name: Verify Public Download
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Validated release version from the entry workflow.
+        required: true
+        type: string
+
+jobs:
+  verify-public-download:
+    name: Smoke Test Public Download (${{ matrix.os_name }}-${{ matrix.arch }})
+    # Draft releases are only visible to tokens with repo WRITE access
+    # (2026-09-12): this job downloads the DRAFT to verify its bytes
+    # before promotion; the elevated permission is scoped to THIS job
+    # and only ever reads. Post-promotion, anonymous users run the same
+    # download with no token at all.
+    # Draft release chỉ hiển thị với token có quyền WRITE repo: job này
+    # tải DRAFT để kiểm tra byte trước khi promote; quyền nâng chỉ áp
+    # cho job này và chỉ đọc. Sau promote, user ẩn danh chạy cùng lệnh
+    # download mà không cần token.
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            os_name: linux
+            arch: x64
+            ext: tar.gz
+            binary: mgc
+          - os: windows-latest
+            os_name: windows
+            arch: x64
+            ext: zip
+            binary: mgc.exe
+          - os: macos-latest
+            os_name: macos
+            arch: arm64
+            ext: tar.gz
+            binary: mgc
+          - os: macos-latest
+            os_name: macos
+            arch: x64
+            ext: tar.gz
+            binary: mgc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Download release artifact
+        env:
+          REQUESTED_RELEASE_VERSION: ${{ inputs.version }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${REQUESTED_RELEASE_VERSION}"
+          RELEASE_TAG="v${VERSION}"
+          ARTIFACT_NAME="magicore-${VERSION}-${{ matrix.os_name }}-${{ matrix.arch }}.${{ matrix.ext }}"
+          echo "Downloading: $ARTIFACT_NAME"
+          gh release download "$RELEASE_TAG" -p "$ARTIFACT_NAME" -R "${{ github.repository }}"
+        shell: bash
+
+      - name: Extract archive (Unix)
+        if: matrix.ext == 'tar.gz'
+        run: |
+          mkdir -p test-install
+          tar -xzf magicore-*-${{ matrix.os_name }}-${{ matrix.arch }}.tar.gz -C test-install
+          chmod +x test-install/${{ matrix.binary }}
+          ls -la test-install/
+
+      - name: Extract archive (Windows)
+        if: matrix.ext == 'zip'
+        shell: pwsh
+        run: |
+          $archive = "magicore-*-${{ matrix.os_name }}-${{ matrix.arch }}.zip"
+          New-Item -ItemType Directory -Force -Path test-install
+          Expand-Archive -Path $archive -DestinationPath test-install -Force
+          Get-ChildItem test-install
+
+      - name: Test mgc --version
+        run: |
+          # macOS x64 artifact on the arm64 runner runs via Rosetta
+          # (arch -x86_64) — the x64 binary must at least launch.
+          # Artifact x64 trên runner arm64 chạy qua Rosetta (arch
+          # -x86_64) — binary x64 phải khởi động được ít nhất.
+          if [[ "$RUNNER_OS" == "macOS" && "${{ matrix.arch }}" == "x64" ]]; then
+            if ! arch -x86_64 ./test-install/${{ matrix.binary }} --version 2>/dev/null && ! ./test-install/${{ matrix.binary }} --version; then
+              echo "x64 binary failed to launch (Rosetta not installed on runner?)" >&2
+              exit 1
+            fi
+          else
+            ./test-install/${{ matrix.binary }} --version
+          fi
+        shell: bash
+
+      - name: Test lifecycle (create + install)
+        if: runner.os != 'Windows'
+        run: |
+          # Create isolated test directory
+          mkdir -p lifecycle-test/web-project
+          cd lifecycle-test/web-project
+
+          # Create minimal package.json
+          echo '{"name":"test","version":"1.0.0","dependencies":{"express":"^4.18.0"}}' > package.json
+
+          # Explicit web core — bare install fails honestly on a
+          # package.json with no bound core (2026-09-12).
+          # Core web tường minh — install trần fail trung thực trên
+          # package.json không có core.
+          ../../test-install/${{ matrix.binary }} --core web install
+
+          # Verify installation
+          if [ ! -d "node_modules" ]; then
+            echo "❌ node_modules not created"
+            exit 1
+          fi
+
+          if [ ! -d "node_modules/express" ]; then
+            echo "❌ express not installed"
+            exit 1
+          fi
+
+          echo "✅ Lifecycle test passed"
+
+      - name: Test lifecycle (create + install) - Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Create isolated test directory
+          New-Item -ItemType Directory -Force -Path lifecycle-test/web-project
+          Set-Location lifecycle-test/web-project
+
+          # Create minimal package.json
+          '{"name":"test","version":"1.0.0","dependencies":{"express":"^4.18.0"}}' | Out-File -FilePath package.json -Encoding utf8
+
+          # Explicit web core — bare install fails honestly without one.
+          # Core web tường minh — install trần fail trung thực khi thiếu.
+          & "../../test-install/${{ matrix.binary }}" --core web install
+
+          # Verify installation
+          if (-not (Test-Path "node_modules")) {
+            Write-Error "node_modules not created"
+            exit 1
+          }
+
+          if (-not (Test-Path "node_modules/express")) {
+            Write-Error "express not installed"
+            exit 1
+          }
+
+          Write-Host "✅ Lifecycle test passed"

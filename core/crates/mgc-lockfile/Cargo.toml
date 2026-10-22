@@ -6,6 +6,10 @@ rust-version.workspace = true
 authors.workspace = true
 description = "Cryptographically signed lockfile for Zero-Trust Supply Chain"
 license.workspace = true
+
+[lints]
+workspace = true
+
 [lib]
 path = "src/lib.rs"
 
@@ -65,6 +69,7 @@ path = "tests/v4_stress.rs"
 [dependencies]
 # Crypto primitives (local crate)
 mgc-crypto = { path = "../mgc-crypto" }
+mgc-platform = { workspace = true }
 
 # Shared JSONC cleanup + common types (P1 dedup 2026-09-11: single
 # strip_jsonc for both the importer and the audit scanner).
@@ -104,10 +109,3 @@ default = []
 # PID liveness probes for stale-temp cleanup (unix-only)
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
-
-# Atomic replace + reparse-point refusal (Windows-only). MoveFileExW's
-# link in windows-sys additionally requires Win32_Foundation (BOOL)
-# — without it Windows builds fail with unresolved import E0432.
-# (MoveFileExW cần thêm feature Win32_Foundation.)
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }

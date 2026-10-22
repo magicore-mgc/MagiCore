@@ -11,8 +11,8 @@ use mgc_types::Version;
 #[test]
 fn maven_requirement_matching_uses_maven_range_syntax() {
     let protocol = MavenProtocol::new("https://repo.maven.apache.org/maven2");
-    let exact = Version::parse("1.2.3").unwrap();
-    let different = Version::parse("1.2.4").unwrap();
+    let exact = Version::parse("1.2.3").expect("test operation must succeed");
+    let different = Version::parse("1.2.4").expect("test operation must succeed");
 
     assert!(protocol.matches_requirement("[1.2.3]", &exact));
     assert!(!protocol.matches_requirement("[1.2.3]", &different));
@@ -22,7 +22,7 @@ fn maven_requirement_matching_uses_maven_range_syntax() {
 #[test]
 fn maven_materializer_rejects_path_coordinates_before_writing() {
     use mgc_resolver::protocols::ResolvedEntry;
-    let sandbox = tempfile::tempdir().unwrap();
+    let sandbox = tempfile::tempdir().expect("test operation must succeed");
     let cache = sandbox.path().join("cache");
     let outside = sandbox.path().join("escaped");
     let absolute_artifact = format!("dev.mgc:{}", outside.display());
@@ -61,7 +61,9 @@ fn maven_materializer_rejects_path_coordinates_before_writing() {
             "rejected coordinates must not create the cache"
         );
         assert_eq!(
-            std::fs::read_dir(sandbox.path()).unwrap().count(),
+            std::fs::read_dir(sandbox.path())
+                .expect("test operation must succeed")
+                .count(),
             0,
             "rejected coordinates must not write outside the cache"
         );
@@ -71,7 +73,7 @@ fn maven_materializer_rejects_path_coordinates_before_writing() {
 #[test]
 fn maven_materializer_preserves_raw_safe_versions() {
     use mgc_resolver::protocols::ResolvedEntry;
-    let sandbox = tempfile::tempdir().unwrap();
+    let sandbox = tempfile::tempdir().expect("test operation must succeed");
     let protocol = MavenProtocol::new("http://127.0.0.1:5431");
     for version in ["1.3", "1.0-SNAPSHOT", "1.0.redhat-00001", "1.0+build_2"] {
         let entry = ResolvedEntry {
@@ -84,7 +86,7 @@ fn maven_materializer_preserves_raw_safe_versions() {
         };
         let jar = protocol
             .materialize(&entry, b"fixture", b"<project/>", sandbox.path())
-            .unwrap();
+            .expect("test operation must succeed");
         assert_eq!(
             jar,
             sandbox
@@ -93,7 +95,10 @@ fn maven_materializer_preserves_raw_safe_versions() {
                 .join(version)
                 .join(format!("probe-core-{version}.jar"))
         );
-        assert_eq!(std::fs::read(jar).unwrap(), b"fixture");
+        assert_eq!(
+            std::fs::read(jar).expect("test operation must succeed"),
+            b"fixture"
+        );
     }
 }
 
@@ -215,7 +220,7 @@ async fn maven_resolves_graph_filters_scopes_and_materializes_m2_layout() {
     let entry = protocol
         .resolve("com.example:core", "[1.2.3]")
         .await
-        .unwrap();
+        .expect("test operation must succeed");
     assert_eq!(entry.version, "1.2.3");
     assert_eq!(
         entry.deps,
@@ -256,17 +261,24 @@ async fn maven_resolves_graph_filters_scopes_and_materializes_m2_layout() {
     );
     assert_eq!(entry.sha256, jar_sha256);
 
-    let jar = protocol.download(&entry).await.unwrap();
-    protocol.verify(&entry, &jar).unwrap();
+    let jar = protocol
+        .download(&entry)
+        .await
+        .expect("test operation must succeed");
+    protocol
+        .verify(&entry, &jar)
+        .expect("test operation must succeed");
     pom_mock.assert_async().await;
     jar_mock.assert_async().await;
 
     let pom = protocol
         .download_pom("com.example", "core", &entry.version)
         .await
-        .unwrap();
-    let m2 = tempfile::tempdir().unwrap();
-    let jar_path = protocol.materialize(&entry, &jar, &pom, m2.path()).unwrap();
+        .expect("test operation must succeed");
+    let m2 = tempfile::tempdir().expect("test operation must succeed");
+    let jar_path = protocol
+        .materialize(&entry, &jar, &pom, m2.path())
+        .expect("test operation must succeed");
     assert_eq!(
         jar_path,
         m2.path()
@@ -281,7 +293,7 @@ async fn maven_resolves_graph_filters_scopes_and_materializes_m2_layout() {
         m2.path()
             .join("repository/com/example/core/1.2.3/core-1.2.3.jar.sha256"),
     )
-    .unwrap();
+    .expect("test operation must succeed");
     assert_eq!(written, jar_sha256);
 }
 
@@ -328,7 +340,10 @@ async fn maven_sha1_fallback_verifies_and_tampered_jar_fails_closed() {
         .await;
 
     let protocol = MavenProtocol::new(&server.url());
-    let entry = protocol.resolve("com.legacy:old", "[1.0.0]").await.unwrap();
+    let entry = protocol
+        .resolve("com.legacy:old", "[1.0.0]")
+        .await
+        .expect("test operation must succeed");
     assert!(
         entry.sha256.is_empty(),
         "sha1-only entry keeps sha256 empty"
@@ -341,9 +356,13 @@ async fn maven_sha1_fallback_verifies_and_tampered_jar_fails_closed() {
         "sha1 must be recorded: {:?}",
         entry.extra_markers
     );
-    protocol.verify(&entry, jar_bytes).unwrap();
+    protocol
+        .verify(&entry, jar_bytes)
+        .expect("test operation must succeed");
 
-    let err = protocol.verify(&entry, b"TAMPERED").unwrap_err();
+    let err = protocol
+        .verify(&entry, b"TAMPERED")
+        .expect_err("test operation must fail");
     assert!(matches!(err, mgc_types::MgError::Integrity(_)), "{err:?}");
 }
 
@@ -378,7 +397,10 @@ async fn maven_bom_packaging_skips_transitive_graph() {
         .await;
 
     let protocol = MavenProtocol::new(&server.url());
-    let entry = protocol.resolve("com.bom:bom", "[3.0.0]").await.unwrap();
+    let entry = protocol
+        .resolve("com.bom:bom", "[3.0.0]")
+        .await
+        .expect("test operation must succeed");
     assert!(
         entry.deps.is_empty(),
         "BOM must not pull a transitive graph"
@@ -422,7 +444,7 @@ async fn maven_no_checksum_anywhere_fails_closed() {
     let err = protocol
         .resolve("com.none:art", "[1.0.0]")
         .await
-        .unwrap_err();
+        .expect_err("test operation must fail");
     assert!(matches!(err, mgc_types::MgError::Integrity(_)), "{err:?}");
 }
 
@@ -464,7 +486,7 @@ async fn maven_unresolvable_property_fails_closed() {
     let err = protocol
         .resolve("com.example:badprop", "[1.0.0]")
         .await
-        .unwrap_err();
+        .expect_err("test operation must fail");
     assert!(
         err.to_string().contains("nope.prop"),
         "the error must name the property: {err}"
@@ -540,7 +562,7 @@ async fn maven_managed_version_fills_missing() {
     let entry = protocol
         .resolve("com.example:managed", "[2.0.0]")
         .await
-        .unwrap();
+        .expect("test operation must succeed");
     assert_eq!(
         entry.deps,
         vec![("com.example:managed-dep".to_string(), "9.9.9".to_string())]
@@ -630,7 +652,7 @@ async fn maven_parent_chain_resolves_property() {
     let entry = protocol
         .resolve("com.example:child", "[3.0.0]")
         .await
-        .unwrap();
+        .expect("test operation must succeed");
     assert_eq!(
         entry.deps,
         vec![("com.example:inherited".to_string(), "7.7.7".to_string())]
@@ -690,7 +712,7 @@ async fn maven_empty_version_is_missing_not_empty_edge() {
     let err = protocol
         .resolve("com.example:emptyver", "[1.0.0]")
         .await
-        .unwrap_err();
+        .expect_err("test operation must fail");
     assert!(
         err.to_string().contains("no version"),
         "empty version must fail closed as missing: {err}"
@@ -739,7 +761,7 @@ async fn maven_unreachable_parent_fails_closed() {
     let err = protocol
         .resolve("com.example:child", "[3.0.0]")
         .await
-        .unwrap_err();
+        .expect_err("test operation must fail");
     assert!(
         err.to_string().contains("parent POM"),
         "unreachable parent must fail closed: {err}"

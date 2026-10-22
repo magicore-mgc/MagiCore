@@ -9,7 +9,8 @@ Detects Bevy, Godot, Unity, and Unreal and integrates engine scaffolding, audit,
 
 ## Source map
 
-- [`adapter.rs`](../src/adapter.rs)
+- [`adapter facade`](../src/adapter/mod.rs)
+- [`adapter state`](../src/adapter/adapter.rs)
 - [`engine.rs`](../src/engine.rs)
 - [`scaffold/mod.rs`](../src/scaffold/mod.rs)
 - [`dev/mod.rs`](../src/dev/mod.rs)

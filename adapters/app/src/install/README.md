@@ -1,0 +1,5 @@
+# App install modules / Module install App
+
+This folder owns App install dispatch, native Flutter and Swift materialization, shared CAS initialization, lock updates, archive caching, and fetch/verification entry points. It does not claim native Kotlin or complete React Native install support. `mod.rs` files wire modules and preserve the existing crate API; implementation belongs in same-name owner files. Shared `MgError`/`MgResult` are used because callers consume the common adapter error contract; add a local error type only when a distinct recovery/action contract exists.
+
+Thư mục này quản lý điều phối install App, materialize Flutter/Swift native, khởi tạo CAS dùng chung, cập nhật lock, cache archive và các điểm vào fetch/xác minh. Thư mục không tuyên bố hỗ trợ install Kotlin native hay React Native đầy đủ. File `mod.rs` chỉ nối module và giữ API crate hiện có; logic nằm trong file owner cùng tên. Dùng `MgError`/`MgResult` chung vì caller dùng hợp đồng lỗi adapter chung; chỉ thêm error type cục bộ khi có cách khôi phục/xử lý khác biệt thực sự.

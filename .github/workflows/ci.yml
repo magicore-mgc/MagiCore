@@ -98,372 +98,53 @@ jobs:
       - name: Build the CLI image from the locked workspace
         run: docker build --pull --tag magicore-cli-smoke .
       - name: Extract the tested MGC binary for SDK-aware host lock generation
-        run: |
-          set -euo pipefail
-          docker create --name magicore-cli-extract magicore-cli-smoke
-          docker cp magicore-cli-extract:/usr/local/bin/mgc "$RUNNER_TEMP/mgc"
-          docker rm magicore-cli-extract
-          chmod 0755 "$RUNNER_TEMP/mgc"
-          "$RUNNER_TEMP/mgc" --version
+        run: bash scripts/ci/docker/common/extract_cli_binary.sh
+
       - name: Verify the released entrypoint starts
-        run: |
-          test "$(docker image inspect --format '{{.Config.User}}' magicore-cli-smoke)" = "65532:65532"
-          docker run --rm magicore-cli-smoke --version
-          docker run --rm magicore-cli-smoke --help
+        run: bash scripts/ci/docker/common/verify_entrypoint.sh
+
       - name: Build a project image with MagiCore lifecycle
-        run: |
-          set -euo pipefail
-          chmod 0777 tests/docker/web-node
-          docker run --rm \
-            --volume "${PWD}/tests/docker/web-node:/workspace" \
-            --workdir /workspace \
-            magicore-cli-smoke \
-            install-web
-          test -s tests/docker/web-node/mgc.lock
-          docker build \
-            --build-arg MGC_IMAGE=magicore-cli-smoke \
-            --file tests/docker/web-node/Dockerfile \
-            --tag magicore-web-node-docker-e2e \
-            tests/docker/web-node
+        run: bash scripts/ci/docker/common/build_seeded_web_node.sh
+
       - name: Run the app and test its live endpoint through MagiCore
-        run: |
-          set -euo pipefail
-          docker volume create magicore-web-node-e2e-data >/dev/null
-          docker run --detach --name magicore-web-node-docker-e2e \
-            --publish 4315:4315 \
-            --volume magicore-web-node-e2e-data:/mgc-data \
-            magicore-web-node-docker-e2e
-          trap 'docker rm --force magicore-web-node-docker-e2e >/dev/null 2>&1 || true; docker volume rm magicore-web-node-e2e-data >/dev/null 2>&1 || true' EXIT
-          for attempt in $(seq 1 30); do
-            if docker exec magicore-web-node-docker-e2e mgc install-web --frozen && \
-              docker exec --env MGC_CONTAINER_SMOKE=1 magicore-web-node-docker-e2e mgc test; then
-              exit 0
-            fi
-            sleep 2
-          done
-          docker logs magicore-web-node-docker-e2e
-          exit 1
+        run: bash scripts/ci/docker/common/run_seeded_web_node.sh
+
       - name: Scaffold and build a real web container through the MGC CLI
-        run: |
-          set -euo pipefail
-          project_root="${RUNNER_TEMP}/mgc-generated-web-container"
-          mkdir -p "${project_root}"
-          chmod 0777 "${project_root}"
-          docker run --rm \
-            --volume "${project_root}:/workspace" \
-            --workdir /workspace \
-            magicore-cli-smoke \
-            create-web react-vite container-web --k8s
-          project="${project_root}/container-web"
-          docker run --rm \
-            --volume "${project}:/workspace" \
-            --workdir /workspace \
-            magicore-cli-smoke \
-            install-web
-          test -s "${project}/mgc.lock"
-          # The CLI image writes project metadata as UID 65532:65532. The
-          # runner's Docker client must be able to read this build context.
-          # (CLI image ghi metadata dưới UID 65532:65532; Docker client runner cần đọc được build context.)
-          sudo chown -R "$(id -u):$(id -g)" "${project}"
-          test "$(cat "${project}/.mgc.core")" = "web"
-          test -r "${project}/mgc.toml"
-          grep -F 'RUN mgc install-web --frozen' "${project}/Dockerfile"
-          grep -F 'RUN mgc test' "${project}/Dockerfile"
-          grep -F 'ENTRYPOINT ["/usr/local/bin/mgc-container-entrypoint"]' "${project}/Dockerfile"
-          grep -F 'CMD ["dev", "--host", "0.0.0.0"' "${project}/Dockerfile"
-          grep -F 'mgc install-web --frozen' "${project}/mgc-container-entrypoint"
-          docker compose --file "${project}/docker-compose.yml" config --quiet
-          docker build \
-            --build-arg MGC_IMAGE=magicore-cli-smoke \
-            --file "${project}/Dockerfile" \
-            --tag magicore-container-web:local \
-            "${project}"
+        run: bash scripts/ci/docker/web/scaffold_react_container.sh
+
       - name: Run and reach the CLI-scaffolded container
-        run: |
-          set -euo pipefail
-          docker volume create magicore-generated-web-e2e-data >/dev/null
-          docker run --detach --name magicore-generated-web-e2e \
-            --publish 127.0.0.1:4315:4315 \
-            --volume magicore-generated-web-e2e-data:/mgc-data \
-            magicore-container-web:local
-          trap 'docker rm --force magicore-generated-web-e2e >/dev/null 2>&1 || true; docker volume rm magicore-generated-web-e2e-data >/dev/null 2>&1 || true' EXIT
-          for attempt in $(seq 1 60); do
-            if curl --fail --silent http://127.0.0.1:4315/ | grep -F '<title>container-web</title>'; then
-              exit 0
-            fi
-            sleep 2
-          done
-          docker logs magicore-generated-web-e2e
-          exit 1
+        run: bash scripts/ci/docker/web/run_react_container.sh
+
       - name: Scaffold an Express service through MGC and build its container
-        run: |
-          set -euo pipefail
-          project_root="${RUNNER_TEMP}/mgc-generated-express-container"
-          mkdir -p "${project_root}"
-          chmod 0777 "${project_root}"
-          docker run --rm \
-            --volume "${project_root}:/workspace" \
-            --workdir /workspace \
-            magicore-cli-smoke \
-            create-web express container-express --docker
-          project="${project_root}/container-express"
-          docker run --rm \
-            --volume "${project}:/workspace" \
-            --workdir /workspace \
-            magicore-cli-smoke \
-            install-web
-          test -s "${project}/mgc.lock"
-          sudo chown -R "$(id -u):$(id -g)" "${project}"
-          test "$(cat "${project}/.mgc.core")" = "web"
-          grep -F "app.listen(port, '0.0.0.0'" "${project}/src/server.ts"
-          grep -F 'RUN mgc install-web --frozen' "${project}/Dockerfile"
-          grep -F 'RUN mgc test' "${project}/Dockerfile"
-          docker build \
-            --build-arg MGC_IMAGE=magicore-cli-smoke \
-            --file "${project}/Dockerfile" \
-            --tag magicore-express-container:local \
-            "${project}"
+        run: bash scripts/ci/docker/web/scaffold_express_container.sh
+
       - name: Run the MGC-scaffolded Express container through Docker port mapping
-        run: |
-          set -euo pipefail
-          docker run --detach --name magicore-generated-express-e2e \
-            --publish 127.0.0.1:4351:4315 \
-            magicore-express-container:local
-          trap 'docker rm --force magicore-generated-express-e2e >/dev/null 2>&1 || true' EXIT
-          for attempt in $(seq 1 60); do
-            if curl --fail --silent http://127.0.0.1:4351/ | grep -F 'Hello from MagiCore Express!'; then
-              exit 0
-            fi
-            sleep 2
-          done
-          docker logs magicore-generated-express-e2e
-          exit 1
+        run: bash scripts/ci/docker/web/run_express_container.sh
+
       - name: Build and run the AI Python container with MGC-owned packages
-        run: |
-          set -euo pipefail
-          project_root="${RUNNER_TEMP}/mgc-generated-ai-container"
-          mkdir -p "${project_root}"
-          chmod 0777 "${project_root}"
-          docker run --rm \
-            --volume "${project_root}:/workspace" \
-            --workdir /workspace \
-            magicore-cli-smoke \
-            create-ai python-agent container-ai --docker
-          project="${project_root}/container-ai"
-          docker run --rm \
-            --volume "${project}:/workspace" \
-            --workdir /workspace \
-            magicore-cli-smoke \
-            install-ai
-          test -s "${project}/mgc.lock"
-          sudo chown -R "$(id -u):$(id -g)" "${project}"
-          test "$(cat "${project}/.mgc.core")" = "ai"
-          grep -F 'COPY --from=mgc-cli /usr/local/bin/mgc' "${project}/Dockerfile"
-          grep -F 'pytest==9.1.1' "${project}/pyproject.toml"
-          grep -F 'RUN mgc install --frozen' "${project}/Dockerfile"
-          grep -F 'RUN mgc test' "${project}/Dockerfile"
-          docker compose --file "${project}/docker-compose.yml" config --quiet
-          docker build \
-            --build-arg MGC_IMAGE=magicore-cli-smoke \
-            --file "${project}/Dockerfile" \
-            --tag magicore-ai-python-container:local \
-            "${project}"
-          docker run --rm magicore-ai-python-container:local
-          MGC_IMAGE_NAME=magicore-ai-python-container:local \
-            MGC_DATA_VOLUME=magicore-ai-python-e2e-data \
-            docker compose --file "${project}/docker-compose.yml" run --rm app
+        run: bash scripts/ci/docker/ai/build_python_container.sh
+
       - name: Build and run the CDK validation container through MGC
-        run: |
-          set -euo pipefail
-          project_root="${RUNNER_TEMP}/mgc-generated-clo-container"
-          mkdir -p "${project_root}"
-          chmod 0777 "${project_root}"
-          docker run --rm \
-            --volume "${project_root}:/workspace" \
-            --workdir /workspace \
-            magicore-cli-smoke \
-            create-clo cdk-typescript container-clo --docker
-          project="${project_root}/container-clo"
-          docker run --rm \
-            --volume "${project}:/workspace" \
-            --workdir /workspace \
-            magicore-cli-smoke \
-            install
-          test -s "${project}/mgc.lock"
-          sudo chown -R "$(id -u):$(id -g)" "${project}"
-          test "$(cat "${project}/.mgc.core")" = "clo"
-          grep -F 'COPY --from=mgc-cli /usr/local/bin/mgc' "${project}/Dockerfile"
-          grep -F 'RUN mgc install --frozen' "${project}/Dockerfile"
-          grep -F 'RUN mgc test' "${project}/Dockerfile"
-          grep -F 'RUN mgc build' "${project}/Dockerfile"
-          docker compose --file "${project}/docker-compose.yml" config --quiet
-          docker build \
-            --build-arg MGC_IMAGE=magicore-cli-smoke \
-            --file "${project}/Dockerfile" \
-            --tag magicore-clo-cdk-container:local \
-            "${project}"
-          docker run --rm magicore-clo-cdk-container:local
-          MGC_IMAGE_NAME=magicore-clo-cdk-container:local \
-            MGC_DATA_VOLUME=magicore-clo-cdk-e2e-data \
-            docker compose --file "${project}/docker-compose.yml" run --rm app
+        run: bash scripts/ci/docker/cloud/build_cdk_container.sh
+
       - name: Build and run the Rust library container with MGC-owned packages
-        run: |
-          set -euo pipefail
-          project_root="${RUNNER_TEMP}/mgc-generated-lib-container"
-          mkdir -p "${project_root}"
-          chmod 0777 "${project_root}"
-          docker run --rm \
-            --volume "${project_root}:/workspace" \
-            --workdir /workspace \
-            magicore-cli-smoke \
-            create-lib rust container-lib --docker
-          project="${project_root}/container-lib"
-          docker run --rm \
-            --volume "${project}:/workspace" \
-            --workdir /workspace \
-            magicore-cli-smoke \
-            install
-          test -s "${project}/mgc.lock"
-          sudo chown -R "$(id -u):$(id -g)" "${project}"
-          test "$(cat "${project}/.mgc.core")" = "lib"
-          grep -F 'COPY --from=mgc-cli /usr/local/bin/mgc' "${project}/Dockerfile"
-          grep -F 'RUN mgc install --frozen' "${project}/Dockerfile"
-          grep -F 'RUN mgc test' "${project}/Dockerfile"
-          grep -F 'RUN mgc build' "${project}/Dockerfile"
-          docker compose --file "${project}/docker-compose.yml" config --quiet
-          docker build \
-            --build-arg MGC_IMAGE=magicore-cli-smoke \
-            --file "${project}/Dockerfile" \
-            --tag magicore-lib-rust-container:local \
-            "${project}"
-          docker run --rm magicore-lib-rust-container:local
-          MGC_IMAGE_NAME=magicore-lib-rust-container:local \
-            MGC_DATA_VOLUME=magicore-lib-rust-e2e-data \
-            docker compose --file "${project}/docker-compose.yml" run --rm app
+        run: bash scripts/ci/docker/lib/build_rust_container.sh
+
       - name: Build and run Go, Python, and TypeScript library containers through MGC
-        run: |
-          set -euo pipefail
-          for language in go python typescript; do
-            project_name="container-lib-${language}"
-            project_root="${RUNNER_TEMP}/mgc-generated-${project_name}"
-            mkdir -p "${project_root}"
-            chmod 0777 "${project_root}"
-            docker run --rm \
-              --volume "${project_root}:/workspace" \
-              --workdir /workspace \
-              magicore-cli-smoke \
-              create-lib "${language}" "${project_name}" --docker
-            project="${project_root}/${project_name}"
-            image="magicore-lib-${language}-container:local"
-            docker run --rm \
-              --volume "${project}:/workspace" \
-              --workdir /workspace \
-              magicore-cli-smoke \
-              install
-            test -s "${project}/mgc.lock"
-            sudo chown -R "$(id -u):$(id -g)" "${project}"
-            test "$(cat "${project}/.mgc.core")" = "lib"
-            docker compose --file "${project}/docker-compose.yml" config --quiet
-            grep -F 'COPY --from=mgc-cli /usr/local/bin/mgc' "${project}/Dockerfile"
-            grep -F 'RUN mgc test' "${project}/Dockerfile"
-            grep -F 'RUN mgc build' "${project}/Dockerfile"
-            docker build \
-              --build-arg MGC_IMAGE=magicore-cli-smoke \
-              --file "${project}/Dockerfile" \
-              --tag "${image}" \
-              "${project}"
-            docker run --rm "${image}"
-            MGC_IMAGE_NAME="${image}" \
-              MGC_DATA_VOLUME="magicore-lib-${language}-e2e-data" \
-              docker compose --file "${project}/docker-compose.yml" run --rm app
-          done
+        run: bash scripts/ci/docker/lib/build_polyglot_containers.sh
+
       - name: Build and run the Flutter app container with MGC-owned Pub dependencies
-        run: |
-          set -euo pipefail
-          project_root="${RUNNER_TEMP}/mgc-generated-app-container"
-          mkdir -p "${project_root}"
-          chmod 0777 "${project_root}"
-          docker run --rm \
-            --volume "${project_root}:/workspace" \
-            --workdir /workspace \
-            magicore-cli-smoke \
-            create-app flutter container-app --docker
-          project="${project_root}/container-app"
-          sudo chown -R "$(id -u):$(id -g)" "${project}"
-          mkdir -p "${RUNNER_TEMP}/mgc-app-home" "${RUNNER_TEMP}/mgc-app-data" "${RUNNER_TEMP}/mgc-app-cache" "${RUNNER_TEMP}/mgc-app-templates"
-          (
-            cd "${project}"
-            HOME="${RUNNER_TEMP}/mgc-app-home" \
-            MGC_DATA_DIR="${RUNNER_TEMP}/mgc-app-data" \
-            MGC_CACHE_DIR="${RUNNER_TEMP}/mgc-app-cache" \
-            MGC_TEMPLATES_DIR="${RUNNER_TEMP}/mgc-app-templates" \
-              "${RUNNER_TEMP}/mgc" install
-          )
-          test -s "${project}/mgc.lock"
-          test "$(cat "${project}/.mgc.core")" = "app"
-          grep -F 'COPY --from=mgc-cli /usr/local/bin/mgc' "${project}/Dockerfile"
-          grep -F 'FLUTTER_VERSION=3.47.7' "${project}/Dockerfile"
-          grep -F 'sha256sum --check --strict' "${project}/Dockerfile"
-          grep -F 'RUN mgc install --frozen && mgc test && mgc build' "${project}/Dockerfile"
-          if grep -F 'dart pub get' "${project}/Dockerfile"; then
-            echo 'Flutter dependency installation bypasses MGC' >&2
-            exit 1
-          fi
-          docker compose --file "${project}/docker-compose.yml" config --quiet
-          docker build \
-            --build-arg MGC_IMAGE=magicore-cli-smoke \
-            --file "${project}/Dockerfile" \
-            --tag magicore-app-flutter-container:local \
-            "${project}"
-          docker run --rm magicore-app-flutter-container:local
-          MGC_IMAGE_NAME=magicore-app-flutter-container:local \
-            MGC_DATA_VOLUME=magicore-app-flutter-e2e-data \
-            docker compose --file "${project}/docker-compose.yml" run --rm app
+        run: bash scripts/ci/docker/app/build_flutter_container.sh
+
       - name: Verify non-root writes in every generated container profile
-        run: |
-          set -euo pipefail
-          for image in \
-            magicore-container-web:local \
-            magicore-express-container:local \
-            magicore-ai-python-container:local \
-            magicore-clo-cdk-container:local \
-            magicore-lib-rust-container:local \
-            magicore-lib-go-container:local \
-            magicore-lib-python-container:local \
-            magicore-lib-typescript-container:local \
-            magicore-app-flutter-container:local; do
-            docker run --rm --entrypoint /bin/sh "$image" -ec '
-              test "$(id -u)" = 65532
-              for root in /app /mgc-data; do
-                probe="$(mktemp "$root/.mgc-write-probe.XXXXXX")"
-                rm "$probe"
-              done
-            '
-          done
+        run: bash scripts/ci/docker/common/verify_non_root_writes.sh
+
       - name: Deploy the CLI-scaffolded image to Kubernetes with kind
         uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
         with:
           cluster_name: kind
       - name: Exercise the generated Kubernetes Deployment and Service
-        run: |
-          set -euo pipefail
-          project="${RUNNER_TEMP}/mgc-generated-web-container/container-web"
-          kind load docker-image magicore-container-web:local
-          kubectl apply --filename "${project}/k8s/deployment.yaml"
-          kubectl rollout status deployment/magicore-container-web --timeout=180s
-          kubectl port-forward --address 127.0.0.1 service/magicore-container-web 4315:4315 \
-            >"${RUNNER_TEMP}/mgc-k8s-port-forward.log" 2>&1 &
-          port_forward_pid=$!
-          trap 'kill "${port_forward_pid}" 2>/dev/null || true' EXIT
-          for attempt in $(seq 1 60); do
-            if curl --fail --silent http://127.0.0.1:4315/ | grep -F '<title>container-web</title>'; then
-              exit 0
-            fi
-            sleep 2
-          done
-          cat "${RUNNER_TEMP}/mgc-k8s-port-forward.log"
-          kubectl describe pod --selector=app.kubernetes.io/name=magicore-container-web
-          exit 1
+        run: bash scripts/ci/docker/kubernetes/deploy_and_probe_web.sh
 
   nix-package:
     name: Build and run the Nix package
@@ -655,26 +336,15 @@ jobs:
             echo "FAIL: isolated registry did not become ready" >&2
             exit 1
           fi
-          # Seed only the compiled product template archives; no historical source snapshot or hand-written fixture files.
-          # Seed chỉ từ archive template được biên dịch vào sản phẩm; không lấy snapshot cũ hoặc tự chèn file fixture.
-          python3 scripts/materialize_embedded_template_sources.py \
-            --embedded-dir cli/embedded \
-            --manifest cli/src/scaffold/embedded.rs \
-            --output "${RUNNER_TEMP}/mgc-template-source/templates"
-          MAGICORE_TEMPLATE_DIR="${RUNNER_TEMP}/mgc-template-source/templates" \
-            MGC_NPM_REGISTRY=http://127.0.0.1:4315 \
-            cargo run -p mgc -- template publish-all
-          template_cache="${RUNNER_TEMP}/mgc-template-fetch-cache"
-          mkdir -p "$template_cache"
-          while IFS= read -r template_manifest; do
-            layer_dir="${template_manifest%/template.toml}"
-            layer_rel="${layer_dir#"${RUNNER_TEMP}/mgc-template-source/templates/"}"
-            layer_core="${layer_rel%%/*}"
-            MGC_TEMPLATES_DIR="$template_cache" \
-              ./target/debug/mgc template fetch "$layer_core" "$layer_rel" \
-                --registry http://127.0.0.1:4315 --tag 0.1.0
-            diff -qr --exclude=.mgc-version "$layer_dir" "${template_cache}/${layer_rel}"
-          done < <(find "${RUNNER_TEMP}/mgc-template-source/templates" -type f -name template.toml | sort)
+          # No embedded template archives remain in the product: scaffolds resolve
+          # registry-published layers or fall back to the MGC-controlled online
+          # initializer. Seed nothing from fixtures here — test-only template
+          # fixtures must never stand in for product layers (R12). The registry
+          # below serves npm metadata/package installs for the test run.
+          # Không còn archive template nhúng trong sản phẩm: scaffold resolve
+          # layer đã publish trên registry hoặc fallback về initializer online do
+          # MGC kiểm soát. Không seed fixture test thay layer sản phẩm (R12).
+          # Registry dưới đây phục vụ metadata/package npm cho lượt test.
           mkdir -p /tmp/mgc-empty-cache
           MGC_NPM_REGISTRY=http://127.0.0.1:4315 MGC_TEMPLATES_DIR=/tmp/mgc-empty-cache cargo test -p mgc -p mgc-e2e --locked -- --test-threads=4 --skip bench_
 
@@ -763,6 +433,9 @@ jobs:
         run: cargo test -p mgc --test test_runner_security --locked
         env:
           MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
+
+      - name: Verify CommonJS and ESM package entrypoints without registry access
+        run: cargo test --locked -p mgc --lib node_launcher_preserves_commonjs_and_esm_entrypoint_semantics -- --ignored --test-threads=1
 
       - name: Run optimizer E2E on release binary (MUST PASS - no || true)
         run: cargo test -p mgc --test optimizer_lifecycle_e2e --locked -- --include-ignored --nocapture

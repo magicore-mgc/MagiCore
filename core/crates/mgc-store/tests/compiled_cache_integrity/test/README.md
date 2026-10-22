@@ -1,0 +1,5 @@
+# Behavior-focused compiled-cache tests
+
+`mod.rs` registers eight implementation owners. `key_context` covers compilation-key separation; `record_validation` covers corruption, schema and quarantine; `concurrency` covers same-key races; `verification_memo` covers LRU accounting and mutation invalidation; `root_security` covers symlink and permission rules; `digest_framing` covers collision-resistant output encoding; `threat_boundary` records the accepted local same-user boundary; `generation_claims` preserves its existing database assertions. Root wrappers remain the only `#[test]` registrations.
+
+`mod.rs` đăng ký tám owner implementation. `key_context` kiểm tra tách compilation key; `record_validation` kiểm tra hỏng/schema/quarantine; `concurrency` kiểm tra race cùng key; `verification_memo` kiểm tra LRU và vô hiệu khi blob đổi; `root_security` kiểm tra symlink/quyền; `digest_framing` kiểm tra encoding chống collision; `threat_boundary` ghim biên same-user đã chấp nhận; `generation_claims` giữ assertion database hiện có. Chỉ wrapper gốc mang `#[test]`.

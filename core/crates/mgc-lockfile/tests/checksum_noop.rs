@@ -2,11 +2,16 @@
 
 #[test]
 fn unsupported_checksum_write_does_not_report_success_or_create_artifacts() {
-    let project = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().expect("test operation must succeed");
     let error = mgc_lockfile::write_lockfile_checksum(project.path(), b"lock bytes")
         .expect_err("the legacy checksum helper must not claim a write it does not perform");
 
     assert!(error.to_string().contains("checksum"));
     assert!(error.to_string().contains("signed lockfile API"));
-    assert_eq!(std::fs::read_dir(project.path()).unwrap().count(), 0);
+    assert_eq!(
+        std::fs::read_dir(project.path())
+            .expect("test operation must succeed")
+            .count(),
+        0
+    );
 }

@@ -1,0 +1,5 @@
+# Web extraction owners / Owner extraction Web
+
+This directory owns package-root extraction, verified warm-cache reuse, CAS claims, per-root locks, secure cached-file identity/opening, and race-safe staging publication. `mod.rs` is the compatibility facade for existing `crate::install::extract::*` paths. Archive verification never trusts a marker alone: file identity, archive contents, signature facts, CAS publication and claims remain ordered as implemented. Errors use the shared `MgError`/`MgResult` adapter contract; cache snapshot and claim context are local real data types.
+
+Thư mục quản lý bung package, tái sử dụng warm-cache đã xác minh, claim CAS, lock theo root, định danh/mở file cache an toàn và publish staging chịu race. `mod.rs` là facade tương thích cho `crate::install::extract::*`. Xác minh archive không chỉ tin marker: định danh file, nội dung archive, chữ ký, publish CAS và claim giữ đúng thứ tự triển khai. Lỗi dùng hợp đồng adapter `MgError`/`MgResult` chung; snapshot cache và claim context là type dữ liệu cục bộ thực sự.

@@ -311,6 +311,7 @@ fn test_extra_web_lock_entry_cannot_drive_install() {
     );
     orphan.ecosystem = mgc_lockfile::EcosystemTag::Web;
     orphan.owner_core = Some("web".to_string());
+    orphan.registry = Some(registry.url.clone());
     lock.packages.push(orphan);
     let tampered = mgc_lockfile::writer::serialize_lockfile(&lock).unwrap();
     fs::write(&lockfile, &tampered).unwrap();

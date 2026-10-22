@@ -4,8 +4,7 @@
 use anyhow::Result;
 
 use super::super::shared;
-
-const OPTIMIZER_PKG: &str = "optimizer";
+use crate::commands::core::hardware::OPTIMIZER_PKG;
 
 fn game_split(packages: &[String]) -> (Vec<String>, bool) {
     let mut adapter_pkgs = Vec::new();
@@ -39,7 +38,7 @@ pub async fn add(
     let (adapter_pkgs, has_optimizer) = game_split(&packages);
     if adapter_pkgs.is_empty() {
         if has_optimizer {
-            shared::validate_game_optimizer_project(&root)?;
+            super::super::game::validate_game_optimizer_project(&root)?;
             let compat = crate::commands::dep_gate::from_dep_flag(compat_runtime.as_deref())?;
             crate::commands::dep_gate::gate(
                 &crate::commands::dep_gate::DepContext::new(
@@ -54,7 +53,7 @@ pub async fn add(
                 &compat,
                 Some(&root.join(".magicore").join("exec.log")),
             )?;
-            shared::game_optimizer_template(&root).await?;
+            super::super::game::game_optimizer_template(&root).await?;
         }
         return Ok(());
     }
@@ -94,7 +93,7 @@ pub async fn add(
         )
         .await?;
         if has_optimizer {
-            shared::game_optimizer_template(&root).await?;
+            super::super::game::game_optimizer_template(&root).await?;
         }
         return Ok(());
     }

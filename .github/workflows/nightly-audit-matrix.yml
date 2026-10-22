@@ -83,17 +83,17 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
-      - name: Install Gradle (pinned — Kotlin OWASP lane)
+      - name: Install Gradle (pinned — Kotlin no-delegation sentinel)
         run: |
           GRADLE_VERSION="9.8.1"
           cd /tmp && curl -sSLO "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" \
             && unzip -q "gradle-${GRADLE_VERSION}-bin.zip" \
             && echo "/tmp/gradle-${GRADLE_VERSION}/bin" >> "$GITHUB_PATH" \
             && gradle --version | head -5
-        # Gradle ships a platform JDK requirement — provision a JRE only
-        # for the dependency-check lane (no Java project is built).
-        # Gradle cần JRE — provision chỉ cho lane dependency-check
-        # (không build project Java nào).
+        # Gradle is available for the Kotlin no-delegation sentinel; the
+        # audit path itself must stay native and must not launch Gradle.
+        # Gradle được cài để sentinel kiểm tra không ủy quyền; audit phải
+        # chạy native và không được khởi chạy Gradle.
         if: runner.os != 'Windows'
 
       - name: Verify scanner versions (fail fast on drift)
@@ -116,7 +116,7 @@ jobs:
       - name: Parser lanes (10-test per language)
         run: cargo test -p mgc-audit --locked -- --nocapture
 
-      - name: App adapter lanes (OWASP 10-test + kotlin gradle E2E)
+      - name: App adapter tests (Kotlin unsupported/no-delegation boundary)
         run: cargo test -p mgc-app-adapter --locked -- --nocapture
 
       - name: Binary E2E lanes (CLI, real scanners + OSV network)

@@ -1,0 +1,185 @@
+# Release job owner. / Owner riêng cho job phát hành.
+name: Build Release
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Validated release version from the entry workflow.
+        required: true
+        type: string
+
+jobs:
+  build-release:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            os_name: linux
+            arch: x64
+            ext: tar.gz
+            use_cross: false
+            is_windows: false
+
+          # Native Linux ARM64 runner builds both release variants without cross emulation.
+          # Runner Linux ARM64 bản địa build hai biến thể phát hành, không giả lập cross.
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            os_name: linux
+            arch: arm64
+            ext: tar.gz
+            use_cross: false
+            is_windows: false
+
+          # macOS Apple Silicon (arm64) — added 2026-09-12 (item 12):
+          # most current Macs are arm64; without this artifact the
+          # Homebrew formula odie's on them and the distribution
+          # channel is broken for the majority of macOS users.
+          # macOS Apple Silicon (arm64) — 2026-09-12 (item 12): phần
+          # lớn Mac hiện nay là arm64; thiếu artifact này thì formula
+          # Homebrew odie trên chúng và kênh phân phối hỏng với đa số
+          # user macOS.
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            os_name: macos
+            arch: arm64
+            ext: tar.gz
+            use_cross: false
+            is_windows: false
+
+          # macOS Intel (x86_64) — cross-compiled on the arm64 runner
+          # (GitHub retired Intel macOS runners 2025; aarch64 hosts
+          # cross-compile x86_64-apple-darwin with just the target
+          # toolchain installed).
+          # macOS Intel (x86_64) — cross-compile trên runner arm64
+          # (GitHub đã nghỉ hưu runner Intel macOS 2025; host aarch64
+          # cross-compile x86_64-apple-darwin chỉ cần cài target).
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            os_name: macos
+            arch: x64
+            ext: tar.gz
+            use_cross: false
+            is_windows: false
+
+          # Windows x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            os_name: windows
+            arch: x64
+            ext: zip
+            use_cross: false
+            is_windows: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Extract version from tag or input
+        id: version
+        shell: bash
+        env:
+          REQUESTED_RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          VERSION="${REQUESTED_RELEASE_VERSION}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Using version: $VERSION"
+
+      - name: Set artifact names (via contract)
+        id: artifacts
+        shell: bash
+        env:
+          MGC_RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          MGC_RELEASE_OS_NAME: ${{ matrix.os_name }}
+          MGC_RELEASE_ARCH: ${{ matrix.arch }}
+        run: bash scripts/release/build/set_artifact_names.sh
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
+        with:
+          toolchain: "1.99.0"
+          targets: ${{ matrix.target }}
+
+      - name: Setup Go for esbuild-rs
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.2"
+          cache: false
+
+      - name: Install Cross (if cross-compiling on Linux)
+        if: matrix.use_cross
+        run: cargo install cross --git https://github.com/cross-rs/cross --rev 64b5bb4d3d34de062552b9a2093affe77b4ad16a --locked
+
+      - name: Build Binaries (Standard)
+        if: ${{ !matrix.use_cross && !matrix.is_windows }}
+        env:
+          GOARCH: ${{ contains(matrix.target, 'aarch64') && 'arm64' || 'amd64' }}
+          CGO_ENABLED: "1"
+          MGC_RELEASE_TARGET: ${{ matrix.target }}
+        run: bash scripts/release/build/build_standard_unix.sh
+
+      - name: Build Binaries (Cross)
+        if: matrix.use_cross
+        env:
+          MGC_RELEASE_TARGET: ${{ matrix.target }}
+        shell: bash
+        run: bash scripts/release/build/build_cross_unix.sh
+
+      - name: Build Binaries (Windows)
+        if: matrix.is_windows
+        shell: pwsh
+        env:
+          MGC_RELEASE_TARGET: ${{ matrix.target }}
+        run: ./scripts/release/build/build_windows.ps1
+
+      # Package Unix (.tar.gz)
+      - name: Package Unix Archive
+        if: ${{ !matrix.is_windows }}
+        shell: bash
+        env:
+          MGC_RELEASE_ARTIFACT_NAME: ${{ steps.artifacts.outputs.artifact_name }}
+          MGC_RELEASE_WEB_ARTIFACT_NAME: ${{ steps.artifacts.outputs.web_artifact_name }}
+        run: bash scripts/release/build/package_unix.sh
+
+      # Generate SBOM (CycloneDX format)
+      - name: Generate SBOM
+        if: ${{ !matrix.is_windows }}
+        shell: bash
+        env:
+          MGC_RELEASE_TARGET: ${{ matrix.target }}
+          MGC_RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          MGC_RELEASE_OS_NAME: ${{ matrix.os_name }}
+          MGC_RELEASE_ARCH: ${{ matrix.arch }}
+        run: bash scripts/release/build/generate_sbom_unix.sh
+      - name: Package Windows Archive
+        if: matrix.is_windows
+        shell: pwsh
+        env:
+          MGC_RELEASE_ARTIFACT_NAME: ${{ steps.artifacts.outputs.artifact_name }}
+          MGC_RELEASE_WEB_ARTIFACT_NAME: ${{ steps.artifacts.outputs.web_artifact_name }}
+        run: ./scripts/release/build/package_windows.ps1
+
+      # Generate SBOM (CycloneDX format) - Windows
+      - name: Generate SBOM (Windows)
+        if: matrix.is_windows
+        shell: pwsh
+        env:
+          MGC_RELEASE_TARGET: ${{ matrix.target }}
+          MGC_RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          MGC_RELEASE_OS_NAME: ${{ matrix.os_name }}
+          MGC_RELEASE_ARCH: ${{ matrix.arch }}
+        run: ./scripts/release/build/generate_sbom_windows.ps1
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.artifacts.outputs.artifact_name }}
+          path: |
+            ${{ steps.artifacts.outputs.artifact_name }}
+            ${{ steps.artifacts.outputs.artifact_name }}.sha256
+            ${{ steps.artifacts.outputs.web_artifact_name }}
+            ${{ steps.artifacts.outputs.web_artifact_name }}.sha256
+            *-sbom.json

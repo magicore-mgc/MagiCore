@@ -1,5 +1,6 @@
 pub mod cache;
 mod container;
+pub(crate) mod error;
 pub mod processor;
 pub mod processors;
 pub mod provenance;

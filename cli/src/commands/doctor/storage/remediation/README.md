@@ -1,0 +1,7 @@
+# Store remediation
+
+`initialize_missing` is the only automatic store repair in this owner. It prepares missing parent directories, then atomically creates the configured leaf only when the initial snapshot says it is missing. If the leaf appears in the meantime, `create_dir` does not replace it and the owner re-inspects the path. A valid symlink to a writable directory follows the existing store semantics and gets a transient write probe that must be removed; a dangling symlink is skipped. It returns the verified store snapshot for report aggregation. Existing writable and skipped paths reuse their initial snapshot, avoiding a second write probe. Existing non-writable or non-directory paths are left untouched and reported as skipped. It never changes permissions recursively.
+
+# Sửa chữa store
+
+`initialize_missing` là thao tác sửa store tự động duy nhất trong owner này. Hàm chuẩn bị các thư mục cha còn thiếu, sau đó tạo leaf đã cấu hình bằng thao tác nguyên tử khi snapshot ban đầu xác nhận path thiếu. Nếu leaf xuất hiện trong lúc đó, `create_dir` không thay thế nó và owner kiểm tra lại path. Symlink hợp lệ trỏ tới thư mục ghi được vẫn theo semantics store hiện hành, nên có một write probe tạm phải được xóa; symlink bị đứt được bỏ qua. Hàm trả snapshot store đã xác minh để ghép report. Path đã ghi được hoặc bị skip dùng lại snapshot ban đầu, tránh write probe lần hai. Path hiện hữu nhưng không ghi được hoặc không phải thư mục được giữ nguyên và báo skipped. Hàm không đổi permission đệ quy.

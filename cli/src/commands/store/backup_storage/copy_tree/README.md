@@ -1,0 +1,7 @@
+# Safe tree copy / Copy cây an toàn
+
+Copies regular files through the shared no-follow/atomic file owner, rejects special and external targets, and rebases safe in-tree package links into relative links inside the copy. A source capability records a full preflight before destination mutation; tree copy only accepts an absent or empty destination so stale entries cannot be mixed into a snapshot. It copies files/directories before rescanning links, so Windows link targets exist and memory use does not grow with the number of package links. Escaping, dangling, target-resolution cycles, and directory-to-ancestor cycles are refused. The source/destination directory walk remains path-based and cannot close hostile concurrent ancestor replacement races.
+
+Copy file thường qua owner file no-follow/atomic dùng chung; từ chối special/external target và rebase package link nội bộ an toàn thành relative link trong bản copy. Một capability source lưu kết quả preflight toàn cây trước mutation đích; tree copy chỉ nhận đích chưa tồn tại hoặc đang trống để không trộn entry snapshot cũ. Owner copy file/directory trước rồi quét lại link, bảo đảm target tồn tại trên Windows và memory không tăng theo số package link. Từ chối link thoát cây, dangling, chu trình target khi resolve và directory link về ancestor. Duyệt source/destination vẫn dùng path nên chưa đóng race thay ancestor đồng thời.
+
+Implementation/error owner: `copy_tree.rs` and `error.rs`; nearest tests: `test/`.

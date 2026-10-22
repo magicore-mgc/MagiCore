@@ -34,7 +34,7 @@ pub async fn add(
         &compat,
         Some(&root.join(".magicore").join("exec.log")),
     )?;
-    let adapter = shared::lib_adapter(&root)?;
+    let adapter = crate::commands::core::lib::adapter(&root)?;
     shared::add(
         &*adapter, &root, packages, version, dev, exact, optional, peer, no_save, true, global,
     )

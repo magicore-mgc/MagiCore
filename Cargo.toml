@@ -42,11 +42,18 @@ mgc-oci = { path = "core/crates/mgc-oci" }
 mgc-registry-server = { path = "core/crates/mgc-registry-server" }
 mgc-oidc = { path = "core/crates/mgc-oidc" }
 mgc-exec = { path = "core/crates/mgc-exec" }
+# Shared ecosystem services (S07/S09, A05 single-owner): extracted from adapters.
+mgc-js-service = { path = "core/crates/mgc-js-service" }
+mgc-python-service = { path = "core/crates/mgc-python-service" }
 which = "8.0.6"
 
 # External deps (for mgc-http, mgc-oci, etc.)
 http = { version = "1.5.0", features = [] }
 bytes = { version = "1.12.1" }
+
+# Unicode identifier rules used for Cargo-compatible generated names.
+# Quy tắc Unicode identifier dùng cho tên Cargo được scaffold.
+unicode-ident = "1.0.27"
 
 # Async runtime
 tokio = { version = "1.53.3", features = ["full"] }
@@ -87,6 +94,7 @@ crossterm = "0.29.0"
 
 # Crypto
 sha2 = "0.11.1"
+argon2 = { version = "0.6.0", features = ["zeroize"] }
 blake3 = "1.8.7"
 hex = "0.4.3"
 base64 = "0.23.1"
@@ -165,6 +173,9 @@ unsafe_code = "deny"
 dbg_macro = "warn"
 todo = "warn"
 unwrap_used = "warn"
+# RULE §2/F06 requires same-name owner folders and implementation modules.
+# RULE §2/F06 yêu cầu owner folder và module implementation cùng tên.
+module_inception = "allow"
 
 [profile.release]
 opt-level = "z"          # Optimize for size

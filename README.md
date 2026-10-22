@@ -129,7 +129,6 @@ This README makes no speed comparison. Do not claim an advantage over npm, pnpm,
 - <code>cli/</code> — command-line application.
 - <code>core/crates/</code> — shared Rust foundations.
 - <code>adapters/</code> — core-specific behavior.
-- <code>templates/</code> — project scaffolds and template fragments.
 - <code>tests/</code> — integration and end-to-end tests.
 - <code>.github/workflows/</code> — CI and release verification.
 

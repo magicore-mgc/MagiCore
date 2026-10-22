@@ -63,8 +63,6 @@ MagiCore/
 ├── tools/
 │   ├── mgc-dist/                       # distribution tool
 │   └── mgc-mcp/                        # present on disk; excluded by root Cargo.toml
-├── templates/
-│   └── web/                            # only source-template core present at this snapshot
 ├── tests/
 │   ├── e2e/
 │   │   ├── src/
@@ -114,7 +112,7 @@ At this snapshot, <code>core/crates/</code> contains 23 crate directories and <c
 | Ecosystem adapter behavior | <code>adapters/&lt;core&gt;/src/</code>, <code>tests/</code>, <code>benches/</code> and manifest |
 | CLI routing/commands | <code>cli/src/dispatch/</code>, <code>cli/src/commands/</code>, <code>cli/tests/</code> |
 | Workspace E2E | <code>tests/e2e/src/</code>, <code>tests/e2e/tests/</code>, <code>tests/fixtures/</code> |
-| Source templates | <code>templates/</code>; only <code>templates/web/</code> was present at this snapshot |
+| Hybrid project creation | Official initializers via CLI package runtime; redundant README-only templates tree removed 2026-10-21; native/fullstack migration pending |
 | Embedded template resources | <code>cli/embedded/</code>; inspect generation/embedding scripts before changing |
 | CI and gates | <code>.github/workflows/</code>, <code>ci/</code>, <code>scripts/</code> |
 | Distribution and packaging | <code>packaging/</code>, <code>tools/mgc-dist/</code>, <code>dist/</code> |

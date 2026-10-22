@@ -29,11 +29,14 @@ pub fn spawn_tarball_download(
                 let id = pkg.id.clone();
                 let lock = tarball_prefetch_lock(&id);
                 let _guard = lock.lock().await;
-                if let Some(bytes) = cache
-                    .get_tarball(&id)
+                if let Some(file) = cache
+                    .open_tarball(&id)
                     .map_err(|e| mgc_types::MgError::Store(e.to_string()))?
                 {
-                    return Ok(bytes.len() as u64);
+                    return file
+                        .metadata()
+                        .map(|metadata| metadata.len())
+                        .map_err(|error| mgc_types::MgError::Store(error.to_string()));
                 }
                 let _permit = download_sem.acquire_owned().await.map_err(|e| {
                     mgc_types::MgError::Other(format!("download semaphore closed: {e}"))

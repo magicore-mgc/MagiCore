@@ -28,9 +28,9 @@ fn test_hash_verify() {
 fn test_hash_hex_roundtrip() {
     let hash = Blake3Hasher::hash_string("test");
     let hex = hash.to_hex();
-    let parsed = Blake3Hash::from_hex(&hex).unwrap();
+    let parsed = Blake3Hash::from_hex(&hex).expect("test operation must succeed");
     assert_eq!(hash, parsed);
-    let uppercase = Blake3Hash::from_hex(&hex.to_uppercase()).unwrap();
+    let uppercase = Blake3Hash::from_hex(&hex.to_uppercase()).expect("test operation must succeed");
     assert_eq!(hash, uppercase);
 }
 
@@ -38,7 +38,7 @@ fn test_hash_hex_roundtrip() {
 fn test_hash_base64_roundtrip() {
     let hash = Blake3Hasher::hash_string("test");
     let b64 = hash.to_base64();
-    let parsed = Blake3Hash::from_base64(&b64).unwrap();
+    let parsed = Blake3Hash::from_base64(&b64).expect("test operation must succeed");
     assert_eq!(hash, parsed);
 }
 
@@ -48,7 +48,12 @@ fn test_hex_dos_protection() {
     let evil = "a".repeat(200);
     let result = Blake3Hash::from_hex(&evil);
     assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("too long"));
+    assert!(
+        result
+            .expect_err("test operation must fail")
+            .to_string()
+            .contains("too long")
+    );
 }
 
 #[test]
@@ -62,11 +67,12 @@ fn test_hex_rejects_unicode_without_panicking() {
 fn test_mmap_empty_file() {
     // A6 TEST: Empty file should not crash
     use tempfile::NamedTempFile;
-    let tmpfile = NamedTempFile::new().unwrap();
+    let tmpfile = NamedTempFile::new().expect("test operation must succeed");
 
     #[cfg(not(target_env = "msvc"))]
     {
-        let hash = Blake3Hasher::hash_file_mmap(tmpfile.path()).unwrap();
+        let hash =
+            Blake3Hasher::hash_file_mmap(tmpfile.path()).expect("test operation must succeed");
         let expected = Blake3Hasher::hash_bytes(&[]);
         assert_eq!(hash, expected);
     }

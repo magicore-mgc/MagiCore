@@ -94,7 +94,7 @@ path = "tests/protocols_hfhub.rs"
 
 [[test]]
 name = "test_protocols_pypi"
-path = "tests/protocols_pypi.rs"
+path = "tests/protocols_pypi/mod.rs"
 
 [[test]]
 name = "test_protocols_crates"
@@ -103,3 +103,6 @@ path = "tests/protocols_crates.rs"
 [[test]]
 name = "test_protocols_pub"
 path = "tests/protocols_pub.rs"
+
+[lints]
+workspace = true

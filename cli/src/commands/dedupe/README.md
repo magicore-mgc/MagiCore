@@ -1,0 +1,5 @@
+# Dedupe command
+
+This owner coordinates the existing project writer lock, unrecovered-journal refusal, exact lockfile merge, mutation-free dry-run, atomic publication, same-root MGC build verification, rollback, post-verification virtual-store cleanup, and output. The `mod.rs` facade keeps `commands::dedupe::{run, DedupeArgs, DedupeReport, DedupeEntry}` stable. Tests live beside the coordinator and each behavior owner. S459 hardens root/link handling and clarifies that `disk_saved_bytes` is observed logical payload in successfully removed paths; runtime race behavior remains unverified.
+
+Owner này điều phối writer lock của project, từ chối journal chưa phục hồi, merge lockfile chính xác, dry-run không mutation, atomic publish, xác minh build MGC cùng root, rollback, dọn virtual store sau xác minh và output. Facade `mod.rs` giữ nguyên `commands::dedupe::{run, DedupeArgs, DedupeReport, DedupeEntry}`. Test nằm cạnh coordinator và từng owner hành vi. S459 siết root/link và làm rõ `disk_saved_bytes` chỉ là payload logic quan sát được trong path xóa thành công; race runtime vẫn chưa xác minh.

@@ -24,7 +24,7 @@ pub async fn add(
         crate::commands::dep_gate::DepOp::Add,
         compat_runtime.as_deref(),
     )?;
-    let adapter = shared::cloud_adapter(&root)?;
+    let adapter = crate::commands::core::cloud::adapter(&root)?;
     shared::add(
         &*adapter, &root, packages, version, dev, exact, optional, peer, no_save, true, global,
     )

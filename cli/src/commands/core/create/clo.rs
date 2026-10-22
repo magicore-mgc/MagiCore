@@ -5,7 +5,7 @@ use anyhow::Result;
 pub async fn run(
     framework: &str,
     project_name: &str,
-    container: super::super::scaffold_flags::ContainerFlags,
+    container: super::super::shared::container_flags::ContainerFlags,
 ) -> Result<()> {
     if container.k8s {
         return Err(crate::error::k8s_profile_unsupported("clo"));

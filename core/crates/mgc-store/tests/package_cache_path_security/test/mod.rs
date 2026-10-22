@@ -1,0 +1,9 @@
+include!("metadata_dot_segments_are_escaped_before_path_join/mod.rs");
+include!("metadata_escape_marker_does_not_alias_literal_names/mod.rs");
+include!("ordinary_package_names_keep_existing_cache_path_layout/mod.rs");
+include!("separator_names_have_collision_resistant_paths/mod.rs");
+include!("os_sensitive_names_use_collision_resistant_paths/mod.rs");
+include!("tarball_count_includes_hashed_name_layout/mod.rs");
+include!("malformed_versions_cannot_escape_cache_root/mod.rs");
+include!("version_fields_have_collision_resistant_cache_keys/mod.rs");
+include!("portable_prerelease_versions_keep_legacy_filename/mod.rs");

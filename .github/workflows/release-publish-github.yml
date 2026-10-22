@@ -1,0 +1,129 @@
+# Release job owner. / Owner riêng cho job phát hành.
+name: Publish Github Release
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Validated release version from the entry workflow.
+        required: true
+        type: string
+      trust_roots:
+        description: Comma-separated public release trust roots.
+        required: false
+        default: ""
+        type: string
+    secrets:
+      MGC_RELEASE_SIGNING_KEY:
+        required: false
+
+jobs:
+  publish-github-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required to create release and upload assets
+      attestations: write # Required for artifact attestation
+      id-token: write # Required for OIDC attestation
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Display downloaded release assets
+        run: ls -la release-assets
+
+      - name: Update and verify manifests
+        env:
+          REQUESTED_RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          VERSION="${REQUESTED_RELEASE_VERSION}"
+          ./scripts/update-manifests.sh --version "$VERSION" --artifacts release-assets
+          ./scripts/update-manifests.sh --version "$VERSION" --artifacts release-assets --verify-only
+          # Check every generated Homebrew/Scoop entry, not only the subset
+          # sampled by update-manifests.sh --verify-only.
+          # Kiểm mọi entry Homebrew/Scoop, không chỉ các hash được updater lấy mẫu.
+          python3 scripts/verify_release_manifests.py
+
+      - name: Stage package manager manifests
+        run: |
+          mkdir -p release-assets/packaging/homebrew release-assets/packaging/scoop
+          cp packaging/homebrew/magicore.rb release-assets/packaging/homebrew/magicore.rb
+          cp packaging/homebrew/magicore-web.rb release-assets/packaging/homebrew/magicore-web.rb
+          cp packaging/scoop/magicore.json release-assets/packaging/scoop/magicore.json
+          cp packaging/scoop/magicore-web.json release-assets/packaging/scoop/magicore-web.json
+
+      # Release provenance (P0): build manifest.json binding every
+      # archive (version/variant/os/arch/digest/size) and sign it with
+      # the Ed25519 release key. Client `mgc self-update` verifies the
+      # manifest + signature against --trust-root/MGC_RELEASE_TRUST_ROOTS.
+      # Key setup (repo Settings → Secrets/Variables → Actions):
+      #   MGC_RELEASE_SIGNING_KEY = 64-hex-char Ed25519 seed.
+      #   MGC_RELEASE_TRUST_ROOTS = comma-separated 64-hex public key pin(s).
+      # Signing is mandatory for publication: MGC_RELEASE_REQUIRE_SIGNED
+      # makes the release fail closed when the signing secret is absent.
+      # No unsigned manifest is published by this workflow.
+      # (Bắt buộc ký khi phát hành: thiếu secret thì workflow dừng fail-closed.)
+      - name: Generate and sign release manifest
+        env:
+          REQUESTED_RELEASE_VERSION: ${{ inputs.version }}
+          MGC_RELEASE_SIGNING_KEY: ${{ secrets.MGC_RELEASE_SIGNING_KEY }}
+          # P0-5: stable releases must never ship unsigned — missing key
+          # fails this job instead of publishing a sha256-only manifest.
+          # (Release stable không bao giờ unsigned — thiếu key thì fail.)
+          MGC_RELEASE_REQUIRE_SIGNED: "1"
+        run: |
+          export VERSION="${REQUESTED_RELEASE_VERSION}"
+          # Manifest builder lives in scripts/ (tested by
+          # scripts/test-release-manifest.sh — RC dashes parse from the
+          # right, missing VERSION fails closed, no KeyError).
+          # Builder manifest nằm ở scripts/ (có test — version RC parse
+          # từ phải, thiếu VERSION fail rõ ràng).
+          python3 scripts/release-manifest.py --require-matrix release-assets
+          # Sign with the JUST-BUILT binary (ring backend, locked in
+          # Cargo.lock — no pip/network at signing time; P0). The python
+          # signer stays as the independent cross-check oracle in
+          # scripts/test-release-manifest.sh and the verify-distribution
+          # workflow.
+          # (Ký bằng CHÍNH binary vừa build — backend ring đã khóa.)
+          BOOTSTRAP_DIR="$(mktemp -d)"
+          tar -xzf release-assets/magicore-"$VERSION"-linux-x64.tar.gz -C "$BOOTSTRAP_DIR"
+          "$BOOTSTRAP_DIR/mgc" sign-release --manifest release-assets/manifest.json
+          rm -rf "$BOOTSTRAP_DIR"
+
+      - name: Verify signed release manifest using public trust roots
+        env:
+          REQUESTED_RELEASE_VERSION: ${{ inputs.version }}
+          MGC_RELEASE_TRUST_ROOTS: ${{ inputs.trust_roots }}
+        run: |
+          set -euo pipefail
+          VERSION="${REQUESTED_RELEASE_VERSION}"
+          shopt -s nullglob
+          archives=(release-assets/magicore-*.tar.gz release-assets/magicore-*.zip)
+          python3 scripts/verify-release-manifest-signature.py \
+            release-assets "$VERSION" "${archives[@]}"
+
+      # Note: Attestations already generated in pre-publish-verification
+      # No need to regenerate here (P1 finding #6)
+
+      - name: Create GitHub Release and Upload Assets
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3 (latest, node24)
+        with:
+          files: |
+            release-assets/*.tar.gz
+            release-assets/*.zip
+            release-assets/*.sha256
+            release-assets/*-sbom.json
+            release-assets/manifest.json
+            release-assets/manifest.json.sig
+            release-assets/packaging/homebrew/*.rb
+            release-assets/packaging/scoop/*.json
+          draft: true # P0: Start as draft, promote after post-download smoke
+          prerelease: ${{ contains(inputs.version, 'beta') || contains(inputs.version, 'rc') || contains(inputs.version, 'alpha') }}
+          generate_release_notes: false
+          body_path: CHANGELOG.md

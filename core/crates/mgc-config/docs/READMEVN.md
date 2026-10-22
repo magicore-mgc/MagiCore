@@ -12,7 +12,7 @@ Sở hữu model cấu hình project/user, chuỗi registry, credential/registry
 - [`lib.rs`](../src/lib.rs)
 - [`project.rs`](../src/project.rs)
 - [`chain.rs`](../src/chain.rs)
-- [`npmrc.rs`](../src/npmrc.rs)
+- [Module owner npmrc](../src/npmrc/README.md)
 - [`attestation.rs`](../src/attestation.rs)
 
 ## Bàn giao và review

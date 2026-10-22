@@ -25,7 +25,13 @@ fn test_lockfile_add_package() {
 
     lockfile.add_package(pkg);
     assert_eq!(lockfile.packages.len(), 1);
-    assert_eq!(lockfile.get_package("react").unwrap().version, "18.2.0");
+    assert_eq!(
+        lockfile
+            .get_package("react")
+            .expect("test operation must succeed")
+            .version,
+        "18.2.0"
+    );
 }
 
 #[test]
@@ -94,7 +100,7 @@ key_id = "a1b2c3d4"
 signed_at = "2026-08-21T18:30:00+07:00"
 "#;
 
-    let sig: SignatureFile = input.parse().unwrap();
+    let sig: SignatureFile = input.parse().expect("test operation must succeed");
     assert_eq!(sig.lockfile_hash, "blake3-abc123");
     assert_eq!(sig.signature, "ed25519-xyz789");
     assert_eq!(sig.key_id, "a1b2c3d4");
@@ -111,7 +117,7 @@ fn test_signature_file_roundtrip() {
     };
 
     let output = sig.to_string();
-    let parsed: SignatureFile = output.parse().unwrap();
+    let parsed: SignatureFile = output.parse().expect("test operation must succeed");
 
     assert_eq!(sig, parsed);
 }

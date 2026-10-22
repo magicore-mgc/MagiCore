@@ -130,42 +130,6 @@ async fn concurrent_stream_downloads_write_to_distinct_staging_files() {
 }
 
 #[test]
-fn test_check_publish_age_blocks_new_package() {
-    let mut meta = PackageMetadata {
-        name: "evil-pkg".to_string(),
-        description: None,
-        versions: Default::default(),
-        dist_tags: Default::default(),
-        time: Default::default(),
-    };
-    let published_at = (chrono::Utc::now() - chrono::Duration::hours(1)).to_rfc3339();
-    meta.time.insert("1.0.0".to_string(), published_at);
-
-    let result = check_publish_age(&meta, "1.0.0", 86400);
-    assert!(result.is_err(), "should block packages published < 24h ago");
-    assert!(result.unwrap_err().contains("quarantine"));
-
-    let result = check_publish_age(&meta, "1.0.0", 1800);
-    assert!(result.is_ok());
-}
-
-#[test]
-fn test_check_publish_age_allows_old_package() {
-    let mut meta = PackageMetadata {
-        name: "safe-pkg".to_string(),
-        description: None,
-        versions: Default::default(),
-        dist_tags: Default::default(),
-        time: Default::default(),
-    };
-    let published_at = (chrono::Utc::now() - chrono::Duration::hours(48)).to_rfc3339();
-    meta.time.insert("2.0.0".to_string(), published_at);
-
-    let result = check_publish_age(&meta, "2.0.0", 86400);
-    assert!(result.is_ok());
-}
-
-#[test]
 fn test_base64_encode_hello() {
     assert_eq!(base64_encode(b"Hello"), "SGVsbG8=");
 }

@@ -1,0 +1,5 @@
+# Bounded response owner
+
+EN: Reads response chunks while enforcing the caller-provided maximum byte count. A declared Content-Length above the boundary is rejected before body reads; chunked or misreported bodies are checked again for every chunk. The buffer grows geometrically up to the caller's logical byte cap, using fallible exact reservation at each growth step to avoid per-chunk reallocations and propagate allocation failure. The allocator may reserve more than requested; temporary reallocations, chunk buffers, allocator metadata and aggregate concurrent-request memory remain outside this logical-body cap.
+
+VI: Đọc từng chunk response và áp dụng giới hạn byte do caller truyền. Content-Length vượt ngưỡng bị từ chối trước khi đọc body; body chunked hoặc khai báo sai tiếp tục được kiểm tra từng chunk. Buffer tăng theo cấp số nhân nhưng target bị chặn ở giới hạn byte logic; mỗi lần tăng dùng fallible exact reserve để tránh reallocate theo từng chunk và truyền lỗi cấp phát. Allocator vẫn có thể cấp nhiều hơn mức yêu cầu; vùng nhớ tạm khi reallocate, chunk đang đọc, metadata allocator và tổng memory của nhiều request không nằm trong trần body logic này.

@@ -5,15 +5,22 @@
 
 ## Purpose
 
-Defines shared contracts and domain types: adapters/capabilities, ecosystems, package/version identity, manifests, publish/patch models, errors/results, JSONC, and secret censoring. Public changes may affect most crates and require caller plus serialization/API compatibility review.
+Defines shared contracts and domain types: adapters/capabilities, ecosystems, package/version identity, manifests, publish/patch models, errors/results, JSONC, and a legacy literal-string censor helper. The helper does not redact configuration values and is not a security-grade redactor. Public changes may affect most crates and require caller plus serialization/API compatibility review.
 
 ## Source map
 
 - [`lib.rs`](../src/lib.rs)
-- [`adapter.rs`](../src/adapter.rs)
-- [`capabilities.rs`](../src/capabilities.rs)
-- [`package.rs`](../src/package.rs)
-- [`manifest.rs`](../src/manifest.rs)
+- [`adapter/`](../src/adapter/README.md)
+- [`capabilities/`](../src/capabilities/README.md)
+- [`ecosystem/`](../src/ecosystem/README.md) — shared enum, string mapping and nearest tests.
+- [`error/`](../src/error/README.md)
+- [`jsonc/`](../src/jsonc/README.md)
+- [`manifest/`](../src/manifest/README.md) — shared manifest model and nearest behavior tests.
+- [`package/`](../src/package/README.md)
+- [`patch/`](../src/patch/README.md) — config-time patch specs and lockfile patch records.
+- [`publish/`](../src/publish/README.md) — publish request and result contracts with nearest tests.
+- [`version/`](../src/version/README.md)
+- [`secret_censor/`](../src/secret_censor/README.md) — legacy literal helper; not a secure value redactor.
 
 ## Handoff and review
 

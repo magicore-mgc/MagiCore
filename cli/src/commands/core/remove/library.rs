@@ -23,6 +23,6 @@ pub async fn remove(packages: Vec<String>, compat_runtime: Option<String>) -> Re
         &compat,
         Some(&root.join(".magicore").join("exec.log")),
     )?;
-    let adapter = shared::lib_adapter(&root)?;
+    let adapter = crate::commands::core::lib::adapter(&root)?;
     shared::remove(&*adapter, &root, packages, true).await
 }

@@ -7,7 +7,8 @@
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
-use crate::commands::core::shared::{self, BENCH_PKG, OPTIMIZER_PKG};
+use crate::commands::core::hardware::{self as hardware_core, BENCH_PKG, OPTIMIZER_PKG};
+use crate::commands::core::shared;
 
 fn project_root() -> Result<PathBuf> {
     let cwd = std::env::current_dir().map_err(|e| crate::error::cwd_deleted(&e))?;
@@ -56,7 +57,7 @@ pub async fn install_at(
         ));
     }
     for pkg in &packages {
-        shared::materialize_template(root, pkg).await?;
+        hardware_core::materialize_template(root, pkg).await?;
     }
     Ok(())
 }

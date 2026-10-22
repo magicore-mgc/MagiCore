@@ -1,0 +1,3 @@
+This owner separates process-instance identity and remembered PID state (`identity.rs`), PID graph traversal and ambiguity detection (`scan.rs`), and classification of verified descendants (`command_scan.rs`). The existing Windows feature tests exercise the owners through the stable facade. Identity failure and PID-reuse ambiguity retain the current fail-closed results.
+
+Owner này tách định danh instance và state PID đã ghi nhớ (`identity.rs`), duyệt đồ thị PID và phát hiện ancestry mơ hồ (`scan.rs`), cùng phân loại descendant đã xác minh (`command_scan.rs`). Bộ test feature Windows hiện tại kiểm thử các owner qua facade ổn định. Thiếu identity và PID reuse mơ hồ vẫn giữ kết quả fail-closed hiện tại.

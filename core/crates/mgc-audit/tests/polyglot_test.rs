@@ -1,6 +1,6 @@
 //! `polyglot_test.rs` — Shared polyglot dispatch contract (P2): every
 //! shared-scanner manifest in an extended-core project joins ONE plan
-//! (game Bevy + Cargo.toml → cargo-audit; IoT + go.mod → govulncheck);
+//! (game Bevy + Cargo.toml → MGC native Rust OSV; IoT + go.mod → shared Go scanner);
 //! no shared manifest → honest UnsupportedEcosystem, never a fake clean.
 //! Hợp đồng dispatch polyglot chung: mọi manifest scanner-chung trong
 //! project core-mở rộng gộp vào MỘT plan; không còn manifest chung →
@@ -43,7 +43,7 @@ async fn rust_manifest_joins_plan() {
     )
     .unwrap();
     let plan = plan_for_shared_manifests(dir.path()).unwrap();
-    assert_eq!(plan.len(), 1, "Cargo.toml → one cargo-audit step");
+    assert_eq!(plan.len(), 1, "Cargo.toml → one native MGC Rust OSV step");
 }
 
 #[tokio::test]

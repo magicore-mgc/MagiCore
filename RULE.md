@@ -17,9 +17,11 @@ Cấu trúc hiện hành được xác định từ repository đang làm việc
 
 ---
 
-## 2. CẤU TRÚC FOLDER CHUẨN — src/ + docs/ + test/ (Standard Folder Layout)
+## 2. CẤU TRÚC PACKAGE VÀ MODULE OWNER (Package and Module-Owner Layout)
 
-Khi bắt đầu làm việc trong bất kỳ folder nào (core crate, adapter, cli, template...), **bắt buộc** cấu trúc:
+Áp dụng skeleton dưới đây tại **package root** hoặc functional owner có source, API, tests/docs và trách nhiệm độc lập. Đây không phải khuôn đệ quy bắt buộc cho mọi folder/file con; không tạo `src/`, `docs/`, `test/` rỗng để đủ hình thức. Mỗi owner chỉ thêm các thư mục có nội dung thật.
+
+Apply this skeleton at a package root or functional owner with its own source, API, tests/docs and responsibility. Do not recursively require `src/`, `docs/`, or `test/` in every child folder/file; never create empty folders to satisfy a diagram.
 
 ```
 tên-folder/
@@ -32,11 +34,12 @@ tên-folder/
 └── (file config khác)
 ```
 
-- `docs/` là nơi duy nhất ghi báo cáo tiến độ + checklist của folder đó.
-- docs/ is the single place for progress reports + checklists.
-- `test/` là nơi duy nhất đặt test của folder — **CẤM `#[cfg(test)] mod tests` inline trong file `src/*.rs`** (xem §5).
+- `docs/` của owner là nơi ghi báo cáo/checklist khi task của owner cần tracking; không tạo progress giả cho module chưa làm.
+- The owner's `docs/` holds reports/checklists when that owner has active tracked work; do not create populated-looking progress for untouched modules.
+- Test đặt theo crate discovery hoặc gần behavior owner. Rust được phép đặt test file riêng tại `src/<module>/test/` theo ngoại lệ nearest-owner ở §5 và E28/R21; body test inline trong file production vẫn bị cấm.
 - Ví dụ: `core/crates/mgc-exec/docs/Checklist.md`, `adapters/game/test/`, `cli/docs/ProgressReport.md`.
 - Tên folder phải là **lowercase** (`docs/` không phải `DOCS/`).
+- `mod.rs`/`lib.rs` chỉ wiring và export tối thiểu; module có behavior tuân same-name folder theo F06/R22, nhưng leaf có trách nhiệm đơn được giữ trong owner thật.
 
 ---
 
@@ -99,6 +102,8 @@ Quy tắc:
   - Integration test (crate riêng): test files đặt trong `test/`, khai báo target trong `Cargo.toml` (`[[test]] name = "..." path = "test/...rs"`) nếu crate dùng thư mục `test/` thay vì `tests/`.
   - Với crate có sẵn `tests/` (chuẩn Cargo): giữ nguyên — `tests/` cũng là vị trí hợp lệ cho integration test. Điểm mấu chốt: test KHÔNG nằm chung với code production trong `src/`.
 - Tóm tắt: production code trong `src/`; test trong `test/` (hoặc `tests/` chuẩn Cargo) — tách bạch.
+- **Ngoại lệ nearest-owner (user 2026-10-16, R02/E28):** module Rust có behavior được tách file test riêng tại `src/<module>/test/` (mỗi test một file theo subject, đăng ký qua `#[cfg(test)] #[path = "test/<...>.rs"]` — chỉ dòng khai báo, KHÔNG body inline) và/hoặc `tests/` đã đăng ký. Body test inline trong file `src/*.rs` vẫn CẤM. Xem `docs/specs/wholeprojectrefactor/` R21/E28–E29.
+- Exception (nearest-owner, user 2026-10-16, R02/E28): behavioral Rust modules keep separate test files at `src/<module>/test/` (registered via `#[cfg(test)] #[path]` declaration only, no inline bodies) and/or registered `tests/`. Inline test bodies in `src/*.rs` remain FORBIDDEN.
 
 ---
 
@@ -133,7 +138,8 @@ Quy tắc:
 - EN mô tả kỹ thuật; VI mô tả ý nghĩa/ngữ cảnh (không dịch nguyên văn lặp lại).
 - File mới: header 2 dòng song ngữ: mô tả file (EN) + mục đích (VI).
 - Chỉ comment ý nghĩa thật — không comment tầm thường (`// increment i`).
-- **Lỗi CLI TẬP TRUNG**: mọi error message của CLI định nghĩa tại `cli/src/error/messages.rs` (hàm trả `anyhow::Error`) — file command KHÔNG viết bail!/anyhow! message mới inline, chỉ gọi `crate::error::<tên>()` (hoặc `with_context` để giữ chain lỗi gốc). Thêm lỗi mới → thêm hàm trong messages.rs.
+- **Lỗi cục bộ thay quy tắc tập trung (user 2026-10-16, R02/R08):** module chức năng sở hữu `error.rs` với variant typed, giữ source chain và phân loại retry/recovery; chỉ owner được retry. Renderer diagnostic chung render MỘT lần, giữ nguyên mọi bảo đảm cũ: output tiếng Anh, redaction secret, mã exit ổn định, hỗ trợ JSON, không match chuỗi để điều khiển lỗi. `cli/src/error/messages.rs` còn lại là facade cho lỗi global/root trong lúc migration; lỗi module mới viết tại owner, không thêm vào file tập trung. Cấm `println!` mỗi tầng propagate, cấm catch-all đổi lỗi thành success. Chi tiết: `docs/specs/wholeprojectrefactor/` R08/C05.
+- **Local errors supersede centralization (user 2026-10-16, R02/R08):** functional modules own typed `error.rs`, preserving source chains and retry/recovery classification; only the owner retries. The shared diagnostic renderer still renders ONCE, keeping every prior guarantee: English output, secret redaction, stable exit codes, JSON support, no string matching for error control. `cli/src/error/messages.rs` remains only as a facade for global/root errors during migration; new module errors go to their owner. No `println!` per propagation layer, no catch-all turning errors into success.
 - **OUTPUT toàn repo tiếng Anh**: mọi thứ in ra console/terminal (println/info/warning/error/bail/panic/assert message) bằng tiếng Anh — cấm tiếng Việt trong output (2026-08-19 user bắt buộc).
 - **Console/log/panic/error messages: ENGLISH ONLY** — messages hiển thị ra terminal, log file, CLI output đều bằng tiếng Anh.
 

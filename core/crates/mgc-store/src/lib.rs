@@ -15,7 +15,10 @@ pub use cas::{
     COMPILED_CACHE_SCHEMA_VERSION, CompilationKey, CompiledCache, CompiledModule, ContentStore,
     IntegrityHash,
 };
-pub use database::{CasGenerationError, Database, DatabaseEntry, ProjectInstallLock, StagingLease};
+pub use database::{
+    CasGenerationError, CasIntegrityCounts, CasIntegritySnapshotError, Database, DatabaseEntry,
+    ProjectInstallLock, StagingLease,
+};
 pub use index::{FileEntry, StoreIndex};
 pub use layout::Layout;
 

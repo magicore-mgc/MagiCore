@@ -1,0 +1,46 @@
+# Release job owner. / Owner riêng cho job phát hành.
+name: Publish Cli Container
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Validated release version from the entry workflow.
+        required: true
+        type: string
+    secrets:
+      GHCR_TOKEN:
+        required: true
+
+jobs:
+  publish-cli-container:
+    name: Publish MagiCore CLI container (Linux amd64)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build, publish, and smoke-test the versioned CLI image
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}/magicore"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker buildx create --use
+          TAG_ARGS=(--tag "$IMAGE:$RELEASE_VERSION")
+          if [[ "$RELEASE_VERSION" != *-* ]]; then TAG_ARGS+=(--tag "$IMAGE:latest"); fi
+          docker buildx build \
+            --platform linux/amd64 \
+            --provenance=mode=max \
+            --sbom=true \
+            --push \
+            "${TAG_ARGS[@]}" \
+            .
+          docker pull "$IMAGE:$RELEASE_VERSION"
+          docker run --rm "$IMAGE:$RELEASE_VERSION" --version
+          docker run --rm "$IMAGE:$RELEASE_VERSION" --help

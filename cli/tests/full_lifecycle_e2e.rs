@@ -74,7 +74,7 @@ fn test_web_full_lifecycle() {
 
     // === STEP 1: CREATE (REAL mgc create-web call) ===
     // Bước 1: TẠO (gọi mgc create-web thật)
-    println!("\n=== STEP 1: mgc create-web vanilla (create-vite via MGC dlx) ===");
+    println!("\n=== STEP 1: mgc create-web vanilla (create-vite via MGC create flow) ===");
     let create_output = Command::new(&mgc)
         .arg("create-web")
         .arg("vanilla")
@@ -106,13 +106,18 @@ fn test_web_full_lifecycle() {
         String::from_utf8_lossy(&create_output.stderr)
     );
     assert!(
-        create_output_text.contains("create: installing initializer create-vite@latest through MagiCore"),
+        create_output_text
+            .contains("create: installing initializer create-vite@latest through MagiCore"),
         "vanilla generator must execute through the MagiCore create flow: {create_output_text}"
     );
     let provenance = std::fs::read_to_string(project_path.join(".mgc-provenance.json"))
         .expect("online generator provenance");
     assert!(provenance.contains("npm:create-vite@"));
-    assert!(provenance.contains("#template=vanilla-ts"));
+    // Same canonical `#generator=` schema as the parity test: exact initializer
+    // binary plus template, not the legacy `#template=` form.
+    // Cùng schema `#generator=` chuẩn như parity test: binary initializer chính
+    // xác cộng template, không phải dạng `#template=` cũ.
+    assert!(provenance.contains("#generator=vite:vanilla-ts"));
     assert!(!provenance.contains("npm:create-vite@latest"));
 
     // The online TypeScript starter creates a package manifest and HTML entry.
@@ -143,27 +148,43 @@ fn test_web_full_lifecycle() {
     // === STEP 2: INSTALL ===
     println!("\n=== STEP 2: mgc install ===");
 
-    // Create package.json with real dependencies
-    // Native-engine contract (2026-09-10): project scripts run through the
-    // native task runner WITHOUT a shell — chaining tokens like `&&` are
-    // rejected fail-closed. A single program is the honest fixture.
-    // Hợp đồng engine native: script project chạy qua task runner native
-    // KHÔNG shell — token nối `&&` bị từ chối fail-closed. Một lệnh đơn là
-    // fixture trung thực.
-    std::fs::write(
-        project_path.join("package.json"),
-        r#"{
-                "name": "test-web-full",
-                "version": "1.0.0",
-                "scripts": {
-                    "test": "echo \"Test passed\""
-                },
-                "dependencies": {
-                    "lodash": "^4.17.21"
-                }
-        }"#,
+    // Keep the actual manifest created by create-vite. Only add a project test
+    // script, as a developer would; do not replace the generator's dependency
+    // graph with a hand-written fixture. MGC must install the generated Vite
+    // dependency set through its own resolver and store.
+    // Giữ manifest thật do create-vite sinh. Chỉ thêm script test như thao tác
+    // của developer; không thay dependency graph của generator bằng fixture.
+    // MGC phải tự resolve và cài bộ dependency Vite được sinh ra.
+    let package_json_path = project_path.join("package.json");
+    let mut package: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(&package_json_path).expect("create-vite package.json"),
     )
-    .unwrap();
+    .expect("create-vite package.json must be valid JSON");
+    let has_vite_dependency = ["dependencies", "devDependencies"].iter().any(|section| {
+        package
+            .get(section)
+            .and_then(|dependencies| dependencies.get("vite"))
+            .and_then(serde_json::Value::as_str)
+            .is_some()
+    });
+    assert!(
+        has_vite_dependency,
+        "create-vite manifest must declare Vite before mgc install"
+    );
+    let scripts = package
+        .get_mut("scripts")
+        .and_then(serde_json::Value::as_object_mut)
+        .expect("create-vite package.json must contain its scripts object");
+    assert!(scripts.contains_key("dev") && scripts.contains_key("build"));
+    scripts.insert(
+        "test".into(),
+        serde_json::json!("node -e \"console.log('Test passed')\""),
+    );
+    std::fs::write(
+        &package_json_path,
+        serde_json::to_vec_pretty(&package).expect("serialize augmented project manifest"),
+    )
+    .expect("write test script into generated project manifest");
 
     let install_output = Command::new(&mgc)
         .arg("install")
@@ -172,6 +193,7 @@ fn test_web_full_lifecycle() {
         .env("MGC_CACHE_DIR", &mgc_cache)
         .env("MGC_TEMPLATES_DIR", &mgc_templates)
         .env("MAGICORE_STORE_ROOT", &mgc_store)
+        .env_remove("MGC_NPM_REGISTRY")
         .output()
         .expect("Failed to run mgc install");
 
@@ -193,6 +215,15 @@ fn test_web_full_lifecycle() {
         project_path.join("mgc.lock").exists(),
         "mgc.lock not created"
     );
+    let lock_text = std::fs::read_to_string(project_path.join("mgc.lock")).unwrap();
+    assert!(
+        lock_text.contains("vite"),
+        "mgc.lock must own the Vite dependency from create-vite's manifest"
+    );
+    assert!(
+        project_path.join("node_modules/vite").is_dir(),
+        "MGC did not materialize the generated Vite dependency"
+    );
 
     println!("INSTALL verified: dependencies installed + lockfile created");
 
@@ -206,6 +237,7 @@ fn test_web_full_lifecycle() {
         .env("MGC_CACHE_DIR", &mgc_cache)
         .env("MGC_TEMPLATES_DIR", &mgc_templates)
         .env("MAGICORE_STORE_ROOT", &mgc_store)
+        .env_remove("MGC_NPM_REGISTRY")
         .output()
         .expect("Failed to run mgc test");
 

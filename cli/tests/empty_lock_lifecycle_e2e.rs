@@ -192,6 +192,33 @@ fn empty_web_install_writes_and_frozen_replays_v4_lock() {
 }
 
 #[test]
+fn unversioned_web_application_installs_and_frozen_replays_without_manifest_mutation() {
+    for (schema, version) in [("3", 3), ("v4", 4)] {
+        let fixture = Fixture::new(schema);
+        let package = fixture.project.join("package.json");
+        let content = br#"{"name":"nuxt-style-app","private":true,"type":"module","dependencies":{},"scripts":{"dev":"nuxt dev"}}"#;
+        std::fs::write(&package, content).expect("write unversioned application");
+        assert_success(
+            fixture.run(&["install", "--core", "web"]),
+            "unversioned application install",
+        );
+        let original_lock = assert_lock_version(&fixture.project, version);
+        assert_success(
+            fixture.run(&["install", "--frozen", "--core", "web"]),
+            "unversioned application frozen replay",
+        );
+        assert_eq!(
+            std::fs::read(&package).expect("read application manifest"),
+            content
+        );
+        assert_eq!(
+            std::fs::read(fixture.project.join("mgc.lock")).expect("read lock"),
+            original_lock
+        );
+    }
+}
+
+#[test]
 fn empty_lib_rust_install_writes_and_frozen_replays_v3_and_v4_locks() {
     for schema in ["3", "v4"] {
         let fixture = Fixture::new_lib_rust(schema);

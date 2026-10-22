@@ -29,7 +29,7 @@ fn material_equality_ignores_serialization_order_but_preserves_artifact_changes(
     reordered.packages[0]
         .artifact
         .as_mut()
-        .unwrap()
+        .expect("test operation must succeed")
         .url
         .push_str("-changed");
     assert!(!mgc_lockfile::v4_graph::v4_docs_match_material(
@@ -55,7 +55,7 @@ fn shared_owner_document() -> LockfileV4 {
         "web",
         "mgc/test",
     )
-    .unwrap();
+    .expect("test operation must succeed");
     document
         .root_dependencies_by_owner
         .insert("web".into(), vec!["react@18.2.0".into()]);
@@ -73,8 +73,8 @@ fn owner_manifest(names: &[&str]) -> mgc_types::Manifest {
     for name in names {
         manifest.add_dep(
             mgc_types::DependencySpec::new(
-                mgc_types::PackageName::new(*name).unwrap(),
-                mgc_types::VersionRange::parse("*").unwrap(),
+                mgc_types::PackageName::new(*name).expect("test operation must succeed"),
+                mgc_types::VersionRange::parse("*").expect("test operation must succeed"),
             ),
             false,
             false,
@@ -87,7 +87,8 @@ fn owner_manifest(names: &[&str]) -> mgc_types::Manifest {
 #[test]
 fn replay_selects_owner_roots_and_transitive_closure_without_siblings() {
     let document = shared_owner_document();
-    let web = mgc_lockfile::v4_graph::graph_from_v4_lockfile(&document, "web").unwrap();
+    let web = mgc_lockfile::v4_graph::graph_from_v4_lockfile(&document, "web")
+        .expect("test operation must succeed");
     assert_eq!(
         web.packages.len(),
         2,
@@ -98,7 +99,8 @@ fn replay_selects_owner_roots_and_transitive_closure_without_siblings() {
             .iter()
             .all(|package| package.id.name_str() != "sibling")
     );
-    let lib = mgc_lockfile::v4_graph::graph_from_v4_lockfile(&document, "lib").unwrap();
+    let lib = mgc_lockfile::v4_graph::graph_from_v4_lockfile(&document, "lib")
+        .expect("test operation must succeed");
     assert_eq!(lib.packages.len(), 1);
     assert_eq!(lib.packages[0].id.name_str(), "sibling");
 }
@@ -108,7 +110,7 @@ fn explicit_empty_owner_never_borrows_global_roots() {
     let document = shared_owner_document();
     assert!(
         mgc_lockfile::v4_graph::graph_from_v4_lockfile(&document, "ai")
-            .unwrap()
+            .expect("test operation must succeed")
             .packages
             .is_empty()
     );
@@ -156,7 +158,7 @@ fn legacy_unscoped_v4_replay_preserves_global_root_behavior() {
     document.root_dependencies_by_owner.clear();
     assert_eq!(
         mgc_lockfile::v4_graph::graph_from_v4_lockfile(&document, "web")
-            .unwrap()
+            .expect("test operation must succeed")
             .packages
             .len(),
         3
@@ -194,11 +196,11 @@ fn unrelated_sibling_artifact_is_not_an_install_input() {
         .packages
         .iter_mut()
         .find(|row| row.key.name == "sibling")
-        .unwrap()
+        .expect("test operation must succeed")
         .artifact = None;
     assert_eq!(
         mgc_lockfile::v4_graph::graph_from_v4_lockfile(&document, "web")
-            .unwrap()
+            .expect("test operation must succeed")
             .packages
             .len(),
         2
@@ -211,7 +213,7 @@ fn dev_only_transitive_dependencies_do_not_become_production_packages() {
     let mut graph = sample_graph();
     graph.packages[1]
         .deps
-        .push(PackageId::parse("dev-child@1.0.0").unwrap());
+        .push(PackageId::parse("dev-child@1.0.0").expect("test operation must succeed"));
     graph.packages.push(pkg(
         "dev-child",
         "1.0.0",
@@ -228,21 +230,22 @@ fn dev_only_transitive_dependencies_do_not_become_production_packages() {
         "web",
         "mgc/test",
     )
-    .unwrap();
+    .expect("test operation must succeed");
     document
         .packages
         .iter_mut()
         .find(|row| row.key.name == "react")
-        .unwrap()
+        .expect("test operation must succeed")
         .edges[0]
         .kind = mgc_lockfile::v4::EdgeKind::Dev;
-    let replay = mgc_lockfile::v4_graph::graph_from_v4_lockfile(&document, "web").unwrap();
+    let replay = mgc_lockfile::v4_graph::graph_from_v4_lockfile(&document, "web")
+        .expect("test operation must succeed");
     assert!(
         replay
             .packages
             .iter()
             .find(|row| row.id.name_str() == "dev-child")
-            .unwrap()
+            .expect("test operation must succeed")
             .dev,
         "normal descendants of a dev-only path must remain dev-only"
     );
@@ -250,26 +253,27 @@ fn dev_only_transitive_dependencies_do_not_become_production_packages() {
         .packages
         .iter()
         .find(|row| row.key.name == "scheduler")
-        .unwrap()
+        .expect("test operation must succeed")
         .edges
         .iter()
         .find(|edge| edge.target_key.name == "dev-child")
-        .unwrap()
+        .expect("test operation must succeed")
         .clone();
     document
         .packages
         .iter_mut()
         .find(|row| row.key.name == "react")
-        .unwrap()
+        .expect("test operation must succeed")
         .edges
         .push(edge);
-    let replay = mgc_lockfile::v4_graph::graph_from_v4_lockfile(&document, "web").unwrap();
+    let replay = mgc_lockfile::v4_graph::graph_from_v4_lockfile(&document, "web")
+        .expect("test operation must succeed");
     assert!(
         !replay
             .packages
             .iter()
             .find(|row| row.id.name_str() == "dev-child")
-            .unwrap()
+            .expect("test operation must succeed")
             .dev,
         "a second production path must make the shared dependency production-reachable"
     );
@@ -285,7 +289,7 @@ fn pkg(
     direct: bool,
 ) -> ResolvedPackage {
     ResolvedPackage {
-        id: PackageId::parse(&format!("{name}@{version}")).unwrap(),
+        id: PackageId::parse(&format!("{name}@{version}")).expect("test operation must succeed"),
         integrity: integrity.to_string(),
         tarball_url: url.to_string(),
         deps,
@@ -296,8 +300,8 @@ fn pkg(
 }
 
 fn sample_graph() -> ResolvedGraph {
-    let react = PackageId::parse("react@18.2.0").unwrap();
-    let sched = PackageId::parse("scheduler@0.23.0").unwrap();
+    let react = PackageId::parse("react@18.2.0").expect("test operation must succeed");
+    let sched = PackageId::parse("scheduler@0.23.0").expect("test operation must succeed");
     ResolvedGraph {
         packages: vec![
             pkg(
@@ -333,7 +337,7 @@ fn builder_emits_canonical_identity() {
         "web",
         "mgc/test",
     )
-    .unwrap();
+    .expect("test operation must succeed");
     assert_eq!(doc.version, mgc_lockfile::v4::LOCKFILE_SCHEMA_V4);
     assert_eq!(doc.sources.len(), 1);
     assert_eq!(doc.sources[0].id, "src-native");
@@ -354,7 +358,7 @@ fn builder_emits_canonical_identity() {
         .packages
         .iter()
         .find(|p| p.key.name == "scheduler")
-        .unwrap();
+        .expect("test operation must succeed");
     assert!(
         sched
             .edges
@@ -391,13 +395,15 @@ fn builder_output_verifies_and_roundtrips() {
         "web",
         "mgc/test",
     )
-    .unwrap();
+    .expect("test operation must succeed");
     doc.metadata.generated_at = "2026-10-07T00:00:00Z".to_string();
     doc.metadata.lockfile_hash = payload_digest(&doc.payload());
-    let text = mgc_lockfile::canonical::write_v4_document(&doc).unwrap();
-    let back = mgc_lockfile::canonical::parse_v4_document(&text).unwrap();
+    let text =
+        mgc_lockfile::canonical::write_v4_document(&doc).expect("test operation must succeed");
+    let back =
+        mgc_lockfile::canonical::parse_v4_document(&text).expect("test operation must succeed");
     assert_eq!(back, doc);
-    let report = mgc_lockfile::policy::verify_v4_math(&back).unwrap();
+    let report = mgc_lockfile::policy::verify_v4_math(&back).expect("test operation must succeed");
     assert!(report.digest_ok);
 }
 
@@ -422,7 +428,7 @@ fn unenforceable_sri_stays_absent() {
         "web",
         "mgc/test",
     )
-    .unwrap();
+    .expect("test operation must succeed");
     assert!(
         doc.packages[0]
             .artifact
@@ -443,7 +449,7 @@ fn merge_keeps_sibling_lanes_and_replaces_own() {
         "web",
         "mgc/test",
     )
-    .unwrap();
+    .expect("test operation must succeed");
     base.packages.push(mgc_lockfile::canonical::PackageV4 {
         key: mgc_lockfile::v4::PackageKey {
             ecosystem: EcosystemTag::Web,
@@ -486,7 +492,7 @@ fn merge_keeps_sibling_lanes_and_replaces_own() {
         "web",
         "mgc/test",
     )
-    .unwrap();
+    .expect("test operation must succeed");
     let lane_packages = lane.packages.clone();
     let lane_sources = lane.sources.clone();
     let lane_roots = lane.root_dependencies.clone();
@@ -512,12 +518,14 @@ fn merge_keeps_sibling_lanes_and_replaces_own() {
     let mut merged = merged;
     merged.metadata.generated_at = "2026-10-07T00:00:00Z".to_string();
     merged.metadata.lockfile_hash = payload_digest(&merged.payload());
-    let text = mgc_lockfile::canonical::write_v4_document(&merged).unwrap();
-    let back = mgc_lockfile::canonical::parse_v4_document(&text).unwrap();
+    let text =
+        mgc_lockfile::canonical::write_v4_document(&merged).expect("test operation must succeed");
+    let back =
+        mgc_lockfile::canonical::parse_v4_document(&text).expect("test operation must succeed");
     assert_eq!(back, merged);
     assert!(
         mgc_lockfile::policy::verify_v4_math(&back)
-            .unwrap()
+            .expect("test operation must succeed")
             .digest_ok
     );
 }
@@ -534,7 +542,7 @@ fn merge_over_legacy_base_reports_dropped_sibling() {
         "web",
         "mgc/test",
     )
-    .unwrap();
+    .expect("test operation must succeed");
     let (merged, dropped) = merge_v4_lane_packages(
         None,
         lane.packages.clone(),
@@ -561,7 +569,7 @@ fn merge_collects_orphans_but_keeps_sibling_roots() {
         "web",
         "mgc/test",
     )
-    .unwrap();
+    .expect("test operation must succeed");
     base.packages.retain(|p| p.key.name == "react");
     base.packages[0].key.version = "17.0.0".to_string();
     base.root_dependencies = vec!["react@17.0.0".to_string()];
@@ -601,7 +609,7 @@ fn merge_collects_orphans_but_keeps_sibling_roots() {
         "web",
         "mgc/test",
     )
-    .unwrap();
+    .expect("test operation must succeed");
     let (merged, dropped) = merge_v4_lane_packages(
         Some(base),
         lane.packages.clone(),
@@ -644,11 +652,11 @@ fn peer_duplicate_instances_document_but_replay_refuses() {
     // Force a peer twin: same name@version as react, different peer set.
     // (Ép twin peer: cùng name@version với react, khác tập peer.)
     let twin = ResolvedPackage {
-        id: PackageId::parse("react@18.2.0").unwrap(),
+        id: PackageId::parse("react@18.2.0").expect("test operation must succeed"),
         integrity: graph.packages[0].integrity.clone(),
         tarball_url: graph.packages[0].tarball_url.clone(),
         deps: vec![],
-        peer_deps: vec![PackageId::parse("scheduler@0.23.0").unwrap()],
+        peer_deps: vec![PackageId::parse("scheduler@0.23.0").expect("test operation must succeed")],
         direct: false,
         dev: false,
     };
@@ -663,18 +671,20 @@ fn peer_duplicate_instances_document_but_replay_refuses() {
         "web",
         "mgc/test",
     )
-    .unwrap();
+    .expect("test operation must succeed");
     doc.metadata.generated_at = "2026-10-07T00:00:00Z".to_string();
     doc.metadata.lockfile_hash = payload_digest(&doc.payload());
-    let text = mgc_lockfile::canonical::write_v4_document(&doc).unwrap();
-    let back = mgc_lockfile::canonical::parse_v4_document(&text).unwrap();
+    let text =
+        mgc_lockfile::canonical::write_v4_document(&doc).expect("test operation must succeed");
+    let back =
+        mgc_lockfile::canonical::parse_v4_document(&text).expect("test operation must succeed");
     assert_eq!(back, doc);
     // The root pin `react@18.2.0` is now ambiguous across the two variants,
     // so even digest-level verification refuses before replay is attempted:
     // no layer silently picks one twin.
     // (Pin root giờ mơ hồ giữa hai variant, nên ngay verify đã từ chối
     // trước cả replay: không tầng nào lặng lẽ chọn một twin.)
-    let err = mgc_lockfile::policy::verify_v4_math(&back).unwrap_err();
+    let err = mgc_lockfile::policy::verify_v4_math(&back).expect_err("test operation must fail");
     assert!(
         err.to_string().contains("ambiguous"),
         "expected ambiguity refusal, got: {err}"

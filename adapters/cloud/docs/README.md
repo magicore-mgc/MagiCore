@@ -9,8 +9,10 @@ Classifies CDK, Pulumi, Terraform, and Cloudflare projects and coordinates scaff
 
 ## Source map
 
-- [`adapter.rs`](../src/adapter.rs)
-- [`cloud_type.rs`](../src/cloud_type.rs)
+- [`adapter/mod.rs`](../src/adapter/mod.rs)
+- [`adapter/adapter.rs`](../src/adapter/adapter.rs)
+- [`cloud_type/mod.rs`](../src/cloud_type/mod.rs)
+- [`cloud_type/cloud_type.rs`](../src/cloud_type/cloud_type.rs)
 - [`scaffold/mod.rs`](../src/scaffold/mod.rs)
 - [`deploy/mod.rs`](../src/deploy/mod.rs)
 

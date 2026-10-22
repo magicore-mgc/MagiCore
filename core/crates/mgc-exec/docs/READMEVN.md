@@ -11,7 +11,7 @@ Tập trung passthrough process ngoài qua allowlist executable/argument, wrappe
 
 - [`lib.rs`](../src/lib.rs)
 - [`allowlist.rs`](../src/allowlist.rs)
-- [`run.rs`](../src/run.rs)
+- [`run/mod.rs`](../src/run/mod.rs)
 - [`audit.rs`](../src/audit.rs)
 - [`sanitizer.rs`](../src/sanitizer.rs)
 

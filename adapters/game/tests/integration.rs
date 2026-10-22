@@ -1,323 +1,113 @@
 #![allow(clippy::unwrap_used)]
-//! Integration tests for mgc-game-adapter — sát với src/lib.rs
-//! Kiểm thử: detect_engine (Bevy, Godot, Unity, Unreal), adapter_for, PackageAdapter trait.
+//! Game adapter integration tests; stable Cargo harness with focused behavior owners.
+//! Integration test Game adapter; giữ harness Cargo ổn định và tách hành vi theo owner.
 
-use mgc_game_adapter::{GameEngine, adapter_for, detect_engine, generate_sbom};
-use mgc_types::PackageName;
-use mgc_types::adapter::{AddOptions, PackageAdapter};
-use mgc_types::capabilities::{
-    AuditProvider, ContentStoreProvider, CoreIdent, DependencyResolver, ProjectDetector,
-};
-use std::path::PathBuf;
-
-fn tmp(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("mgc-game-itg-{tag}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("tmp dir");
-    dir
-}
+#[path = "integration/mod.rs"]
+mod integration;
 
 #[cfg(unix)]
 #[test]
 fn engine_detection_does_not_follow_external_mgc_config_symlink() {
-    let project = tmp("external-mgc-config-link");
-    let external = tmp("external-mgc-config-target");
-    std::fs::write(external.join("mgc.toml"), "[game]\nengine = 'bevy'\n").unwrap();
-    std::os::unix::fs::symlink(external.join("mgc.toml"), project.join("mgc.toml")).unwrap();
-
-    assert_eq!(detect_engine(&project), None);
-    let _ = std::fs::remove_dir_all(project);
-    let _ = std::fs::remove_dir_all(external);
+    integration::symlink_safety::engine_detection_does_not_follow_external_mgc_config_symlink();
 }
-
-// ── detect_engine — file markers ──────────────────────────────────────────
 
 #[test]
 fn detect_godot_via_project_godot() {
-    let dir = tmp("godot");
-    std::fs::write(
-        dir.join("project.godot"),
-        "[application]\nconfig/name=\"Demo\"\n",
-    )
-    .unwrap();
-    assert_eq!(detect_engine(&dir), Some(GameEngine::Godot));
+    integration::engine_markers::detect_godot_via_project_godot();
 }
 
 #[test]
 fn detect_unity_via_packages_manifest() {
-    let dir = tmp("unity");
-    std::fs::create_dir_all(dir.join("Packages")).unwrap();
-    std::fs::write(
-        dir.join("Packages").join("manifest.json"),
-        "{\"dependencies\":{}}\n",
-    )
-    .unwrap();
-    assert_eq!(detect_engine(&dir), Some(GameEngine::Unity));
+    integration::engine_markers::detect_unity_via_packages_manifest();
 }
 
 #[test]
 fn detect_unreal_via_uproject() {
-    let dir = tmp("unreal");
-    std::fs::write(dir.join("Game.uproject"), "{\"FileVersion\":3}\n").unwrap();
-    assert_eq!(detect_engine(&dir), Some(GameEngine::Unreal));
+    integration::engine_markers::detect_unreal_via_uproject();
 }
 
 #[test]
 fn detect_bevy_via_cargo_toml() {
-    let dir = tmp("bevy");
-    std::fs::write(
-        dir.join("Cargo.toml"),
-        "[package]\nname = \"game\"\nversion = \"0.1.0\"\n",
-    )
-    .unwrap();
-    assert_eq!(detect_engine(&dir), Some(GameEngine::Bevy));
+    integration::engine_markers::detect_bevy_via_cargo_toml();
 }
-
-// ── detect_engine — mgc.toml priority ──────────────────────────────────────
 
 #[test]
 fn detect_via_mgc_toml_overrides_file_marker() {
-    let dir = tmp("mgc-override");
-    // Cargo.toml -> Bevy, mgc.toml -> Godot
-    std::fs::write(dir.join("Cargo.toml"), "[package]\nname=\"x\"\n").unwrap();
-    std::fs::write(
-        dir.join("mgc.toml"),
-        "ecosystem = \"game\"\n\n[game]\nengine = \"godot\"\n",
-    )
-    .unwrap();
-    assert_eq!(detect_engine(&dir), Some(GameEngine::Godot));
+    integration::engine_config::detect_via_mgc_toml_overrides_file_marker();
 }
 
 #[test]
 fn detect_returns_none_for_empty_dir() {
-    let dir = tmp("empty");
-    assert!(detect_engine(&dir).is_none());
+    integration::engine_config::detect_returns_none_for_empty_dir();
 }
-
-// ── adapter_for & engine() ─────────────────────────────────────────────────
 
 #[test]
 fn adapter_for_returns_some_for_godot() {
-    let dir = tmp("af-godot");
-    std::fs::write(dir.join("project.godot"), "[application]\n").unwrap();
-    let a = adapter_for(&dir).unwrap();
-    assert_eq!(a.engine(), "godot");
+    integration::adapter_discovery::adapter_for_returns_some_for_godot();
 }
 
 #[test]
 fn adapter_for_returns_none_for_plain_dir() {
-    let dir = tmp("af-none");
-    assert!(adapter_for(&dir).is_none());
+    integration::adapter_discovery::adapter_for_returns_none_for_plain_dir();
 }
-
-// ── PackageAdapter trait ───────────────────────────────────────────────────
 
 #[test]
 fn adapter_name_and_ecosystem() {
-    let dir = tmp("name-eco");
-    std::fs::write(dir.join("project.godot"), "[application]\n").unwrap();
-    let a = adapter_for(&dir).unwrap();
-    assert_eq!(a.name(), "game");
-    assert_eq!(format!("{:?}", a.ecosystem()), "Game");
+    integration::adapter_contract::adapter_name_and_ecosystem();
 }
 
 #[test]
 fn can_handle_returns_true_for_game_project() {
-    let dir = tmp("ch-true");
-    std::fs::write(dir.join("project.godot"), "[application]\n").unwrap();
-    let a = adapter_for(&dir).unwrap();
-    assert!(a.can_handle(&dir));
+    integration::adapter_contract::can_handle_returns_true_for_game_project();
 }
 
 #[tokio::test]
 async fn parse_manifest_godot_returns_game_manifest() {
-    let dir = tmp("my-godot-game");
-    std::fs::write(dir.join("project.godot"), "[application]\n").unwrap();
-    let a = adapter_for(&dir).unwrap();
-    let manifest = a.parse_manifest(&dir).await.unwrap();
-    assert!(manifest.name.contains("my-godot-game"));
+    integration::manifest_parsing::parse_manifest_godot_returns_game_manifest().await;
 }
 
 #[tokio::test]
 async fn parse_manifest_bevy_reads_cargo_toml_dependencies() {
-    let dir = tmp("my-bevy-game");
-    std::fs::write(
-        dir.join("Cargo.toml"),
-        "[package]\nname = \"space-game\"\nversion = \"0.1.0\"\n\n[dependencies]\nbevy = \"0.14\"\n",
-    )
-    .unwrap();
-    let a = adapter_for(&dir).unwrap();
-    let manifest = a.parse_manifest(&dir).await.unwrap();
-    assert_eq!(manifest.name, "space-game");
-    assert_eq!(manifest.dependencies.len(), 1);
-    assert_eq!(manifest.dependencies[0].name.as_str(), "bevy");
+    integration::manifest_parsing::parse_manifest_bevy_reads_cargo_toml_dependencies().await;
 }
 
 #[tokio::test]
 async fn godot_install_fails_closed_pointing_to_editor() {
-    // Godot projects have no dependency install step — install must fail
-    // closed with typed Unsupported instead of a silent Ok.
-    // Project Godot không có bước install dependency — install phải
-    // fail-closed typed Unsupported thay vì Ok im lặng.
-    let dir = tmp("install-godot");
-    std::fs::write(dir.join("project.godot"), "[application]\n").unwrap();
-    let a = adapter_for(&dir).unwrap();
-    let manifest = a.parse_manifest(&dir).await.unwrap();
-
-    let resolve_err = a.resolve(&manifest).await.unwrap_err();
-    assert!(
-        matches!(resolve_err, mgc_types::MgError::Unsupported { core, .. } if core == "game"),
-        "resolve must be typed-unsupported, got: {resolve_err}"
-    );
-
-    let graph = mgc_types::ResolvedGraph::default();
-    let install_err = a
-        .install(&graph, &dir, Default::default())
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(install_err, mgc_types::MgError::Unsupported { core, capability, .. }
-            if core == "game" && capability == "install"),
-        "install must be typed-unsupported, got: {install_err}"
-    );
+    integration::package_operations::godot_install_fails_closed_pointing_to_editor().await;
 }
 
 #[tokio::test]
 async fn godot_add_fails_closed_until_mgc_owns_dependency_resolution() {
-    let dir = tmp("add-godot");
-    std::fs::write(dir.join("project.godot"), "[application]\n").unwrap();
-    let a = adapter_for(&dir).unwrap();
-    let name = PackageName::new("godot-plugin").unwrap();
-    let err = a
-        .add(&dir, &name, None, AddOptions::default())
-        .await
-        .unwrap_err();
-    assert!(matches!(
-        err,
-        mgc_types::MgError::Unsupported {
-            core: "game",
-            capability: "add",
-            ..
-        }
-    ));
+    integration::package_operations::godot_add_fails_closed_until_mgc_owns_dependency_resolution()
+        .await;
 }
 
 #[tokio::test]
 async fn godot_list_fails_closed_instead_of_returning_an_empty_native_list() {
-    let dir = tmp("list-godot");
-    std::fs::write(dir.join("project.godot"), "[application]\n").unwrap();
-    let adapter = adapter_for(&dir).unwrap();
-    let error = adapter.list(&dir).await.unwrap_err();
-    assert!(matches!(
-        error,
-        mgc_types::MgError::Unsupported {
-            core: "game",
-            capability: "list",
-            ..
-        }
-    ));
-    assert!(
-        !adapter
-            .capabilities()
-            .contains(&mgc_types::capabilities::Capability::ContentStoreProvider)
-    );
-    assert!(adapter.probe_content_store().is_err());
+    integration::package_operations::godot_list_fails_closed_instead_of_returning_an_empty_native_list().await;
 }
 
 #[tokio::test]
 async fn bevy_list_does_not_report_manifest_ranges_as_installed_versions() {
-    let dir = tmp("list-bevy");
-    std::fs::write(
-        dir.join("Cargo.toml"),
-        "[package]\nname = \"bevy-game\"\nversion = \"0.1.0\"\n[dependencies]\nserde = \"^1\"\n",
-    )
-    .unwrap();
-    let adapter = adapter_for(&dir).unwrap();
-    let error = adapter.list(&dir).await.unwrap_err();
-    assert!(matches!(
-        error,
-        mgc_types::MgError::Unsupported {
-            capability: "list",
-            ..
-        }
-    ));
+    integration::package_operations::bevy_list_does_not_report_manifest_ranges_as_installed_versions().await;
 }
 
 #[tokio::test]
 async fn bevy_adapter_dependency_operations_fail_closed_without_spawning_cargo() {
-    let dir = tmp("adapter-no-delegate");
-    std::fs::write(
-        dir.join("Cargo.toml"),
-        "[package]\nname = \"bevy-game\"\nversion = \"0.1.0\"\n",
-    )
-    .unwrap();
-    let adapter = adapter_for(&dir).unwrap();
-    let name = PackageName::new("serde").unwrap();
-    let graph = mgc_types::ResolvedGraph::empty();
-    let install_error = ContentStoreProvider::install(
-        &adapter,
-        &graph,
-        &dir,
-        mgc_types::adapter::InstallOptions::default(),
-    )
-    .await
-    .unwrap_err();
-    assert!(matches!(
-        install_error,
-        mgc_types::MgError::Unsupported { .. }
-    ));
-    let add_error = adapter
-        .add(&dir, &name, None, AddOptions::default())
-        .await
-        .unwrap_err();
-    assert!(matches!(add_error, mgc_types::MgError::Unsupported { .. }));
+    integration::package_operations::bevy_adapter_dependency_operations_fail_closed_without_spawning_cargo().await;
 }
 
 #[tokio::test]
 async fn unity_add_fails_closed_until_mgc_owns_upm_resolution() {
-    let dir = tmp("add-unity");
-    std::fs::create_dir_all(dir.join("Packages")).unwrap();
-    std::fs::write(
-        dir.join("Packages").join("manifest.json"),
-        "{\"dependencies\":{}}\n",
-    )
-    .unwrap();
-    let a = adapter_for(&dir).unwrap();
-    let name = PackageName::new("com.unity.cinemachine").unwrap();
-    let err = a
-        .add(&dir, &name, None, AddOptions::default())
-        .await
-        .unwrap_err();
-    assert!(matches!(
-        err,
-        mgc_types::MgError::Unsupported {
-            core: "game",
-            capability: "add",
-            ..
-        }
-    ));
+    integration::package_operations::unity_add_fails_closed_until_mgc_owns_upm_resolution().await;
 }
 
 #[tokio::test]
 async fn audit_returns_clean_for_game_project() {
-    let dir = tmp("audit-game");
-    std::fs::write(dir.join("project.godot"), "[application]\n").unwrap();
-    let a = adapter_for(&dir).unwrap();
-    let report = a.audit(&dir).await.unwrap();
-    assert_eq!(report.vulnerabilities.len(), 0);
+    integration::audit_sbom::audit_returns_clean_for_game_project().await;
 }
 
 #[test]
 fn generate_sbom_uses_lockfile_v2_fixture() {
-    let mut lockfile = mgc_lockfile::Lockfile::new();
-    lockfile.add_package(mgc_lockfile::Package::new(
-        "test-pkg".to_string(),
-        "1.0.0".to_string(),
-        "https://example.com/test.tgz".to_string(),
-        "blake3:test123".to_string(),
-    ));
-    let json = generate_sbom(&lockfile, mgc_sbom::SbomOptions::default()).unwrap();
-    assert!(json.contains("CycloneDX"));
-    assert!(json.contains("test-pkg"));
-    assert!(json.contains("1.0.0"));
+    integration::audit_sbom::generate_sbom_uses_lockfile_v2_fixture();
 }

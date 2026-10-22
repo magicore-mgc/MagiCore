@@ -113,6 +113,6 @@ pub fn trust_allows_script(policy: Option<&str>, blanket_scripts: bool) -> bool 
 pub fn load_file_scripts_policy(
     project_root: &std::path::Path,
 ) -> Result<Option<mgc_config::project::ScriptsPolicy>, MgError> {
-    mgc_config::project::load_scripts_table(project_root)
+    mgc_config::project::load_scripts_table_typed(project_root)
         .map_err(|e| MgError::Other(format!("[scripts] policy parse failed: {e}")))
 }

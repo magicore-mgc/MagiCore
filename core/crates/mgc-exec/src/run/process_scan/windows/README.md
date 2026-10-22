@@ -1,0 +1,3 @@
+Owns the Windows process scan facade and wires `types/`, `ancestry/identity.rs`, `ancestry/scan.rs`, `retry/`, and `system_snapshot/`. The feature-test facade registers nearest-owner tests; cross-owner cases remain under `test/integration/`. Public-in-crate `process_scan::*` and Windows Job Object caller paths remain stable.
+
+Sở hữu facade scanner process Windows và nối `types/`, `ancestry/identity.rs`, `ancestry/scan.rs`, `retry/`, `system_snapshot/`. Facade test feature đăng ký test theo owner gần nhất; case nhiều owner ở `test/integration/`. Giữ nguyên các path `process_scan::*` nội bộ crate và caller Windows Job Object.

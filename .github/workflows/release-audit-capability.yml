@@ -1,0 +1,75 @@
+# Release job owner. / Owner riêng cho job phát hành.
+name: Audit Capability Gate
+
+on:
+  workflow_call:
+
+jobs:
+  audit-capability-gate:
+    # Release gate (Tech Lead 2026-09-10): a release RC may only be
+    # published when the audit capability matrix — regenerated at THIS
+    # commit — has every SUPPORTED lane green with the required evidence
+    # (clean + vulnerable + tool-failure). The matrix is generated, never
+    # hand-written; this job is the machine enforcement of the honesty
+    # contract (README never claims beyond the matrix).
+    # Release gate: RC chỉ được duyệt khi matrix năng lực audit — sinh
+    # lại TẠI commit này — có mọi lane SUPPORTED xanh với đủ evidence
+    # (clean + vulnerable + tool-failure). Matrix sinh tự động, không
+    # viết tay; job này là sự thực thi máy móc của hợp đồng trung thực.
+    name: Audit Capability Gate (matrix honest)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      MGC_E2E_AUDIT_NETWORK: required
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
+        with:
+          toolchain: "1.99.0"
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Install scanner toolchain (pinned — required lanes)
+        run: |
+          cargo install cargo-audit --version 0.22.2 --locked
+          python3 -m pip install --user 'pip-audit==2.10.1'
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          GO_ARCHIVE="go1.27.2.linux-amd64.tar.gz"
+          GO_SHA256="ecbadb99091a3f46e31f5f934b068b1864eafa7995211b39eaddf76996045fe5"
+          curl -fsSL "https://go.dev/dl/${GO_ARCHIVE}" -o /tmp/go.tgz
+          # Verify the pinned Go archive before extraction.
+          # Xác minh archive Go đã ghim trước khi giải nén.
+          printf '%s  %s\n' "$GO_SHA256" /tmp/go.tgz | sha256sum --check --strict -
+          sudo tar -C /usr/local -xzf /tmp/go.tgz
+          echo "/usr/local/go/bin" >> "$GITHUB_PATH"
+          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Regenerate capability matrix at this commit
+        run: |
+          cargo build -p mgc --locked
+          python3 scripts/audit_capability_matrix.py
+
+      - name: "Enforce release gate (expected manifest: every lane supported, fresh)"
+        # P0-1 (2026-09-11): the REQUIRED scope comes from the matrix's
+        # expected_lanes manifest (a code constant, independent from test
+        # results — tests never shrink the scope). Gate order:
+        #   1. format contract: expected_lanes manifest must exist
+        #   2. stale check: matrix commit must equal GITHUB_SHA
+        #   3. every expected lane must EXIST and be "supported"
+        #   4. missing_lanes must be empty
+        # A lane absent from the matrix can no longer dodge the gate.
+        # P0-1: scope bắt buộc đến từ manifest expected_lanes (hằng số
+        # code, độc lập kết quả test). Lane thiếu khỏi matrix không còn
+        # lọt được gate; matrix cũ/stale bị chặn.
+        run: python3 scripts/release/verify_audit_capability_matrix.py
+      - name: Upload gate matrix (audit trail)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-audit-capability-matrix
+          path: docs/specs/auditCapabilityMatrix.json

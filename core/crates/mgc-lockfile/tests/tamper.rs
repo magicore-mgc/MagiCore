@@ -10,7 +10,7 @@ use tempfile::tempdir;
 
 #[test]
 fn test_sign_and_verify_roundtrip() {
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("test operation must succeed");
     let lockfile_path = dir.path().join("mgc.lock");
 
     // Create lockfile
@@ -23,12 +23,14 @@ fn test_sign_and_verify_roundtrip() {
     ));
 
     // Generate key and sign
-    let key_pair = KeyPair::generate().unwrap();
-    sign_and_write_lockfile(&mut lockfile, &lockfile_path, &key_pair).unwrap();
+    let key_pair = KeyPair::generate().expect("test operation must succeed");
+    sign_and_write_lockfile(&mut lockfile, &lockfile_path, &key_pair)
+        .expect("test operation must succeed");
 
     // Verify
     let sig_path = lockfile_path.with_extension("lock.sig");
-    let loaded = load_and_verify_lockfile(&lockfile_path, &sig_path).unwrap();
+    let loaded =
+        load_and_verify_lockfile(&lockfile_path, &sig_path).expect("test operation must succeed");
 
     assert_eq!(loaded.packages.len(), 1);
     assert_eq!(loaded.packages[0].name, "react");
@@ -39,23 +41,24 @@ fn test_sign_and_verify_roundtrip() {
 fn signed_lock_verification_refuses_symlinked_lock_and_signature_files() {
     use std::os::unix::fs::symlink;
 
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("test operation must succeed");
     let lockfile_path = dir.path().join("mgc.lock");
     let mut lockfile = Lockfile::new();
-    let key_pair = KeyPair::generate().unwrap();
-    sign_and_write_lockfile(&mut lockfile, &lockfile_path, &key_pair).unwrap();
+    let key_pair = KeyPair::generate().expect("test operation must succeed");
+    sign_and_write_lockfile(&mut lockfile, &lockfile_path, &key_pair)
+        .expect("test operation must succeed");
     let signature_path = lockfile_path.with_extension("lock.sig");
 
     let lock_target = dir.path().join("lock-target");
-    std::fs::rename(&lockfile_path, &lock_target).unwrap();
-    symlink(&lock_target, &lockfile_path).unwrap();
+    std::fs::rename(&lockfile_path, &lock_target).expect("test operation must succeed");
+    symlink(&lock_target, &lockfile_path).expect("test operation must succeed");
     assert!(load_and_verify_lockfile(&lockfile_path, &signature_path).is_err());
-    std::fs::remove_file(&lockfile_path).unwrap();
-    std::fs::rename(&lock_target, &lockfile_path).unwrap();
+    std::fs::remove_file(&lockfile_path).expect("test operation must succeed");
+    std::fs::rename(&lock_target, &lockfile_path).expect("test operation must succeed");
 
     let signature_target = dir.path().join("signature-target");
-    std::fs::rename(&signature_path, &signature_target).unwrap();
-    symlink(&signature_target, &signature_path).unwrap();
+    std::fs::rename(&signature_path, &signature_target).expect("test operation must succeed");
+    symlink(&signature_target, &signature_path).expect("test operation must succeed");
     assert!(load_and_verify_lockfile(&lockfile_path, &signature_path).is_err());
 }
 
@@ -65,33 +68,35 @@ fn signature_presence_probe_distinguishes_missing_from_symlink() {
     use mgc_lockfile::signature_file_presence;
     use std::os::unix::fs::symlink;
 
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("test operation must succeed");
     let lock_path = dir.path().join("mgc.lock");
-    assert!(!signature_file_presence(&lock_path).unwrap());
+    assert!(!signature_file_presence(&lock_path).expect("test operation must succeed"));
 
     let outside = dir.path().join("outside.sig");
-    std::fs::write(&outside, "signature data").unwrap();
-    symlink(&outside, lock_path.with_extension("lock.sig")).unwrap();
+    std::fs::write(&outside, "signature data").expect("test operation must succeed");
+    symlink(&outside, lock_path.with_extension("lock.sig")).expect("test operation must succeed");
 
     assert!(signature_file_presence(&lock_path).is_err());
 }
 
 #[test]
 fn signed_lock_verification_rejects_oversized_lock_and_signature_files() {
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("test operation must succeed");
     let lockfile_path = dir.path().join("mgc.lock");
     let signature_path = lockfile_path.with_extension("lock.sig");
 
-    std::fs::write(&lockfile_path, vec![b' '; 10 * 1024 * 1024 + 1]).unwrap();
-    std::fs::write(&signature_path, "signature").unwrap();
+    std::fs::write(&lockfile_path, vec![b' '; 10 * 1024 * 1024 + 1])
+        .expect("test operation must succeed");
+    std::fs::write(&signature_path, "signature").expect("test operation must succeed");
     assert!(load_and_verify_lockfile(&lockfile_path, &signature_path).is_err());
 
     std::fs::write(
         &lockfile_path,
-        mgc_lockfile::serialize_lockfile(&Lockfile::new()).unwrap(),
+        mgc_lockfile::serialize_lockfile(&Lockfile::new()).expect("test operation must succeed"),
     )
-    .unwrap();
-    std::fs::write(&signature_path, vec![b'x'; 64 * 1024 + 1]).unwrap();
+    .expect("test operation must succeed");
+    std::fs::write(&signature_path, vec![b'x'; 64 * 1024 + 1])
+        .expect("test operation must succeed");
     assert!(load_and_verify_lockfile(&lockfile_path, &signature_path).is_err());
 }
 
@@ -100,24 +105,25 @@ fn signed_lock_verification_rejects_oversized_lock_and_signature_files() {
 fn trust_verification_does_not_downgrade_symlinks_to_unsigned() {
     use std::os::unix::fs::symlink;
 
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("test operation must succeed");
     let lockfile_path = dir.path().join("mgc.lock");
-    write_lockfile(&Lockfile::new(), &lockfile_path).unwrap();
+    write_lockfile(&Lockfile::new(), &lockfile_path).expect("test operation must succeed");
     let lock_target = dir.path().join("lock-target");
-    std::fs::rename(&lockfile_path, &lock_target).unwrap();
-    symlink(&lock_target, &lockfile_path).unwrap();
+    std::fs::rename(&lockfile_path, &lock_target).expect("test operation must succeed");
+    symlink(&lock_target, &lockfile_path).expect("test operation must succeed");
     assert!(verify_lockfile(&lockfile_path).is_err());
 
-    std::fs::remove_file(&lockfile_path).unwrap();
-    std::fs::rename(&lock_target, &lockfile_path).unwrap();
+    std::fs::remove_file(&lockfile_path).expect("test operation must succeed");
+    std::fs::rename(&lock_target, &lockfile_path).expect("test operation must succeed");
     let signature_path = lockfile_path.with_extension("lock.sig");
-    symlink(dir.path().join("missing-signature"), &signature_path).unwrap();
+    symlink(dir.path().join("missing-signature"), &signature_path)
+        .expect("test operation must succeed");
     assert!(verify_lockfile(&lockfile_path).is_err());
 }
 
 #[test]
 fn test_tamper_detection_manual_edit() {
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("test operation must succeed");
     let lockfile_path = dir.path().join("mgc.lock");
 
     // Create and sign lockfile
@@ -129,8 +135,9 @@ fn test_tamper_detection_manual_edit() {
         "blake3-abc123".to_string(),
     ));
 
-    let key_pair = KeyPair::generate().unwrap();
-    sign_and_write_lockfile(&mut lockfile, &lockfile_path, &key_pair).unwrap();
+    let key_pair = KeyPair::generate().expect("test operation must succeed");
+    sign_and_write_lockfile(&mut lockfile, &lockfile_path, &key_pair)
+        .expect("test operation must succeed");
 
     // Tamper: add malicious package
     lockfile.add_package(Package::new(
@@ -143,32 +150,32 @@ fn test_tamper_detection_manual_edit() {
     // Write tampered lockfile (without re-signing)
     std::fs::write(
         &lockfile_path,
-        mgc_lockfile::serialize_lockfile(&lockfile).unwrap(),
+        mgc_lockfile::serialize_lockfile(&lockfile).expect("test operation must succeed"),
     )
-    .unwrap();
+    .expect("test operation must succeed");
 
     // Verify should fail
-    let status = verify_lockfile(&lockfile_path).unwrap();
+    let status = verify_lockfile(&lockfile_path).expect("test operation must succeed");
     assert!(matches!(status, VerificationStatus::Tampered(_)));
 }
 
 #[test]
 fn test_unsigned_lockfile_warning() {
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("test operation must succeed");
     let lockfile_path = dir.path().join("mgc.lock");
 
     // Create lockfile without signing
     let lockfile = Lockfile::new();
-    write_lockfile(&lockfile, &lockfile_path).unwrap();
+    write_lockfile(&lockfile, &lockfile_path).expect("test operation must succeed");
 
     // Verify should return Unsigned
-    let status = verify_lockfile(&lockfile_path).unwrap();
+    let status = verify_lockfile(&lockfile_path).expect("test operation must succeed");
     assert_eq!(status, VerificationStatus::Unsigned);
 }
 
 #[test]
 fn ordinary_writer_refuses_signed_lock_without_changing_either_artifact() {
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("test operation must succeed");
     let lockfile_path = dir.path().join("mgc.lock");
     let mut original = Lockfile::new();
     original.add_package(Package::new(
@@ -177,11 +184,12 @@ fn ordinary_writer_refuses_signed_lock_without_changing_either_artifact() {
         "https://registry.example/trusted-package.tgz".to_string(),
         "blake3-trusted".to_string(),
     ));
-    let key = KeyPair::generate().unwrap();
-    sign_and_write_lockfile(&mut original, &lockfile_path, &key).unwrap();
-    let old_lock = std::fs::read(&lockfile_path).unwrap();
+    let key = KeyPair::generate().expect("test operation must succeed");
+    sign_and_write_lockfile(&mut original, &lockfile_path, &key)
+        .expect("test operation must succeed");
+    let old_lock = std::fs::read(&lockfile_path).expect("test operation must succeed");
     let sig_path = lockfile_path.with_extension("lock.sig");
-    let old_sig = std::fs::read(&sig_path).unwrap();
+    let old_sig = std::fs::read(&sig_path).expect("test operation must succeed");
 
     let mut attempted = original;
     attempted.add_package(Package::new(
@@ -190,20 +198,26 @@ fn ordinary_writer_refuses_signed_lock_without_changing_either_artifact() {
         "https://registry.example/new-package.tgz".to_string(),
         "blake3-new".to_string(),
     ));
-    let error = write_lockfile(&attempted, &lockfile_path).unwrap_err();
+    let error = write_lockfile(&attempted, &lockfile_path).expect_err("test operation must fail");
 
     assert!(error.to_string().contains("signed mgc.lock"));
-    assert_eq!(std::fs::read(&lockfile_path).unwrap(), old_lock);
-    assert_eq!(std::fs::read(&sig_path).unwrap(), old_sig);
     assert_eq!(
-        verify_lockfile(&lockfile_path).unwrap(),
+        std::fs::read(&lockfile_path).expect("test operation must succeed"),
+        old_lock
+    );
+    assert_eq!(
+        std::fs::read(&sig_path).expect("test operation must succeed"),
+        old_sig
+    );
+    assert_eq!(
+        verify_lockfile(&lockfile_path).expect("test operation must succeed"),
         VerificationStatus::Valid
     );
 }
 
 #[test]
 fn ordinary_writer_refuses_signed_metadata_when_signature_sidecar_is_missing() {
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("test operation must succeed");
     let lockfile_path = dir.path().join("mgc.lock");
     let mut original = Lockfile::new();
     original.add_package(Package::new(
@@ -212,11 +226,12 @@ fn ordinary_writer_refuses_signed_metadata_when_signature_sidecar_is_missing() {
         "https://registry.example/signed-package.tgz".to_string(),
         "blake3-signed".to_string(),
     ));
-    let key = KeyPair::generate().unwrap();
-    sign_and_write_lockfile(&mut original, &lockfile_path, &key).unwrap();
+    let key = KeyPair::generate().expect("test operation must succeed");
+    sign_and_write_lockfile(&mut original, &lockfile_path, &key)
+        .expect("test operation must succeed");
     let sig_path = lockfile_path.with_extension("lock.sig");
-    std::fs::remove_file(sig_path).unwrap();
-    let old_lock = std::fs::read(&lockfile_path).unwrap();
+    std::fs::remove_file(sig_path).expect("test operation must succeed");
+    let old_lock = std::fs::read(&lockfile_path).expect("test operation must succeed");
 
     let mut attempted = original;
     attempted.add_package(Package::new(
@@ -225,85 +240,108 @@ fn ordinary_writer_refuses_signed_metadata_when_signature_sidecar_is_missing() {
         "https://registry.example/new-package.tgz".to_string(),
         "blake3-new".to_string(),
     ));
-    let error = write_lockfile(&attempted, &lockfile_path).unwrap_err();
+    let error = write_lockfile(&attempted, &lockfile_path).expect_err("test operation must fail");
 
     assert!(error.to_string().contains("signed mgc.lock"));
-    assert_eq!(std::fs::read(&lockfile_path).unwrap(), old_lock);
+    assert_eq!(
+        std::fs::read(&lockfile_path).expect("test operation must succeed"),
+        old_lock
+    );
 }
 
 #[test]
 fn verifier_does_not_downgrade_signed_metadata_without_sidecar_to_unsigned() {
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("test operation must succeed");
     let lockfile_path = dir.path().join("mgc.lock");
     let mut lock = Lockfile::new();
-    let key = KeyPair::generate().unwrap();
-    sign_and_write_lockfile(&mut lock, &lockfile_path, &key).unwrap();
-    std::fs::remove_file(lockfile_path.with_extension("lock.sig")).unwrap();
+    let key = KeyPair::generate().expect("test operation must succeed");
+    sign_and_write_lockfile(&mut lock, &lockfile_path, &key).expect("test operation must succeed");
+    std::fs::remove_file(lockfile_path.with_extension("lock.sig"))
+        .expect("test operation must succeed");
 
     assert!(matches!(
-        verify_lockfile(&lockfile_path).unwrap(),
+        verify_lockfile(&lockfile_path).expect("test operation must succeed"),
         VerificationStatus::InvalidSignature(_)
     ));
 }
 
 #[test]
 fn ordinary_writer_refuses_inline_v4_signature_without_sidecar() {
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("test operation must succeed");
     let lockfile_path = dir.path().join("mgc.lock");
-    let key_pair = KeyPair::generate().unwrap();
+    let key_pair = KeyPair::generate().expect("test operation must succeed");
     let mut lock = mgc_lockfile::canonical::LockfileV4::new("mgc/test");
     lock.metadata.lockfile_hash = mgc_lockfile::canonical::payload_digest(&lock.payload());
     lock.metadata.signature = Some(
-        mgc_lockfile::policy::sign_payload_digest(&lock.metadata.lockfile_hash, &key_pair).unwrap(),
+        mgc_lockfile::policy::sign_payload_digest(&lock.metadata.lockfile_hash, &key_pair)
+            .expect("test operation must succeed"),
     );
-    let bytes = mgc_lockfile::canonical::write_v4_document(&lock).unwrap();
-    std::fs::write(&lockfile_path, &bytes).unwrap();
+    let bytes =
+        mgc_lockfile::canonical::write_v4_document(&lock).expect("test operation must succeed");
+    std::fs::write(&lockfile_path, &bytes).expect("test operation must succeed");
 
-    let error = mgc_lockfile::ensure_lockfile_mutation_allowed(&lockfile_path).unwrap_err();
+    let error = mgc_lockfile::ensure_lockfile_mutation_allowed(&lockfile_path)
+        .expect_err("test operation must fail");
     assert!(matches!(
         error,
         mgc_lockfile::LockfileError::SignedLockMutation(_)
     ));
-    assert_eq!(std::fs::read(lockfile_path).unwrap(), bytes.as_bytes());
+    assert_eq!(
+        std::fs::read(lockfile_path).expect("test operation must succeed"),
+        bytes.as_bytes()
+    );
 }
 
 #[test]
 fn ordinary_writer_refuses_to_downgrade_unsigned_v4_lockfile() {
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("test operation must succeed");
     let lockfile_path = dir.path().join("mgc.lock");
     let mut v4 = mgc_lockfile::canonical::LockfileV4::new("mgc/test");
     v4.root_dependencies.push("npm:react@19.0.0".to_string());
     v4.metadata.lockfile_hash = mgc_lockfile::canonical::payload_digest(&v4.payload());
-    let bytes = mgc_lockfile::canonical::write_v4_document(&v4).unwrap();
-    std::fs::write(&lockfile_path, &bytes).unwrap();
+    let bytes =
+        mgc_lockfile::canonical::write_v4_document(&v4).expect("test operation must succeed");
+    std::fs::write(&lockfile_path, &bytes).expect("test operation must succeed");
 
-    let error = write_lockfile(&Lockfile::new(), &lockfile_path).unwrap_err();
+    let error =
+        write_lockfile(&Lockfile::new(), &lockfile_path).expect_err("test operation must fail");
 
     assert!(error.to_string().contains("legacy lockfile writer"));
-    assert_eq!(std::fs::read(lockfile_path).unwrap(), bytes.as_bytes());
+    assert_eq!(
+        std::fs::read(lockfile_path).expect("test operation must succeed"),
+        bytes.as_bytes()
+    );
 }
 
 #[test]
 fn legacy_signer_refuses_to_downgrade_unsigned_v4_lockfile() {
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("test operation must succeed");
     let lockfile_path = dir.path().join("mgc.lock");
     let mut v4 = mgc_lockfile::canonical::LockfileV4::new("mgc/test");
     v4.root_dependencies.push("npm:react@19.0.0".to_string());
     v4.metadata.lockfile_hash = mgc_lockfile::canonical::payload_digest(&v4.payload());
-    let bytes = mgc_lockfile::canonical::write_v4_document(&v4).unwrap();
-    std::fs::write(&lockfile_path, &bytes).unwrap();
+    let bytes =
+        mgc_lockfile::canonical::write_v4_document(&v4).expect("test operation must succeed");
+    std::fs::write(&lockfile_path, &bytes).expect("test operation must succeed");
 
     let mut legacy = Lockfile::new();
-    let error = sign_and_write_lockfile(&mut legacy, &lockfile_path, &KeyPair::generate().unwrap())
-        .unwrap_err();
+    let error = sign_and_write_lockfile(
+        &mut legacy,
+        &lockfile_path,
+        &KeyPair::generate().expect("test operation must succeed"),
+    )
+    .expect_err("test operation must fail");
 
     assert!(error.to_string().contains("legacy lockfile writer"));
-    assert_eq!(std::fs::read(lockfile_path).unwrap(), bytes.as_bytes());
+    assert_eq!(
+        std::fs::read(lockfile_path).expect("test operation must succeed"),
+        bytes.as_bytes()
+    );
 }
 
 #[test]
 fn ordinary_writer_rejects_oversized_existing_lock_without_rewriting_it() {
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("test operation must succeed");
     let lockfile_path = dir.path().join("mgc.lock");
     let mut bytes = b"version = \"3\"\n[metadata]\ngenerator = \"test\"\n#".to_vec();
     bytes.extend(std::iter::repeat_n(
@@ -311,12 +349,16 @@ fn ordinary_writer_rejects_oversized_existing_lock_without_rewriting_it() {
         10 * 1024 * 1024 + 1 - bytes.len(),
     ));
     bytes.push(b'\n');
-    std::fs::write(&lockfile_path, &bytes).unwrap();
+    std::fs::write(&lockfile_path, &bytes).expect("test operation must succeed");
 
-    let error = write_lockfile(&Lockfile::new(), &lockfile_path).unwrap_err();
+    let error =
+        write_lockfile(&Lockfile::new(), &lockfile_path).expect_err("test operation must fail");
 
     assert!(error.to_string().contains("lockfile too large"));
-    assert_eq!(std::fs::read(lockfile_path).unwrap(), bytes);
+    assert_eq!(
+        std::fs::read(lockfile_path).expect("test operation must succeed"),
+        bytes
+    );
 }
 
 #[cfg(unix)]
@@ -324,21 +366,25 @@ fn ordinary_writer_rejects_oversized_existing_lock_without_rewriting_it() {
 fn ordinary_writer_refuses_symlink_lockfile_path() {
     use std::os::unix::fs::symlink;
 
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("test operation must succeed");
     let target = dir.path().join("outside.txt");
-    std::fs::write(&target, b"do not overwrite").unwrap();
+    std::fs::write(&target, b"do not overwrite").expect("test operation must succeed");
     let lockfile_path = dir.path().join("mgc.lock");
-    symlink(&target, &lockfile_path).unwrap();
+    symlink(&target, &lockfile_path).expect("test operation must succeed");
 
-    let error = write_lockfile(&Lockfile::new(), &lockfile_path).unwrap_err();
+    let error =
+        write_lockfile(&Lockfile::new(), &lockfile_path).expect_err("test operation must fail");
 
     assert!(error.to_string().contains("non-regular lockfile path"));
-    assert_eq!(std::fs::read(target).unwrap(), b"do not overwrite");
+    assert_eq!(
+        std::fs::read(target).expect("test operation must succeed"),
+        b"do not overwrite"
+    );
 }
 
 #[test]
 fn signature_sidecar_key_id_must_match_the_actual_signer() {
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("test operation must succeed");
     let lockfile_path = dir.path().join("mgc.lock");
     let mut lockfile = Lockfile::new();
     lockfile.add_package(Package::new(
@@ -347,24 +393,27 @@ fn signature_sidecar_key_id_must_match_the_actual_signer() {
         "https://registry.example/signed-package.tgz".to_string(),
         "blake3-signed".to_string(),
     ));
-    let key = KeyPair::generate().unwrap();
-    sign_and_write_lockfile(&mut lockfile, &lockfile_path, &key).unwrap();
+    let key = KeyPair::generate().expect("test operation must succeed");
+    sign_and_write_lockfile(&mut lockfile, &lockfile_path, &key)
+        .expect("test operation must succeed");
 
     let sig_path = lockfile_path.with_extension("lock.sig");
-    let mut signature: mgc_lockfile::SignatureFile =
-        std::fs::read_to_string(&sig_path).unwrap().parse().unwrap();
+    let mut signature: mgc_lockfile::SignatureFile = std::fs::read_to_string(&sig_path)
+        .expect("test operation must succeed")
+        .parse()
+        .expect("test operation must succeed");
     signature.key_id = "0000000000000000".to_string();
-    std::fs::write(&sig_path, signature.to_string()).unwrap();
+    std::fs::write(&sig_path, signature.to_string()).expect("test operation must succeed");
 
     assert!(matches!(
-        verify_lockfile(&lockfile_path).unwrap(),
+        verify_lockfile(&lockfile_path).expect("test operation must succeed"),
         VerificationStatus::InvalidSignature(_)
     ));
 }
 
 #[test]
 fn project_trust_roots_distinguish_valid_signature_from_trusted_signer() {
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("test operation must succeed");
     let lockfile_path = dir.path().join("mgc.lock");
     let mut lockfile = Lockfile::new();
     lockfile.add_package(Package::new(
@@ -373,26 +422,28 @@ fn project_trust_roots_distinguish_valid_signature_from_trusted_signer() {
         "https://registry.example/signed-package.tgz".to_string(),
         "blake3-signed".to_string(),
     ));
-    let key = KeyPair::generate().unwrap();
-    sign_and_write_lockfile(&mut lockfile, &lockfile_path, &key).unwrap();
+    let key = KeyPair::generate().expect("test operation must succeed");
+    sign_and_write_lockfile(&mut lockfile, &lockfile_path, &key)
+        .expect("test operation must succeed");
 
     assert_eq!(
         mgc_lockfile::verify_lockfile_with_trust(
             &lockfile_path,
             std::slice::from_ref(&key.key_id),
         )
-        .unwrap(),
+        .expect("test operation must succeed"),
         VerificationStatus::Valid
     );
     assert_eq!(
-        mgc_lockfile::verify_lockfile_with_trust(&lockfile_path, &[]).unwrap(),
+        mgc_lockfile::verify_lockfile_with_trust(&lockfile_path, &[])
+            .expect("test operation must succeed"),
         VerificationStatus::UntrustedKey(key.key_id)
     );
 }
 
 #[test]
 fn test_invalid_signature() {
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("test operation must succeed");
     let lockfile_path = dir.path().join("mgc.lock");
     let sig_path = lockfile_path.with_extension("lock.sig");
 
@@ -405,8 +456,9 @@ fn test_invalid_signature() {
         "blake3-abc123".to_string(),
     ));
 
-    let key_pair = KeyPair::generate().unwrap();
-    sign_and_write_lockfile(&mut lockfile, &lockfile_path, &key_pair).unwrap();
+    let key_pair = KeyPair::generate().expect("test operation must succeed");
+    sign_and_write_lockfile(&mut lockfile, &lockfile_path, &key_pair)
+        .expect("test operation must succeed");
 
     // Corrupt signature file (but keep valid format with wrong signature)
     std::fs::write(
@@ -416,16 +468,16 @@ fn test_invalid_signature() {
          key_id = \"fake\"\n\
          signed_at = \"2026-08-21T00:00:00Z\"\n",
     )
-    .unwrap();
+    .expect("test operation must succeed");
 
     // Verify should fail (hash mismatch)
-    let status = verify_lockfile(&lockfile_path).unwrap();
+    let status = verify_lockfile(&lockfile_path).expect("test operation must succeed");
     assert!(matches!(status, VerificationStatus::Tampered(_)));
 }
 
 #[test]
 fn test_tamper_hash_mismatch() {
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("test operation must succeed");
     let lockfile_path = dir.path().join("mgc.lock");
 
     // Create and sign lockfile
@@ -437,15 +489,16 @@ fn test_tamper_hash_mismatch() {
         "blake3-abc123".to_string(),
     ));
 
-    let key_pair = KeyPair::generate().unwrap();
-    sign_and_write_lockfile(&mut lockfile, &lockfile_path, &key_pair).unwrap();
+    let key_pair = KeyPair::generate().expect("test operation must succeed");
+    sign_and_write_lockfile(&mut lockfile, &lockfile_path, &key_pair)
+        .expect("test operation must succeed");
 
     // Modify lockfile content (simulate manual edit)
-    let mut content = std::fs::read_to_string(&lockfile_path).unwrap();
+    let mut content = std::fs::read_to_string(&lockfile_path).expect("test operation must succeed");
     content.push_str("\n# tampered comment\n");
-    std::fs::write(&lockfile_path, content).unwrap();
+    std::fs::write(&lockfile_path, content).expect("test operation must succeed");
 
     // Verify should detect tamper
-    let status = verify_lockfile(&lockfile_path).unwrap();
+    let status = verify_lockfile(&lockfile_path).expect("test operation must succeed");
     assert!(matches!(status, VerificationStatus::Tampered(_)));
 }

@@ -27,6 +27,6 @@ pub async fn update(
         &compat,
         Some(&root.join(".magicore").join("exec.log")),
     )?;
-    let adapter = shared::lib_adapter(&root)?;
+    let adapter = crate::commands::core::lib::adapter(&root)?;
     shared::update(&*adapter, &root, packages, install).await
 }

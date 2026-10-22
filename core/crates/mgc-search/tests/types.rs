@@ -43,8 +43,9 @@ fn test_search_query_serialization() {
         },
     };
 
-    let json = serde_json::to_string(&query).unwrap();
-    let deserialized: SearchQuery = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&query).expect("type serialization fixture succeeds");
+    let deserialized: SearchQuery =
+        serde_json::from_str(&json).expect("type serialization fixture succeeds");
 
     assert_eq!(query.query, deserialized.query);
     assert_eq!(query.context.core, deserialized.context.core);
@@ -67,8 +68,9 @@ fn test_search_result_serialization() {
         score: 95.5,
     };
 
-    let json = serde_json::to_string(&result).unwrap();
-    let deserialized: SearchResult = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&result).expect("type serialization fixture succeeds");
+    let deserialized: SearchResult =
+        serde_json::from_str(&json).expect("type serialization fixture succeeds");
 
     assert_eq!(result.name, deserialized.name);
     assert_eq!(result.registry, deserialized.registry);

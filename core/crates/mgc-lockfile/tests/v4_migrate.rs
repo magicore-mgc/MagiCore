@@ -38,7 +38,8 @@ fn same_name_version_two_registries_becomes_two_keys() {
     left.registry = Some("npm://registry.npmjs.org".to_string());
     let mut right = package("lodash", "4.17.21", None);
     right.registry = Some("npm://mirror.corp".to_string());
-    let (v4, _) = migrate_v3_to_v4(v3_lock(vec![left, right])).unwrap();
+    let (v4, _) =
+        migrate_v3_to_v4(v3_lock(vec![left, right])).expect("test operation must succeed");
     assert_eq!(v4.packages.len(), 2);
     assert_ne!(
         v4.packages[0].key.source_id, v4.packages[1].key.source_id,
@@ -54,9 +55,14 @@ fn unique_name_dep_becomes_transitive_edge() {
     app.dependencies = vec!["lodash".to_string()];
     let mut lodash = package("lodash", "4.17.21", None);
     lodash.registry = Some("npm://registry.npmjs.org".to_string());
-    let (v4, warnings) = migrate_v3_to_v4(v3_lock(vec![app, lodash])).unwrap();
+    let (v4, warnings) =
+        migrate_v3_to_v4(v3_lock(vec![app, lodash])).expect("test operation must succeed");
     assert!(warnings.is_empty(), "{warnings:?}");
-    let app_entry = v4.packages.iter().find(|p| p.key.name == "app").unwrap();
+    let app_entry = v4
+        .packages
+        .iter()
+        .find(|p| p.key.name == "app")
+        .expect("test operation must succeed");
     assert_eq!(app_entry.edges.len(), 1);
     assert_eq!(app_entry.edges[0].target_key.name, "lodash");
     assert_eq!(app_entry.edges[0].range, "*");
@@ -84,13 +90,14 @@ fn exact_dependency_reference_selects_one_of_multiple_locked_versions() {
     );
     newer.ecosystem = mgc_lockfile::EcosystemTag::Rust;
 
-    let (v4, warnings) = migrate_v3_to_v4(v3_lock(vec![parent, older, newer])).unwrap();
+    let (v4, warnings) =
+        migrate_v3_to_v4(v3_lock(vec![parent, older, newer])).expect("test operation must succeed");
     assert!(warnings.is_empty(), "{warnings:?}");
     let left = v4
         .packages
         .iter()
         .find(|package| package.key.name == "left")
-        .unwrap();
+        .expect("test operation must succeed");
     assert_eq!(left.edges.len(), 1);
     assert_eq!(left.edges[0].target_key.name, "embassy-sync");
     assert_eq!(left.edges[0].target_key.version, "0.6.2");
@@ -107,8 +114,13 @@ fn missing_and_ambiguous_deps_drop_with_warnings() {
     dup_a.registry = Some("npm://registry.npmjs.org".to_string());
     let mut dup_b = package("dup", "2.0.0", None);
     dup_b.registry = Some("npm://registry.npmjs.org".to_string());
-    let (v4, warnings) = migrate_v3_to_v4(v3_lock(vec![ghost, dup_a, dup_b])).unwrap();
-    let ghost_entry = v4.packages.iter().find(|p| p.key.name == "ghost").unwrap();
+    let (v4, warnings) =
+        migrate_v3_to_v4(v3_lock(vec![ghost, dup_a, dup_b])).expect("test operation must succeed");
+    let ghost_entry = v4
+        .packages
+        .iter()
+        .find(|p| p.key.name == "ghost")
+        .expect("test operation must succeed");
     assert!(ghost_entry.edges.is_empty());
     assert!(
         warnings.iter().any(|w| w.contains("missing-dep")),
@@ -125,14 +137,16 @@ fn peers_drop_with_warning_instead_of_fake_digest() {
     let mut with_peers = package("button", "1.0.0", None);
     with_peers.registry = Some("npm://registry.npmjs.org".to_string());
     with_peers.peers = Some(vec!["react".to_string()]);
-    let (v4, warnings) = migrate_v3_to_v4(v3_lock(vec![with_peers])).unwrap();
+    let (v4, warnings) =
+        migrate_v3_to_v4(v3_lock(vec![with_peers])).expect("test operation must succeed");
     assert!(v4.packages[0].key.variant.peer_context.is_none());
     assert!(warnings.iter().any(|w| w.contains("peer")), "{warnings:?}");
 }
 
 #[test]
 fn registry_less_pins_share_labeled_unknown_source() {
-    let (v4, warnings) = migrate_v3_to_v4(v3_lock(vec![package("x", "1.0.0", None)])).unwrap();
+    let (v4, warnings) = migrate_v3_to_v4(v3_lock(vec![package("x", "1.0.0", None)]))
+        .expect("test operation must succeed");
     assert_eq!(v4.packages[0].key.source_id, "unknown");
     assert!(v4.sources.iter().any(|s| s.id == "unknown"));
     assert!(
@@ -146,7 +160,8 @@ fn empty_integrity_is_preserved_never_invented() {
     let mut bare = package("bare", "1.0.0", None);
     bare.registry = Some("npm://registry.npmjs.org".to_string());
     bare.integrity = String::new();
-    let (v4, warnings) = migrate_v3_to_v4(v3_lock(vec![bare])).unwrap();
+    let (v4, warnings) =
+        migrate_v3_to_v4(v3_lock(vec![bare])).expect("test operation must succeed");
     assert!(v4.packages[0].key.name == "bare");
     assert!(
         warnings.iter().any(|w| w.contains("no integrity")),
@@ -161,12 +176,13 @@ fn migrated_document_roundtrips_with_stable_digest() {
     app.dependencies = vec!["lodash".to_string()];
     let mut lodash = package("lodash", "4.17.21", None);
     lodash.registry = Some("npm://registry.npmjs.org".to_string());
-    let (mut v4, _) = migrate_v3_to_v4(v3_lock(vec![app, lodash])).unwrap();
+    let (mut v4, _) =
+        migrate_v3_to_v4(v3_lock(vec![app, lodash])).expect("test operation must succeed");
     v4.metadata.generated_at = "2026-09-17T00:00:00Z".to_string();
     v4.metadata.generator = "mgc/1.2.0-test".to_string();
     v4.metadata.lockfile_hash = payload_digest(&v4.payload());
-    let text = write_v4_document(&v4).unwrap();
-    let back = parse_v4_document(&text).unwrap();
+    let text = write_v4_document(&v4).expect("test operation must succeed");
+    let back = parse_v4_document(&text).expect("test operation must succeed");
     assert_eq!(back, v4);
     assert_eq!(payload_digest(&back.payload()), v4.metadata.lockfile_hash);
 }
@@ -182,17 +198,18 @@ fn v4_migration_preserves_protocol_markers_in_the_signed_payload() {
     go.markers = Some(vec![
         "go-mod-sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
     ]);
-    let (mut v4, warnings) = migrate_v3_to_v4(v3_lock(vec![go])).unwrap();
+    let (mut v4, warnings) =
+        migrate_v3_to_v4(v3_lock(vec![go])).expect("test operation must succeed");
     assert!(warnings.is_empty(), "{warnings:?}");
     v4.metadata.generator = "mgc/go-marker-test".into();
     v4.metadata.lockfile_hash = payload_digest(&v4.payload());
 
-    let text = write_v4_document(&v4).unwrap();
+    let text = write_v4_document(&v4).expect("test operation must succeed");
     assert!(
         text.contains("go-mod-sha256:"),
         "marker was dropped:\n{text}"
     );
-    let parsed = parse_v4_document(&text).unwrap();
+    let parsed = parse_v4_document(&text).expect("test operation must succeed");
     assert_eq!(parsed, v4);
     assert_eq!(payload_digest(&parsed.payload()), v4.metadata.lockfile_hash);
 }

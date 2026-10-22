@@ -1,0 +1,3 @@
+Child-process waiting, cancellation, timeout, and pipe draining. The `mod.rs` file exports the supervisor entry point; `supervision.rs` implements the wait loop; `error.rs` owns typed wait, pipe, inspection, kill, and process-tree termination failures with source chains; `test/` covers lifecycle and error behavior.
+
+Folder này sở hữu vòng chờ process con, cancel, timeout và drain pipe. `mod.rs` export entry point; `supervision.rs` triển khai vòng chờ; `error.rs` sở hữu lỗi typed khi chờ, đọc pipe, kiểm tra cây process, kill và terminate, đồng thời giữ source chain; `test/` kiểm tra lifecycle và contract lỗi.

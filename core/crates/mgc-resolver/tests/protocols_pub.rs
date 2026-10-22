@@ -36,7 +36,8 @@ fn pub_version(version: &str, archive_url: &str, sha: &str, deps: Value) -> Valu
 }
 
 fn pub_json(versions: Vec<Value>) -> String {
-    serde_json::to_string(&json!({ "name": "http", "versions": versions })).unwrap()
+    serde_json::to_string(&json!({ "name": "http", "versions": versions }))
+        .expect("test operation must succeed")
 }
 
 #[tokio::test]
@@ -106,17 +107,29 @@ async fn pub_constraint_selection_caret_any_exact() {
     let protocol = PubProtocol::new(&base);
     // ^1.0.0 → >=1.0.0 <2.0.0 → 1.2.0
     assert_eq!(
-        protocol.resolve("http", "^1.0.0").await.unwrap().version,
+        protocol
+            .resolve("http", "^1.0.0")
+            .await
+            .expect("test operation must succeed")
+            .version,
         "1.2.0"
     );
     // any → highest → 2.0.0
     assert_eq!(
-        protocol.resolve("http", "any").await.unwrap().version,
+        protocol
+            .resolve("http", "any")
+            .await
+            .expect("test operation must succeed")
+            .version,
         "2.0.0"
     );
     // bare version → exact
     assert_eq!(
-        protocol.resolve("http", "0.13.0").await.unwrap().version,
+        protocol
+            .resolve("http", "0.13.0")
+            .await
+            .expect("test operation must succeed")
+            .version,
         "0.13.0"
     );
 }
@@ -167,7 +180,7 @@ async fn pub_multi_root_resolution_intersects_transitive_constraints() {
             ("root_b".to_string(), "any".to_string()),
         ])
         .await
-        .unwrap();
+        .expect("test operation must succeed");
     let shared = graph
         .iter()
         .find(|entry| entry.name == "shared")
@@ -192,7 +205,7 @@ async fn pub_multi_root_metadata_fetch_is_bounded_and_concurrent() {
         Ok(listener) => listener,
         Err(error) => panic!("failed to bind pub concurrency test server: {error}"),
     };
-    let address = listener.local_addr().unwrap();
+    let address = listener.local_addr().expect("test operation must succeed");
     let active = Arc::new(AtomicUsize::new(0));
     let max_active = Arc::new(AtomicUsize::new(0));
     let server_active = Arc::clone(&active);
@@ -202,7 +215,10 @@ async fn pub_multi_root_metadata_fetch_is_bounded_and_concurrent() {
     let server = tokio::spawn(async move {
         let mut handlers = Vec::with_capacity(request_count);
         for _ in 0..request_count {
-            let (mut socket, _) = listener.accept().await.unwrap();
+            let (mut socket, _) = listener
+                .accept()
+                .await
+                .expect("test operation must succeed");
             let active = Arc::clone(&server_active);
             let max_active = Arc::clone(&server_max_active);
             let archive_sha256 = archive_sha256.clone();
@@ -210,11 +226,11 @@ async fn pub_multi_root_metadata_fetch_is_bounded_and_concurrent() {
                 let mut request = Vec::new();
                 let mut chunk = [0u8; 1024];
                 while !request.windows(4).any(|window| window == b"\r\n\r\n") {
-                    let read = socket.read(&mut chunk).await.unwrap();
+                    let read = socket.read(&mut chunk).await.expect("test operation must succeed");
                     assert_ne!(read, 0, "client closed before sending HTTP headers");
                     request.extend_from_slice(&chunk[..read]);
                 }
-                let request_line = String::from_utf8(request).unwrap();
+                let request_line = String::from_utf8(request).expect("test operation must succeed");
                 let package = request_line
                     .lines()
                     .next()
@@ -240,17 +256,17 @@ async fn pub_multi_root_metadata_fetch_is_bounded_and_concurrent() {
                         "archive_sha256": archive_sha256
                     }]
                 }))
-                .unwrap();
+                .expect("test operation must succeed");
                 let response = format!(
                     "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
                     body.len()
                 );
-                socket.write_all(response.as_bytes()).await.unwrap();
-                socket.write_all(&body).await.unwrap();
+                socket.write_all(response.as_bytes()).await.expect("test operation must succeed");
+                socket.write_all(&body).await.expect("test operation must succeed");
             }));
         }
         for handler in handlers {
-            handler.await.unwrap();
+            handler.await.expect("test operation must succeed");
         }
     });
 
@@ -258,8 +274,11 @@ async fn pub_multi_root_metadata_fetch_is_bounded_and_concurrent() {
     let roots = (0..request_count)
         .map(|index| (format!("root{index}"), "any".to_string()))
         .collect::<Vec<_>>();
-    let entries = protocol.resolve_graph_roots(&roots).await.unwrap();
-    server.await.unwrap();
+    let entries = protocol
+        .resolve_graph_roots(&roots)
+        .await
+        .expect("test operation must succeed");
+    server.await.expect("test operation must succeed");
 
     assert_eq!(entries.len(), request_count);
     assert!(
@@ -309,7 +328,10 @@ async fn pub_null_optional_maps_are_empty_but_null_pubspec_fails_closed() {
         .await;
 
     let protocol = PubProtocol::new(&base);
-    let entry = protocol.resolve("example", "^1.0.0").await.unwrap();
+    let entry = protocol
+        .resolve("example", "^1.0.0")
+        .await
+        .expect("test operation must succeed");
     assert!(entry.deps.is_empty());
     assert!(entry.extra_markers.is_empty());
 
@@ -350,7 +372,10 @@ async fn pub_resolves_dependencies_and_full_path() {
         .await;
 
     let protocol = PubProtocol::new(&base);
-    let entry = protocol.resolve("http", "^1.0.0").await.unwrap();
+    let entry = protocol
+        .resolve("http", "^1.0.0")
+        .await
+        .expect("test operation must succeed");
     // flutter SDK dep dropped, http_parser kept
     assert_eq!(
         entry.deps,
@@ -358,8 +383,13 @@ async fn pub_resolves_dependencies_and_full_path() {
     );
     assert!(entry.extra_markers.iter().any(|m| m == "sdk:^3.0.0"));
 
-    let downloaded = protocol.download(&entry).await.unwrap();
-    protocol.verify(&entry, &downloaded).unwrap();
+    let downloaded = protocol
+        .download(&entry)
+        .await
+        .expect("test operation must succeed");
+    protocol
+        .verify(&entry, &downloaded)
+        .expect("test operation must succeed");
     let expected_hex = blake3::hash(bytes).to_hex().to_string();
     assert_eq!(
         protocol.store_ref(&downloaded),
@@ -396,7 +426,10 @@ async fn pub_sdk_owned_dependencies_are_recorded_not_silenced() {
         .await;
 
     let protocol = PubProtocol::new(&base);
-    let entry = protocol.resolve("mix", "any").await.unwrap();
+    let entry = protocol
+        .resolve("mix", "any")
+        .await
+        .expect("test operation must succeed");
     assert_eq!(
         entry.deps,
         vec![("realdep".to_string(), "^1.0.0".to_string())]
@@ -433,7 +466,7 @@ async fn pub_empty_dependency_constraint_fails_closed() {
     let error = PubProtocol::new(&base)
         .resolve("mix", "any")
         .await
-        .unwrap_err();
+        .expect_err("test operation must fail");
     assert!(matches!(error, mgc_types::MgError::Unsupported { .. }));
 }
 
@@ -462,6 +495,6 @@ async fn pub_git_dependency_fails_closed_instead_of_omitting_graph_edge() {
     let error = PubProtocol::new(&base)
         .resolve("mix", "any")
         .await
-        .unwrap_err();
+        .expect_err("test operation must fail");
     assert!(matches!(error, mgc_types::MgError::Unsupported { .. }));
 }

@@ -6,15 +6,15 @@
 //! the shared scanners DO understand (Bevy games ship Cargo.toml, IoT
 //! backends ship go.mod, AI pipelines inside cloud projects ship
 //! requirements.txt). The honest contract: scan EVERY recognized
-//! manifest via the shared engine — a Bevy game gets a REAL cargo-audit
-//! run; a Unity-only project stays UnsupportedEcosystem (never a fake
+//! manifest via the shared engine — a Bevy game gets MGC's native Rust
+//! OSV scan; a Unity-only project stays UnsupportedEcosystem (never a fake
 //! clean).
 //!
 //! Core mở rộng chưa có scanner riêng cho ecosystem của mình, nhưng
 //! project của chúng thường mang manifest mà scanner chung HIỂU (game
 //! Bevy có Cargo.toml, backend IoT có go.mod). Hợp đồng trung thực:
 //! quét MỌI manifest nhận diện được qua engine chung — game Bevy được
-//! cargo-audit THẬT; project chỉ Unity thì giữ UnsupportedEcosystem
+//! MGC quét Rust OSV native; project chỉ Unity thì giữ UnsupportedEcosystem
 //! (không bao giờ bịa sạch).
 
 use crate::engine::AuditPlan;

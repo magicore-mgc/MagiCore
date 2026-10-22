@@ -8,6 +8,7 @@ repository.workspace = true
 authors.workspace = true
 description = "AI ecosystem adapter for MagiCore"
 [dependencies]
+anyhow.workspace = true
 futures-util = { workspace = true }
 mgc-audit = { workspace = true }
 # Core crates (W1-W6 support)
@@ -19,6 +20,13 @@ mgc-cache = { workspace = true }
 mgc-config = { workspace = true }
 mgc-platform = { workspace = true }
 mgc-adapter-base = { workspace = true }
+# Shared Python service (S09b/D012): ownership predicate + manifest IO go
+# straight here. (Service Python dùng chung: predicate + manifest IO.)
+mgc-python-service = { workspace = true }
+# KEPT (S09b partial retarget): resolve/prepare_add/fetch/install/list/age-gate
+# still delegate to the embedded lib Python engine (`python_lane`), and
+# `adapter_for_ai_python` still builds it with the ai security scope — drop
+# deferred to the P04 wave moving the engine. (GIỮ: engine vẫn ở lib.)
 mgc-lib-adapter = { path = "../lib" }
 
 # Async
@@ -29,6 +37,7 @@ tokio.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 toml.workspace = true
+thiserror.workspace = true
 
 # Crypto
 hex.workspace = true

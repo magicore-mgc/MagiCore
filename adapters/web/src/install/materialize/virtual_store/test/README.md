@@ -1,0 +1,5 @@
+# Virtual Store tests
+
+Focused tests for the virtual store owner; shared fixture helpers live in the parent materialize test support module.
+
+Test tập trung cho owner virtual store; fixture dùng chung nằm trong test support của thư mục materialize cha.

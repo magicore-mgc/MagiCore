@@ -13,7 +13,8 @@ Implements the durable package store around CAS, integrity, lifecycle/cache, dat
 - [`cas/mod.rs`](../src/cas/mod.rs)
 - [`database.rs`](../src/database.rs)
 - [`index.rs`](../src/index.rs)
-- [`layout.rs`](../src/layout.rs)
+- [`layout/README.md`](../src/layout/README.md)
+- [`layout/layout.rs`](../src/layout/layout.rs)
 
 ## Handoff and review
 

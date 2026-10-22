@@ -1,0 +1,29 @@
+# Release job owner. / Owner riêng cho job phát hành.
+name: Dry Run Summary
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Validated release version from the entry workflow.
+        required: true
+        type: string
+
+jobs:
+  dry-run-summary:
+    name: Dry-Run Summary
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dry-run results
+        env:
+          REQUESTED_RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          echo "=== DRY-RUN COMPLETED ==="
+          echo ""
+          echo "Version: ${REQUESTED_RELEASE_VERSION}"
+          echo "Build: ✅ PASS (10 archives incl. Linux and macOS arm64)"
+          echo "Smoke: ✅ PASS (10 variants incl. Linux and macOS arm64)"
+          echo "Pre-publish: ✅ PASS (10 archives + checksums + SBOMs)"
+          echo ""
+          echo "Publish readiness: NOT ASSESSED (dry-run does not authorize publishing)"
+          echo "Draft publication requires an approved tag and successful pre-publish, audit-capability, scoped-support, lifecycle, and workspace CI gates"

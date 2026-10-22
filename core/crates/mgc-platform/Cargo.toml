@@ -7,12 +7,17 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "L0 OS layer: os, symlink, shell, paths, perms (MagiCore)"
+
+[lints]
+workspace = true
+
 [dependencies]
 dirs = { workspace = true }
 anyhow = { workspace = true }
 blake3 = { workspace = true }
 libc = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
@@ -25,3 +30,6 @@ path = "tests/paths.rs"
 [[test]]
 name = "test_reflink"
 path = "tests/reflink.rs"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }

@@ -1,0 +1,2 @@
+mod project_uses_npm_registry;
+pub use project_uses_npm_registry::project_uses_npm_registry;

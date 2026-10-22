@@ -139,13 +139,13 @@ fn canonical_output_is_order_independent() {
 #[test]
 fn legacy_v4_remains_readable_and_does_not_gain_new_payload_fields() {
     let lock = sample_lockfile();
-    let text = write_v4_document(&lock).unwrap();
-    let parsed = parse_v4_document(&text).unwrap();
+    let text = write_v4_document(&lock).expect("test operation must succeed");
+    let parsed = parse_v4_document(&text).expect("test operation must succeed");
 
     assert_eq!(parsed, lock);
     assert!(!canonical_toml(&lock.payload()).contains("markers ="));
     assert_eq!(
-        parse_document(&text).unwrap(),
+        parse_document(&text).expect("test operation must succeed"),
         mgc_lockfile::parser::LockDocument::V4(lock)
     );
 }
@@ -158,11 +158,11 @@ fn v4_1_markers_are_roundtripped_and_authenticated() {
         "go-mod-sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
     ]);
     let first_digest = payload_digest(&lock.payload());
-    let text = write_v4_document(&lock).unwrap();
+    let text = write_v4_document(&lock).expect("test operation must succeed");
 
     assert!(text.contains("version = \"4.1\""));
     assert!(canonical_toml(&lock.payload()).contains("markers = ["));
-    let parsed = parse_v4_document(&text).unwrap();
+    let parsed = parse_v4_document(&text).expect("test operation must succeed");
     assert_eq!(parsed, lock);
     assert_eq!(payload_digest(&parsed.payload()), first_digest);
 
@@ -174,11 +174,11 @@ fn v4_1_markers_are_roundtripped_and_authenticated() {
 fn legacy_v4_rejects_markers_that_its_revision_cannot_authenticate() {
     let mut lock = sample_lockfile();
     lock.packages[0].markers = Some(vec!["go-mod-sha256:untrusted".into()]);
-    let text = write_v4_document(&lock).unwrap();
+    let text = write_v4_document(&lock).expect("test operation must succeed");
 
     assert!(
         parse_v4_document(&text)
-            .unwrap_err()
+            .expect_err("test operation must fail")
             .to_string()
             .contains("require lockfile schema revision 4.1")
     );
@@ -249,7 +249,7 @@ fn feature_set_order_does_not_change_package_order_or_digest() {
         .variant
         .feature_set
         .as_mut()
-        .unwrap()
+        .expect("test operation must succeed")
         .reverse();
     assert_eq!(
         payload_digest(&original.payload()),
@@ -339,7 +339,10 @@ fn workspace_collection_order_does_not_change_canonical_bytes() {
     original.optimizer_profile = Some("balanced".into());
 
     let mut shuffled = original.clone();
-    let workspace = shuffled.workspace.as_mut().unwrap();
+    let workspace = shuffled
+        .workspace
+        .as_mut()
+        .expect("test operation must succeed");
     workspace.members.reverse();
     workspace.cross_core_edges.reverse();
 
@@ -363,7 +366,9 @@ fn workspace_and_optimizer_payload_round_trip_with_matching_digest() {
     document.optimizer_profile = Some("balanced".into());
     document.metadata.lockfile_hash = payload_digest(&document.payload());
 
-    let parsed = parse_v4_document(&write_v4_document(&document).unwrap()).unwrap();
+    let parsed =
+        parse_v4_document(&write_v4_document(&document).expect("test operation must succeed"))
+            .expect("test operation must succeed");
 
     assert_eq!(parsed.workspace, document.workspace);
     assert_eq!(parsed.optimizer_profile, document.optimizer_profile);
@@ -381,8 +386,8 @@ fn owner_scoped_root_edges_round_trip_through_v4_document() {
         vec!["flutter-pkg@1.2.3".into(), "swift-pkg@4.5.6".into()],
     );
     document.metadata.lockfile_hash = payload_digest(&document.payload());
-    let bytes = write_v4_document(&document).unwrap();
-    let parsed = parse_v4_document(&bytes).unwrap();
+    let bytes = write_v4_document(&document).expect("test operation must succeed");
+    let parsed = parse_v4_document(&bytes).expect("test operation must succeed");
     assert_eq!(
         parsed.root_dependencies_by_owner["app"],
         ["flutter-pkg@1.2.3", "swift-pkg@4.5.6"]
@@ -412,7 +417,7 @@ fn canonical_output_parses_as_toml() {
 
 #[test]
 fn unknown_v4_root_field_is_rejected() {
-    let mut text = write_v4_document(&sample_lockfile()).unwrap();
+    let mut text = write_v4_document(&sample_lockfile()).expect("test operation must succeed");
     text.insert_str(0, "unrecognized_root_field = true\n");
 
     assert!(
@@ -456,8 +461,11 @@ fn unknown_v4_source_and_package_fields_are_rejected() {
             package: "model-client".into(),
         }],
     });
-    let valid = write_v4_document(&extended).unwrap();
-    assert_eq!(parse_v4_document(&valid).unwrap(), extended);
+    let valid = write_v4_document(&extended).expect("test operation must succeed");
+    assert_eq!(
+        parse_v4_document(&valid).expect("test operation must succeed"),
+        extended
+    );
     let cases = [
         (
             "source",
@@ -559,12 +567,12 @@ fn unknown_transitive_origin_field_is_rejected() {
     document.packages[1].edges[0].origin = EdgeOrigin::Transitive {
         from_key: Box::new(document.packages[0].key.clone()),
     };
-    let serialized = write_v4_document(&document).unwrap();
-    let mut value: toml::Value = toml::from_str(&serialized).unwrap();
+    let serialized = write_v4_document(&document).expect("test operation must succeed");
+    let mut value: toml::Value = toml::from_str(&serialized).expect("test operation must succeed");
     let packages = value
         .get_mut("package")
         .and_then(toml::Value::as_array_mut)
-        .unwrap();
+        .expect("test operation must succeed");
     let package_with_edge = packages
         .iter_mut()
         .find(|package| {
@@ -573,23 +581,23 @@ fn unknown_transitive_origin_field_is_rejected() {
                 .and_then(toml::Value::as_array)
                 .is_some_and(|edges| !edges.is_empty())
         })
-        .unwrap();
+        .expect("test operation must succeed");
     let edge = package_with_edge
         .get_mut("edges")
         .and_then(toml::Value::as_array_mut)
         .and_then(|edges| edges.first_mut())
-        .unwrap();
+        .expect("test operation must succeed");
     let transitive = edge
         .get_mut("origin")
         .and_then(toml::Value::as_table_mut)
         .and_then(|origin| origin.get_mut("Transitive"))
         .and_then(toml::Value::as_table_mut)
-        .unwrap();
+        .expect("test operation must succeed");
     transitive.insert(
         "unrecognized_origin_field".into(),
         toml::Value::Boolean(true),
     );
-    let invalid = toml::to_string(&value).unwrap();
+    let invalid = toml::to_string(&value).expect("test operation must succeed");
 
     assert!(
         parse_v4_document(&invalid).is_err(),

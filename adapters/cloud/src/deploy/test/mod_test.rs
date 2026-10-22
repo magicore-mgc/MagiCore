@@ -1,6 +1,7 @@
-#![cfg(test)]
 #![allow(clippy::unwrap_used)]
-//! Adapter tests
+use crate::CloudType;
+use mgc_types::MgError;
+// Adapter tests
 
 use super::*;
 

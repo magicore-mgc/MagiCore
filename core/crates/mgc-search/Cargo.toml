@@ -58,3 +58,6 @@ path = "tests/ranking.rs"
 [[test]]
 name = "cache"
 path = "tests/cache.rs"
+
+[lints]
+workspace = true

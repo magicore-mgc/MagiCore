@@ -7,7 +7,7 @@ use tempfile::NamedTempFile;
 
 #[test]
 fn test_sri_parse() {
-    let sri = SriHash::parse("blake3-YWJjMTIz").unwrap();
+    let sri = SriHash::parse("blake3-YWJjMTIz").expect("test operation must succeed");
     assert_eq!(sri.algorithm, "blake3");
     assert_eq!(sri.hash, "YWJjMTIz");
 }
@@ -29,7 +29,7 @@ fn test_compute_and_verify() {
     let sri = IntegrityVerifier::compute(data);
 
     assert_eq!(sri.algorithm, "blake3");
-    IntegrityVerifier::verify(data, &sri).unwrap();
+    IntegrityVerifier::verify(data, &sri).expect("test operation must succeed");
 }
 
 #[test]
@@ -43,14 +43,16 @@ fn test_verify_mismatch() {
 
 #[test]
 fn test_compute_file() {
-    let mut tmpfile = NamedTempFile::new().unwrap();
-    tmpfile.write_all(b"test content").unwrap();
-    tmpfile.flush().unwrap();
+    let mut tmpfile = NamedTempFile::new().expect("test operation must succeed");
+    tmpfile
+        .write_all(b"test content")
+        .expect("test operation must succeed");
+    tmpfile.flush().expect("test operation must succeed");
 
-    let sri = IntegrityVerifier::compute_file(tmpfile.path()).unwrap();
+    let sri = IntegrityVerifier::compute_file(tmpfile.path()).expect("test operation must succeed");
     assert_eq!(sri.algorithm, "blake3");
 
-    IntegrityVerifier::verify_file(tmpfile.path(), &sri).unwrap();
+    IntegrityVerifier::verify_file(tmpfile.path(), &sri).expect("test operation must succeed");
 }
 
 #[test]

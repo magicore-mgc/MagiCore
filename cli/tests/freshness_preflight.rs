@@ -27,6 +27,7 @@ fn lock_with(packages: &[(&str, &str)]) -> String {
         );
         package.owner_core = Some("web".into());
         package.ecosystem = mgc_lockfile::EcosystemTag::Web;
+        package.registry = Some("https://registry.npmjs.org/".into());
         lock.add_package(package);
     }
     mgc_lockfile::update_owner_root_pins(
@@ -51,6 +52,7 @@ fn v4_lock_with(packages: &[(&str, &str)]) -> String {
         );
         package.owner_core = Some("web".into());
         package.ecosystem = mgc_lockfile::EcosystemTag::Web;
+        package.registry = Some("https://registry.npmjs.org/".into());
         lock.add_package(package);
     }
     mgc_lockfile::update_owner_root_pins(

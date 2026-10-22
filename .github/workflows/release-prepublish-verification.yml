@@ -1,0 +1,88 @@
+# Release job owner. / Owner riêng cho job phát hành.
+name: Pre Publish Verification
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Validated release version from the entry workflow.
+        required: true
+        type: string
+
+jobs:
+  pre-publish-verification:
+    name: Pre-Publish Verification (Fail-Closed)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Test release manifest builder (stable + RC names)
+        # P0: RC versions carry dashes (1.1.0-rc.10) — a left-split name
+        # parser silently drops them from manifest.json. This test pins
+        # the right-parse contract before any asset is published.
+        # Test builder manifest (stable + RC): parser tách trái từng lặng
+        # lẽ loại asset RC khỏi manifest — test này giữ hợp đồng parse-phải.
+        run: bash scripts/test-release-manifest.sh
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: verify-assets
+          merge-multiple: true
+
+      - name: Extract version
+        id: version
+        env:
+          REQUESTED_RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          VERSION="${REQUESTED_RELEASE_VERSION}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Verify all 10 archives present
+        # Required pairs: Linux x64/arm64, macOS x64/arm64, Windows x64 × {all, web}.
+        # Các cặp bắt buộc: Linux x64/arm64, macOS x64/arm64, Windows x64 × {all, web}.
+        shell: bash
+        env:
+          MGC_RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: bash scripts/release/prepublish/verify_archive_set.sh
+      - name: Verify all checksums
+        run: |
+          cd verify-assets
+          for checksum_file in *.sha256; do
+            echo "Verifying: $checksum_file"
+            sha256sum --check "$checksum_file" || exit 1
+          done
+          echo "✅ All checksums verified"
+
+      - name: Generate attestations for verification
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2 (latest, node24)
+        with:
+          subject-path: |
+            verify-assets/*.tar.gz
+            verify-assets/*.zip
+
+      - name: Verify all attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MGC_RELEASE_REPOSITORY_OWNER: ${{ github.repository_owner }}
+        shell: bash
+        run: bash scripts/release/prepublish/verify_attestations.sh
+      - name: Validate all SBOMs (enhanced)
+        shell: bash
+        env:
+          MGC_RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: bash scripts/release/prepublish/validate_sboms.sh
+      - name: Verification summary
+        run: |
+          echo "=== PRE-PUBLISH VERIFICATION PASSED ==="
+          echo "✅ All required archives present"
+          echo "✅ All checksums verified"
+          echo "✅ All attestations verified"
+          echo "✅ All SBOMs validated"
+          echo "✅ 10 archives + 10 checksums + 10 SBOMs verified (linux-x64/arm64, macos-x64/arm64, windows-x64 x all/web)"
+          echo "Safe to publish."

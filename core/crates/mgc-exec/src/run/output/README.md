@@ -1,0 +1,3 @@
+Bounded child output conversion and diagnostic-tail formatting. `mod.rs` exports the owner API; `output.rs` implements stream draining and byte/line bounds; `types/` owns capture mode and completed process output data; `error.rs` preserves pipe read failures and their I/O source; `test/` holds focused behavior tests.
+
+Folder này xử lý output process con có giới hạn và tail chẩn đoán. `mod.rs` export API; `output.rs` chứa logic drain stream và giới hạn byte/dòng; `types/` sở hữu chế độ capture và dữ liệu output process đã hoàn tất; `error.rs` giữ lỗi đọc pipe cùng nguồn I/O; `test/` chứa test hành vi gần owner.

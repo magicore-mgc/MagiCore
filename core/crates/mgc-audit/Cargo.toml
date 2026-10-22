@@ -43,5 +43,9 @@ tempfile = { workspace = true }
 # Runtime async cho test engine polyglot.
 tokio = { workspace = true }
 
+[[test]]
+name = "aggregate_test"
+path = "src/aggregate/test/aggregate.rs"
+
 [lints]
 workspace = true

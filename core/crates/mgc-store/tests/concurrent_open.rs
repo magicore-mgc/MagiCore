@@ -36,7 +36,7 @@ fn parallel_first_open_and_generation_allocation_are_safe() {
 
     let database = Database::open(&database_path).expect("reopen initialized store");
     let schema_version: i64 = database
-        .conn()
+        .conn_for_tests()
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .expect("read store schema version");
     assert_eq!(
@@ -51,7 +51,7 @@ fn opening_a_store_from_a_newer_schema_fails_closed() {
     let database_path = directory.path().join("store.db");
     let database = Database::open(&database_path).expect("create initial store schema");
     database
-        .conn()
+        .conn_for_tests()
         .pragma_update(None, "user_version", 99_i64)
         .expect("set future schema version");
     drop(database);

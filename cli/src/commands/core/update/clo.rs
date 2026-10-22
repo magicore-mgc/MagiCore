@@ -17,6 +17,6 @@ pub async fn update(
         crate::commands::dep_gate::DepOp::Update,
         compat_runtime.as_deref(),
     )?;
-    let adapter = shared::cloud_adapter(&root)?;
+    let adapter = crate::commands::core::cloud::adapter(&root)?;
     shared::update(&*adapter, &root, packages, install).await
 }

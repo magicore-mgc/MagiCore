@@ -1,0 +1,108 @@
+//! Process-tree guard that assigns children before resuming their suspended thread.
+//! Guard cây process: gắn child vào Job trước khi resume thread đang suspend.
+
+#[cfg(windows)]
+use super::super::super::error::WindowsJobError;
+#[cfg(windows)]
+use super::super::owned_handle::WindowsOwnedHandle;
+
+/// Closing this job handle kills its assigned process tree by OS policy.
+/// Đóng handle job sẽ dừng cây tiến trình đã gắn theo chính sách của OS.
+/// Source: https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects
+/// Nguồn: tài liệu Microsoft xác nhận KILL_ON_JOB_CLOSE kết thúc toàn bộ job.
+#[cfg(windows)]
+pub(in crate::run::implementation) struct ProcessTreeGuard {
+    job: WindowsOwnedHandle,
+}
+
+#[cfg(windows)]
+impl ProcessTreeGuard {
+    #[allow(unsafe_code)]
+    pub(in crate::run::implementation) fn new() -> std::result::Result<Self, WindowsJobError> {
+        use windows_sys::Win32::System::JobObjects::{
+            CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
+            SetInformationJobObject,
+        };
+
+        let handle = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+        if handle.is_null() {
+            return Err(WindowsJobError::native_api(
+                "CreateJobObjectW",
+                super::super::windows_last_error(),
+            ));
+        }
+        let guard = Self {
+            job: WindowsOwnedHandle::from_raw(handle),
+        };
+        let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        let configured = unsafe {
+            SetInformationJobObject(
+                guard.job.as_raw(),
+                JobObjectExtendedLimitInformation,
+                std::ptr::from_ref(&limits).cast(),
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            )
+        };
+        if configured == 0 {
+            return Err(WindowsJobError::native_api(
+                "SetInformationJobObject",
+                super::super::windows_last_error(),
+            ));
+        }
+        Ok(guard)
+    }
+
+    #[allow(unsafe_code)]
+    pub(in crate::run::implementation) fn activate(
+        &self,
+        child: &std::process::Child,
+    ) -> std::result::Result<(), WindowsJobError> {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::System::JobObjects::AssignProcessToJobObject;
+
+        let assigned =
+            unsafe { AssignProcessToJobObject(self.job.as_raw(), child.as_raw_handle().cast()) };
+        if assigned == 0 {
+            return Err(WindowsJobError::native_api(
+                "AssignProcessToJobObject",
+                super::super::windows_last_error(),
+            ));
+        }
+        super::super::primary_thread::resume_primary_thread(child.id())
+    }
+
+    #[allow(unsafe_code)]
+    pub(in crate::run::implementation) fn terminate(
+        &self,
+    ) -> std::result::Result<(), WindowsJobError> {
+        use windows_sys::Win32::System::JobObjects::TerminateJobObject;
+
+        let terminated = unsafe { TerminateJobObject(self.job.as_raw(), 1) };
+        if terminated == 0 {
+            return Err(WindowsJobError::native_api(
+                "TerminateJobObject",
+                super::super::windows_last_error(),
+            ));
+        }
+        Ok(())
+    }
+
+    pub(in crate::run::implementation::windows_job) fn active_process_ids(
+        &self,
+    ) -> std::result::Result<Vec<u32>, WindowsJobError> {
+        super::super::process_snapshot::active_process_ids(self.job.as_raw())
+    }
+
+    pub(in crate::run::implementation::windows_job) fn capture_job_member_process(
+        &self,
+        process_id: u32,
+    ) -> std::result::Result<Option<WindowsOwnedHandle>, WindowsJobError> {
+        super::super::member_capture::capture_job_member_process(self.job.as_raw(), process_id)
+    }
+}
+
+#[cfg(all(test, windows))]
+#[path = "test/mod.rs"]
+mod test;

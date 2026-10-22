@@ -14,6 +14,8 @@ import tempfile
 import tomllib
 import unittest
 from unittest.mock import patch
+from runner_patching import patch_runner_symbol
+from workflow_evidence import workflow_with_script_evidence
 from pathlib import Path
 
 
@@ -233,7 +235,7 @@ class StressMatrixTests(unittest.TestCase):
             ["mgc", "capabilities", "--json"], 0, json.dumps(payload)
         )
 
-        with patch.object(stress_matrix, "run_command", return_value=completed):
+        with patch_runner_symbol(stress_matrix, "run_command", return_value=completed):
             version, rows = stress_matrix.capability_rows(Path("mgc"), Path("."), {})
 
         self.assertEqual(version, "1.1.0-rc.9")
@@ -285,14 +287,14 @@ class StressMatrixTests(unittest.TestCase):
                     0,
                     json.dumps(payload_with_ownership(ownership)),
                 )
-                with patch.object(stress_matrix, "run_command", return_value=completed):
+                with patch_runner_symbol(stress_matrix, "run_command", return_value=completed):
                     with self.assertRaisesRegex(RuntimeError, expected):
                         stress_matrix.capability_rows(Path("mgc"), Path("."), {})
 
         completed = subprocess.CompletedProcess(
             ["mgc", "capabilities", "--json"], 0, "[]"
         )
-        with patch.object(stress_matrix, "run_command", return_value=completed):
+        with patch_runner_symbol(stress_matrix, "run_command", return_value=completed):
             with self.assertRaisesRegex(RuntimeError, "root must be an object"):
                 stress_matrix.capability_rows(Path("mgc"), Path("."), {})
 
@@ -321,7 +323,7 @@ class StressMatrixTests(unittest.TestCase):
             ["mgc", "capabilities", "--json"], 0, json.dumps(payload)
         )
 
-        with patch.object(stress_matrix, "run_command", return_value=completed):
+        with patch_runner_symbol(stress_matrix, "run_command", return_value=completed):
             with self.assertRaisesRegex(RuntimeError, "unsupported core.*new-core"):
                 stress_matrix.capability_rows(Path("mgc"), Path("."), {})
 
@@ -503,7 +505,7 @@ Options:
                 help_outputs.get(command, "unexpected command path"),
             )
 
-        with patch.object(stress_matrix, "run_command", side_effect=fake_run):
+        with patch_runner_symbol(stress_matrix, "run_command", side_effect=fake_run):
             results = stress_matrix.run_cli_contracts(
                 Path("mgc"), Path("."), {}
             )
@@ -523,9 +525,7 @@ Options:
 
     def test_workflow_runs_all_real_native_web_lifecycle_targets_on_three_os(self) -> None:
         repository = SOURCE.parents[2]
-        workflow = (repository / ".github/workflows/stress-matrix.yml").read_text(
-            encoding="utf-8"
-        )
+        workflow = workflow_with_script_evidence(repository / ".github/workflows/stress-matrix.yml")
         expected_frontend_targets = {
             "web_fw_fe_angular",
             "web_fw_fe_astro",
@@ -685,7 +685,7 @@ Options:
         self.assertNotIn("lib", package_manifest["features"])
 
     def test_ci_lifecycle_and_strict_gate_use_the_same_frozen_binary(self) -> None:
-        workflow = (SOURCE.parents[2] / ".github/workflows/stress-matrix.yml").read_text()
+        workflow = workflow_with_script_evidence(SOURCE.parents[2] / ".github/workflows/stress-matrix.yml")
         self.assertIn("cargo build --release --locked --bin mgc", workflow)
         self.assertIn("shutil.copy2(source, destination)", workflow)
         self.assertIn('target/release/mgc.exe" if os.name == "nt" else "target/release/mgc', workflow)
@@ -726,25 +726,18 @@ Options:
             self.assertEqual(sorted(port), sorted("4315"), port)
 
     def test_nuxt_generator_excludes_internal_storage_without_excluding_build_assets(self) -> None:
-        import ast
-        source = (SOURCE.parents[2] / "scripts/gen-fullstack-templates.py").read_text(encoding="utf-8")
-        table = next(
-            node.value for node in ast.parse(source).body
-            if isinstance(node, ast.Assign)
-            and any(isinstance(target, ast.Name) and target.id == "ALLO_SOURCES" for target in node.targets)
-        )
-        config = ast.literal_eval(table)["nuxt"]["nuxt.config.ts"]
+        config = (SOURCE.parents[2] / "cli/src/scaffold/processor/scaffold_writers/web_files/web_files.rs").read_text(encoding="utf-8")
         for pattern in ("**/.magicore/cache", "**/.magicore/store", "**/.magicore/exec.log"):
             self.assertIn(pattern, config)
-        self.assertNotIn("'**/.magicore'", config)
-        self.assertNotIn("'**/.magicore/build'", config)
+        self.assertNotIn('"**/.magicore"', config)
+        self.assertNotIn('"**/.magicore/build"', config)
 
     def test_ci_runs_sdk_qualified_unix_go_cold_cache_regression(self) -> None:
-        workflow = (SOURCE.parents[2] / ".github/workflows/stress-matrix.yml").read_text()
+        workflow = workflow_with_script_evidence(SOURCE.parents[2] / ".github/workflows/stress-matrix.yml")
         block = workflow.split("- name: Verify Go readonly execution with cold compiler caches", 1)[1].split("\n      - name:", 1)[0]
         self.assertNotIn("if: runner.os", block)
-        self.assertIn("shutil.which('go')", block)
-        self.assertIn("print(pathlib.Path(executable).resolve())", block)
+        self.assertIn('shutil.which("go")', block)
+        self.assertIn("print(Path(executable).resolve())", block)
         self.assertIn("MGC_E2E_GO_BINARY", block)
         self.assertIn("--test test_run", block)
         self.assertIn("real_go_readonly_run_survives_cold_compiler_processes", block)
@@ -753,7 +746,7 @@ Options:
         self.assertIn("-- --ignored --test-threads=1", block)
 
     def test_ci_requires_real_dart_import_in_app_only_distribution(self) -> None:
-        workflow = (SOURCE.parents[2] / ".github/workflows/stress-matrix.yml").read_text()
+        workflow = workflow_with_script_evidence(SOURCE.parents[2] / ".github/workflows/stress-matrix.yml")
         block = workflow.split("- name: Verify App-only offline packages import with real Dart", 1)[1].split("\n      - name:", 1)[0]
         self.assertIn("MGC_E2E_DART_BINARY", block)
         self.assertIn("if not dart.is_file():", block)
@@ -923,7 +916,7 @@ Options:
                 )
             return subprocess.CompletedProcess(argv, 2, "unexpected invocation")
 
-        with patch.object(stress_matrix, "run_command", side_effect=fake_run):
+        with patch_runner_symbol(stress_matrix, "run_command", side_effect=fake_run):
             results = stress_matrix.run_cli_contracts(Path("mgc"), Path("."), {})
 
         alpha_result = next(
@@ -939,7 +932,7 @@ Options:
                 raise subprocess.TimeoutExpired(argv, timeout=10)
             raise OSError("binary could not be spawned")
 
-        with patch.object(stress_matrix, "run_command", side_effect=failing_run):
+        with patch_runner_symbol(stress_matrix, "run_command", side_effect=failing_run):
             results = stress_matrix.run_cli_contracts(
                 Path("missing-mgc"), Path("."), {}
             )
@@ -1036,7 +1029,7 @@ Options:
                 )
                 return subprocess.CompletedProcess(argv, 0, marker)
 
-            with patch.object(stress_matrix, "run_command", side_effect=fake_run):
+            with patch_runner_symbol(stress_matrix, "run_command", side_effect=fake_run):
                 results = stress_matrix.run_framework_script_contracts(
                     Path("mgc"), "web", "vanilla", project, {}
                 )
@@ -1063,7 +1056,7 @@ Options:
             project.mkdir()
             (project / "mgc.toml").write_text('name = "probe"\necosystem = "lib"\n')
             env = {"MGC_DATA_DIR": str(root / "data"), "PATH": "test-path"}
-            with patch.object(stress_matrix.shutil, "which", return_value="go"), patch.object(
+            with patch.object(stress_matrix.shutil, "which", return_value="go"), patch_runner_symbol(
                 stress_matrix, "run_command", return_value=subprocess.CompletedProcess([], 0, "MGC_STRESS_LANGUAGE_RUNTIME:Go\n")
             ):
                 result = stress_matrix._run_framework_language_probe_for_language(
@@ -1104,7 +1097,7 @@ Options:
                 output = marker if len(calls) == 3 else "MagiCore stage completed\n"
                 return subprocess.CompletedProcess(argv, 0, output)
 
-            with patch.object(stress_matrix.shutil, "which", return_value="go"), patch.object(
+            with patch.object(stress_matrix.shutil, "which", return_value="go"), patch_runner_symbol(
                 stress_matrix, "run_command", side_effect=fake_run
             ):
                 result = stress_matrix._run_framework_language_probe_for_language(
@@ -1203,7 +1196,7 @@ Options:
 
             with (
                 patch.object(stress_matrix.shutil, "which", return_value="/usr/bin/cargo"),
-                patch.object(stress_matrix, "run_command", side_effect=fake_run),
+                patch_runner_symbol(stress_matrix, "run_command", side_effect=fake_run),
             ):
                 results = stress_matrix.run_framework_language_runtime_probe(
                     Path("mgc"), "lib", "rust", project, {"PATH": "/usr/bin"}
@@ -1254,7 +1247,7 @@ Options:
                 with (
                     patch.object(stress_matrix.sys, "platform", "darwin"),
                     patch.object(stress_matrix.shutil, "which", side_effect=fake_which),
-                    patch.object(stress_matrix, "run_command", side_effect=fake_run),
+                    patch_runner_symbol(stress_matrix, "run_command", side_effect=fake_run),
                 ):
                     result = stress_matrix._run_framework_language_probe_for_language(
                         Path("mgc"), "lib", "c", project, env, language,
@@ -1300,7 +1293,7 @@ Options:
 
             with (
                 patch.object(stress_matrix.shutil, "which", return_value=f"/usr/bin/{compiler}"),
-                patch.object(stress_matrix, "run_command", side_effect=fake_run),
+                patch_runner_symbol(stress_matrix, "run_command", side_effect=fake_run),
             ):
                 results = stress_matrix.run_framework_language_runtime_probe(
                     Path("mgc"), "lib", "c", project, env
@@ -1352,7 +1345,7 @@ Options:
 
             with (
                 patch.object(stress_matrix.shutil, "which", return_value="/usr/bin/dotnet"),
-                patch.object(stress_matrix, "run_command", side_effect=fake_run),
+                patch_runner_symbol(stress_matrix, "run_command", side_effect=fake_run),
             ):
                 results = stress_matrix.run_framework_language_runtime_probe(
                     Path("mgc"), "web", "dotnet-minimal", project, env
@@ -1385,7 +1378,7 @@ Options:
 
             with (
                 patch.object(stress_matrix.shutil, "which", return_value="/usr/bin/java"),
-                patch.object(stress_matrix, "run_command", side_effect=fake_run),
+                patch_runner_symbol(stress_matrix, "run_command", side_effect=fake_run),
             ):
                 results = stress_matrix.run_framework_language_runtime_probe(
                     Path("mgc"), "web", "java", project, env
@@ -1425,7 +1418,7 @@ Options:
 
             with (
                 patch.object(stress_matrix.shutil, "which", return_value="/usr/bin/swift"),
-                patch.object(stress_matrix, "run_command", side_effect=fake_run),
+                patch_runner_symbol(stress_matrix, "run_command", side_effect=fake_run),
             ):
                 results = stress_matrix.run_framework_language_runtime_probe(
                     Path("mgc"), "app", "swift", project, env
@@ -1468,7 +1461,7 @@ Options:
 
             with (
                 patch.object(stress_matrix.shutil, "which", return_value="/usr/bin/python3"),
-                patch.object(stress_matrix, "run_command", side_effect=fake_run),
+                patch_runner_symbol(stress_matrix, "run_command", side_effect=fake_run),
             ):
                 results = stress_matrix.run_framework_language_runtime_probe(
                     Path("mgc"), "web", "fastapi", project, env
@@ -1486,7 +1479,7 @@ Options:
                 'ecosystem = "web"\nframeworks = ["spring-boot"]\n',
                 encoding="utf-8",
             )
-            with patch.object(stress_matrix, "run_command") as run_command:
+            with patch_runner_symbol(stress_matrix, "run_command") as run_command:
                 result = stress_matrix._run_framework_language_probe_for_language(
                     Path("mgc"),
                     "web",
@@ -1533,7 +1526,7 @@ Options:
 
             with (
                 patch.object(stress_matrix.shutil, "which", return_value="/usr/bin/terraform"),
-                patch.object(stress_matrix, "run_command", side_effect=fake_run),
+                patch_runner_symbol(stress_matrix, "run_command", side_effect=fake_run),
             ):
                 results = stress_matrix.run_framework_language_runtime_probe(
                     Path("mgc"), "web", "terraform", project, env
@@ -1602,7 +1595,7 @@ Options:
 
             with (
                 patch.object(stress_matrix.shutil, "which", return_value="/usr/bin/runtime"),
-                patch.object(stress_matrix, "run_command", side_effect=fake_run),
+                patch_runner_symbol(stress_matrix, "run_command", side_effect=fake_run),
             ):
                 results = stress_matrix.run_framework_language_runtime_probe(
                     Path("mgc"), "web", "mixed", project, env
@@ -1639,7 +1632,7 @@ Options:
                 )
                 return subprocess.CompletedProcess(argv, 0, marker)
 
-            with patch.object(stress_matrix, "run_command", side_effect=fake_run):
+            with patch_runner_symbol(stress_matrix, "run_command", side_effect=fake_run):
                 results = stress_matrix.run_framework_script_contracts(
                     Path("mgc"), "web", "fastapi", project, {}
                 )
@@ -1696,10 +1689,10 @@ Options:
                 "dependency_ownership": {"install": {"owner": "unsupported"}},
             }
             with (
-                patch.object(stress_matrix, "run_command", side_effect=fake_run),
-                patch.object(stress_matrix, "run_framework_script_contracts", side_effect=clear_dependencies),
-                patch.object(stress_matrix, "run_native_install_contract", return_value=(None, False, None)),
-                patch.object(
+                patch_runner_symbol(stress_matrix, "run_command", side_effect=fake_run),
+                patch_runner_symbol(stress_matrix, "run_framework_script_contracts", side_effect=clear_dependencies),
+                patch_runner_symbol(stress_matrix, "run_native_install_contract", return_value=(None, False, None)),
+                patch_runner_symbol(
                     stress_matrix,
                     "run_store_scope_contract",
                     return_value=[
@@ -1707,8 +1700,8 @@ Options:
                         stress_matrix.Result("shared-store-runtime", "web/vanilla", True, "checked"),
                     ],
                 ),
-                patch.object(stress_matrix, "run_lockfile_contracts", return_value=[]),
-                patch.object(stress_matrix, "run_shared_store_check", return_value=[]),
+                patch_runner_symbol(stress_matrix, "run_lockfile_contracts", return_value=[]),
+                patch_runner_symbol(stress_matrix, "run_shared_store_check", return_value=[]),
             ):
                 results = stress_matrix.run_project_dimensions(
                     Path("mgc"),
@@ -1779,10 +1772,10 @@ Options:
                 "dependency_ownership": {"install": {"owner": "mgc-native"}},
             }
             with (
-                patch.object(stress_matrix, "run_command", side_effect=fake_run),
-                patch.object(stress_matrix, "run_native_install_contract", side_effect=fake_install),
-                patch.object(stress_matrix, "run_framework_script_contracts", return_value=[]),
-                patch.object(
+                patch_runner_symbol(stress_matrix, "run_command", side_effect=fake_run),
+                patch_runner_symbol(stress_matrix, "run_native_install_contract", side_effect=fake_install),
+                patch_runner_symbol(stress_matrix, "run_framework_script_contracts", return_value=[]),
+                patch_runner_symbol(
                     stress_matrix,
                     "run_store_scope_contract",
                     return_value=[
@@ -1790,8 +1783,8 @@ Options:
                         stress_matrix.Result("shared-store-runtime", "web/vanilla", True, "checked"),
                     ],
                 ),
-                patch.object(stress_matrix, "run_lockfile_contracts", return_value=[]),
-                patch.object(stress_matrix, "run_shared_store_check", return_value=[]),
+                patch_runner_symbol(stress_matrix, "run_lockfile_contracts", return_value=[]),
+                patch_runner_symbol(stress_matrix, "run_shared_store_check", return_value=[]),
             ):
                 results = stress_matrix.run_project_dimensions(
                     Path("mgc"), [("web", "vanilla", project)], [row], root, {}
@@ -1819,7 +1812,7 @@ Options:
             completed = subprocess.CompletedProcess(
                 ["mgc", "install"], 0, "All dependencies installed\n"
             )
-            with patch.object(stress_matrix, "run_command", return_value=completed) as run:
+            with patch_runner_symbol(stress_matrix, "run_command", return_value=completed) as run:
                 result, passed, manifest_name = stress_matrix.run_native_install_contract(
                     Path("mgc"), row, project, {}
                 )
@@ -1839,7 +1832,7 @@ Options:
             "framework": "react-native",
             "dependency_ownership": {"install": {"owner": "unsupported"}},
         }
-        with patch.object(stress_matrix, "run_command", side_effect=AssertionError("must not spawn")):
+        with patch_runner_symbol(stress_matrix, "run_command", side_effect=AssertionError("must not spawn")):
             result, passed, manifest = stress_matrix.run_native_install_contract(
                 Path("mgc"), row, Path("."), {}
             )
@@ -1864,7 +1857,7 @@ Options:
                 "dependency_ownership": {"install": {"owner": "mgc-native"}},
             }
             completed = subprocess.CompletedProcess(["mgc", "install-app"], 0, "installed")
-            with patch.object(stress_matrix, "run_command", return_value=completed):
+            with patch_runner_symbol(stress_matrix, "run_command", return_value=completed):
                 results = stress_matrix.run_lockfile_contracts(
                     Path("mgc"),
                     row,
@@ -1887,7 +1880,7 @@ Options:
                 "store": {"owner": "unsupported"},
             },
         }
-        with patch.object(stress_matrix, "run_command") as run:
+        with patch_runner_symbol(stress_matrix, "run_command") as run:
             results = stress_matrix.run_store_scope_contract(
                 Path("mgc"), row, Path("."), {}, install_succeeded=True
             )
@@ -1932,7 +1925,7 @@ Options:
             )
             return completed
 
-        with patch.object(stress_matrix, "run_command", side_effect=fake_run):
+        with patch_runner_symbol(stress_matrix, "run_command", side_effect=fake_run):
             results = stress_matrix.run_store_scope_contract(
                 Path("mgc"), row, Path("."), {}, install_succeeded=True
             )
@@ -1967,7 +1960,7 @@ Options:
             ["mgc", "store", "doctor"], 0, json.dumps(payload)
         )
 
-        with patch.object(stress_matrix, "run_command", return_value=completed):
+        with patch_runner_symbol(stress_matrix, "run_command", return_value=completed):
             results = stress_matrix.run_store_scope_contract(
                 Path("mgc"), row, Path("."), {}, install_succeeded=True
             )
@@ -2002,7 +1995,7 @@ Options:
             ["mgc", "store", "doctor"], 1, json.dumps(payload)
         )
 
-        with patch.object(stress_matrix, "run_command", return_value=completed):
+        with patch_runner_symbol(stress_matrix, "run_command", return_value=completed):
             results = stress_matrix.run_store_scope_contract(
                 Path("mgc"), row, Path("."), {}, install_succeeded=True
             )
@@ -2061,7 +2054,7 @@ Options:
                     return subprocess.CompletedProcess(argv, 0, "All dependencies installed\n")
                 return subprocess.CompletedProcess(argv, 0, "All dependencies installed\n")
 
-            with patch.object(stress_matrix, "run_command", side_effect=fake_run):
+            with patch_runner_symbol(stress_matrix, "run_command", side_effect=fake_run):
                 results = stress_matrix.run_lockfile_contracts(
                     Path("mgc"), row, project, {}, install_succeeded=True
                 )
@@ -2088,7 +2081,7 @@ Options:
                 "framework": "benchmark",
                 "dependency_ownership": {"install": {"owner": "mgc-native"}},
             }
-            with patch.object(
+            with patch_runner_symbol(
                 stress_matrix,
                 "run_command",
                 return_value=subprocess.CompletedProcess(["mgc", "install"], 0, "installed"),

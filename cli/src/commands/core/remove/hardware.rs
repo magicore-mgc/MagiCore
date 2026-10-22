@@ -7,7 +7,8 @@
 use anyhow::Result;
 use std::path::PathBuf;
 
-use crate::commands::core::shared::{self, BENCH_PKG, OPTIMIZER_PKG};
+use crate::commands::core::hardware::{BENCH_PKG, OPTIMIZER_PKG};
+use crate::commands::core::shared;
 
 fn project_root() -> Result<PathBuf> {
     let cwd = std::env::current_dir().map_err(|e| crate::error::cwd_deleted(&e))?;

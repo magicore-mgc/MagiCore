@@ -39,7 +39,7 @@ impl ScaffoldCache {
 
     pub fn read(spec: &ScaffoldSpec, version: &str) -> Result<PathBuf> {
         validated_entry(&Self::cache_root(), spec, version)?.ok_or_else(|| {
-            crate::error::template_layer_missing_manifest(&format!(
+            super::error::template_layer_missing_manifest(&format!(
                 "{}/{}/{}",
                 spec.core.as_str(),
                 spec.normalized_name,
@@ -82,7 +82,7 @@ fn validate_identity(spec: &ScaffoldSpec) -> Result<()> {
             .split('/')
             .any(|part| part.is_empty() || part.ends_with(['.', ' ']))
     {
-        return Err(crate::error::template_layer_identity_invalid());
+        return Err(super::error::template_layer_identity_invalid());
     }
     Ok(())
 }
@@ -90,7 +90,7 @@ fn validate_identity(spec: &ScaffoldSpec) -> Result<()> {
 fn validate_existing_directory(path: &Path) -> Result<bool> {
     match fs::symlink_metadata(path) {
         Ok(metadata) if template_cache_is_link(&metadata) || !metadata.is_dir() => {
-            Err(crate::error::template_cache_unsafe_path(path))
+            Err(super::error::template_cache_unsafe_path(path))
         }
         Ok(_) => Ok(true),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
@@ -115,7 +115,7 @@ fn resolve_base(root: &Path, spec: &ScaffoldSpec, create: bool) -> Result<Option
 }
 
 fn validated_entry(root: &Path, spec: &ScaffoldSpec, version: &str) -> Result<Option<PathBuf>> {
-    semver::Version::parse(version).map_err(|_| crate::error::template_metadata_invalid())?;
+    semver::Version::parse(version).map_err(|_| super::error::template_metadata_invalid())?;
     let Some(base) = resolve_base(root, spec, false)? else {
         return Ok(None);
     };
@@ -130,9 +130,9 @@ fn validated_entry(root: &Path, spec: &ScaffoldSpec, version: &str) -> Result<Op
 }
 
 fn write_at(root: &Path, spec: &ScaffoldSpec, version: &str, tarball: &[u8]) -> Result<()> {
-    semver::Version::parse(version).map_err(|_| crate::error::template_metadata_invalid())?;
+    semver::Version::parse(version).map_err(|_| super::error::template_metadata_invalid())?;
     let base = resolve_base(root, spec, true)?
-        .ok_or_else(|| crate::error::template_cache_unsafe_path(root))?;
+        .ok_or_else(|| super::error::template_cache_unsafe_path(root))?;
     let canonical_root = root.canonicalize()?;
     let _lock = lock_template_cache_layer(&canonical_root, &layer_key(spec))?;
     if validated_entry(&canonical_root, spec, version)?.is_some() {
@@ -164,7 +164,7 @@ fn list_versions_at(root: &Path, spec: &ScaffoldSpec) -> Vec<String> {
 
 fn clear_at(root: &Path, spec: &ScaffoldSpec, version: Option<&str>) -> Result<()> {
     if let Some(version) = version {
-        semver::Version::parse(version).map_err(|_| crate::error::template_metadata_invalid())?;
+        semver::Version::parse(version).map_err(|_| super::error::template_metadata_invalid())?;
     }
     let Some(base) = resolve_base(root, spec, false)? else {
         return Ok(());

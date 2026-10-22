@@ -1,0 +1,3 @@
+Platform-specific deny-shim file creation for guarded child PATH entries. Unix writes a read-only shell shim and allows only the exact `npm --version` probe; Windows retains the native `mgc.exe` hard-link/copy probe and deny-only `.cmd` fallback. `mod.rs` exports the private owner API. ShadowPath allocation, sealing and cleanup stay in the parent environment owner.
+
+Folder này tạo deny-shim theo nền tảng cho PATH của child được bảo vệ. Unix ghi shell shim chỉ đọc và chỉ cho phép probe chính xác `npm --version`; Windows giữ probe hard-link/copy tới `mgc.exe` và fallback `.cmd` chỉ chặn. `mod.rs` export API private của owner. Cấp phát, khóa và cleanup ShadowPath vẫn thuộc environment cha.

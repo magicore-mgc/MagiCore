@@ -40,12 +40,12 @@ pub fn rank_results(results: &mut [SearchResult], context: &ProjectContext, quer
         if let Some(stars) = result.metadata.stars {
             // Log scale: 10k stars → 12 points, 100k → 15 points
             // Thang log: 10k stars → 12 điểm, 100k → 15 điểm
-            score += (stars as f64).log10() * 3.0;
+            score += (stars.max(1) as f64).log10() * 3.0;
         }
         if let Some(downloads) = result.metadata.downloads {
             // Log scale: 1M downloads → 12 points
             // Thang log: 1M lượt tải → 12 điểm
-            score += (downloads as f64).log10() * 2.0;
+            score += (downloads.max(1) as f64).log10() * 2.0;
         }
 
         // 4. Freshness (0-10)
@@ -53,10 +53,13 @@ pub fn rank_results(results: &mut [SearchResult], context: &ProjectContext, quer
         let freshness_score = parse_updated_score(&result.metadata.updated);
         score += freshness_score;
 
-        // 5. Quality (0-10, npm only)
-        // 5. Chất lượng (0-10, chỉ npm)
-        if let Some(quality) = result.metadata.quality {
-            score += (quality as f64) / 10.0; // Convert 0-100 to 0-10
+        // 5. Quality uses the documented finite NPM range (0-1), scaled to 0-10.
+        // 5. Chất lượng NPM chỉ nhận giá trị hữu hạn trong khoảng 0-1, đổi sang 0-10.
+        if let Some(quality) = result.metadata.quality
+            && quality.is_finite()
+            && (0.0..=1.0).contains(&quality)
+        {
+            score += f64::from(quality) * 10.0;
         }
 
         result.score = score;
@@ -64,7 +67,12 @@ pub fn rank_results(results: &mut [SearchResult], context: &ProjectContext, quer
 
     // Sort by score descending
     // Sắp xếp theo điểm giảm dần
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+    results.sort_by(|a, b| match (a.score.is_finite(), b.score.is_finite()) {
+        (false, true) => std::cmp::Ordering::Greater,
+        (true, false) => std::cmp::Ordering::Less,
+        (false, false) => std::cmp::Ordering::Equal,
+        (true, true) => b.score.total_cmp(&a.score),
+    });
 }
 
 /// Check if registry matches project core

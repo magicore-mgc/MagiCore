@@ -11,8 +11,8 @@ const SHA256_SRI: &str = "sha256-AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=";
 
 #[test]
 fn install_sri_gate_accepts_supported_algorithms() {
-    check_install_sri(SHA512_SRI).unwrap();
-    check_install_sri(SHA256_SRI).unwrap();
+    check_install_sri(SHA512_SRI).expect("test operation must succeed");
+    check_install_sri(SHA256_SRI).expect("test operation must succeed");
 }
 
 #[test]
@@ -50,7 +50,7 @@ fn migrate_carries_supported_sri_into_v4_artifact() {
     let mut lock = Lockfile::new();
     lock.packages
         .push(v3_package("leftpad", "1.3.0", SHA512_SRI));
-    let (v4, warnings) = migrate_v3_to_v4(lock).unwrap();
+    let (v4, warnings) = migrate_v3_to_v4(lock).expect("test operation must succeed");
     assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
     let pin = v4
         .packages
@@ -70,7 +70,7 @@ fn migrate_drops_unsupported_sri_with_warning_instead_of_fabricating() {
     let mut lock = Lockfile::new();
     lock.packages
         .push(v3_package("leftpad", "1.3.0", "blake3-abc123"));
-    let (v4, warnings) = migrate_v3_to_v4(lock).unwrap();
+    let (v4, warnings) = migrate_v3_to_v4(lock).expect("test operation must succeed");
     assert!(
         warnings.iter().any(|warning| warning.contains("leftpad")),
         "expected an SRI warning, got: {warnings:?}"
@@ -93,11 +93,11 @@ fn v4_document_round_trips_with_integrity_sri() {
     let mut lock = Lockfile::new();
     lock.packages
         .push(v3_package("leftpad", "1.3.0", SHA512_SRI));
-    let (v4, warnings) = migrate_v3_to_v4(lock).unwrap();
+    let (v4, warnings) = migrate_v3_to_v4(lock).expect("test operation must succeed");
     assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
-    let text = write_v4_document(&v4).unwrap();
+    let text = write_v4_document(&v4).expect("test operation must succeed");
     assert!(text.contains("integrity_sri"), "SRI must hit disk:\n{text}");
-    let back = parse_v4_document(&text).unwrap();
+    let back = parse_v4_document(&text).expect("test operation must succeed");
     assert_eq!(back, v4);
 }
 
@@ -120,7 +120,7 @@ url = "https://registry.npmjs.org/leftpad/-/leftpad-1.3.0.tgz"
 content_hash = ""
 downloaded_from = "https://registry.npmjs.org"
 "#;
-    let doc = parse_v4_document(text).unwrap();
+    let doc = parse_v4_document(text).expect("test operation must succeed");
     let artifact: &ArtifactRef = doc.packages[0].artifact.as_ref().expect("artifact");
     assert_eq!(artifact.integrity_sri, None);
 }

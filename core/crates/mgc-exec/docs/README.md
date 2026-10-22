@@ -11,7 +11,7 @@ Centralizes controlled external-process passthrough through executable/argument 
 
 - [`lib.rs`](../src/lib.rs)
 - [`allowlist.rs`](../src/allowlist.rs)
-- [`run.rs`](../src/run.rs)
+- [`run/mod.rs`](../src/run/mod.rs)
 - [`audit.rs`](../src/audit.rs)
 - [`sanitizer.rs`](../src/sanitizer.rs)
 

@@ -2,9 +2,7 @@
 
 use anyhow::Result;
 
-use crate::commands::core::install::app::{
-    gate_react_native, language, manifest_hint, project_root,
-};
+use crate::commands::core::app::{gate_react_native, language, manifest_hint, project_root};
 
 /// Convert the app CLI's Flutter constraint syntax into the shared native
 /// dependency-spec syntax (`name@range`).
@@ -56,7 +54,7 @@ pub async fn add(
     gate_react_native(&root, lang, crate::commands::dep_gate::DepOp::Add, &compat)?;
     if lang == mgc_app_adapter::AppLanguage::Flutter {
         let adapter = mgc_app_adapter::adapter_for(&root)
-            .ok_or_else(crate::error::app_project_not_detected)?;
+            .ok_or_else(crate::commands::core::app::project_not_detected_error)?;
         crate::commands::dep_gate::gate_native_adapter(
             &crate::commands::dep_gate::DepContext::new(
                 "app",

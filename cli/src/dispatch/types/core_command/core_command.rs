@@ -1,0 +1,305 @@
+//! CoreCommand implementation owner — stores per-core lifecycle payloads and policy controls.
+//! Owner lưu payload vòng đời và policy riêng cho từng core.
+
+#[allow(clippy::large_enum_variant)]
+pub enum CoreCommand {
+    CreateWeb {
+        framework: String,
+        project_name: String,
+        flags: crate::commands::core::web::scaffold_flags::WebScaffoldFlags,
+    },
+    CreateGame {
+        framework: String,
+        project_name: String,
+    },
+    CreateAi {
+        framework: String,
+        project_name: String,
+        container: crate::commands::core::shared::container_flags::ContainerFlags,
+    },
+    CreateClo {
+        framework: String,
+        project_name: String,
+        container: crate::commands::core::shared::container_flags::ContainerFlags,
+    },
+    CreateCicd {
+        framework: String,
+        project_name: String,
+    },
+    CreateIot {
+        framework: String,
+        project_name: String,
+    },
+    CreateApp {
+        framework: String,
+        project_name: String,
+        container: crate::commands::core::shared::container_flags::ContainerFlags,
+    },
+    CreateLib {
+        framework: String,
+        project_name: String,
+        container: crate::commands::core::shared::container_flags::ContainerFlags,
+    },
+    CreateHardware {
+        framework: String,
+        project_name: String,
+    },
+    InstallWeb {
+        packages: Vec<String>,
+        frozen: bool,
+        ignore_scripts: bool,
+        allow_scripts: bool,
+        prefer_dedupe: bool,
+        repair: bool,
+        offline: bool,
+        compat_runtime: Option<String>,
+    },
+    InstallGame {
+        packages: Vec<String>,
+        frozen: bool,
+        compat_runtime: Option<String>,
+    },
+    InstallAi {
+        packages: Vec<String>,
+        dry_run: bool,
+        compat_runtime: Option<String>,
+        frozen: bool,
+        offline: bool,
+    },
+    InstallClo {
+        packages: Vec<String>,
+        dry_run: bool,
+        frozen: bool,
+        compat_runtime: Option<String>,
+    },
+    InstallCicd {
+        packages: Vec<String>,
+        dry_run: bool,
+        compat_runtime: Option<String>,
+    },
+    InstallIot {
+        packages: Vec<String>,
+        frozen: bool,
+        compat_runtime: Option<String>,
+    },
+    InstallApp {
+        packages: Vec<String>,
+        dry_run: bool,
+        compat_runtime: Option<String>,
+        frozen: bool,
+        offline: bool,
+    },
+    InstallLib {
+        packages: Vec<String>,
+        compat_runtime: Option<String>,
+        frozen: bool,
+        offline: bool,
+    },
+    InstallHardware {
+        packages: Vec<String>,
+        compat_runtime: Option<String>,
+    },
+    AddWeb {
+        packages: Vec<String>,
+        dev: bool,
+        exact: bool,
+        optional: bool,
+        peer: bool,
+        no_save: bool,
+        install: bool,
+        global: bool,
+        compat_runtime: Option<String>,
+        version: Option<String>,
+    },
+    AddGame {
+        packages: Vec<String>,
+        dev: bool,
+        exact: bool,
+        optional: bool,
+        peer: bool,
+        no_save: bool,
+        global: bool,
+        compat_runtime: Option<String>,
+        version: Option<String>,
+    },
+    AddAi {
+        packages: Vec<String>,
+        dev: bool,
+        exact: bool,
+        optional: bool,
+        peer: bool,
+        no_save: bool,
+        global: bool,
+        compat_runtime: Option<String>,
+        version: Option<String>,
+    },
+    AddClo {
+        packages: Vec<String>,
+        dev: bool,
+        exact: bool,
+        optional: bool,
+        peer: bool,
+        no_save: bool,
+        global: bool,
+        compat_runtime: Option<String>,
+        version: Option<String>,
+    },
+    AddCicd {
+        packages: Vec<String>,
+        dev: bool,
+        exact: bool,
+        optional: bool,
+        peer: bool,
+        no_save: bool,
+        global: bool,
+        compat_runtime: Option<String>,
+        version: Option<String>,
+    },
+    AddIot {
+        packages: Vec<String>,
+        dev: bool,
+        exact: bool,
+        optional: bool,
+        peer: bool,
+        no_save: bool,
+        global: bool,
+        compat_runtime: Option<String>,
+        version: Option<String>,
+    },
+    AddApp {
+        packages: Vec<String>,
+        dev: bool,
+        exact: bool,
+        optional: bool,
+        peer: bool,
+        no_save: bool,
+        global: bool,
+        compat_runtime: Option<String>,
+        version: Option<String>,
+    },
+    AddLib {
+        packages: Vec<String>,
+        dev: bool,
+        exact: bool,
+        optional: bool,
+        peer: bool,
+        no_save: bool,
+        global: bool,
+        compat_runtime: Option<String>,
+        version: Option<String>,
+    },
+    AddHardware {
+        packages: Vec<String>,
+        compat_runtime: Option<String>,
+        version: Option<String>,
+    },
+    RemoveWeb {
+        packages: Vec<String>,
+        install: bool,
+        compat_runtime: Option<String>,
+    },
+    RemoveGame {
+        packages: Vec<String>,
+        compat_runtime: Option<String>,
+    },
+    RemoveAi {
+        packages: Vec<String>,
+        compat_runtime: Option<String>,
+    },
+    RemoveClo {
+        packages: Vec<String>,
+        compat_runtime: Option<String>,
+    },
+    RemoveCicd {
+        packages: Vec<String>,
+        compat_runtime: Option<String>,
+    },
+    RemoveIot {
+        packages: Vec<String>,
+        compat_runtime: Option<String>,
+    },
+    RemoveApp {
+        packages: Vec<String>,
+        compat_runtime: Option<String>,
+    },
+    RemoveLib {
+        packages: Vec<String>,
+        compat_runtime: Option<String>,
+    },
+    RemoveHardware {
+        packages: Vec<String>,
+        compat_runtime: Option<String>,
+    },
+    ListWeb {
+        compat_runtime: Option<String>,
+    },
+    ListGame {
+        compat_runtime: Option<String>,
+    },
+    ListAi {
+        compat_runtime: Option<String>,
+    },
+    ListClo {
+        compat_runtime: Option<String>,
+    },
+    ListCicd {
+        compat_runtime: Option<String>,
+    },
+    ListIot {
+        compat_runtime: Option<String>,
+    },
+    ListApp {
+        compat_runtime: Option<String>,
+    },
+    ListLib {
+        compat_runtime: Option<String>,
+    },
+    ListHardware {
+        compat_runtime: Option<String>,
+    },
+    UpdateWeb {
+        packages: Vec<String>,
+        install: bool,
+        compat_runtime: Option<String>,
+    },
+    UpdateGame {
+        packages: Vec<String>,
+        install: bool,
+        compat_runtime: Option<String>,
+    },
+    UpdateAi {
+        packages: Vec<String>,
+        install: bool,
+        compat_runtime: Option<String>,
+    },
+    UpdateClo {
+        packages: Vec<String>,
+        install: bool,
+        compat_runtime: Option<String>,
+    },
+    UpdateCicd {
+        packages: Vec<String>,
+        install: bool,
+        compat_runtime: Option<String>,
+    },
+    UpdateIot {
+        packages: Vec<String>,
+        install: bool,
+        compat_runtime: Option<String>,
+    },
+    UpdateApp {
+        packages: Vec<String>,
+        install: bool,
+        compat_runtime: Option<String>,
+    },
+    UpdateLib {
+        packages: Vec<String>,
+        install: bool,
+        compat_runtime: Option<String>,
+    },
+    UpdateHardware {
+        packages: Vec<String>,
+        install: bool,
+        compat_runtime: Option<String>,
+    },
+}

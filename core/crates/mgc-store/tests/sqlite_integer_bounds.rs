@@ -18,18 +18,18 @@ fn unsigned_metadata_roundtrips_and_rejects_unrepresentable_values() {
     let id = mgc_types::PackageId::parse("probe@1.0.0").unwrap();
     db.insert_package(&id, Some("sha512-probe")).unwrap();
     assert!(db.list_installed().unwrap()[0].installed_at > 0);
-    db.conn()
+    db.conn_for_tests()
         .execute("UPDATE packages SET installed_at = -1", [])
         .unwrap();
     assert!(db.list_installed().is_err());
 
     db.upsert_trust_policy("probe", "allow").unwrap();
-    db.conn()
+    db.conn_for_tests()
         .execute("UPDATE trust_policy SET updated_at = -1", [])
         .unwrap();
     assert!(db.list_trust_policies().is_err());
 
-    db.conn()
+    db.conn_for_tests()
         .execute("UPDATE release_policy SET min_age_secs = -1", [])
         .unwrap();
     assert!(db.release_policy("npm").is_err());
@@ -57,7 +57,7 @@ fn negative_package_file_size_is_rejected_by_database_and_index_rebuild() {
         let db = Database::open(&db_path).unwrap();
         db.replace_package_files(&id, &[("lib.rs".to_string(), "hash-a".to_string(), 7)])
             .unwrap();
-        db.conn()
+        db.conn_for_tests()
             .execute("UPDATE package_files SET size = -1", [])
             .unwrap();
         assert!(db.list_package_files(&id).is_err());

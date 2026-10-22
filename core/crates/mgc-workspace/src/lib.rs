@@ -20,4 +20,4 @@ pub use filter::filter_matches;
 pub use graph::{
     WorkspaceEdge, WorkspaceGraph, WorkspaceNode, WorkspacePackageManifest, read_package_manifest,
 };
-pub use topo::{TopoError, topo_levels};
+pub use topo::{TopoError, dependency_first_levels, topo_levels};

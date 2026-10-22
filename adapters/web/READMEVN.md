@@ -45,6 +45,6 @@ Shared cache được prune theo chu kỳ best-effort qua `MAGICORE_WEB_CACHE_PR
 
 ## Tích hợp
 
-Các lệnh đi qua `cli/src/commands/core/web.rs`, tạo `WebAdapter` rồi ủy quyền phần logic dùng chung (`add`, `remove`, `list`, `update`, `install`) cho `shared.rs`.
+Các lệnh đi qua `cli/src/commands/core/web/web.rs`, tạo `WebAdapter` rồi ủy quyền phần logic dùng chung (`add`, `remove`, `list`, `update`, `install`) cho `shared.rs`.
 
 Ở chế độ single-core, các lệnh trần như `mgc create`, `mgc add`, `mgc remove`, `mgc update`, `mgc list`, `mgc install` dùng đường dẫn tự nhận diện core. Dự án multi-core có các lệnh riêng như `mgc create-web`, `mgc add-web`, `mgc install-web`.

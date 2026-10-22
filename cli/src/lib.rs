@@ -1,5 +1,6 @@
 //! MagiCore CLI library - expose modules for testing
 
+#![cfg_attr(test, allow(clippy::duplicate_mod, unused_imports))]
 #![allow(clippy::unwrap_used)]
 
 pub mod bundler;

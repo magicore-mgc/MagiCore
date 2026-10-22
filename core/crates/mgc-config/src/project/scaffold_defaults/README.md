@@ -1,0 +1,9 @@
+# Project scaffold defaults / Default scaffold project
+
+`scaffold_defaults.rs` is the single coordinator for `ProjectConfig::from_scaffold`. It owns generic project fields and the execution-profile default, then dispatches optional core settings to the matching DTO owner. Individual core defaults belong beside the matching DTO in `core_settings/`: Lib language aliases, Game engine, IoT framework/board, Cloud type, CICD provider, App language/platforms, and AI framework.
+
+The public method path and signature must remain stable. Preserve the `clo` Cloud alias, all empty-input defaults, the `app=multi` platform set, and the existing rule that Web/unknown cores leave optional core settings unset. This owner is infallible and has no local error type. Per-core scaffold regressions live beside each DTO in `core_settings/test/`; broad public-API/TOML integration remains in `mgc-config/tests/project.rs`. The 16 moved test items are source-compared and `NOT_RUN` in this source-first batch.
+
+`scaffold_defaults.rs` là coordinator duy nhất của `ProjectConfig::from_scaffold`. Nó sở hữu field project chung và execution-profile default, sau đó dispatch settings tùy chọn tới DTO owner tương ứng. Default riêng từng core nằm cạnh DTO trong `core_settings/`: alias ngôn ngữ Lib, engine Game, framework/board IoT, type Cloud, provider CICD, ngôn ngữ/platform App và framework AI.
+
+Public path và chữ ký method phải ổn định. Giữ alias Cloud `clo`, mọi default khi input rỗng, platform của `app=multi`, và quy tắc cũ rằng Web/core lạ không set settings tùy chọn. Owner này không có lỗi runtime riêng nên không có error type cục bộ. Test scaffold từng core nằm cạnh DTO trong `core_settings/test/`; integration test public API/TOML tổng quát vẫn ở `mgc-config/tests/project.rs`. 16 test item được đối chiếu source và `NOT_RUN` trong batch source-first này.

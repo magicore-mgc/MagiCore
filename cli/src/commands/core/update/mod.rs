@@ -18,6 +18,5 @@ pub mod iot;
 pub mod library;
 pub mod web;
 
-// Router `run(core, ...)` đã bị loại: dispatch live (dispatch/core/package_ops.rs)
-// gọi trực tiếp update::<core> — router này trùng lắp, không còn caller.
-// Removed legacy router: live dispatch calls each update subcommand directly.
+// Router `run(core, ...)` cũ đã bị loại; package dispatch hiện nằm tại `dispatch::core::package_ops`.
+// Legacy `run(core, ...)` router is retired; package dispatch now lives in `dispatch::core::package_ops`.

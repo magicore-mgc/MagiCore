@@ -49,7 +49,10 @@ async fn test_orchestrator_search_all() {
         },
     };
 
-    let results = orchestrator.search_all(&query).await.unwrap();
+    let results = orchestrator
+        .search_all(&query)
+        .await
+        .expect("mock orchestrator operation succeeds");
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].name, "test-package");
 }
@@ -96,7 +99,10 @@ async fn test_orchestrator_multiple_clients() {
         },
     };
 
-    let results = orchestrator.search_all(&query).await.unwrap();
+    let results = orchestrator
+        .search_all(&query)
+        .await
+        .expect("mock orchestrator operation succeeds");
     assert_eq!(results.len(), 2);
 }
 
@@ -121,7 +127,7 @@ async fn test_orchestrator_empty_results() {
     assert!(result.is_err());
     assert!(
         result
-            .unwrap_err()
+            .expect_err("empty search result must produce an error")
             .to_string()
             .contains("No packages found")
     );

@@ -3,9 +3,7 @@
 
 use anyhow::Result;
 
-use crate::commands::core::install::app::{
-    gate_react_native, language, manifest_hint, project_root,
-};
+use crate::commands::core::app::{gate_react_native, language, manifest_hint, project_root};
 
 pub async fn update(
     packages: Vec<String>,
@@ -32,7 +30,7 @@ pub async fn update(
             Some(&root.join(".magicore").join("exec.log")),
         )?;
         let adapter = mgc_app_adapter::adapter_for(&root)
-            .ok_or_else(crate::error::app_project_not_detected)?;
+            .ok_or_else(crate::commands::core::app::project_not_detected_error)?;
         return crate::commands::core::shared::native_update(&adapter, &root, packages, true).await;
     }
     // Swift/Kotlin source/catalog mutations do not yet share the crash

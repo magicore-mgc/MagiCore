@@ -1,12 +1,22 @@
 pub mod add;
+pub mod ai;
+#[cfg(feature = "app")]
+pub mod app;
+#[cfg(feature = "clo")]
+pub mod cloud;
 pub mod create;
 pub mod dev;
 pub mod dev_port;
+pub mod game;
+pub mod hardware;
 pub mod install;
+#[cfg(feature = "lib")]
+pub mod lib;
 pub mod list;
 pub mod remove;
 pub mod scaffold_flags;
 /// Core command implementations (sub-ecosystems)
+#[path = "shared.rs"]
 pub mod shared;
 pub mod update;
 pub mod web;

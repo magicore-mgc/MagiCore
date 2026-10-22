@@ -140,9 +140,5 @@ pub async fn run(core: Option<&str>, force: bool) -> Result<()> {
 mod tests;
 
 #[cfg(test)]
-#[path = "test/runtime_detect_test.rs"]
-mod runtime_detect_tests;
-
-#[cfg(test)]
 #[path = "test/adapters_test.rs"]
 mod adapters_tests;

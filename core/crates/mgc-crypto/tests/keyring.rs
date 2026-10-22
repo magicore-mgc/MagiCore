@@ -3,84 +3,44 @@
 
 use mgc_crypto::keyring::{KeyPair, Keyring};
 use std::fs;
-use tempfile::tempdir;
 
-// Helper để gọi save không validation trong tests
-trait KeyringSaveTest {
-    fn save_test(&self, path: &std::path::Path) -> mgc_crypto::CryptoResult<()>;
-}
-
-impl KeyringSaveTest for Keyring {
-    fn save_test(&self, path: &std::path::Path) -> mgc_crypto::CryptoResult<()> {
-        // Call private save_impl with skip_validation=true via reflection workaround
-        // Workaround: just inline the save logic without validation
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let content = serde_json::to_string_pretty(self)?;
-
-        #[cfg(unix)]
-        {
-            use std::io::Write;
-            use std::os::unix::fs::OpenOptionsExt;
-            let mut file = fs::OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .mode(0o600)
-                .open(path)?;
-            file.write_all(content.as_bytes())?;
-            file.sync_all()?;
-        }
-
-        #[cfg(not(unix))]
-        {
-            fs::write(path, content)?;
-        }
-        Ok(())
-    }
-}
-
-#[test]
-fn test_generate_key_pair() {
-    let key_pair = KeyPair::generate().unwrap();
-    assert_eq!(key_pair.public_key.0.len(), 32);
-    assert!(!key_pair.key_id.is_empty());
-}
-
-#[test]
-fn test_key_pair_signer() {
-    let key_pair = KeyPair::generate().unwrap();
-    let signer = key_pair.signer().unwrap();
-    let public_key = signer.public_key();
-    assert_eq!(public_key, key_pair.public_key);
+fn keyring_test_dir() -> tempfile::TempDir {
+    let home =
+        dirs::home_dir().expect("home directory is required for production keyring save tests");
+    let home = home.canonicalize().unwrap_or(home);
+    tempfile::Builder::new()
+        .prefix("mgc-keyring-test-")
+        .tempdir_in(home)
+        .expect("create keyring test directory under home")
 }
 
 #[test]
 fn test_keyring_add_key() {
     let mut keyring = Keyring::new();
-    let key_pair = KeyPair::generate().unwrap();
+    let key_pair = KeyPair::generate().expect("test operation must succeed");
     let key_id = key_pair.key_id.clone();
 
     keyring.add_key(key_pair);
     assert_eq!(keyring.keys.len(), 1);
     assert_eq!(keyring.default_key_id, Some(key_id.clone()));
 
-    let retrieved = keyring.get_key(&key_id).unwrap();
+    let retrieved = keyring
+        .get_key(&key_id)
+        .expect("test operation must succeed");
     assert_eq!(retrieved.key_id, key_id);
 }
 
 #[test]
 fn test_keyring_save_load() {
-    let dir = tempdir().unwrap();
+    let dir = keyring_test_dir();
     let path = dir.path().join("keyring.json");
 
     let mut keyring = Keyring::new();
-    let key_pair = KeyPair::generate().unwrap();
+    let key_pair = KeyPair::generate().expect("test operation must succeed");
     keyring.add_key(key_pair);
 
-    keyring.save_test(&path).unwrap();
-    let loaded = Keyring::load(&path).unwrap();
+    keyring.save(&path).expect("test operation must succeed");
+    let loaded = Keyring::load(&path).expect("test operation must succeed");
 
     assert_eq!(keyring.keys.len(), loaded.keys.len());
     assert_eq!(keyring.default_key_id, loaded.default_key_id);
@@ -89,17 +49,19 @@ fn test_keyring_save_load() {
 #[test]
 fn test_keyring_default_key() {
     let mut keyring = Keyring::new();
-    let key1 = KeyPair::generate().unwrap();
-    let key2 = KeyPair::generate().unwrap();
+    let key1 = KeyPair::generate().expect("test operation must succeed");
+    let key2 = KeyPair::generate().expect("test operation must succeed");
 
     keyring.add_key(key1.clone());
     keyring.add_key(key2.clone());
 
-    let default = keyring.default_key().unwrap();
+    let default = keyring.default_key().expect("test operation must succeed");
     assert_eq!(default.key_id, key1.key_id);
 
-    keyring.set_default(&key2.key_id).unwrap();
-    let default = keyring.default_key().unwrap();
+    keyring
+        .set_default(&key2.key_id)
+        .expect("test operation must succeed");
+    let default = keyring.default_key().expect("test operation must succeed");
     assert_eq!(default.key_id, key2.key_id);
 }
 
@@ -108,16 +70,16 @@ fn test_keyring_default_key() {
 fn test_keyring_secure_permissions() {
     use std::os::unix::fs::PermissionsExt;
 
-    let dir = tempdir().unwrap();
+    let dir = keyring_test_dir();
     let path = dir.path().join("keyring.json");
 
     let mut keyring = Keyring::new();
-    let key_pair = KeyPair::generate().unwrap();
+    let key_pair = KeyPair::generate().expect("test operation must succeed");
     keyring.add_key(key_pair);
 
-    keyring.save_test(&path).unwrap();
+    keyring.save(&path).expect("test operation must succeed");
 
-    let metadata = fs::metadata(&path).unwrap();
+    let metadata = fs::metadata(&path).expect("test operation must succeed");
     let mode = metadata.permissions().mode();
     assert_eq!(mode & 0o777, 0o600); // Owner read/write only — Chỉ owner đọc/ghi
 }
@@ -127,15 +89,16 @@ fn test_keyring_secure_permissions() {
 fn test_keyring_load_rejects_group_or_world_readable_private_keys() {
     use std::os::unix::fs::PermissionsExt;
 
-    let dir = tempdir().unwrap();
+    let dir = keyring_test_dir();
     let path = dir.path().join("keyring.json");
     let mut keyring = Keyring::new();
-    keyring.add_key(KeyPair::generate().unwrap());
-    keyring.save_test(&path).unwrap();
+    keyring.add_key(KeyPair::generate().expect("test operation must succeed"));
+    keyring.save(&path).expect("test operation must succeed");
 
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o644))
+        .expect("test operation must succeed");
 
-    let error = Keyring::load(&path).unwrap_err();
+    let error = Keyring::load(&path).expect_err("test operation must fail");
 
     assert!(
         error.to_string().contains("permissions") && error.to_string().contains("group/world"),
@@ -148,13 +111,13 @@ fn test_keyring_load_rejects_group_or_world_readable_private_keys() {
 fn test_keyring_load_rejects_symlink_path() {
     use std::os::unix::fs::symlink;
 
-    let dir = tempdir().unwrap();
+    let dir = keyring_test_dir();
     let target = dir.path().join("target.json");
     let link = dir.path().join("keyring.json");
     let mut keyring = Keyring::new();
-    keyring.add_key(KeyPair::generate().unwrap());
-    keyring.save_test(&target).unwrap();
-    symlink(&target, &link).unwrap();
+    keyring.add_key(KeyPair::generate().expect("test operation must succeed"));
+    keyring.save(&target).expect("test operation must succeed");
+    symlink(&target, &link).expect("test operation must succeed");
 
     assert!(Keyring::load(&link).is_err());
     assert!(target.exists(), "load must not mutate the symlink target");
@@ -162,15 +125,22 @@ fn test_keyring_load_rejects_symlink_path() {
 
 #[test]
 #[cfg(unix)]
+// SAFETY: `mkfifo` receives a valid NUL-terminated path pointer from `CString`
+// (no interior NUL possible) with mode 0o600; return value is checked and the
+// FIFO is created inside an isolated tempdir. Test-only helper, no production use.
+// AN TOÀN: `mkfifo` nhận con trỏ path NUL-terminated hợp lệ từ `CString` (không
+// thể có NUL giữa), mode 0o600; kiểm tra return và FIFO nằm trong tempdir cô lập.
+// Helper chỉ dùng cho test, không dùng production.
+#[allow(unsafe_code)]
 fn test_keyring_load_rejects_fifo_without_blocking() {
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
     use std::sync::mpsc;
     use std::time::Duration;
 
-    let dir = tempdir().unwrap();
+    let dir = keyring_test_dir();
     let path = dir.path().join("keyring.fifo");
-    let c_path = CString::new(path.as_os_str().as_bytes()).unwrap();
+    let c_path = CString::new(path.as_os_str().as_bytes()).expect("test operation must succeed");
     let mkfifo_result = unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) };
     assert_eq!(
         mkfifo_result,
@@ -189,20 +159,4 @@ fn test_keyring_load_rejects_fifo_without_blocking() {
         .recv_timeout(Duration::from_millis(500))
         .expect("loading a FIFO must not hang before rejecting the non-regular file");
     assert!(result.is_err(), "FIFO must be rejected, got {result:?}");
-}
-
-#[test]
-fn test_keypair_debug_redacts_private_key_bytes() {
-    let key_pair = KeyPair::generate().unwrap();
-    let debug = format!("{key_pair:?}");
-    let private_bytes = format!("{:?}", key_pair.private_key_pkcs8);
-
-    assert!(
-        debug.contains("REDACTED"),
-        "debug output must mark the secret as redacted"
-    );
-    assert!(
-        !debug.contains(&private_bytes),
-        "debug output must not include private key bytes"
-    );
 }

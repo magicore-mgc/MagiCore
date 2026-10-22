@@ -9,6 +9,11 @@ authors.workspace = true
 description = "Web ecosystem adapter for MagiCore"
 [dependencies]
 mgc-audit = { workspace = true }
+# S07 shared JS service (compat facade target): direct path dep until the
+# central edit adds the root workspace-table entry (root Cargo.toml is frozen
+# Shared JS service (S07; facade-compat target): workspace-owned dep (D010).
+# Service JS dùng chung (S07; đích facade tương thích): dep thuộc workspace (D010).
+mgc-js-service = { workspace = true }
 # Core crates
 mgc-types = { workspace = true }
 mgc-adapter-base = { workspace = true }
@@ -26,6 +31,10 @@ mgc-exec = { workspace = true }
 mgc-platform = { workspace = true }
 mgc-search = { workspace = true }
 
+# Web development server
+axum = { workspace = true }
+notify = { workspace = true }
+
 # Async
 tokio = { workspace = true }
 async-trait = { workspace = true }
@@ -42,6 +51,11 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 
 # Utilities
+blake3 = { workspace = true }
+esbuild-rs = { workspace = true }
+mime_guess = { workspace = true }
+regex = { workspace = true }
+tracing = { workspace = true }
 semver = { workspace = true }
 url = { workspace = true }
 walkdir = { workspace = true }

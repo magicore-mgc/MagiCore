@@ -1,0 +1,5 @@
+# Cache path owner / Owner đường dẫn cache
+
+This owner converts package and metadata identities into portable cache paths. Lowercase portable names and ordinary versions retain their legacy locations; names that can alias across separators, case-insensitive filesystems, Windows reserved devices, or unsafe prerelease text use versioned BLAKE3 namespaces. Exact metadata `.`/`..` retain dedicated safe sentinels. Existing entries whose path changes are cache misses and are not migrated automatically. A pre-existing symlink at a cache parent can still redirect filesystem operations and needs a separate platform-aware fix.
+
+Owner này chuyển identity package và metadata thành path cache portable. Tên chữ thường portable và version thông thường giữ vị trí cũ; tên có thể alias do separator, filesystem không phân biệt hoa thường, tên thiết bị Windows hoặc prerelease không an toàn dùng namespace BLAKE3 có version. Metadata chính xác `.`/`..` có sentinel an toàn riêng. Entry cũ có path thay đổi sẽ thành cache miss, không tự migrate. Symlink có sẵn ở cache parent vẫn có thể chuyển hướng filesystem operation và cần fix riêng theo platform.

@@ -34,6 +34,10 @@ fn lock_with_owner(
         );
         package.owner_core = Some(owner.to_string());
         package.ecosystem = ecosystem;
+        package.registry = Some(format!(
+            "https://registry.example.invalid/{}",
+            ecosystem.as_str()
+        ));
         lock.add_package(package);
     }
     mgc_lockfile::update_owner_root_pins(
@@ -75,6 +79,10 @@ fn polyglot_lock() -> String {
             );
             package.owner_core = Some(owner.into());
             package.ecosystem = ecosystem;
+            package.registry = Some(format!(
+                "https://registry.example.invalid/{}",
+                ecosystem.as_str()
+            ));
             lock.add_package(package);
         }
         mgc_lockfile::update_owner_root_pins(

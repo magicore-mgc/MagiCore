@@ -1,0 +1,5 @@
+# Dependency package entry resolution
+
+This owner resolves the installed package directory first, then selects browser/module/main/index in existing precedence. The package directory may be a pnpm/workspace symlink; the resolved directory becomes its root. Plain and scoped package subpaths may target a file directly or a directory with its own manifest/index. Manifest entry paths and fallback files must canonicalize to regular files under the package root. Relative `./` and in-package `../` forms remain valid; absolute, cross-platform separator/device and outside-target paths are rejected.
+
+Owner này resolve thư mục package đã cài trước, rồi chọn browser/module/main/index theo thứ tự hiện tại. Thư mục package có thể là symlink pnpm/workspace; thư mục sau resolve là root. Subpath package thường hoặc scoped có thể trỏ thẳng tới file hoặc thư mục có manifest/index riêng. Entry manifest và fallback phải canonicalize thành regular file trong package root đó. Giữ dạng relative `./` và `../` nằm trong package; chặn absolute, separator/device liên OS và target ra ngoài.

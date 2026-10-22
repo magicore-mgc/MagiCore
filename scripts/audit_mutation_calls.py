@@ -117,7 +117,7 @@ ALLOWLIST = {
         {"adapter-mutation"}, "delegated iot lane, documented",
     ),
     # --- lock-only maintenance (writer guard held, no manifest mutation) ---
-    ("cli/src/commands/dedupe.rs", "run"): (
+    ("cli/src/commands/dedupe/dedupe.rs", "run"): (
         {"lock-write"}, "lock merge under writer guard + build-verified rollback",
     ),
     ("cli/src/commands/import.rs", "run"): (
@@ -138,6 +138,26 @@ ALLOWLIST = {
     ("adapters/app/src/install/mod.rs", "atomic_write_canonical_lock"): (
         {"manifest-file-write"},
         "private atomic primitive called only by write_canonical_lock under install gateway",
+    ),
+    # App lock owners retain the audited write chain after module extraction.
+    # (Các owner lock App vẫn nằm trong chuỗi audit sau khi tách module.)
+    ("adapters/app/src/install/install/install.rs", "run_install"): (
+        {"lock-write"}, "App install routes lock writes through the lock owner under the CLI gateway",
+    ),
+    ("adapters/app/src/install/lockfile/lock_write/lock_write.rs", "write_canonical_lock"): (
+        {"lock-write"}, "test-only compatibility wrapper delegates to the scoped writer",
+    ),
+    ("adapters/app/src/install/lockfile/lock_write/lock_write.rs", "write_canonical_lock_with_roots"): (
+        {"lock-write"}, "validates scope and dispatches to the schema-specific lock owner",
+    ),
+    ("adapters/app/src/install/lockfile/atomic_publication/atomic_publication.rs", "atomic_write_canonical_lock"): (
+        {"lock-write"}, "public crate writer delegates to the guarded local atomic publication owner",
+    ),
+    ("adapters/app/src/install/lockfile/v3_merge/v3_merge.rs", "write_v3_lane"): (
+        {"lock-write"}, "v3 writer validates mutation policy and publishes through the App atomic owner",
+    ),
+    ("adapters/app/src/install/lockfile/v4_merge/v4_merge.rs", "write_v4_lane"): (
+        {"lock-write"}, "v4 writer verifies merge base/signature policy before atomic publication",
     ),
     ("adapters/web/src/lockfile.rs", "atomic_write_web_lockfile"): (
         {"manifest-file-write"},
@@ -249,7 +269,7 @@ ALLOWLIST = {
         {"manifest-file-write"}, "engine manifest writer",
     ),
     # --- link/staging/scratch management (not manifest content) ---
-    ("cli/src/commands/core/web.rs", "link_monorepo_workspace_packages"): (
+    ("cli/src/commands/core/web/web.rs", "link_monorepo_workspace_packages"): (
         {"manifest-file-write"}, "symlink management only, no content writes",
     ),
     # --- non-manifest outputs (reports, scaffolds, generated files) ---
@@ -280,13 +300,13 @@ ALLOWLIST = {
     ("adapters/iot/src/adapter.rs", "LockfileProvider::write_manifest"): (
         {"manifest-write"}, "delegating override to the cargo writer",
     ),
-    ("adapters/ai/src/adapter.rs", "mgc_types::remove"): (
+    ("adapters/ai/src/adapter/adapter.rs", "mgc_types::remove"): (
         {"adapter-mutation"}, "forwards native Python removal; CLI entry is shared::remove under mutation gateway",
     ),
-    ("adapters/ai/src/adapter.rs", "mgc_types::update"): (
+    ("adapters/ai/src/adapter/adapter.rs", "mgc_types::update"): (
         {"adapter-mutation"}, "forwards native Python update; CLI entry is shared::update under mutation gateway",
     ),
-    ("adapters/ai/src/adapter.rs", "mgc_types::write_manifest"): (
+    ("adapters/ai/src/adapter/adapter.rs", "mgc_types::write_manifest"): (
         {"manifest-write"}, "forwards native Python manifest write; CLI mutation entry is gateway-routed",
     ),
     ("adapters/lib/src/manifest.rs", "write_cargo_manifest"): (
@@ -382,7 +402,10 @@ PATTERNS = [
     ("lock-write", re.compile(r"\batomic_write_locked\s*\("), True),
     ("lock-write", re.compile(r"\bwrite_web_lockfile\w*\s*\("), True),
     ("lock-write", re.compile(r"\bwrite_lockfile\s*\("), True),
-    ("lock-write", re.compile(r"\bwrite_canonical_lock\s*\("), True),
+    ("lock-write", re.compile(r"\bwrite_canonical_lock\w*\s*\("), True),
+    ("lock-write", re.compile(r"\bwrite_v[34]_lane\s*\("), True),
+    ("lock-write", re.compile(r"\batomic_write_canonical_lock\w*\s*\("), True),
+    ("lock-write", re.compile(r"\batomic_write_v4_bytes\s*\("), True),
     ("adapter-mutation", re.compile(r"\badapter\.add\s*\("), True),
     ("adapter-mutation", re.compile(r"\badapter\.remove\s*\("), True),
     ("adapter-mutation", re.compile(r"\badapter\.update\s*\("), True),
@@ -443,7 +466,8 @@ def open_options_write_starts(lines):
 # The definitions themselves are not calls.
 DEF_RE = re.compile(
     r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+"
-    r"(?:atomic_write_locked|write_manifest|write_web_lockfile\w*|write_lockfile|write_canonical_lock|atomic_write\w*)\b"
+    r"(?:atomic_write_locked|write_manifest|write_web_lockfile\w*|write_lockfile|"
+    r"write_canonical_lock\w*|write_v[34]_lane|atomic_write\w*)\b"
 )
 
 FN_RE = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+(\w+)")
@@ -646,6 +670,11 @@ def self_test():
     not a reimplementation — flags every bypass form. Returns exit code."""
     import tempfile
     failures = []
+    dedupe_route = ALLOWLIST.get(("cli/src/commands/dedupe/dedupe.rs", "run"))
+    if dedupe_route is None or dedupe_route[0] != {"lock-write"}:
+        failures.append("dedupe coordinator route is missing its lock-write allowlist")
+    if ("cli/src/commands/dedupe.rs", "run") in ALLOWLIST:
+        failures.append("removed flat dedupe route is still allowlisted")
     with tempfile.TemporaryDirectory() as tmp:
         for name, (expected_sink, snippet) in NEGATIVE_CORPUS.items():
             if name == "split_let_write_manifest.rs":

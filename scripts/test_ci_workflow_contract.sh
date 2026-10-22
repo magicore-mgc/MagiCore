@@ -6,6 +6,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ALL_CORE="$ROOT/.github/workflows/delegated-compatibility-matrix.yml"
 RELEASE="$ROOT/.github/workflows/release.yml"
+RELEASE_BUILD="$ROOT/.github/workflows/release-build.yml"
+RELEASE_SMOKE="$ROOT/.github/workflows/release-artifact-smoke.yml"
+RELEASE_PUBLISH="$ROOT/.github/workflows/release-publish-github.yml"
+RELEASE_AUDIT="$ROOT/.github/workflows/release-audit-capability.yml"
 SECURITY="$ROOT/.github/workflows/security.yml"
 VERIFY_DISTRIBUTION="$ROOT/.github/workflows/verify-release-distribution.yml"
 LOCAL_RUNNER="$ROOT/scripts/run_all_core_tests.sh"
@@ -53,22 +57,26 @@ done
 if grep -Fq 'gen-backend-templates.py' "$ROOT/.github/workflows/ci.yml"; then
   fail "CI must not overlay generated backend files into framework templates"
 fi
-container_template_files="$(find "$ROOT/templates" -type f \( \
-  -name Dockerfile -o -name Containerfile -o -name .dockerignore -o -name .containerignore \
-  -o -name docker-compose.yml -o -name docker-compose.yaml -o -name compose.yml -o -name compose.yaml \
-  -o -name mgc-container-entrypoint \) -print)"
-[[ -z "$container_template_files" ]] \
-  || fail "Docker assets must be emitted by MGC flags, not framework template files"
-container_template_dirs="$(find "$ROOT/templates" -type d \( -name k8s -o -name kubernetes \) -print)"
-[[ -z "$container_template_dirs" ]] \
-  || fail "Kubernetes assets must be emitted by MGC flags, not framework template directories"
+# Optional legacy sources still obey container ownership; hybrid installs need no source tree.
+# Cây nguồn cũ nếu tồn tại vẫn tuân ownership container; hybrid không cần cây đó.
+if [[ -d "$ROOT/templates" ]]; then
+  container_template_files="$(find "$ROOT/templates" -type f \( \
+    -name Dockerfile -o -name Containerfile -o -name .dockerignore -o -name .containerignore \
+    -o -name docker-compose.yml -o -name docker-compose.yaml -o -name compose.yml -o -name compose.yaml \
+    -o -name mgc-container-entrypoint \) -print)"
+  [[ -z "$container_template_files" ]] \
+    || fail "Docker assets must be emitted by MGC flags, not framework template files"
+  container_template_dirs="$(find "$ROOT/templates" -type d \( -name k8s -o -name kubernetes \) -print)"
+  [[ -z "$container_template_dirs" ]] \
+    || fail "Kubernetes assets must be emitted by MGC flags, not framework template directories"
+fi
 
 # Docker E2E scaffolds projects as the non-root CLI image user, then builds
 # from the host runner. Return ownership before the runner reads private MGC
 # identity/config files, and check the web marker before entering Docker COPY.
 # (E2E Docker scaffold bằng user không-root; trả ownership trước khi runner đọc
 # file MGC riêng tư và kiểm tra core marker trước bước Docker COPY.)
-generated_web_container="$(sed -n '/Scaffold and build a real web container through the MGC CLI/,/Run and reach the CLI-scaffolded container/p' "$ROOT/.github/workflows/ci.yml")"
+generated_web_container="$(cat "$ROOT/scripts/ci/docker/web/scaffold_react_container.sh")"
 grep -Fq 'sudo chown -R "$(id -u):$(id -g)" "${project}"' <<<"$generated_web_container" \
   || fail "Docker E2E must make the generated web build context readable to the host Docker client"
 grep -Fq 'test "$(cat "${project}/.mgc.core")" = "web"' <<<"$generated_web_container" \
@@ -79,7 +87,7 @@ grep -Fq 'test -r "${project}/mgc.toml"' <<<"$generated_web_container" \
 # `docker compose run` has no `--no-build` option. Reuse the explicitly built
 # image by setting the generated Compose image name, then invoke the valid `run`
 # command. (Compose `run` không có `--no-build`; dùng image đã build theo tên.)
-generated_ai_container="$(sed -n '/Build and run the AI Python container with MGC-owned packages/,/Build and run the CDK validation container through MGC/p' "$ci_workflow")"
+generated_ai_container="$(cat "$ROOT/scripts/ci/docker/ai/build_python_container.sh")"
 grep -Fq -- '--tag magicore-ai-python-container:local' <<<"$generated_ai_container" \
   || fail "AI container E2E must build the image that the Compose run reuses"
 grep -Fq 'MGC_IMAGE_NAME=magicore-ai-python-container:local' <<<"$generated_ai_container" \
@@ -107,21 +115,24 @@ grep -Fq 'curl -sf -o /dev/null http://127.0.0.1:4315/v2/' <<<"$seeded_ci_regist
   || fail "seeded CI registry readiness must probe its registered OCI /v2/ ping route"
 grep -Fq 'if [[ "$registry_ready" != 1 ]]; then' <<<"$seeded_ci_registry" \
   || fail "registry seeding must stop when the readiness budget expires"
-grep -Fq 'python3 scripts/materialize_embedded_template_sources.py' <<<"$seeded_ci_registry" \
-  || fail "registry seeding must materialize the compiled product template layers"
-grep -Fq -- '--manifest cli/src/scaffold/embedded.rs' <<<"$seeded_ci_registry" \
-  || fail "registry seeding must derive layers from the binary's embedded-template manifest"
-grep -Fq 'cargo run -p mgc -- template publish-all' <<<"$seeded_ci_registry" \
-  || fail "registry seeding must publish product layers through the MGC CLI"
-grep -Fq './target/debug/mgc template fetch' <<<"$seeded_ci_registry" \
-  || fail "registry integration must fetch product layers through the MGC CLI"
-grep -Fq 'diff -qr --exclude=.mgc-version' <<<"$seeded_ci_registry" \
-  || fail "registry integration must compare fetched files with the embedded product layers"
+# The embedded-template seeder is retired with its deleted inputs
+# (cli/embedded/, cli/src/scaffold/embedded.rs): the product no longer ships
+# compiled template archives, so no materialize/publish-all/fetch/diff seeding
+# may remain. Guard against resurrection and pin the replacement product path:
+# an empty template cache forces registry-or-online-initializer resolution.
+# Seeder embedded-template đã nghỉ cùng input đã xóa (cli/embedded/,
+# cli/src/scaffold/embedded.rs): sản phẩm không còn archive template biên dịch
+# sẵn nên cấm mọi seeding materialize/publish-all/fetch/diff. Chặn hồi sinh và
+# ghim product-path thay thế: cache template rỗng ép resolve qua
+# registry-hoặc-initializer-online.
+if grep -Eq 'materialize_embedded_template_sources|cli/src/scaffold/embedded\.rs|cli/embedded' <<<"$seeded_ci_registry"; then
+  fail "seeded CI registry must not reference the retired embedded-template seeder"
+fi
+grep -Fq 'MGC_TEMPLATES_DIR=/tmp/mgc-empty-cache cargo test -p mgc -p mgc-e2e' <<<"$seeded_ci_registry" \
+  || fail "registry seeding must run the mgc + mgc-e2e suites against an empty template cache"
 if grep -Eq 'git archive 1b69dd0|APP_SECRET=changeme|storage/logs/\.gitkeep' <<<"$seeded_ci_registry"; then
   fail "registry seeding must not resurrect historical templates or fabricate framework files"
 fi
-PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test_materialize_embedded_template_sources.py" \
-  || fail "compiled-template materialization security tests failed"
 grep -Fq 'cargo test -p mgc-exec --test test_run -- --test-threads=1 2>&1' "$ROOT/.github/workflows/ci.yml" \
   || fail "process-table executor tests must serialize synthetic process fixtures"
 if grep -Eq 'curl -sf -o /dev/null http://127\.0\.0\.1:4315/[[:space:]]' <<<"$seeded_ci_registry"; then
@@ -163,7 +174,12 @@ grep -q 'e2a55d2ffb04f378e9626c28d38b36d230d1e12f' "$ALL_CORE" || fail "delegate
 grep -q 'toolchain: "1.99.0"' "$ALL_CORE" || fail "delegated-compatibility Rust lane must use the current pinned stable version"
 grep -q 'python3 scripts/test_audit_dependency_delegation.py' "$ROOT/.github/workflows/ci.yml" || fail "CI must run dependency ownership audit negative controls"
 grep -q 'python3 scripts/test_audit_capability_matrix.py' "$ROOT/.github/workflows/ci.yml" || fail "CI must test audit-matrix source provenance"
-grep -q 'working_tree_clean.*is not True' "$RELEASE" || fail "release audit gate must reject dirty-tree matrices"
+grep -Fq 'uses: ./.github/workflows/release-audit-capability.yml' "$RELEASE" \
+  || fail "release must invoke its audit capability gate"
+grep -Fq 'run: python3 scripts/release/verify_audit_capability_matrix.py' "$ROOT/.github/workflows/release-audit-capability.yml" \
+  || fail "release audit gate must invoke its matrix verifier"
+grep -q 'working_tree_clean.*is not True' "$ROOT/scripts/release/verify_audit_capability_matrix.py" \
+  || fail "release audit gate must reject dirty-tree matrices"
 grep -q 'working_tree_clean.*is not True' "$ROOT/.github/workflows/nightly-audit-matrix.yml" || fail "nightly audit gate must reject dirty-tree matrices"
 grep -q 'scripts/test_dep_gate_consistency.py' "$ROOT/.github/workflows/lifecycle-matrix.yml" || fail "lifecycle CI must test binary-to-matrix operation ownership"
 grep -Fq 'run: bash cli/tests/scripts/runtime_full_e2e.sh' "$ROOT/.github/workflows/lifecycle-matrix.yml" \
@@ -244,20 +260,22 @@ python3 "$ROOT/scripts/test_github_action_pin.py" || fail "action-pin verifier b
 
 cross_rev='64b5bb4d3d34de062552b9a2093affe77b4ad16a'
 cross_install="cargo install cross --git https://github.com/cross-rs/cross --rev ${cross_rev} --locked"
-grep -Fq "$cross_install" "$RELEASE" \
+grep -Fq "$cross_install" "$RELEASE_BUILD" \
   || fail "release cross compiler install must use the reviewed immutable revision and Cargo.lock"
 grep -Fq "$cross_install" "$ROOT/scripts/build_all_platforms.sh" \
   || fail "local cross build instructions must use the same immutable revision as release CI"
 
-manifest_signing="$(sed -n '/^      # Release provenance (P0)/,/^      # Note: Attestations/p' "$RELEASE")"
+manifest_signing="$(cat "$RELEASE_PUBLISH")"
+grep -Fq 'trust_roots: ${{ vars.MGC_RELEASE_TRUST_ROOTS }}' "$RELEASE" \
+  || fail "release must pass its configured public trust roots to the publisher"
 grep -q 'MGC_RELEASE_REQUIRE_SIGNED: "1"' <<<"$manifest_signing" \
   || fail "release manifest signing must require a signature"
-grep -Fq 'MGC_RELEASE_TRUST_ROOTS: ${{ vars.MGC_RELEASE_TRUST_ROOTS }}' <<<"$manifest_signing" \
+grep -Fq 'MGC_RELEASE_TRUST_ROOTS: ${{ inputs.trust_roots }}' <<<"$manifest_signing" \
   || fail "release workflow must verify the signed manifest with its configured public trust root"
 grep -q 'scripts/verify-release-manifest-signature.py' <<<"$manifest_signing" \
   || fail "release workflow must cross-check its signature and every archive binding before creating a draft"
-public_manifest_verify="$(sed -n '/^      - name: Verify signed release manifest using public trust roots/,/^      # Note: Attestations/p' "$RELEASE")"
-grep -Fq 'MGC_RELEASE_TRUST_ROOTS: ${{ vars.MGC_RELEASE_TRUST_ROOTS }}' <<<"$public_manifest_verify" \
+public_manifest_verify="$(sed -n '/^      - name: Verify signed release manifest using public trust roots/,/^      # Note: Attestations/p' "$RELEASE_PUBLISH")"
+grep -Fq 'MGC_RELEASE_TRUST_ROOTS: ${{ inputs.trust_roots }}' <<<"$public_manifest_verify" \
   || fail "the post-signing release verifier must receive the public trust-root variable"
 if grep -q 'MGC_RELEASE_SIGNING_KEY' <<<"$public_manifest_verify"; then
   fail "the post-signing release verifier must not receive the private signing seed"
@@ -339,7 +357,7 @@ fi
 
 # The Linux ARM64 target must build and smoke-test on the native ARM runner.
 # Target Linux ARM64 phải được build và smoke test trên runner ARM bản địa.
-release_build_matrix="$(sed -n '/^  build-release:/,/^  test-release-artifacts:/p' "$RELEASE")"
+release_build_matrix="$(cat "$RELEASE_BUILD")"
 linux_arm_build="$(grep -A6 '^          - os: ubuntu-24.04-arm$' <<<"$release_build_matrix" | head -n 7)"
 grep -q 'target: aarch64-unknown-linux-gnu' <<<"$linux_arm_build" \
   || fail "release build matrix must target native Linux ARM64"
@@ -347,7 +365,7 @@ grep -q 'arch: arm64' <<<"$linux_arm_build" \
   || fail "Linux ARM64 release archive must carry the arm64 contract identity"
 grep -q 'use_cross: false' <<<"$linux_arm_build" \
   || fail "Linux ARM64 release target must build natively on its hosted runner"
-release_smoke_matrix="$(sed -n '/^  test-release-artifacts:/,/^  pre-publish-verification:/p' "$RELEASE")"
+release_smoke_matrix="$(cat "$RELEASE_SMOKE")"
 [[ "$(grep -c '^          - os: ubuntu-24.04-arm$' <<<"$release_smoke_matrix")" -eq 2 ]] \
   || fail "all-core and web Linux ARM64 artifacts must both have smoke-test rows"
 linux_arm_smoke_blocks="$(grep -A3 '^          - os: ubuntu-24.04-arm$' <<<"$release_smoke_matrix")"
@@ -396,16 +414,16 @@ setup_go_count="$(grep -c "actions/setup-go@${setup_go_sha}" "$ALL_CORE")"
 [[ "$setup_go_count" -eq 4 ]] || fail "delegated-compatibility matrix must provision pinned Go for all four core jobs"
 go_version_count="$(grep -c 'go-version: "1.27.2"' "$ALL_CORE")"
 [[ "$go_version_count" -eq 4 ]] || fail "delegated-compatibility matrix must pin Go 1.27.2 for all four core jobs"
-grep -q "actions/setup-go@${setup_go_sha}" "$RELEASE" || fail "release builds must provision pinned Go for esbuild-rs"
-grep -q 'go-version: "1.27.2"' "$RELEASE" || fail "release builds must pin Go 1.27.2"
+grep -q "actions/setup-go@${setup_go_sha}" "$RELEASE_BUILD" || fail "release builds must provision pinned Go for esbuild-rs"
+grep -q 'go-version: "1.27.2"' "$RELEASE_BUILD" || fail "release builds must pin Go 1.27.2"
 go_version_values=$(grep -rhoE 'go-version: "[^"]+"' "$ROOT/.github/workflows" | sort -u)
 [[ "$go_version_values" == 'go-version: "1.27.2"' ]] || fail "all workflow Go toolchains must use the canonical Go 1.27.2 pin; found: ${go_version_values//$'\n'/, }"
-go_archive_values=$(grep -oE 'go[0-9]+\.[0-9]+\.[0-9]+\.linux-amd64\.tar\.gz' "$RELEASE" | sort -u)
+go_archive_values=$(grep -oE 'go[0-9]+\.[0-9]+\.[0-9]+\.linux-amd64\.tar\.gz' "$RELEASE_AUDIT" | sort -u)
 [[ "$go_archive_values" == 'go1.27.2.linux-amd64.tar.gz' ]] || fail "release scanner archive must match canonical Go 1.27.2; found: ${go_archive_values//$'\n'/, }"
-grep -q 'GO_SHA256="ecbadb99091a3f46e31f5f934b068b1864eafa7995211b39eaddf76996045fe5"' "$RELEASE" \
+grep -q 'GO_SHA256="ecbadb99091a3f46e31f5f934b068b1864eafa7995211b39eaddf76996045fe5"' "$RELEASE_AUDIT" \
   || fail "release scanner must pin the official Go 1.27.2 Linux AMD64 archive checksum"
-go_sha_check_line=$(grep -n -m1 'sha256sum --check --strict -' "$RELEASE" | cut -d: -f1 || true)
-go_extract_line=$(grep -n -m1 'sudo tar -C /usr/local -xzf /tmp/go.tgz' "$RELEASE" | cut -d: -f1 || true)
+go_sha_check_line=$(grep -n -m1 'sha256sum --check --strict -' "$RELEASE_AUDIT" | cut -d: -f1 || true)
+go_extract_line=$(grep -n -m1 'sudo tar -C /usr/local -xzf /tmp/go.tgz' "$RELEASE_AUDIT" | cut -d: -f1 || true)
 [[ -n "$go_sha_check_line" && -n "$go_extract_line" && "$go_sha_check_line" -lt "$go_extract_line" ]] \
   || fail "release scanner archive must pass SHA-256 verification before extraction"
 
@@ -421,7 +439,7 @@ if grep -Eq 'python[^[:cntrl:]]*-m pip|pip[0-9]* install.*(pytest|build|setuptoo
 fi
 grep -q 'publish=true' "$RELEASE" && fail "release instructions reference the removed publish input"
 
-release_dry_run=$(sed -n '/^  dry-run-summary:/,$p' "$RELEASE")
+release_dry_run=$(cat "$ROOT/.github/workflows/release-dry-run-summary.yml")
 grep -q 'Ready to publish: YES' <<<"$release_dry_run" && fail "release dry-run must not claim publish readiness without the tag-triggered publish gates"
 grep -q 'Publish readiness: NOT ASSESSED (dry-run does not authorize publishing)' <<<"$release_dry_run" \
   || fail "release dry-run must state that it does not authorize publishing"
@@ -476,22 +494,24 @@ if grep -q 'ALL CORES' "$ALL_CORE"; then
   fail "workflow summary overclaims 'ALL CORES' while covering only four cores"
 fi
 
-checkout_line="$(grep -n 'name: Checkout repository' "$RELEASE" | head -1 | cut -d: -f1)"
-contract_line="$(grep -n 'name: Set artifact names' "$RELEASE" | head -1 | cut -d: -f1)"
+checkout_line="$(grep -n 'name: Checkout repository' "$RELEASE_BUILD" | head -1 | cut -d: -f1)"
+contract_line="$(grep -n 'name: Set artifact names' "$RELEASE_BUILD" | head -1 | cut -d: -f1)"
 [[ "$checkout_line" -lt "$contract_line" ]] || fail "release contract runs before checkout"
 
 ref_count="$(grep -c 'GITHUB_REF_NAME' "$RELEASE" || true)"
 [[ "$ref_count" -eq 1 ]] || fail "resolved release version must be reused downstream"
 
-grep -q '10 SBOMs' "$RELEASE" || fail "release summary must require all ten SBOMs (5 platform pairs x all/web)"
+grep -q '10 SBOMs' "$ROOT/.github/workflows/release-prepublish-verification.yml" || fail "release summary must require all ten SBOMs (5 platform pairs x all/web)"
 grep -q 'Windows doesn.t generate SBOM' "$RELEASE" && fail "Windows SBOM must not be silently excluded"
 
 grep -q 'cargo-audit --version 0.22.2' "$SECURITY" || fail "cargo-audit pin is stale"
 grep -q 'OSV_VERSION="2.6.0"' "$SECURITY" || fail "OSV-Scanner pin is stale"
 
 stress_workflow="$ROOT/.github/workflows/stress-matrix.yml"
+grep -Fq 'run: bash scripts/ci/stress/toolchains/verification/verify_all.sh' "$stress_workflow" \
+  || fail "stress matrix must invoke its runtime version verification script"
 for runtime_check in 'deno --version | head -1 | grep -F "deno 2.9.7"'; do
-  grep -Fq "$runtime_check" "$stress_workflow" \
+  grep -Fq "$runtime_check" "$ROOT/scripts/ci/stress/toolchains/verification/verify_all.sh" \
     || fail "stress matrix must verify installed runtime version: $runtime_check"
 done
 
@@ -501,9 +521,9 @@ done
 # (Portable sed: BSD grep on macOS runners has no -P.)
 # (Tươi checksum installer: SHA-256 nhúng phải khác rỗng VÀ khớp file ở
 # commit ghim — checksum cũ làm fail pipeline nó sinh ra.)
-installer_sha="$(sed -n 's/.*MGC_INSTALLER_SHA: &str = "\([0-9a-f][0-9a-f]*\)".*/\1/p' "$ROOT/cli/src/commands/core/dev/cicd.rs" | head -n 1)"
+installer_sha="$(grep -A1 'MGC_INSTALLER_SHA: &str' "$ROOT/cli/src/commands/core/dev/cicd/templates/templates.rs" | sed -n 's/.*"\([0-9a-f][0-9a-f]*\)".*/\1/p' | head -n 1)"
 [[ -n "$installer_sha" ]] || fail "installer commit pin is missing"
-embedded_sha256="$(grep -A1 'MGC_INSTALLER_SHA256: &str' "$ROOT/cli/src/commands/core/dev/cicd.rs" | sed -n 's/.*"\([0-9a-f][0-9a-f]*\)".*/\1/p' | head -n 1)"
+embedded_sha256="$(grep -A1 'MGC_INSTALLER_SHA256: &str' "$ROOT/cli/src/commands/core/dev/cicd/templates/templates.rs" | sed -n 's/.*"\([0-9a-f][0-9a-f]*\)".*/\1/p' | head -n 1)"
 [[ -n "$embedded_sha256" ]] || fail "installer checksum is not pinned (MGC_INSTALLER_SHA256 empty)"
 expected_sha256=$(git -C "$ROOT" show "${installer_sha}:scripts/install-from-gh.sh" | shasum -a 256 | awk '{print $1}')
 [[ "$embedded_sha256" == "$expected_sha256" ]] || fail "installer checksum is stale for the pinned commit"

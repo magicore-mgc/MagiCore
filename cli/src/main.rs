@@ -1,5 +1,9 @@
 #![allow(clippy::too_many_arguments)]
 #![cfg_attr(test, allow(clippy::unwrap_used))]
+// The binary shares its module tree with the library and consumes only CLI entry points;
+// owner facades also serve library consumers and the separate test target.
+#![allow(unused_imports)]
+#![cfg_attr(test, allow(clippy::duplicate_mod))]
 
 /// MagiCore CLI - Universal Package Manager
 use std::{ffi::OsStr, ffi::OsString, path::PathBuf};

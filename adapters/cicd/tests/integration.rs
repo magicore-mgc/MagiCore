@@ -1,281 +1,129 @@
 #![allow(clippy::unwrap_used)]
-//! Integration tests for mgc-cicd-adapter — sát với src/lib.rs
-//! Kiểm thử: detect_provider (7 providers × 2 paths), adapter_for, PackageAdapter trait.
+//! CI/CD adapter integration tests; stable Cargo harness with focused behavior owners.
+//! Integration test CICD adapter; giữ harness Cargo ổn định và tách hành vi theo owner.
 
-use mgc_cicd_adapter::{CicdAdapter, CicdProvider, adapter_for, detect_provider, generate_sbom};
-use mgc_types::PackageName;
-use mgc_types::adapter::{AddOptions, PackageAdapter};
-use mgc_types::capabilities::{
-    AuditProvider, ContentStoreProvider, CoreIdent, DependencyResolver, ProjectDetector,
-};
-use std::path::PathBuf;
-
-fn tmp(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("mgc-cicd-itg-{tag}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("tmp dir");
-    dir
-}
+#[path = "integration/mod.rs"]
+mod integration;
 
 #[cfg(unix)]
 #[test]
 fn provider_detection_does_not_follow_external_mgc_config_symlink() {
-    let project = tmp("external-mgc-config-link");
-    let external = tmp("external-mgc-config-target");
-    std::fs::write(external.join("mgc.toml"), "[cicd]\nprovider = 'gitlab'\n").unwrap();
-    std::os::unix::fs::symlink(external.join("mgc.toml"), project.join("mgc.toml")).unwrap();
-
-    assert_eq!(detect_provider(&project), None);
-    let _ = std::fs::remove_dir_all(project);
-    let _ = std::fs::remove_dir_all(external);
+    integration::provider_detection::provider_detection_does_not_follow_external_mgc_config_symlink(
+    );
 }
-
-// ── detect_provider — file-based markers ───────────────────────────────────
 
 #[test]
 fn detect_cloudflare_via_wrangler_toml() {
-    let dir = tmp("cf");
-    std::fs::write(dir.join("wrangler.toml"), "name = \"worker\"\n").unwrap();
-    assert_eq!(detect_provider(&dir), Some(CicdProvider::Cloudflare));
+    integration::provider_detection::detect_cloudflare_via_wrangler_toml();
 }
 
 #[test]
 fn detect_github_actions_via_workflows_dir() {
-    let dir = tmp("gha");
-    std::fs::create_dir_all(dir.join(".github").join("workflows")).unwrap();
-    std::fs::write(
-        dir.join(".github").join("workflows").join("ci.yml"),
-        "name: CI\non: [push]\n",
-    )
-    .unwrap();
-    assert_eq!(detect_provider(&dir), Some(CicdProvider::GithubActions));
+    integration::provider_detection::detect_github_actions_via_workflows_dir();
 }
 
 #[test]
 fn detect_gitlab_via_gitlab_ci_yml() {
-    let dir = tmp("gl");
-    std::fs::write(dir.join(".gitlab-ci.yml"), "stages: [test]\n").unwrap();
-    assert_eq!(detect_provider(&dir), Some(CicdProvider::Gitlab));
+    integration::provider_detection::detect_gitlab_via_gitlab_ci_yml();
 }
 
 #[test]
 fn detect_circleci_via_config_yml() {
-    let dir = tmp("cc");
-    std::fs::create_dir_all(dir.join(".circleci")).unwrap();
-    std::fs::write(dir.join(".circleci").join("config.yml"), "version: 2.1\n").unwrap();
-    assert_eq!(detect_provider(&dir), Some(CicdProvider::CircleCi));
+    integration::provider_detection::detect_circleci_via_config_yml();
 }
 
 #[test]
 fn detect_argocd_via_application_yaml() {
-    let dir = tmp("argo");
-    std::fs::create_dir_all(dir.join("argocd")).unwrap();
-    std::fs::write(
-        dir.join("argocd").join("application.yaml"),
-        "kind: Application\n",
-    )
-    .unwrap();
-    assert_eq!(detect_provider(&dir), Some(CicdProvider::Argocd));
+    integration::provider_detection::detect_argocd_via_application_yaml();
 }
 
 #[test]
 fn detect_aws_via_main_tf() {
-    let dir = tmp("aws-tf");
-    std::fs::write(dir.join("main.tf"), "provider \"aws\" {}\n").unwrap();
-    assert_eq!(detect_provider(&dir), Some(CicdProvider::Aws));
+    integration::provider_detection::detect_aws_via_main_tf();
 }
-
-// ── detect_provider — mgc.toml override (priority) ──────────────────────────
 
 #[test]
 fn detect_aws_via_mgc_toml_overrides_file_marker() {
-    let dir = tmp("mgc-aws");
-    // wrangler.toml → Cloudflare, mgc.toml → Aws (mgc.toml thắng)
-    std::fs::write(dir.join("wrangler.toml"), "name = \"worker\"\n").unwrap();
-    std::fs::write(dir.join("mgc.toml"), "[cicd]\nprovider = \"aws\"\n").unwrap();
-    assert_eq!(detect_provider(&dir), Some(CicdProvider::Aws));
+    integration::provider_detection::detect_aws_via_mgc_toml_overrides_file_marker();
 }
 
 #[test]
 fn detect_gcp_via_mgc_toml() {
-    let dir = tmp("mgc-gcp");
-    std::fs::write(dir.join("mgc.toml"), "[cicd]\nprovider = \"gcp\"\n").unwrap();
-    assert_eq!(detect_provider(&dir), Some(CicdProvider::Gcp));
+    integration::provider_detection::detect_gcp_via_mgc_toml();
 }
 
 #[test]
 fn detect_returns_none_for_empty_dir() {
-    let dir = tmp("empty");
-    assert!(detect_provider(&dir).is_none());
+    integration::provider_detection::detect_returns_none_for_empty_dir();
 }
 
 #[test]
 fn detect_returns_none_for_unknown_mgc_toml_provider() {
-    let dir = tmp("unknown");
-    std::fs::write(dir.join("mgc.toml"), "[cicd]\nprovider = \"jenkins\"\n").unwrap();
-    // "jenkins" chưa được hỗ trợ → None
-    assert!(detect_provider(&dir).is_none());
+    integration::provider_detection::detect_returns_none_for_unknown_mgc_toml_provider();
 }
-
-// ── CicdProvider helpers ───────────────────────────────────────────────────
 
 #[test]
 fn cicd_provider_as_str_values() {
-    assert_eq!(CicdProvider::GithubActions.as_str(), "github-actions");
-    assert_eq!(CicdProvider::Gitlab.as_str(), "gitlab");
-    assert_eq!(CicdProvider::CircleCi.as_str(), "circleci");
-    assert_eq!(CicdProvider::Cloudflare.as_str(), "cloudflare");
-    assert_eq!(CicdProvider::Aws.as_str(), "aws");
-    assert_eq!(CicdProvider::Gcp.as_str(), "gcp");
-    assert_eq!(CicdProvider::Argocd.as_str(), "argocd");
+    integration::provider_model::cicd_provider_as_str_values();
 }
-
-// ── adapter_for ────────────────────────────────────────────────────────────
 
 #[test]
 fn adapter_for_returns_some_with_wrangler() {
-    let dir = tmp("af-cf");
-    std::fs::write(dir.join("wrangler.toml"), "name = \"w\"\n").unwrap();
-    assert!(adapter_for(&dir).is_some());
+    integration::adapter_discovery::adapter_for_returns_some_with_wrangler();
 }
 
 #[tokio::test]
 async fn list_fails_closed_because_pipeline_files_are_not_packages() {
-    let dir = tmp("list-not-packages");
-    std::fs::write(dir.join(".gitlab-ci.yml"), "stages: [test]\n").unwrap();
-    let adapter = adapter_for(&dir).unwrap();
-    let error = adapter.list(&dir).await.unwrap_err();
-    assert!(matches!(
-        error,
-        mgc_types::MgError::Unsupported {
-            capability: "list",
-            ..
-        }
-    ));
+    integration::package_operations::list_fails_closed_because_pipeline_files_are_not_packages()
+        .await;
 }
 
 #[test]
 fn adapter_for_returns_none_without_markers() {
-    let dir = tmp("af-none");
-    assert!(adapter_for(&dir).is_none());
+    integration::adapter_discovery::adapter_for_returns_none_without_markers();
 }
 
 #[test]
 fn adapter_provider_method_returns_correct_str() {
-    let dir = tmp("af-gha");
-    std::fs::create_dir_all(dir.join(".github").join("workflows")).unwrap();
-    std::fs::write(
-        dir.join(".github").join("workflows").join("ci.yml"),
-        "name: CI\n",
-    )
-    .unwrap();
-    let a = adapter_for(&dir).unwrap();
-    assert_eq!(a.provider(), "github-actions");
+    integration::adapter_discovery::adapter_provider_method_returns_correct_str();
 }
-
-// ── PackageAdapter trait ───────────────────────────────────────────────────
 
 #[test]
 fn adapter_name_and_ecosystem() {
-    let a = CicdAdapter {
-        provider: CicdProvider::GithubActions,
-    };
-    assert_eq!(a.name(), "cicd");
-    assert_eq!(format!("{:?}", a.ecosystem()), "Cicd");
+    integration::adapter_contract::adapter_name_and_ecosystem();
 }
 
 #[test]
 fn can_handle_returns_true_for_known_marker() {
-    let dir = tmp("ch-true");
-    std::fs::write(dir.join("wrangler.toml"), "name = \"w\"\n").unwrap();
-    let a = adapter_for(&dir).unwrap();
-    assert!(a.can_handle(&dir));
+    integration::adapter_discovery::can_handle_returns_true_for_known_marker();
 }
 
 #[tokio::test]
 async fn install_fails_closed_because_no_package_semantics() {
-    // CI/CD templates carry no registry packages: resolve AND install must
-    // both fail closed with a typed Unsupported error — never Ok(default()).
-    // Template CI/CD không có package registry: resolve VÀ install đều phải
-    // fail-closed với error typed Unsupported — tuyệt đối không Ok(default()).
-    let dir = tmp("install-fail-closed");
-    std::fs::write(dir.join("wrangler.toml"), "name = \"w\"\n").unwrap();
-    let a = adapter_for(&dir).unwrap();
-    let manifest = a.parse_manifest(&dir).await.unwrap();
-
-    let resolve_err = a.resolve(&manifest).await.unwrap_err();
-    assert!(
-        matches!(resolve_err, mgc_types::MgError::Unsupported { core, capability, .. }
-            if core == "cicd" && capability == "resolve"),
-        "resolve must be typed-unsupported, got: {resolve_err}"
-    );
-
-    let graph = mgc_types::ResolvedGraph::default();
-    let install_err = a
-        .install(&graph, &dir, Default::default())
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(install_err, mgc_types::MgError::Unsupported { core, capability, .. }
-            if core == "cicd" && capability == "install"),
-        "install must be typed-unsupported, got: {install_err}"
-    );
+    integration::package_operations::install_fails_closed_because_no_package_semantics().await;
 }
 
 #[tokio::test]
 async fn add_fails_closed_with_error_mentioning_deploy() {
-    let dir = tmp("add-fail");
-    std::fs::write(dir.join("wrangler.toml"), "name = \"w\"\n").unwrap();
-    let a = adapter_for(&dir).unwrap();
-    let name = PackageName::new("my-service").unwrap();
-    let err = a
-        .add(&dir, &name, None, AddOptions::default())
-        .await
-        .unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("deploy") || msg.contains("cicd"),
-        "error must mention deploy: {msg}"
-    );
+    integration::package_operations::add_fails_closed_with_error_mentioning_deploy().await;
 }
 
 #[tokio::test]
 async fn remove_fails_closed() {
-    let dir = tmp("remove-fail");
-    std::fs::write(dir.join("wrangler.toml"), "name = \"w\"\n").unwrap();
-    let a = adapter_for(&dir).unwrap();
-    let name = PackageName::new("svc").unwrap();
-    assert!(a.remove(&dir, &name).await.is_err());
+    integration::package_operations::remove_fails_closed().await;
 }
 
 #[tokio::test]
 async fn update_fails_closed() {
-    let dir = tmp("update-fail");
-    std::fs::write(dir.join("wrangler.toml"), "name = \"w\"\n").unwrap();
-    let a = adapter_for(&dir).unwrap();
-    assert!(a.update(&dir, None).await.is_err());
+    integration::package_operations::update_fails_closed().await;
 }
 
 #[tokio::test]
 async fn audit_returns_clean_for_empty_cicd_project() {
-    let dir = tmp("audit");
-    std::fs::write(dir.join("wrangler.toml"), "name = \"w\"\n").unwrap();
-    let a = adapter_for(&dir).unwrap();
-    let report = a.audit(&dir).await.unwrap();
-    assert_eq!(report.vulnerabilities.len(), 0);
+    integration::audit_sbom::audit_returns_clean_for_empty_cicd_project().await;
 }
 
 #[test]
 fn generate_sbom_uses_lockfile_v2_fixture() {
-    let mut lockfile = mgc_lockfile::Lockfile::new();
-    lockfile.add_package(mgc_lockfile::Package::new(
-        "test-pkg".to_string(),
-        "1.0.0".to_string(),
-        "https://example.com/test.tgz".to_string(),
-        "blake3:test123".to_string(),
-    ));
-    let json = generate_sbom(&lockfile, mgc_sbom::SbomOptions::default()).unwrap();
-    assert!(json.contains("CycloneDX"));
-    assert!(json.contains("test-pkg"));
-    assert!(json.contains("1.0.0"));
+    integration::audit_sbom::generate_sbom_uses_lockfile_v2_fixture();
 }

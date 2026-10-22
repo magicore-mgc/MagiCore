@@ -1,484 +1,190 @@
 #![allow(clippy::unwrap_used)]
-//! Integration tests for mgc-app-adapter — sát với src/lib.rs
-//! Kiểm thử: detect_language (all 6 paths), adapter_for, PackageAdapter trait methods.
+//! App adapter integration tests — integration test App adapter.
+//! Stable Cargo harness; test logic is in owner modules. — Harness Cargo giữ ổn định; test nằm trong module owner.
 
-use mgc_app_adapter::{AppAdapter, AppLanguage, adapter_for, detect_language, generate_sbom};
-use mgc_types::adapter::{AddOptions, PackageAdapter};
-use mgc_types::capabilities::{
-    AuditProvider, ContentStoreProvider, CoreIdent, DependencyResolver, ProjectDetector,
-};
-use mgc_types::{PackageName, ResolvedGraph};
-use std::path::PathBuf;
+#[path = "integration/mod.rs"]
+mod integration;
 
 #[test]
 fn lock_replay_manifest_preserves_explicit_non_sdk_requirements() {
-    let project = tempfile::tempdir().unwrap();
-    std::fs::write(
-        project.path().join("pubspec.yaml"),
-        "name: app\ndependencies:\n  http: ^1.0.0\n",
-    )
-    .unwrap();
-    let mut manifest = mgc_types::Manifest::new("app", mgc_types::Ecosystem::App);
-    manifest.add_dep(
-        mgc_types::DependencySpec::new(
-            PackageName::new("http").unwrap(),
-            mgc_types::VersionRange::parse("^1.0.0").unwrap(),
-        ),
-        false,
-        false,
-        false,
-    );
-    for language in [
-        AppLanguage::Flutter,
-        AppLanguage::Swift,
-        AppLanguage::Kotlin,
-    ] {
-        let adapter = AppAdapter::new(language);
-        let replay = adapter
-            .lock_replay_manifest(project.path(), &manifest)
-            .unwrap();
-        assert_eq!(replay.name, manifest.name);
-        assert_eq!(replay.all_dependencies().count(), 1);
-        assert_eq!(replay.find_dep("http").unwrap().range.to_string(), "^1.0.0");
-        assert_eq!(manifest.all_dependencies().count(), 1);
-    }
-}
-
-fn tmp(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("mgc-app-itg-{tag}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("tmp dir");
-    dir
+    integration::lock_replay::lock_replay_manifest_preserves_explicit_non_sdk_requirements();
 }
 
 #[cfg(unix)]
 #[test]
 fn language_detection_does_not_follow_external_mgc_config_symlink() {
-    let project = tmp("external-mgc-config-link");
-    let external = tmp("external-mgc-config-target");
-    std::fs::write(external.join("mgc.toml"), "[app]\nlanguage = 'flutter'\n").unwrap();
-    std::os::unix::fs::symlink(external.join("mgc.toml"), project.join("mgc.toml")).unwrap();
-
-    assert_eq!(detect_language(&project), None);
-    let _ = std::fs::remove_dir_all(project);
-    let _ = std::fs::remove_dir_all(external);
+    integration::language_detection::language_detection_does_not_follow_external_mgc_config_symlink(
+    );
 }
 
 #[cfg(unix)]
 #[test]
 fn language_detection_does_not_follow_external_package_json_symlink() {
-    let project = tmp("external-package-json-link");
-    let external = tmp("external-package-json-target");
-    std::fs::write(
-        external.join("package.json"),
-        r#"{"dependencies":{"react-native":"0.74.0"}}"#,
-    )
-    .unwrap();
-    std::os::unix::fs::symlink(external.join("package.json"), project.join("package.json"))
-        .unwrap();
-
-    assert_eq!(detect_language(&project), None);
-    let _ = std::fs::remove_dir_all(project);
-    let _ = std::fs::remove_dir_all(external);
+    integration::language_detection::language_detection_does_not_follow_external_package_json_symlink();
 }
-
-// ── detect_language — tất cả 6 loại marker ─────────────────────────────────
 
 #[test]
 fn detect_flutter_via_pubspec_yaml() {
-    let dir = tmp("flutter");
-    std::fs::write(dir.join("pubspec.yaml"), "name: myapp\nversion: 1.0.0\n").unwrap();
-    assert_eq!(detect_language(&dir), Some(AppLanguage::Flutter));
+    integration::language_detection::detect_flutter_via_pubspec_yaml();
 }
 
 #[test]
 fn detect_kotlin_via_build_gradle_kts() {
-    let dir = tmp("kotlin-kts");
-    std::fs::write(
-        dir.join("build.gradle.kts"),
-        "plugins { kotlin(\"jvm\") }\n",
-    )
-    .unwrap();
-    assert_eq!(detect_language(&dir), Some(AppLanguage::Kotlin));
+    integration::language_detection::detect_kotlin_via_build_gradle_kts();
 }
 
 #[test]
 fn detect_kotlin_via_build_gradle() {
-    let dir = tmp("kotlin-groovy");
-    std::fs::write(dir.join("build.gradle"), "apply plugin: 'kotlin'\n").unwrap();
-    assert_eq!(detect_language(&dir), Some(AppLanguage::Kotlin));
+    integration::language_detection::detect_kotlin_via_build_gradle();
 }
 
 #[test]
 fn detect_swift_via_package_swift() {
-    let dir = tmp("swift");
-    std::fs::write(dir.join("Package.swift"), "// swift-tools-version:5.9\n").unwrap();
-    assert_eq!(detect_language(&dir), Some(AppLanguage::Swift));
+    integration::language_detection::detect_swift_via_package_swift();
 }
 
 #[test]
 fn detect_maui_via_explicit_use_maui_csproj() {
-    let dir = tmp("maui");
-    std::fs::write(
-        dir.join("Sample.csproj"),
-        "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><UseMaui>true</UseMaui></PropertyGroup></Project>",
-    )
-    .unwrap();
-
-    assert_eq!(detect_language(&dir), Some(AppLanguage::Maui));
-    let adapter = adapter_for(&dir).unwrap();
-    let identity = adapter.manifest_identity().unwrap();
-    assert_eq!(identity.language, "maui");
-    assert_eq!(identity.format, "csproj");
-    assert_eq!(identity.relpath, "Sample.csproj");
-    assert!(
-        !adapter
-            .capabilities()
-            .contains(&mgc_types::capabilities::Capability::DependencyResolver)
-    );
+    integration::language_detection::detect_maui_via_explicit_use_maui_csproj();
 }
 
 #[test]
 fn maui_detection_refuses_ambiguous_root_projects() {
-    let dir = tmp("maui-ambiguous");
-    for name in ["First.csproj", "Second.csproj"] {
-        std::fs::write(
-            dir.join(name),
-            "<Project><PropertyGroup><UseMaui>true</UseMaui></PropertyGroup></Project>",
-        )
-        .unwrap();
-    }
-
-    assert_eq!(detect_language(&dir), None);
+    integration::language_detection::maui_detection_refuses_ambiguous_root_projects();
 }
 
 #[test]
 fn detect_tauri_via_rust_manifest_and_config() {
-    let dir = tmp("tauri");
-    std::fs::create_dir_all(dir.join("src-tauri")).unwrap();
-    std::fs::write(
-        dir.join("src-tauri/Cargo.toml"),
-        "[package]\nname='sample'\n",
-    )
-    .unwrap();
-    std::fs::write(dir.join("src-tauri/tauri.conf.json"), "{}\n").unwrap();
-
-    assert_eq!(detect_language(&dir), Some(AppLanguage::Tauri));
-    let adapter = adapter_for(&dir).unwrap();
-    let identity = adapter.manifest_identity().unwrap();
-    assert_eq!(identity.language, "tauri");
-    assert_eq!(identity.format, "Cargo.toml");
-    assert_eq!(identity.relpath, "src-tauri/Cargo.toml");
-    assert!(
-        !adapter
-            .capabilities()
-            .contains(&mgc_types::capabilities::Capability::DependencyResolver)
-    );
+    integration::language_detection::detect_tauri_via_rust_manifest_and_config();
 }
 
 #[test]
 fn detect_react_native_via_package_json_dep() {
-    let dir = tmp("rn");
-    std::fs::write(
-        dir.join("package.json"),
-        r#"{"name":"rn","dependencies":{"react-native":"0.74.0"}}"#,
-    )
-    .unwrap();
-    assert_eq!(detect_language(&dir), Some(AppLanguage::ReactNative));
+    integration::language_detection::detect_react_native_via_package_json_dep();
 }
 
 #[test]
 fn react_native_manifest_identity_uses_canonical_gate_id() {
-    let dir = tmp("rn-manifest-identity");
-    std::fs::write(
-        dir.join("package.json"),
-        r#"{"name":"rn","dependencies":{"react-native":"0.74.0"}}"#,
-    )
-    .unwrap();
-
-    let identity = adapter_for(&dir).unwrap().manifest_identity().unwrap();
-    assert_eq!(identity.core, "app");
-    assert_eq!(identity.language, "rn");
-    assert_eq!(identity.format, "package.json");
-    assert_eq!(identity.relpath, "package.json");
+    integration::language_detection::react_native_manifest_identity_uses_canonical_gate_id();
 }
 
 #[test]
 fn detect_objc_via_bridge_header_and_impl_pair() {
-    let dir = tmp("objc");
-    std::fs::write(dir.join("ObjcBridge.h"), "@interface MGShared\n@end\n").unwrap();
-    std::fs::write(dir.join("ObjcBridge.m"), "@implementation MGShared\n@end\n").unwrap();
-    assert_eq!(detect_language(&dir), Some(AppLanguage::ObjC));
+    integration::language_detection::detect_objc_via_bridge_header_and_impl_pair();
 }
 
 #[test]
 fn detect_via_mgc_toml_language_overrides_marker() {
-    let dir = tmp("mgc-override");
-    // pubspec.yaml → Flutter, mgc.toml override → Kotlin
-    std::fs::write(dir.join("pubspec.yaml"), "name: x\n").unwrap();
-    std::fs::write(dir.join("mgc.toml"), "[app]\nlanguage = \"kotlin\"\n").unwrap();
-    assert_eq!(detect_language(&dir), Some(AppLanguage::Kotlin));
+    integration::language_detection::detect_via_mgc_toml_language_overrides_marker();
 }
 
 #[test]
 fn detect_multi_via_mgc_toml() {
-    let dir = tmp("multi");
-    std::fs::write(
-        dir.join("mgc.toml"),
-        "[app]\nlanguage = \"multi\"\nplatforms = [\"android\",\"ios\"]\n",
-    )
-    .unwrap();
-    assert_eq!(detect_language(&dir), Some(AppLanguage::Multi));
+    integration::language_detection::detect_multi_via_mgc_toml();
 }
 
 #[test]
 fn detect_react_native_via_explicit_mgc_toml_language() {
-    let dir = tmp("rn-explicit");
-    std::fs::write(dir.join("mgc.toml"), "[app]\nlanguage = \"react-native\"\n").unwrap();
-
-    assert_eq!(detect_language(&dir), Some(AppLanguage::ReactNative));
-    assert_eq!(
-        adapter_for(&dir).map(|adapter| adapter.language),
-        Some(AppLanguage::ReactNative)
-    );
+    integration::language_detection::detect_react_native_via_explicit_mgc_toml_language();
 }
 
 #[test]
 fn detect_returns_none_for_empty_dir() {
-    let dir = tmp("empty");
-    assert!(detect_language(&dir).is_none());
+    integration::language_detection::detect_returns_none_for_empty_dir();
 }
 
 #[test]
 fn detect_returns_none_for_unknown_mgc_toml_language() {
-    let dir = tmp("unknown-lang");
-    std::fs::write(dir.join("mgc.toml"), "[app]\nlanguage = \"xamarin\"\n").unwrap();
-    // "xamarin" không được hỗ trợ → None
-    assert!(detect_language(&dir).is_none());
+    integration::language_detection::detect_returns_none_for_unknown_mgc_toml_language();
 }
-
-// ── react_native: package.json không có "react-native" → không phải RN ──────
 
 #[test]
 fn package_json_without_react_native_is_not_detected_as_rn() {
-    let dir = tmp("non-rn");
-    std::fs::write(
-        dir.join("package.json"),
-        r#"{"name":"web","dependencies":{"react":"^18.0.0"}}"#,
-    )
-    .unwrap();
-    // react thuần web — không phải RN
-    assert!(detect_language(&dir).is_none());
+    integration::language_detection::package_json_without_react_native_is_not_detected_as_rn();
 }
-
-// ── adapter_for ────────────────────────────────────────────────────────────
 
 #[test]
 fn adapter_for_returns_some_with_pubspec_marker() {
-    let dir = tmp("af-flutter");
-    std::fs::write(dir.join("pubspec.yaml"), "name: a\n").unwrap();
-    assert!(adapter_for(&dir).is_some());
+    integration::language_detection::adapter_for_returns_some_with_pubspec_marker();
 }
 
 #[test]
 fn adapter_for_returns_none_without_any_marker() {
-    let dir = tmp("af-none");
-    assert!(adapter_for(&dir).is_none());
+    integration::language_detection::adapter_for_returns_none_without_any_marker();
 }
-
-// ── AppLanguage helpers ────────────────────────────────────────────────────
 
 #[test]
 fn applanguage_as_str_values() {
-    assert_eq!(AppLanguage::Flutter.as_str(), "flutter");
-    assert_eq!(AppLanguage::Kotlin.as_str(), "kotlin");
-    assert_eq!(AppLanguage::Swift.as_str(), "swift");
-    assert_eq!(AppLanguage::ReactNative.as_str(), "react-native");
-    assert_eq!(AppLanguage::ObjC.as_str(), "objc");
-    assert_eq!(AppLanguage::Multi.as_str(), "multi");
-    assert_eq!(AppLanguage::Maui.as_str(), "maui");
-    assert_eq!(AppLanguage::Tauri.as_str(), "tauri");
+    integration::adapter_contract::applanguage_as_str_values();
 }
-
-// ── PackageAdapter trait ───────────────────────────────────────────────────
 
 #[test]
 fn adapter_name_and_ecosystem() {
-    let a = AppAdapter::new(AppLanguage::Flutter);
-    assert_eq!(a.name(), "app");
-    assert_eq!(format!("{:?}", a.ecosystem()), "App");
+    integration::adapter_contract::adapter_name_and_ecosystem();
 }
 
 #[test]
 fn can_handle_returns_true_for_pubspec_project() {
-    let dir = tmp("ch-true");
-    std::fs::write(dir.join("pubspec.yaml"), "name: a\n").unwrap();
-    let a = AppAdapter::new(AppLanguage::Flutter);
-    assert!(a.can_handle(&dir));
+    integration::adapter_contract::can_handle_returns_true_for_pubspec_project();
 }
 
 #[test]
 fn can_handle_returns_false_for_empty_dir() {
-    let dir = tmp("ch-false");
-    let a = AppAdapter::new(AppLanguage::Flutter);
-    assert!(!a.can_handle(&dir));
+    integration::adapter_contract::can_handle_returns_false_for_empty_dir();
 }
 
 #[tokio::test]
 async fn parse_manifest_derives_name_from_dir() {
-    let dir = tmp("my-flutter-app");
-    std::fs::write(dir.join("pubspec.yaml"), "name: a\n").unwrap();
-    let a = adapter_for(&dir).unwrap();
-    let manifest = a.parse_manifest(&dir).await.unwrap();
-    // Name now comes from pubspec.yaml content, not directory
-    assert_eq!(manifest.name, "a");
+    integration::lifecycle::parse_manifest_derives_name_from_dir().await;
 }
 
 #[tokio::test]
 async fn flutter_resolve_empty_deps_returns_empty_graph() {
-    let dir = tmp("resolve");
-    std::fs::write(dir.join("pubspec.yaml"), "name: a\n").unwrap();
-    let a = adapter_for(&dir).unwrap();
-    let manifest = a.parse_manifest(&dir).await.unwrap();
-    // Phase 2: app (Flutter) now claims DependencyResolver via the native
-    // pub.dev engine; an empty pubspec resolves to an empty graph (honest —
-    // nothing to resolve, never a fake error and never a fake network call).
-    // (Phase 2: app (Flutter) giờ claim DependencyResolver qua engine pub.dev
-    // native; pubspec rỗng resolve ra graph rỗng (trung thực — không gì để
-    // resolve, không lỗi giả, không gọi mạng giả).)
-    let graph = a.resolve(&manifest).await.unwrap();
-    assert!(graph.packages.is_empty());
+    integration::lifecycle::flutter_resolve_empty_deps_returns_empty_graph().await;
 }
 
 #[tokio::test]
 async fn kotlin_resolve_fails_closed_toolchain_owned() {
-    let dir = tmp("resolve-kotlin");
-    std::fs::write(dir.join("build.gradle.kts"), "").unwrap();
-    let a = adapter_for(&dir).unwrap();
-    // Gradle build files are executable DSL, not a parsed dependency
-    // manifest. Refuse at the parser boundary before any resolver path.
-    // (Gradle DSL có thể thực thi; từ chối ngay ở parser boundary.)
-    let result = a.parse_manifest(&dir).await;
-    assert!(
-        result.is_err(),
-        "Kotlin Gradle DSL must not become an empty manifest"
-    );
-    assert!(
-        result
-            .unwrap_err()
-            .to_string()
-            .contains("executable Gradle DSL"),
-        "error must state why the Gradle manifest is not parsed"
-    );
+    integration::lifecycle::kotlin_resolve_fails_closed_toolchain_owned().await;
 }
 
 #[tokio::test]
 async fn native_flutter_empty_install_writes_mgc_lock_without_provider_resolution() {
-    let dir = tmp("install-ok");
-    std::fs::write(dir.join("pubspec.yaml"), "name: a\n").unwrap();
-    let a = adapter_for(&dir).unwrap();
-    // An empty native graph must not trigger Flutter's package resolver.
-    // Graph native rỗng không được kích hoạt Flutter resolve package.
-    let graph = ResolvedGraph::default();
-    let result = a.install(&graph, &dir, Default::default()).await;
-    assert!(
-        result.is_ok(),
-        "empty native graph should finish without provider tools: {result:?}"
-    );
-    assert!(
-        dir.join("mgc.lock").is_file(),
-        "an empty native graph must write the lock required by dev freshness"
-    );
-    assert!(!dir.join("pubspec.lock").exists());
+    integration::lifecycle::native_flutter_empty_install_writes_mgc_lock_without_provider_resolution().await;
 }
 
 #[tokio::test]
 async fn add_fails_closed_directs_to_tooling() {
-    let dir = tmp("add-fail");
-    std::fs::write(dir.join("pubspec.yaml"), "name: a\n").unwrap();
-    let a = adapter_for(&dir).unwrap();
-    let name = PackageName::new("http").unwrap();
-    let err = a
-        .add(&dir, &name, None, AddOptions::default())
-        .await
-        .unwrap_err();
-    let msg = err.to_string();
-    // Global Gate 1: app does NOT claim DependencyResolver — add fails
-    // closed with the unified capability message naming the core.
-    // (Global Gate 1: app KHÔNG claim DependencyResolver — add fail
-    // closed với message capability thống nhất nêu tên core.)
-    assert!(
-        msg.contains("app core does not support 'add'"),
-        "error must be the capability default naming the core: {msg}"
-    );
+    integration::lifecycle::add_fails_closed_directs_to_tooling().await;
 }
 
 #[tokio::test]
 async fn remove_fails_closed_directs_to_tooling() {
-    let dir = tmp("remove-fail");
-    std::fs::write(dir.join("pubspec.yaml"), "name: a\n").unwrap();
-    let a = adapter_for(&dir).unwrap();
-    let name = PackageName::new("http").unwrap();
-    assert!(a.remove(&dir, &name).await.is_err());
+    integration::lifecycle::remove_fails_closed_directs_to_tooling().await;
 }
 
 #[tokio::test]
 async fn update_fails_closed_directs_to_tooling() {
-    let dir = tmp("update-fail");
-    std::fs::write(dir.join("pubspec.yaml"), "name: a\n").unwrap();
-    let a = adapter_for(&dir).unwrap();
-    let name = PackageName::new("http").unwrap();
-    assert!(a.update(&dir, Some(&name)).await.is_err());
+    integration::lifecycle::update_fails_closed_directs_to_tooling().await;
 }
 
 #[tokio::test]
 async fn audit_returns_clean_for_empty_project() {
-    let dir = tmp("audit");
-    std::fs::write(dir.join("pubspec.yaml"), "name: a\n").unwrap();
-    let a = adapter_for(&dir).unwrap();
-    let report = a.audit(&dir).await.unwrap();
-    assert_eq!(report.vulnerabilities.len(), 0);
+    integration::audit_sbom::audit_returns_clean_for_empty_project().await;
 }
 
 #[tokio::test]
 async fn list_returns_empty_for_no_deps() {
-    let dir = tmp("list");
-    std::fs::write(dir.join("pubspec.yaml"), "name: a\n").unwrap();
-    let a = adapter_for(&dir).unwrap();
-    let pkgs = a.list(&dir).await.unwrap();
-    assert!(pkgs.is_empty());
+    integration::lifecycle::list_returns_empty_for_no_deps().await;
 }
 
 #[tokio::test]
 async fn list_does_not_claim_unresolved_manifest_ranges_are_installed_versions() {
-    let dir = tmp("list-unresolved");
-    std::fs::write(
-        dir.join("pubspec.yaml"),
-        "name: a\ndependencies:\n  http: ^1.0.0\n",
-    )
-    .unwrap();
-    let adapter = adapter_for(&dir).unwrap();
-    let error = adapter.list(&dir).await.unwrap_err();
-    assert!(matches!(
-        error,
-        mgc_types::MgError::Unsupported {
-            capability: "list",
-            ..
-        }
-    ));
+    integration::lifecycle::list_does_not_claim_unresolved_manifest_ranges_are_installed_versions()
+        .await;
 }
 
 #[test]
 fn generate_sbom_uses_lockfile_v2_fixture() {
-    let mut lockfile = mgc_lockfile::Lockfile::new();
-    lockfile.add_package(mgc_lockfile::Package::new(
-        "test-pkg".to_string(),
-        "1.0.0".to_string(),
-        "https://example.com/test.tgz".to_string(),
-        "blake3:test123".to_string(),
-    ));
-    let json = generate_sbom(&lockfile, mgc_sbom::SbomOptions::default()).unwrap();
-    assert!(json.contains("CycloneDX"));
-    assert!(json.contains("test-pkg"));
-    assert!(json.contains("1.0.0"));
+    integration::audit_sbom::generate_sbom_uses_lockfile_v2_fixture();
 }

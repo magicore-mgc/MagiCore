@@ -1,8 +1,10 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
+#![cfg_attr(test, allow(clippy::duplicate_mod))]
 //! mgc-lib-adapter — library ecosystem adapter for MagiCore.
 //! Native registry lanes and fail-closed compatibility boundaries for library projects.
 //! Lane registry native và biên compatibility fail-closed cho project library.
 
+#[path = "adapter/mod.rs"]
 mod adapter;
 mod language;
 mod manifest;

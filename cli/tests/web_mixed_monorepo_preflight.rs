@@ -40,21 +40,31 @@ fn combined_output(output: &Output) -> String {
 #[test]
 fn mixed_web_install_rejects_unsupported_backend_before_frontend_mutation() {
     let temp = TempDir::new().expect("create temporary mixed-stack project");
-    let project_name = "mixed-react-spring";
-    let project = temp.path().join(project_name);
-
-    let scaffold = run_mgc(
-        &["create-web", "react-spring", project_name],
-        temp.path(),
-        &temp,
-    );
-    assert!(
-        scaffold.status.success(),
-        "create-web react-spring failed:\n{}",
-        combined_output(&scaffold)
-    );
-    assert!(project.join("package.json").is_file());
-    assert!(project.join("server").join("pom.xml").is_file());
+    let project = temp.path().join("mixed-react-spring");
+    let frontend = project.join("apps/frontend");
+    let backend = project.join("apps/backend");
+    std::fs::create_dir_all(&frontend).expect("create frontend workspace member");
+    std::fs::create_dir_all(&backend).expect("create backend workspace member");
+    std::fs::write(
+        project.join("mgc.toml"),
+        "name = \"mixed-react-spring\"\nversion = \"0.1.0\"\necosystem = \"web\"\n",
+    )
+    .expect("write root project identity");
+    std::fs::write(
+        project.join("magicore.workspace.toml"),
+        "mode = \"monorepo\"\n[layout]\napps_dir = \"apps\"\npackages_dir = \"packages\"\n",
+    )
+    .expect("write mixed workspace layout");
+    std::fs::write(
+        frontend.join("package.json"),
+        r#"{"name":"frontend","version":"0.1.0","dependencies":{}}"#,
+    )
+    .expect("write empty JavaScript frontend manifest");
+    std::fs::write(
+        backend.join("pom.xml"),
+        "<project><modelVersion>4.0.0</modelVersion></project>\n",
+    )
+    .expect("write Java backend manifest");
 
     let install = run_mgc(&["--core", "web", "install"], &project, &temp);
     let output = combined_output(&install);

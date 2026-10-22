@@ -1,6 +1,8 @@
 #![cfg(test)]
 #![allow(clippy::unwrap_used)]
-//! Tests for cache command (clean, prune, stats logic)
+use crate::commands::cache::prune::prune_generic_cache;
+use std::path::Path;
+// Tests for cache command (clean, prune, stats logic)
 
 use super::*;
 

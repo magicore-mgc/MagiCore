@@ -1,8 +1,11 @@
 //! `cache/mod.rs` — Cache management for app adapter.
 //! MGC-owned app cache paths; unsupported lanes cannot claim external caches.
-
-pub mod metadata;
-pub mod prune;
+//!
+//! S08 removed the dead `metadata`/`prune` re-exports of lib cache items: they
+//! had zero callers (app uses its own AppLanguage-typed cache functions) and
+//! cross-core `pub use` re-exports violate R07 one-way direction.
+//! S08 đã xóa 2 re-export chết của lib cache: không caller nào dùng (app có hàm
+//! cache riêng theo AppLanguage), và re-export `pub use` xuyên core vi phạm R07.
 
 use crate::language::AppLanguage;
 use mgc_types::{MgError, MgResult};

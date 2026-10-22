@@ -24,6 +24,7 @@ fn lock_with(name: &str, version: &str) -> String {
         );
         package.owner_core = Some("web".to_string());
         package.ecosystem = mgc_lockfile::EcosystemTag::Web;
+        package.registry = Some("https://registry.npmjs.org/".to_string());
         lock.add_package(package);
         mgc_lockfile::update_owner_root_pins(
             &mut lock,

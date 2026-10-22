@@ -26,10 +26,12 @@ fn test_doc(generator: &str, root_dep: &str) -> LockfileV4 {
 }
 
 fn write_doc_locked(project: &Path, lock: &LockfileV4) -> PathBuf {
-    let guard = ProjectWriteLock::acquire(project, Duration::from_secs(10)).unwrap();
+    let guard = ProjectWriteLock::acquire(project, Duration::from_secs(10))
+        .expect("test operation must succeed");
     let dest = project.join("mgc.lock");
-    let bytes = write_v4_document(lock).unwrap();
-    atomic_write_locked(&guard, &dest, bytes.as_bytes(), Duration::from_secs(60)).unwrap();
+    let bytes = write_v4_document(lock).expect("test operation must succeed");
+    atomic_write_locked(&guard, &dest, bytes.as_bytes(), Duration::from_secs(60))
+        .expect("test operation must succeed");
     dest
 }
 
@@ -50,7 +52,7 @@ fn assert_valid_v4(path: &Path, allowed_generators: &[&str]) {
 
 fn no_temps_left(dir: &Path) {
     let leftovers: Vec<String> = std::fs::read_dir(dir)
-        .unwrap()
+        .expect("test operation must succeed")
         .flatten()
         .map(|e| e.file_name().to_string_lossy().to_string())
         .filter(|n| n.starts_with("mgc.lock.tmp."))
@@ -60,7 +62,7 @@ fn no_temps_left(dir: &Path) {
 
 #[test]
 fn atomic_roundtrip_leaves_no_temps() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("test operation must succeed");
     let dest = write_doc_locked(dir.path(), &test_doc("mgc/1.2.0", "a@1.0.0"));
     assert_valid_v4(&dest, &["mgc/1.2.0"]);
     no_temps_left(dir.path());
@@ -68,19 +70,21 @@ fn atomic_roundtrip_leaves_no_temps() {
 
 #[test]
 fn stale_temp_with_dead_pid_is_removed_live_pid_is_kept() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("test operation must succeed");
     // A provably-dead pid: spawn + reap `true`, so the pid is ESRCH.
     // (Pid chắc chắn chết: spawn + reap, để kill báo ESRCH.)
-    let mut child = std::process::Command::new("true").spawn().unwrap();
+    let mut child = std::process::Command::new("true")
+        .spawn()
+        .expect("test operation must succeed");
     let dead_pid = child.id();
-    child.wait().unwrap();
+    child.wait().expect("test operation must succeed");
     let stale = dir.path().join(format!("mgc.lock.tmp.{dead_pid}.abc.1"));
-    std::fs::write(&stale, b"stale").unwrap();
+    std::fs::write(&stale, b"stale").expect("test operation must succeed");
 
     let live = dir
         .path()
         .join(format!("mgc.lock.tmp.{}.abc.2", std::process::id()));
-    std::fs::write(&live, b"live").unwrap();
+    std::fs::write(&live, b"live").expect("test operation must succeed");
 
     // Zero grace: every mtime qualifies — the decision rests on pid
     // liveness alone.
@@ -88,13 +92,14 @@ fn stale_temp_with_dead_pid_is_removed_live_pid_is_kept() {
     assert_eq!(removed, 1);
     assert!(!stale.exists());
     assert!(live.exists(), "live-pid temp must never be unlinked");
-    std::fs::remove_file(live).unwrap();
+    std::fs::remove_file(live).expect("test operation must succeed");
 }
 
 #[test]
 fn lock_contention_fails_closed_then_recovers() {
-    let dir = tempfile::tempdir().unwrap();
-    let guard = ProjectWriteLock::acquire(dir.path(), Duration::from_secs(10)).unwrap();
+    let dir = tempfile::tempdir().expect("test operation must succeed");
+    let guard = ProjectWriteLock::acquire(dir.path(), Duration::from_secs(10))
+        .expect("test operation must succeed");
     // A live holder is NEVER robbed: short timeout → LockBusy.
     // (Holder sống KHÔNG BAO GIỜ bị cướp: timeout ngắn → LockBusy.)
     let busy = ProjectWriteLock::acquire(dir.path(), Duration::from_millis(50));
@@ -104,7 +109,8 @@ fn lock_contention_fails_closed_then_recovers() {
     );
     drop(guard);
     // Release is real: acquire succeeds right after drop.
-    ProjectWriteLock::acquire(dir.path(), Duration::from_secs(10)).unwrap();
+    ProjectWriteLock::acquire(dir.path(), Duration::from_secs(10))
+        .expect("test operation must succeed");
 }
 
 // ---------------------------------------------------------------------------
@@ -112,7 +118,7 @@ fn lock_contention_fails_closed_then_recovers() {
 // ---------------------------------------------------------------------------
 
 fn child_env(mode: &str, dir: &Path, ready: &Path) -> std::process::Command {
-    let exe = std::env::current_exe().unwrap();
+    let exe = std::env::current_exe().expect("test operation must succeed");
     let mut cmd = std::process::Command::new(exe);
     cmd.arg("--exact")
         .arg("v4_crash_probe")
@@ -166,8 +172,8 @@ fn kill_child(child: &mut std::process::Child) {
 }
 
 fn touch_ready() {
-    let ready = std::env::var("MGC_TEST_V4_READY").unwrap();
-    std::fs::write(&ready, "READY\n").unwrap();
+    let ready = std::env::var("MGC_TEST_V4_READY").expect("test operation must succeed");
+    std::fs::write(&ready, "READY\n").expect("test operation must succeed");
 }
 
 fn park_forever() -> ! {
@@ -183,28 +189,31 @@ fn park_forever() -> ! {
 fn v4_crash_probe() {
     if let Ok(mode) = std::env::var("MGC_TEST_V4_MODE") {
         // ---- child life ----
-        let dir = PathBuf::from(std::env::var("MGC_TEST_V4_DIR").unwrap());
+        let dir =
+            PathBuf::from(std::env::var("MGC_TEST_V4_DIR").expect("test operation must succeed"));
         if mode == "lock-holder" {
-            let _guard = ProjectWriteLock::acquire(&dir, Duration::from_secs(10)).unwrap();
+            let _guard = ProjectWriteLock::acquire(&dir, Duration::from_secs(10))
+                .expect("test operation must succeed");
             touch_ready();
             park_forever();
         }
         if let Some(_phase) = mode.strip_prefix("failpoint:") {
             // Attempt a full v4 write: the failpoint env parks the child
             // at the requested phase (its own READY proves the park).
-            let guard = ProjectWriteLock::acquire(&dir, Duration::from_secs(10)).unwrap();
+            let guard = ProjectWriteLock::acquire(&dir, Duration::from_secs(10))
+                .expect("test operation must succeed");
             let dest = dir.join("mgc.lock");
             let mut lock = test_doc("mgc/1.2.0-new", "b@2.0.0");
             lock.metadata.generated_at = "2026-09-17T00:00:01Z".to_string();
             lock.metadata.lockfile_hash = payload_digest(&lock.payload());
-            let bytes = write_v4_document(&lock).unwrap();
+            let bytes = write_v4_document(&lock).expect("test operation must succeed");
             mgc_lockfile::atomic::atomic_write_locked(
                 &guard,
                 &dest,
                 bytes.as_bytes(),
                 Duration::from_secs(60),
             )
-            .unwrap();
+            .expect("test operation must succeed");
             // Reaching here means no failpoint fired (must not happen in
             // this harness — every listed phase sits on this path).
             touch_ready();
@@ -215,7 +224,7 @@ fn v4_crash_probe() {
 
     // ---- parent life: SIGKILL releases the project lock ----
     {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("test operation must succeed");
         let ready = dir.path().join("holder.ready");
         let mut child = child_env("lock-holder", dir.path(), &ready)
             .spawn()
@@ -235,7 +244,7 @@ fn v4_crash_probe() {
 
     // ---- parent life: crash table (§4.5), one kill per failpoint ----
     for phase in LOCK_FAILPOINTS {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("test operation must succeed");
         // Seed the old-valid document first (parent-held lock, released).
         write_doc_locked(dir.path(), &test_doc("mgc/1.2.0-old", "a@1.0.0"));
         let ready = dir.path().join(format!("ready-{phase}"));

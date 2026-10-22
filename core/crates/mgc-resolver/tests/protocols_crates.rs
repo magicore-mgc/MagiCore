@@ -66,16 +66,24 @@ fn dep(name: &str, req: &str, kind: &str, optional: bool) -> String {
 async fn crates_retries_a_truncated_compressed_index_body() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("test operation must succeed");
+    let address = listener.local_addr().expect("test operation must succeed");
     let index_body = crate_line("retrycrate", "1.0.0", false, &sha256_hex(b"retrycrate"), "");
     let server = tokio::spawn(async move {
         for attempt in 0..2 {
-            let (mut socket, _) = listener.accept().await.unwrap();
+            let (mut socket, _) = listener
+                .accept()
+                .await
+                .expect("test operation must succeed");
             let mut request = Vec::new();
             let mut chunk = [0_u8; 1024];
             loop {
-                let read = socket.read(&mut chunk).await.unwrap();
+                let read = socket
+                    .read(&mut chunk)
+                    .await
+                    .expect("test operation must succeed");
                 assert_ne!(read, 0, "client closed before sending request headers");
                 request.extend_from_slice(&chunk[..read]);
                 if request.windows(4).any(|window| window == b"\r\n\r\n") {
@@ -89,14 +97,17 @@ async fn crates_retries_a_truncated_compressed_index_body() {
                         b"HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: 3\r\nConnection: close\r\n\r\nbad",
                     )
                     .await
-                    .unwrap();
+                    .expect("test operation must succeed");
             } else {
                 let response = format!(
                     "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                     index_body.len(),
                     index_body
                 );
-                socket.write_all(response.as_bytes()).await.unwrap();
+                socket
+                    .write_all(response.as_bytes())
+                    .await
+                    .expect("test operation must succeed");
             }
         }
         2
@@ -104,10 +115,13 @@ async fn crates_retries_a_truncated_compressed_index_body() {
 
     let base = format!("http://{address}");
     let protocol = CratesProtocol::with_download_base(&base, &base);
-    let entries = protocol.resolve_graph("retrycrate", "1").await.unwrap();
+    let entries = protocol
+        .resolve_graph("retrycrate", "1")
+        .await
+        .expect("test operation must succeed");
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].name, "retrycrate");
-    assert_eq!(server.await.unwrap(), 2);
+    assert_eq!(server.await.expect("test operation must succeed"), 2);
 }
 
 #[tokio::test]
@@ -205,19 +219,19 @@ async fn crates_resolves_root_features_and_honors_disabled_default_features() {
             default_features: false,
         }])
         .await
-        .unwrap();
+        .expect("test operation must succeed");
 
     assert_eq!(entries.len(), 3);
     let root = entries
         .iter()
         .find(|entry| entry.name == "esp-hal")
-        .unwrap();
+        .expect("test operation must succeed");
     assert_eq!(root.deps, [("chip-core".to_string(), "=1.0.0".to_string())]);
     assert!(entries.iter().any(|entry| entry.name == "chip-core"));
     let chip_core = entries
         .iter()
         .find(|entry| entry.name == "chip-core")
-        .unwrap();
+        .expect("test operation must succeed");
     assert_eq!(
         chip_core.deps,
         [("chip-runtime".to_string(), "=1.0.0".to_string())]
@@ -295,10 +309,19 @@ async fn crates_resolves_multiple_versions_of_a_transitive_crate() {
         .await;
 
     let protocol = CratesProtocol::with_download_base(&server.url(), &server.url());
-    let entries = protocol.resolve_graph("root", "^1").await.unwrap();
+    let entries = protocol
+        .resolve_graph("root", "^1")
+        .await
+        .expect("test operation must succeed");
     assert_eq!(entries.len(), 5);
-    let left = entries.iter().find(|entry| entry.name == "left").unwrap();
-    let right = entries.iter().find(|entry| entry.name == "right").unwrap();
+    let left = entries
+        .iter()
+        .find(|entry| entry.name == "left")
+        .expect("test operation must succeed");
+    let right = entries
+        .iter()
+        .find(|entry| entry.name == "right")
+        .expect("test operation must succeed");
     assert_eq!(
         left.deps,
         [("embassy-sync".to_string(), "=0.6.2".to_string())]
@@ -410,14 +433,20 @@ async fn crates_resolves_complete_lock_closure_with_optional_and_target_edges() 
         .await;
 
     let protocol = CratesProtocol::with_download_base(&server.url(), &server.url());
-    let entries = protocol.resolve_graph("serde", "^1.0").await.unwrap();
+    let entries = protocol
+        .resolve_graph("serde", "^1.0")
+        .await
+        .expect("test operation must succeed");
 
     assert_eq!(
         entries.len(),
         3,
         "unreferenced optional packages stay dormant"
     );
-    let serde = entries.iter().find(|entry| entry.name == "serde").unwrap();
+    let serde = entries
+        .iter()
+        .find(|entry| entry.name == "serde")
+        .expect("test operation must succeed");
     assert_eq!(serde.name, "serde");
     assert_eq!(serde.version, "1.0.219");
     assert_eq!(
@@ -439,7 +468,7 @@ async fn crates_resolves_complete_lock_closure_with_optional_and_target_edges() 
     let core = entries
         .iter()
         .find(|entry| entry.name == "serde_core")
-        .unwrap();
+        .expect("test operation must succeed");
     assert_eq!(core.name, "serde_core");
     assert_eq!(core.version, "1.0.5");
     assert!(!entries.iter().any(|entry| entry.name == "serde_derive"));
@@ -565,7 +594,10 @@ async fn crates_feature_resolution_skips_dormant_optional_edges() {
         .create_async()
         .await;
     let protocol = CratesProtocol::with_download_base(&server.url(), &server.url());
-    let entries = protocol.resolve_graph("root", "1").await.unwrap();
+    let entries = protocol
+        .resolve_graph("root", "1")
+        .await
+        .expect("test operation must succeed");
     let by_name = entries
         .iter()
         .map(|entry| (entry.name.as_str(), entry))
@@ -636,7 +668,7 @@ async fn crates_refuses_unmanaged_alternate_registry_edges() {
     let error = protocol
         .resolve_graph("foreign_root", "1")
         .await
-        .unwrap_err();
+        .expect_err("test operation must fail");
     assert!(error.to_string().contains("alternate registry"), "{error}");
 }
 
@@ -676,12 +708,12 @@ async fn crates_skips_dormant_optional_alternate_registry_edges() {
     let entries = protocol
         .resolve_graph("foreign_optional_root", "1")
         .await
-        .unwrap();
+        .expect("test operation must succeed");
     assert_eq!(entries.len(), 2);
     let child = entries
         .iter()
         .find(|entry| entry.name == "foreign-child")
-        .unwrap();
+        .expect("test operation must succeed");
     assert!(
         child
             .extra_markers
@@ -714,12 +746,20 @@ async fn crates_semver_selection_cases() {
 
     // ^1.0 → highest 1.x (2.0.0 excluded)
     assert_eq!(
-        protocol.resolve("serde", "^1.0").await.unwrap().version,
+        protocol
+            .resolve("serde", "^1.0")
+            .await
+            .expect("test operation must succeed")
+            .version,
         "1.0.219"
     );
     // =1.0.100 → exact
     assert_eq!(
-        protocol.resolve("serde", "=1.0.100").await.unwrap().version,
+        protocol
+            .resolve("serde", "=1.0.100")
+            .await
+            .expect("test operation must succeed")
+            .version,
         "1.0.100"
     );
     // >=1.0, <2.0 → 1.0.219
@@ -727,13 +767,17 @@ async fn crates_semver_selection_cases() {
         protocol
             .resolve("serde", ">=1.0, <2.0")
             .await
-            .unwrap()
+            .expect("test operation must succeed")
             .version,
         "1.0.219"
     );
     // ~1.0.100 → >=1.0.100 <1.1.0 → 1.0.219 (higher, same minor)
     assert_eq!(
-        protocol.resolve("serde", "~1.0.100").await.unwrap().version,
+        protocol
+            .resolve("serde", "~1.0.100")
+            .await
+            .expect("test operation must succeed")
+            .version,
         "1.0.219"
     );
 
@@ -754,7 +798,7 @@ async fn crates_semver_selection_cases() {
         protocol
             .resolve("windows-sys", ">=0.48.0, <=0.61")
             .await
-            .unwrap()
+            .expect("test operation must succeed")
             .version,
         "0.61.2",
         "Cargo accepts semver-compatible minor comparator upper bounds"
@@ -783,9 +827,17 @@ async fn crates_resolve_download_verify_store_ref_full_path() {
         .await;
 
     let protocol = CratesProtocol::with_download_base(&server.url(), &server.url());
-    let entry = protocol.resolve("serde", "^1.0").await.unwrap();
-    let downloaded = protocol.download(&entry).await.unwrap();
-    protocol.verify(&entry, &downloaded).unwrap();
+    let entry = protocol
+        .resolve("serde", "^1.0")
+        .await
+        .expect("test operation must succeed");
+    let downloaded = protocol
+        .download(&entry)
+        .await
+        .expect("test operation must succeed");
+    protocol
+        .verify(&entry, &downloaded)
+        .expect("test operation must succeed");
 
     let expected_hex = blake3::hash(bytes).to_hex().to_string();
     let expected_ref = format!("files/blake3/{}/{}", &expected_hex[..2], expected_hex);
@@ -817,8 +869,16 @@ async fn crates_sha256_mismatch_fails_closed() {
         .await;
 
     let protocol = CratesProtocol::with_download_base(&server.url(), &server.url());
-    let entry = protocol.resolve("serde", "^1.0").await.unwrap();
-    let downloaded = protocol.download(&entry).await.unwrap();
-    let err = protocol.verify(&entry, &downloaded).unwrap_err();
+    let entry = protocol
+        .resolve("serde", "^1.0")
+        .await
+        .expect("test operation must succeed");
+    let downloaded = protocol
+        .download(&entry)
+        .await
+        .expect("test operation must succeed");
+    let err = protocol
+        .verify(&entry, &downloaded)
+        .expect_err("test operation must fail");
     assert!(matches!(err, mgc_types::MgError::Integrity(_)), "{err:?}");
 }
