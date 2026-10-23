@@ -66,6 +66,37 @@ jobs:
         run: cargo test -p mgc-exec --test test_run -- --test-threads=1 2>&1
         timeout-minutes: 2
 
+  feature-matrix:
+    name: Feature build (${{ matrix.features || 'none' }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Every core must build on its own, and the no-feature build must work.
+        # Mỗi core phải build riêng được, và bản không bật feature nào cũng phải build.
+        features: ["web", "game", "ai", "clo", "cicd", "iot", "app", "lib", "hardware", ""]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
+        with:
+          toolchain: "1.99.0"
+      - name: Setup Go (esbuild-rs build script needs go on PATH)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.2"
+          cache: false
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2 (latest)
+      - name: Build one core (or no features)
+        shell: bash
+        run: |
+          if [[ -z "${{ matrix.features }}" ]]; then
+            cargo check -p mgc --no-default-features --locked
+          else
+            cargo check -p mgc --no-default-features --features "${{ matrix.features }}" --locked
+          fi
+
   minimum-rust-version:
     name: Minimum supported Rust (1.94)
     runs-on: ubuntu-latest
