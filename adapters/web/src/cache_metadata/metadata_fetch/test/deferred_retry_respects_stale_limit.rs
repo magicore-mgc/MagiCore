@@ -35,6 +35,14 @@ async fn test_retry_deferred_does_not_bypass_max_stale_limit() {
         .unwrap();
 
     let previous = std::env::var_os("MAGICORE_WEB_METADATA_MAX_STALE_SECS");
+    // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+    // test thread observes a partially written environment.
+    // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+    // không thấy môi trường ghi dở.
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { std::env::set_var("MAGICORE_WEB_METADATA_MAX_STALE_SECS", "60") };
     cache
         .write_metadata_record(

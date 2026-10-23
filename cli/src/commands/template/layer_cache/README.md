@@ -24,7 +24,7 @@ Resolve cache hit/miss, registry fallback and availability-only fallback classif
 - Tiếng Việt: thư mục không thêm hành vi mạng, cache, fallback hay CLI mới.
 ## Implementation / Cài đặt
 
-- [layer_cache.rs](layer_cache.rs)
+- `entry/`, `validation/`, `flow/`, `ref_match/`, `error_mapping/` owners (the former `layer_cache.rs` body)
 
 ## Error owner / Owner xử lý lỗi
 

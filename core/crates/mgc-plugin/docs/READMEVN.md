@@ -10,10 +10,10 @@
 ## Sơ đồ source
 
 - [`lib.rs`](../src/lib.rs)
-- [`resolver.rs`](../src/resolver.rs)
-- [`fetcher.rs`](../src/fetcher.rs)
-- [`linker.rs`](../src/linker.rs)
-- [`template.rs`](../src/template.rs)
+- [`resolver.rs`](../src/resolver/)
+- [`fetcher.rs`](../src/fetcher/)
+- [`linker.rs`](../src/linker/)
+- [`template.rs`](../src/template/)
 
 ## Bàn giao và review
 

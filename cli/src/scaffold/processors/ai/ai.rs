@@ -6,16 +6,16 @@ use std::path::Path;
 
 #[path = "agent/mod.rs"]
 mod agent;
-#[path = "agent_smoke_test/mod.rs"]
-mod agent_smoke_test;
+#[path = "agent_smoke_output/mod.rs"]
+mod agent_smoke_output;
 #[path = "dev_script/mod.rs"]
 mod dev_script;
 #[path = "error/mod.rs"]
 mod error;
 #[path = "mcp_server/mod.rs"]
 mod mcp_server;
-#[path = "mcp_smoke_test/mod.rs"]
-mod mcp_smoke_test;
+#[path = "mcp_smoke_output/mod.rs"]
+mod mcp_smoke_output;
 #[path = "model_configuration/mod.rs"]
 mod model_configuration;
 #[path = "model_runtime/mod.rs"]
@@ -55,9 +55,9 @@ impl AiProcessor {
         // Keep generated smoke tests in the scaffold; never fabricate them at test time.
         // Giữ smoke test trong scaffold; không tạo giả test lúc chạy kiểm thử.
         if framework == "mcp-server" {
-            mcp_smoke_test::write(target)?;
+            mcp_smoke_output::write(target)?;
         } else {
-            agent_smoke_test::write(target)?;
+            agent_smoke_output::write(target)?;
         }
 
         models_readme::write(target)?;

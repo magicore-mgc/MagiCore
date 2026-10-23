@@ -1,5 +1,6 @@
 //! Shared manifest recognizer wiring.
 //! Wiring nhận diện manifest shared.
+#[path = "shared.rs"]
 mod shared;
 pub(in crate::project::project::core_detection) use shared::signature_file_exists;
 pub(in crate::project::project::core_detection::signatures::signatures) use shared::{

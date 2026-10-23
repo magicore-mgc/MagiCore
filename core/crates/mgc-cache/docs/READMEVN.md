@@ -10,7 +10,7 @@ Triển khai package cache có kiểm tra integrity khi đọc, lưu/vô hiệu 
 ## Sơ đồ source
 
 - [`lib.rs`](../src/lib.rs)
-- [`memory.rs`](../src/memory.rs)
+- [`memory.rs`](../src/memory/)
 
 ## Bàn giao và review
 

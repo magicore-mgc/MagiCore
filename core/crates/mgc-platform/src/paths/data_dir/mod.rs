@@ -3,4 +3,6 @@
 
 mod data_dir;
 
-pub use data_dir::{global_bin_dir, global_tools_dir, mgc_data_dir, project_data_dir};
+pub use data_dir::{
+    MGC_DATA_DIR_ENV, global_bin_dir, global_tools_dir, mgc_data_dir, project_data_dir,
+};

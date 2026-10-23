@@ -6,7 +6,7 @@ use crate::commands::registry::registry_url::{
 };
 use url::Url;
 
-use super::super::should_bypass_system_proxy;
+use super::super::client::should_bypass_system_proxy;
 
 #[test]
 fn endpoint_builders_preserve_prefix_and_encode_dynamic_segments() {

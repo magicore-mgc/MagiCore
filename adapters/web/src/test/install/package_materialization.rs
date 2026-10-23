@@ -170,6 +170,14 @@ async fn test_install_skips_when_matching_package_is_already_materialized() {
     // Same loopback opt-in as the cache test above (default deny).
     let _env_guard = env_test_lock().lock().unwrap();
     let old_insecure = std::env::var_os("MAGICORE_WEB_ALLOW_INSECURE_LOCALHOST");
+    // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+    // test thread observes a partially written environment.
+    // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+    // không thấy môi trường ghi dở.
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { std::env::set_var("MAGICORE_WEB_ALLOW_INSECURE_LOCALHOST", "1") };
     let dir = tempdir_real().unwrap();
     std::fs::write(

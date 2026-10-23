@@ -3,4 +3,4 @@
 
 mod bounded_insert;
 
-pub(super) use bounded_insert::insert_bounded;
+pub(crate) use bounded_insert::insert_bounded;

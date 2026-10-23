@@ -10,7 +10,7 @@ Cung cấp lane publish client tới registry MagiCore, gồm phân giải auth 
 ## Sơ đồ source
 
 - [`lib.rs`](../src/lib.rs)
-- [`auth.rs`](../src/auth.rs)
+- [`auth.rs`](../src/auth/)
 
 ## Bàn giao và review
 

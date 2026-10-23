@@ -50,7 +50,7 @@ Keep this code for:
 - `crates/mgc-store/` → `core/crates/mgc-store/`
 - `crates/mgc-resolver/` → `core/crates/mgc-resolver/`
 - `crates/mgc-lockfile/` → `core/crates/mgc-lockfile/`
-- `crates/mgc-registry/` → `adapters/web/src/npm_registry.rs`
+- `crates/mgc-registry/` → `adapters/web/src/native`
 - `crates/mgc-fetcher/` → `core/crates/mgc-fetcher/`
 - `crates/mgc-core/src/cffi/sha256.rs` → `core/crates/mgc-crypto/`
 EOF

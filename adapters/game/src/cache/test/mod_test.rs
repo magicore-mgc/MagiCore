@@ -3,6 +3,7 @@
 //! Adapter tests
 
 use super::*;
+use crate::engine::GameEngine;
 
 #[test]
 fn test_cache_dir() {

@@ -15,7 +15,7 @@ import time
 
 # The recovery probe crashes `mgc install` at this failpoint phase (the
 # FIRST phase of the web install orchestrator's generation lifecycle —
-# see core/crates/mgc-store/src/failpoint.rs KNOWN_PHASES).
+# see core/crates/mgc-store/src/failpoint KNOWN_PHASES).
 # (Probe recovery crash `mgc install` ở phase failpoint này — phase ĐẦU
 # TIÊN của vòng đời generation trong orchestrator install web.)
 RECOVERY_PHASE = "after-generation-begin"

@@ -287,6 +287,10 @@ fn tool_unavailable_honors_pathext_wrappers() {
     // SAFETY (edition 2024): `env::set_var` is unsafe — this test mutates
     // process env with a unique probe name, restoring both vars after.
     // (An toàn: test đổi env với tên probe duy nhất, restore sau.)
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe {
         std::env::set_var("PATH", std::env::join_paths(paths).unwrap());
         std::env::set_var("PATHEXT", ".COM;.EXE;.BAT;.CMD");
@@ -299,6 +303,10 @@ fn tool_unavailable_honors_pathext_wrappers() {
         tool_unavailable("definitely-not-a-real-tool-mgc-pathext"),
         "absent tool must stay unavailable"
     );
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe {
         if let Some(path) = old_path {
             std::env::set_var("PATH", path);

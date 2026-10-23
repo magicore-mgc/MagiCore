@@ -35,12 +35,28 @@ fn parses_auth_token_and_basic_auth() {
 
 #[test]
 fn expands_env_vars() {
+    // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+    // test thread observes a partially written environment.
+    // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+    // không thấy môi trường ghi dở.
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { std::env::set_var("MGC_TEST_TOKEN", "tok123") };
     let rc = NpmRc::parse("//registry.npmjs.org/:_authToken=${MGC_TEST_TOKEN}\n").unwrap();
     assert_eq!(
         rc.token_for("registry.npmjs.org").map(String::as_str),
         Some("tok123")
     );
+    // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+    // test thread observes a partially written environment.
+    // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+    // không thấy môi trường ghi dở.
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { std::env::remove_var("MGC_TEST_TOKEN") };
 }
 

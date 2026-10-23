@@ -52,18 +52,4 @@ where
     Ok(pruned)
 }
 
-pub(in crate::commands::cache) fn file_has_no_external_hardlinks(path: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        std::fs::metadata(path)
-            .map(|metadata| metadata.nlink() <= 1)
-            .unwrap_or(false)
-    }
-
-    #[cfg(not(unix))]
-    {
-        let _ = path;
-        false
-    }
-}
+pub(in crate::commands::cache) use mgc_store::index::file_has_no_external_hardlinks;

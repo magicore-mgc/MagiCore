@@ -64,7 +64,7 @@ to use `MgError` contract violations and `String` per-entry schema reasons.
 - Manifest behavior has nearest-owner tests under `src/manifest/**/test/`;
   `tests/manifest.rs` remains the external public-route integration proof.
   Web adapter behavior continues through the Web facade; audit parsing remains
-  covered by `adapters/web/src/test/audit_lane_test.rs`.
+  covered by the Web adapter audit-lane tests under `adapters/web/src/test/`.
 - Tests, compiler, formatter, CI and OS lanes are NOT_RUN in source-first S440;
   they remain unverified until the deferred verification phase:
   `cargo test -p mgc-js-service`, `cargo test -p mgc-web-adapter`.

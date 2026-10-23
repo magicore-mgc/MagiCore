@@ -5,10 +5,26 @@ use super::*;
 #[test]
 fn test_lifecycle_scripts_are_opt_in() {
     let old = std::env::var_os("MAGICORE_WEB_ALLOW_SCRIPTS");
+    // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+    // test thread observes a partially written environment.
+    // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+    // không thấy môi trường ghi dở.
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { std::env::remove_var("MAGICORE_WEB_ALLOW_SCRIPTS") };
     assert!(!should_run_lifecycle_scripts(false, false));
     assert!(should_run_lifecycle_scripts(false, true));
 
+    // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+    // test thread observes a partially written environment.
+    // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+    // không thấy môi trường ghi dở.
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { std::env::set_var("MAGICORE_WEB_ALLOW_SCRIPTS", "1") };
     assert!(should_run_lifecycle_scripts(false, false));
     assert!(!should_run_lifecycle_scripts(true, true));
@@ -31,6 +47,14 @@ fn test_trust_gate_fail_closed_with_escape_hatch() {
 fn test_prefetch_defaults_are_conservative() {
     let _guard = env_test_lock().lock().unwrap();
     let old_resolve = std::env::var_os("MAGICORE_WEB_RESOLVE_PREFETCH");
+    // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+    // test thread observes a partially written environment.
+    // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+    // không thấy môi trường ghi dở.
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { std::env::remove_var("MAGICORE_WEB_RESOLVE_PREFETCH") };
 
     assert!(!resolve_prefetch_enabled());
@@ -42,6 +66,14 @@ fn test_prefetch_defaults_are_conservative() {
 fn test_prefetch_flag_can_be_enabled_explicitly() {
     let _guard = env_test_lock().lock().unwrap();
     let old_resolve = std::env::var_os("MAGICORE_WEB_RESOLVE_PREFETCH");
+    // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+    // test thread observes a partially written environment.
+    // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+    // không thấy môi trường ghi dở.
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { std::env::set_var("MAGICORE_WEB_RESOLVE_PREFETCH", "1") };
 
     assert!(resolve_prefetch_enabled());

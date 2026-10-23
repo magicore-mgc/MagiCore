@@ -1,5 +1,5 @@
 //! `cache/prune.rs` — Cache pruning for lib adapter.
-//! Removes old/unused cached packages (mirrors web cache_prune.rs).
+//! Removes old/unused cached packages (mirrors the web `cache_prune/` owner).
 
 use super::metadata::{CacheMetadata, metadata_path};
 use mgc_types::{MgError, MgResult};

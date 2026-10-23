@@ -12,7 +12,7 @@ Provides current low-level cross-platform filesystem APIs: standard paths, a bou
 - [`lib.rs`](../src/lib.rs)
 - [`paths/mod.rs`](../src/paths/mod.rs)
 - [`paths/shell/`](../src/paths/shell/) — shared PATH API and OS-specific owners.
-- [`fs_semaphore.rs`](../src/fs_semaphore.rs)
+- [`fs_semaphore.rs`](../src/fs_semaphore/)
 - [`reflink/`](../src/reflink/mod.rs) — stable dispatch, per-platform implementation owners and local error owner.
 - [`open_regular_file/`](../src/open_regular_file/)
 

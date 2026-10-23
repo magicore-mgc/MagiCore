@@ -72,6 +72,10 @@ fn unix_session_prevents_descendants_from_joining_callers_process_group()
             // SAFETY: this reads the test-only group id passed by the parent test.
             // AN TOÀN: đây là group id chỉ dành cho test do test cha truyền vào.
             #[allow(unsafe_code)]
+            // SAFETY: test-only operation on process-local state or FFI with
+            // caller-owned arguments valid for the call.
+            // AN TOÀN: chỉ test thao tác state cục bộ process hoặc FFI với
+            // đối số do caller sở hữu, hợp lệ trong lời gọi.
             let result = unsafe {
                 libc::setpgid(
                     0,
@@ -102,6 +106,10 @@ fn unix_session_prevents_descendants_from_joining_callers_process_group()
     // SAFETY: getpgrp only reads the current test process's group id.
     // AN TOÀN: getpgrp chỉ đọc group id của process test hiện tại.
     #[allow(unsafe_code)]
+    // SAFETY: test-only operation on process-local state or FFI with
+    // caller-owned arguments valid for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process hoặc FFI với
+    // đối số do caller sở hữu, hợp lệ trong lời gọi.
     let caller_group = unsafe { libc::getpgrp() };
     let mut command = std::process::Command::new(std::env::current_exe()?);
     command

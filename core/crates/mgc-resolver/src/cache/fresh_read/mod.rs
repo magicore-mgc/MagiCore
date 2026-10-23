@@ -3,4 +3,4 @@
 
 mod fresh_read;
 
-pub(super) use fresh_read::get_fresh;
+pub(crate) use fresh_read::get_fresh;

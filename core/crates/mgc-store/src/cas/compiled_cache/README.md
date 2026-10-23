@@ -8,5 +8,5 @@ VI: Folder này quản lý cache local dùng chung cho module JavaScript đã bi
 - `loader/`, `compilation_key/`, `compiled_module/`: public model owners.
 - `record/`, `output_digest/`: on-disk record validation and digest format.
 - `publication/`, `temp_guard/`: hard-link race, quarantine and temporary-file cleanup.
-- Nearest existing coverage: `core/crates/mgc-store/tests/compiled_cache_integrity.rs`, `adversarial_integrity.rs`, `compile_fail.rs`; CLI route coverage: `cli/src/test/dev_server_test.rs`.
+- Nearest existing coverage: `core/crates/mgc-store/tests/compiled_cache_integrity.rs`, `adversarial_integrity.rs`, `compile_fail.rs`; CLI route coverage lives under `cli/src/test/`.
 - Schema, path, serialized fields, digest bytes, cache decisions and publication order are compatibility contracts.

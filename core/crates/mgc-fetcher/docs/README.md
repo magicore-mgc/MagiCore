@@ -10,8 +10,8 @@ Provides lower-level shared download and archive-extraction helpers. Higher laye
 ## Source map
 
 - [`lib.rs`](../src/lib.rs)
-- [`download.rs`](../src/download.rs)
-- [`extract.rs`](../src/extract.rs)
+- [`download.rs`](../src/download/)
+- [`extract.rs`](../src/extract/)
 
 ## Handoff and review
 

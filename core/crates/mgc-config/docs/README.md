@@ -10,10 +10,10 @@ Owns shared project/user config models, registry chains, npmrc credential/regist
 ## Source map
 
 - [`lib.rs`](../src/lib.rs)
-- [`project.rs`](../src/project.rs)
+- [`project.rs`](../src/project/)
 - [`chain.rs`](../src/chain.rs)
 - [npmrc owner module](../src/npmrc/README.md)
-- [`attestation.rs`](../src/attestation.rs)
+- [`attestation.rs`](../src/attestation/)
 
 ## Handoff and review
 

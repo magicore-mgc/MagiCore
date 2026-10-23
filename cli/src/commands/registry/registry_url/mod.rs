@@ -6,5 +6,6 @@ mod registry_url;
 
 pub(crate) use error::RegistryUrlError;
 pub(crate) use registry_url::{
-    admin_client, binding_url, client_for_url, revoke_token_url, user_url, validated_registry_base,
+    admin_client, binding_url, client_for_url, is_loopback_host, revoke_token_url, user_url,
+    validated_registry_base,
 };

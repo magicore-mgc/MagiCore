@@ -26,6 +26,10 @@ impl Fixture {
             .iter()
             .map(|key| (*key, std::env::var_os(key)))
             .collect();
+        // SAFETY: test-only operation on process-local state / FFI with
+        // caller-owned buffers kept alive for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+        // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe {
             std::env::set_var("HOME", root.path());
             std::env::remove_var(keys[1]);
@@ -50,6 +54,10 @@ impl Fixture {
 impl Drop for Fixture {
     fn drop(&mut self) {
         for (key, value) in &self.saved {
+            // SAFETY: test-only operation on process-local state / FFI with
+            // caller-owned buffers kept alive for the call.
+            // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+            // buffer do caller sở hữu và còn sống trong lời gọi.
             unsafe {
                 match value {
                     Some(value) => std::env::set_var(key, value),
@@ -69,6 +77,14 @@ fn path_token_beats_host_token() {
 fn env_url_keeps_matching_npmrc_auth() {
     let f = Fixture::new();
     f.npmrc("//127.0.0.1:4351/team/:_authToken=port-fixture\n");
+    // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+    // test thread observes a partially written environment.
+    // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+    // không thấy môi trường ghi dở.
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { std::env::set_var("MAGICORE_WEB_REGISTRY_URL", "http://127.0.0.1:4351/team/") };
     let c = f.checked(None).unwrap();
     assert_eq!(c.len(), 1);
@@ -78,6 +94,10 @@ fn env_url_keeps_matching_npmrc_auth() {
 fn env_token_overrides_npmrc_auth() {
     let f = Fixture::new();
     f.npmrc("//registry.example/:_authToken=root-fixture\n");
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe {
         std::env::set_var("MAGICORE_WEB_REGISTRY_URL", "https://registry.example");
         std::env::set_var("MAGICORE_WEB_REGISTRY_TOKEN", "env-fixture")
@@ -96,6 +116,10 @@ fn config_token_overrides_npmrc_auth() {
 #[test]
 fn explicit_token_does_not_allow_url_userinfo() {
     let f = Fixture::new();
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe {
         std::env::set_var(
             "MAGICORE_WEB_REGISTRY_URL",

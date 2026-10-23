@@ -8,6 +8,8 @@ mod extract_zip;
 mod limits;
 mod local_entry;
 #[cfg(test)]
+#[cfg(test)]
+#[path = "test/support/mod.rs"]
 mod test_support;
 mod zip_entry;
 mod zip_path;

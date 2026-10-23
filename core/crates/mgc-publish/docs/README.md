@@ -10,7 +10,7 @@ Provides the client publication lane to MagiCore registries, including authentic
 ## Source map
 
 - [`lib.rs`](../src/lib.rs)
-- [`auth.rs`](../src/auth.rs)
+- [`auth.rs`](../src/auth/)
 
 ## Handoff and review
 

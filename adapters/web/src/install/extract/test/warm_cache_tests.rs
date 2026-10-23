@@ -539,6 +539,10 @@ fn warm_cache_file_verification_does_not_block_on_fifo_replacement() {
     // for the duration of `mkfifo`; the mode is a valid permission mask.
     // (AN TOÀN: `fifo_path` là đường dẫn NUL-terminated hợp lệ và còn sống
     // trong lúc gọi `mkfifo`; mode là mask quyền hợp lệ.)
+    // SAFETY: test-only operation on process-local state or FFI with
+    // caller-owned arguments valid for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process hoặc FFI với
+    // đối số do caller sở hữu, hợp lệ trong lời gọi.
     assert_eq!(unsafe { libc::mkfifo(fifo_path.as_ptr(), 0o600) }, 0);
 
     let (send, receive) = mpsc::channel();

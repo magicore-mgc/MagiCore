@@ -10,10 +10,10 @@ Owns lockfile schemas and transformations for reproducible graphs: canonical par
 ## Source map
 
 - [`lib.rs`](../src/lib.rs)
-- [`canonical.rs`](../src/canonical.rs)
-- [`v4.rs`](../src/v4.rs)
-- [`verifier.rs`](../src/verifier.rs)
-- [`writer.rs`](../src/writer.rs)
+- [`canonical.rs`](../src/canonical/)
+- [`v4.rs`](../src/v4/)
+- [`verifier.rs`](../src/verifier/)
+- [`writer.rs`](../src/writer/)
 
 ## Handoff and review
 

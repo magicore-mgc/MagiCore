@@ -17,6 +17,12 @@ pub(in crate::run::implementation) struct ProcessTreeGuard {
 
 #[cfg(windows)]
 impl ProcessTreeGuard {
+    // SAFETY: the job object and its extended-limit struct are created and
+    // initialised in this scope; the struct is passed by pointer while alive
+    // and the returned handle is wrapped in an owned guard.
+    // AN TOÀN: job object và struct giới hạn được tạo/khởi tạo trong scope
+    // này; struct truyền bằng con trỏ khi còn sống, handle trả về được bọc
+    // trong guard sở hữu.
     #[allow(unsafe_code)]
     pub(in crate::run::implementation) fn new() -> std::result::Result<Self, WindowsJobError> {
         use windows_sys::Win32::System::JobObjects::{
@@ -54,6 +60,10 @@ impl ProcessTreeGuard {
         Ok(guard)
     }
 
+    // SAFETY: `child` is borrowed for the call and its raw handle is valid; the
+    // job handle belongs to `self`, so no handle is closed here.
+    // AN TOÀN: `child` được mượn trong suốt lời gọi và raw handle còn hiệu lực;
+    // job handle thuộc `self` nên không handle nào bị đóng ở đây.
     #[allow(unsafe_code)]
     pub(in crate::run::implementation) fn activate(
         &self,
@@ -73,6 +83,10 @@ impl ProcessTreeGuard {
         super::super::primary_thread::resume_primary_thread(child.id())
     }
 
+    // SAFETY: `self.job` is an owned job handle kept alive by the guard; the
+    // exit code is a plain integer and the result is checked.
+    // AN TOÀN: `self.job` là job handle do guard sở hữu và còn sống; exit code
+    // là số nguyên và kết quả được kiểm.
     #[allow(unsafe_code)]
     pub(in crate::run::implementation) fn terminate(
         &self,

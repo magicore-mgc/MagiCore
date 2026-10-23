@@ -3,4 +3,4 @@
 
 mod cache_entry;
 
-pub(super) use cache_entry::CacheEntry;
+pub(crate) use cache_entry::CacheEntry;

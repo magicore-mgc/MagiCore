@@ -10,9 +10,9 @@ Cung cấp BLAKE3, checksum, ký/xác minh Ed25519, kiểu integrity, lưu keyri
 ## Sơ đồ source
 
 - [`lib.rs`](../src/lib.rs)
-- [`ed25519_signer.rs`](../src/ed25519_signer.rs)
+- [`ed25519_signer.rs`](../src/ed25519_signer/)
 - [keyring owner](../src/keyring/README.md)
-- [`integrity.rs`](../src/integrity.rs)
+- [`integrity.rs`](../src/integrity/)
 - [source owners](../src/README.md)
 - [owner BLAKE3 signer](../src/blake3_signer/README.md)
 

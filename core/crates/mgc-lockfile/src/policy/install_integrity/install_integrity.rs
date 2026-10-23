@@ -4,7 +4,7 @@
 use crate::{LockfileError, LockfileResult};
 
 /// SRI algorithms the web materializer enforces (must stay in sync with
-/// `adapters/web/src/install/integrity.rs::verify_sri_integrity`).
+/// `adapters/web/src/install/integrity/::verify_sri_integrity`).
 /// Thuật toán SRI materializer web bắt buộc (phải đồng bộ với
 /// `verify_sri_integrity`).
 pub const INSTALL_SRI_ALGORITHMS: &[&str] = &["sha256", "sha512"];

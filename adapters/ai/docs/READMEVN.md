@@ -9,8 +9,8 @@ Nối project AI với core, capability, audit, cache và install của MagiCore
 
 ## Sơ đồ source
 
-- [`adapter.rs`](../src/adapter/adapter.rs)
-- [`framework.rs`](../src/framework.rs)
+- [`adapter.rs`](../src/adapter/adapter/)
+- [`framework.rs`](../src/framework/)
 - [`install/mod.rs`](../src/install/mod.rs)
 - [Các owner client native Hugging Face](../src/native/hf_client/README.md)
 

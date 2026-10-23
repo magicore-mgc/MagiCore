@@ -32,24 +32,6 @@ pub(in crate::cache::prune) fn find_unique_sidecar(path: &Path) -> PruneOutcome<
     Ok(Some(sidecar))
 }
 
-#[cfg(test)]
-pub(in crate::cache::prune) fn remove_regular_sidecar(path: &Path) -> PruneOutcome<u64> {
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
-        Err(source) => return Err(PruneError::io("inspect cache metadata sidecar", source)),
-    };
-
-    if !metadata.file_type().is_file() {
-        return Ok(0);
-    }
-
-    let bytes = metadata.len();
-    fs::remove_file(path)
-        .map_err(|source| PruneError::io("remove cache metadata sidecar", source))?;
-    Ok(bytes)
-}
-
 fn is_metadata_sidecar(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())

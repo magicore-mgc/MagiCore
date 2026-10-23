@@ -1,11 +1,4 @@
-//! Generate SBOM from a Cloud lockfile — sinh SBOM từ lockfile Cloud.
+//! SBOM bridge for cloud lockfiles — implementation lives in `mgc_adapter_base`.
+//! Cầu SBOM cho lockfile cloud — implementation nằm ở `mgc_adapter_base`.
 
-use mgc_lockfile::Lockfile;
-use mgc_sbom::{SbomGenerator, SbomOptions};
-use mgc_types::MgResult;
-pub fn generate_sbom(lockfile: &Lockfile, options: SbomOptions) -> MgResult<String> {
-    let generator = SbomGenerator::new(options);
-    generator
-        .generate_json(lockfile)
-        .map_err(|e| mgc_types::MgError::Other(format!("SBOM generation failed: {e}")))
-}
+pub use mgc_adapter_base::generate_sbom;

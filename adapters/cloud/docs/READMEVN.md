@@ -9,8 +9,8 @@ Phân loại CDK, Pulumi, Terraform và Cloudflare; điều phối scaffold/audi
 
 ## Sơ đồ source
 
-- [`adapter.rs`](../src/adapter.rs)
-- [`cloud_type.rs`](../src/cloud_type.rs)
+- [`adapter.rs`](../src/adapter/)
+- [`cloud_type.rs`](../src/cloud_type/)
 - [`scaffold/mod.rs`](../src/scaffold/mod.rs)
 - [`deploy/mod.rs`](../src/deploy/mod.rs)
 

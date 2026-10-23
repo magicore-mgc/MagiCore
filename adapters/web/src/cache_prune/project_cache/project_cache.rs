@@ -55,21 +55,7 @@ pub fn prune_unlinked_old_cas_files_under(
     Ok(())
 }
 
-pub fn file_has_no_external_hardlinks(path: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        std::fs::metadata(path)
-            .map(|metadata| metadata.nlink() <= 1)
-            .unwrap_or(false)
-    }
-
-    #[cfg(not(unix))]
-    {
-        let _ = path;
-        false
-    }
-}
+pub use mgc_store::index::file_has_no_external_hardlinks;
 
 #[cfg(test)]
 #[path = "test/mod.rs"]

@@ -30,6 +30,14 @@ fn cli_token_wins() {
 #[test]
 fn env_token_used_when_set() {
     with_env_lock(|| {
+        // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+        // test thread observes a partially written environment.
+        // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+        // không thấy môi trường ghi dở.
+        // SAFETY: test-only operation on process-local state / FFI with
+        // caller-owned buffers kept alive for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+        // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe { std::env::set_var("MGC_NPM_TOKEN", "env-token") };
         let auth = resolve_auth(
             &NpmRc::parse("//registry.npmjs.org/:_authToken=npmrc").unwrap(),
@@ -39,7 +47,23 @@ fn env_token_used_when_set() {
         )
         .unwrap();
         assert_eq!(auth.token.as_deref(), Some("env-token"));
+        // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+        // test thread observes a partially written environment.
+        // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+        // không thấy môi trường ghi dở.
+        // SAFETY: test-only operation on process-local state / FFI with
+        // caller-owned buffers kept alive for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+        // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe { std::env::remove_var("MGC_NPM_TOKEN") };
+        // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+        // test thread observes a partially written environment.
+        // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+        // không thấy môi trường ghi dở.
+        // SAFETY: test-only operation on process-local state / FFI with
+        // caller-owned buffers kept alive for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+        // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe { std::env::remove_var("NPM_TOKEN") };
     })
 }
@@ -47,7 +71,23 @@ fn env_token_used_when_set() {
 #[test]
 fn npmrc_token_matches_host() {
     with_env_lock(|| {
+        // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+        // test thread observes a partially written environment.
+        // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+        // không thấy môi trường ghi dở.
+        // SAFETY: test-only operation on process-local state / FFI with
+        // caller-owned buffers kept alive for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+        // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe { std::env::remove_var("MGC_NPM_TOKEN") };
+        // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+        // test thread observes a partially written environment.
+        // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+        // không thấy môi trường ghi dở.
+        // SAFETY: test-only operation on process-local state / FFI with
+        // caller-owned buffers kept alive for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+        // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe { std::env::remove_var("NPM_TOKEN") };
         let auth = resolve_auth(
             &NpmRc::parse("//registry.npmjs.org/:_authToken=npmrc-token").unwrap(),
@@ -63,7 +103,23 @@ fn npmrc_token_matches_host() {
 #[test]
 fn mgc_toml_registry_token_fallback() {
     with_env_lock(|| {
+        // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+        // test thread observes a partially written environment.
+        // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+        // không thấy môi trường ghi dở.
+        // SAFETY: test-only operation on process-local state / FFI with
+        // caller-owned buffers kept alive for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+        // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe { std::env::remove_var("MGC_NPM_TOKEN") };
+        // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+        // test thread observes a partially written environment.
+        // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+        // không thấy môi trường ghi dở.
+        // SAFETY: test-only operation on process-local state / FFI with
+        // caller-owned buffers kept alive for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+        // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe { std::env::remove_var("NPM_TOKEN") };
         let mut reg = Registry::new("r".into(), "https://x/".into());
         reg.token = Some("toml-token".into());
@@ -76,7 +132,23 @@ fn mgc_toml_registry_token_fallback() {
 #[test]
 fn auth_type_basic_forces_basic_auth() {
     with_env_lock(|| {
+        // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+        // test thread observes a partially written environment.
+        // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+        // không thấy môi trường ghi dở.
+        // SAFETY: test-only operation on process-local state / FFI with
+        // caller-owned buffers kept alive for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+        // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe { std::env::remove_var("MGC_NPM_TOKEN") };
+        // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+        // test thread observes a partially written environment.
+        // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+        // không thấy môi trường ghi dở.
+        // SAFETY: test-only operation on process-local state / FFI with
+        // caller-owned buffers kept alive for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+        // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe { std::env::remove_var("NPM_TOKEN") };
         // có token nhưng auth_type = "basic" → bỏ qua token config, dùng basic
         let mut reg = Registry::new("r".into(), "https://x/".into());
@@ -95,7 +167,23 @@ fn auth_type_basic_forces_basic_auth() {
 #[test]
 fn auth_type_basic_without_credentials_errors() {
     with_env_lock(|| {
+        // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+        // test thread observes a partially written environment.
+        // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+        // không thấy môi trường ghi dở.
+        // SAFETY: test-only operation on process-local state / FFI with
+        // caller-owned buffers kept alive for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+        // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe { std::env::remove_var("MGC_NPM_TOKEN") };
+        // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+        // test thread observes a partially written environment.
+        // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+        // không thấy môi trường ghi dở.
+        // SAFETY: test-only operation on process-local state / FFI with
+        // caller-owned buffers kept alive for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+        // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe { std::env::remove_var("NPM_TOKEN") };
         let mut reg = Registry::new("r".into(), "https://x/".into());
         reg.token = Some("toml-token".into());
@@ -109,7 +197,23 @@ fn auth_type_basic_without_credentials_errors() {
 #[test]
 fn auth_type_token_without_token_errors() {
     with_env_lock(|| {
+        // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+        // test thread observes a partially written environment.
+        // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+        // không thấy môi trường ghi dở.
+        // SAFETY: test-only operation on process-local state / FFI with
+        // caller-owned buffers kept alive for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+        // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe { std::env::remove_var("MGC_NPM_TOKEN") };
+        // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+        // test thread observes a partially written environment.
+        // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+        // không thấy môi trường ghi dở.
+        // SAFETY: test-only operation on process-local state / FFI with
+        // caller-owned buffers kept alive for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+        // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe { std::env::remove_var("NPM_TOKEN") };
         let mut reg = Registry::new("r".into(), "https://x/".into());
         reg.username = Some("u".into());
@@ -124,7 +228,23 @@ fn auth_type_token_without_token_errors() {
 #[test]
 fn basic_auth_from_npmrc() {
     with_env_lock(|| {
+        // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+        // test thread observes a partially written environment.
+        // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+        // không thấy môi trường ghi dở.
+        // SAFETY: test-only operation on process-local state / FFI with
+        // caller-owned buffers kept alive for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+        // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe { std::env::remove_var("MGC_NPM_TOKEN") };
+        // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+        // test thread observes a partially written environment.
+        // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+        // không thấy môi trường ghi dở.
+        // SAFETY: test-only operation on process-local state / FFI with
+        // caller-owned buffers kept alive for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+        // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe { std::env::remove_var("NPM_TOKEN") };
         let auth = resolve_auth(
             &NpmRc::parse("//priv.example.com/:username=u\n//priv.example.com/:_password=pass")
@@ -142,7 +262,23 @@ fn basic_auth_from_npmrc() {
 #[test]
 fn missing_auth_errors() {
     with_env_lock(|| {
+        // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+        // test thread observes a partially written environment.
+        // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+        // không thấy môi trường ghi dở.
+        // SAFETY: test-only operation on process-local state / FFI with
+        // caller-owned buffers kept alive for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+        // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe { std::env::remove_var("MGC_NPM_TOKEN") };
+        // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+        // test thread observes a partially written environment.
+        // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+        // không thấy môi trường ghi dở.
+        // SAFETY: test-only operation on process-local state / FFI with
+        // caller-owned buffers kept alive for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+        // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe { std::env::remove_var("NPM_TOKEN") };
         assert!(
             resolve_auth(

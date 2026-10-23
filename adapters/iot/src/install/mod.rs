@@ -1,70 +1,9 @@
-//! IoT dependency installation per framework.
+//! IoT dependency installation per framework facade.
+//! Facade cài dependency IoT theo framework.
 
-use crate::framework::IotFramework;
-use mgc_types::{MgError, MgResult};
-use std::path::Path;
+mod dispatch;
 
-/// Install dependencies for IoT project
-pub async fn install_dependencies(
-    framework: IotFramework,
-    project_root: &Path,
-) -> MgResult<Vec<String>> {
-    match framework {
-        IotFramework::Esp32Rust => install_esp32_rust(project_root).await,
-        IotFramework::Platformio => install_platformio(project_root).await,
-        IotFramework::Zephyr => install_zephyr(project_root).await,
-    }
-}
-
-/// ESP32-Rust: cargo orchestrate — toolchain spawn chưa được kiểm chứng E2E,
-/// fail-closed thay vì trả danh sách giả.
-/// ESP32-Rust: việc spawn toolchain chưa E2E-verified — fail-closed, không
-/// trả danh sách cài đặt giả.
-async fn install_esp32_rust(project_root: &Path) -> MgResult<Vec<String>> {
-    let cargo_toml = project_root.join("Cargo.toml");
-    if !cargo_toml.exists() {
-        return Err(MgError::Other("Cargo.toml not found".into()));
-    }
-
-    Err(MgError::Unsupported {
-        core: "iot",
-        capability: "install (esp32-rust)",
-        guidance: "esp32-rust dependency installation is unsupported: MagiCore does not yet own its resolver, lock, fetch, verification, store, and materializer"
-            .to_string(),
-    })
-}
-
-/// PlatformIO: pio pkg install — chưa chạy tool thật, fail-closed.
-/// PlatformIO: chưa chạy `pio pkg install` thật — fail-closed.
-async fn install_platformio(project_root: &Path) -> MgResult<Vec<String>> {
-    let platformio_ini = project_root.join("platformio.ini");
-    if !platformio_ini.exists() {
-        return Err(MgError::Other("platformio.ini not found".into()));
-    }
-
-    Err(MgError::Unsupported {
-        core: "iot",
-        capability: "install (platformio)",
-        guidance: "PlatformIO dependency installation is unsupported: MagiCore does not yet own its resolver, lock, fetch, verification, store, and materializer"
-            .to_string(),
-    })
-}
-
-/// Zephyr: west update — chưa chạy tool thật, fail-closed.
-/// Zephyr: chưa chạy `west update` thật — fail-closed.
-async fn install_zephyr(project_root: &Path) -> MgResult<Vec<String>> {
-    let west_yml = project_root.join("west.yml");
-    if !west_yml.exists() {
-        return Err(MgError::Other("west.yml not found".into()));
-    }
-
-    Err(MgError::Unsupported {
-        core: "iot",
-        capability: "install (zephyr)",
-        guidance: "Zephyr dependency installation is unsupported: MagiCore does not yet own its resolver, lock, fetch, verification, store, and materializer"
-            .to_string(),
-    })
-}
+pub use dispatch::install_dependencies;
 
 #[cfg(test)]
 #[path = "test/mod_test.rs"]

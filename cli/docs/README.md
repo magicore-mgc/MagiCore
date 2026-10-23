@@ -9,9 +9,9 @@ Builds the user-facing binary: command definitions, project/core context, bare-c
 
 ## Source map
 
-- [`commands/definitions.rs`](../src/commands/definitions.rs)
+- [`commands/definitions.rs`](../src/commands/definitions/)
 - [`dispatch/mod.rs`](../src/dispatch/mod.rs)
-- [`context.rs`](../src/context.rs)
+- [`context.rs`](../src/context/)
 - [`scaffold/mod.rs`](../src/scaffold/mod.rs)
 
 ## Handoff and review

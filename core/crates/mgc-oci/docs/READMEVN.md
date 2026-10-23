@@ -9,9 +9,9 @@ Triển khai OCI Distribution: liệt kê catalog/tag, pull/push blob/manifest, 
 
 ## Sơ đồ source
 
-- [`client.rs`](../src/client.rs)
-- [`manifest.rs`](../src/manifest.rs)
-- [`ref.rs`](../src/ref.rs)
+- [`client.rs`](../src/client/)
+- [`manifest.rs`](../src/manifest/)
+- [`ref.rs`](../src/ref/)
 
 ## Bàn giao và review
 

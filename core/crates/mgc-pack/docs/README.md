@@ -10,9 +10,9 @@ Builds package tarballs with file selection/ignore rules, manifest sanitization,
 ## Source map
 
 - [`lib.rs`](../src/lib.rs)
-- [`ignore.rs`](../src/ignore.rs)
-- [`manifest.rs`](../src/manifest.rs)
-- [`tarball.rs`](../src/tarball.rs)
+- [`ignore.rs`](../src/ignore/)
+- [`manifest.rs`](../src/manifest/)
+- [`tarball.rs`](../src/tarball/)
 
 ## Handoff and review
 

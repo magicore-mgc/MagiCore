@@ -10,10 +10,10 @@ Cung cấp thao tác HTTP outbound chung: TLS, timeout, retry, proxy, offline, r
 ## Sơ đồ source
 
 - [`lib.rs`](../src/lib.rs)
-- [`methods.rs`](../src/methods.rs)
-- [`retry.rs`](../src/retry.rs)
-- [`tls.rs`](../src/tls.rs)
-- [`upload.rs`](../src/upload.rs)
+- [`methods.rs`](../src/methods/)
+- [`retry.rs`](../src/retry/)
+- [`tls.rs`](../src/tls/)
+- [`upload.rs`](../src/upload/)
 
 ## Bàn giao và review
 

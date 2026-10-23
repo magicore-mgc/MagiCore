@@ -20,6 +20,7 @@ pub mod crates;
 pub mod go;
 #[path = "hfhub/mod.rs"]
 pub mod hfhub;
+mod interval_range;
 #[path = "maven/mod.rs"]
 pub mod maven;
 pub mod nuget;

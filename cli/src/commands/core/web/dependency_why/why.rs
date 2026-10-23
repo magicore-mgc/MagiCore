@@ -7,6 +7,12 @@ use std::path::Path;
 
 /// Show reverse dependencies for a package in v2/v3/v4 lockfiles.
 /// Hiển thị phụ thuộc ngược của package trong lockfile v2/v3/v4.
+#[path = "edge_name/mod.rs"]
+mod edge_name;
+
+/// Re-export so module tests and the parent can keep reaching this helper.
+pub(in crate::commands::core::web::dependency_why) use edge_name::edge_name;
+
 pub async fn why(adapter: &dyn PackageAdapter, root: &Path, package: &str) -> Result<()> {
     if adapter.name() != "web" {
         return Err(super::error::WhyError::unsupported_core().into());
@@ -132,21 +138,4 @@ pub async fn why(adapter: &dyn PackageAdapter, root: &Path, package: &str) -> Re
         mgc_ui::info(line);
     }
     Ok(())
-}
-
-/// Remove version/range suffixes while preserving a scoped package name.
-/// Bỏ hậu tố version/range nhưng giữ nguyên tên package có scope.
-pub(in crate::commands::core::web::dependency_why) fn edge_name(edge: &str) -> String {
-    let edge = edge.trim();
-    if let Some(rest) = edge.strip_prefix('@') {
-        match rest.find('@') {
-            Some(index) => format!("@{}", &rest[..index]),
-            None => edge.to_string(),
-        }
-    } else {
-        match edge.find('@') {
-            Some(index) => edge[..index].to_string(),
-            None => edge.to_string(),
-        }
-    }
 }

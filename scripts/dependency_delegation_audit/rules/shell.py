@@ -240,6 +240,23 @@ SHELL_DEPENDENCY_COMMAND_REVIEWS = {
 # A source edit invalidates every review for that file; only listed call lines
 # can be cleared. Hash nguồn đầy đủ; chỉ các dòng được liệt kê mới được duyệt.
 SHELL_SOURCE_DYNAMIC_COMMAND_REVIEWS = {
+    "scripts/release/binary_e2e/web/create_install_test_build_audit.sh": {
+        "source_sha256": "661dde6fbb84b22abfe39f7eb680e7577d304b7d9da662a51cbe72d14a7bc464",
+        "lines": {
+            6: "create mode: runs the freshly built mgc release binary with a literal create-web template invocation in an isolated fixture directory.",
+            20: "install mode: literal mgc install against the generated fixture project.",
+            28: "test mode: literal mgc test against the generated fixture project.",
+            29: "build mode: literal mgc build against the generated fixture project.",
+            39: "audit mode: literal mgc audit against the generated fixture project.",
+        },
+    },
+    "scripts/release/binary_e2e/web/run_script_probe.sh": {
+        "source_sha256": "f1a6c25c9c83f6f0eeb045efde47f2f11d8b33571ddb99db4ecaaa4b5a5e5e06",
+        "lines": {
+            7: "sources the sibling probe_process.sh helper from the same fixed script directory.",
+            28: "runs the literal mgc run subcommand with the fixture script name in a background job.",
+        },
+    },
     "scripts/ci/docker/app/build_flutter_container.sh": {
         "source_sha256": "e1f9dd97045f8e00366f088c87d5aa5ffadd7ed370fc6bb565ce04348d441da5",
         "lines": {18: "Runs the selected MGC release binary with fixed install arguments inside a disposable Docker fixture and isolated data/cache directories."},
@@ -249,19 +266,19 @@ SHELL_SOURCE_DYNAMIC_COMMAND_REVIEWS = {
         "lines": {9: "Runs the extracted release artifact only for its version probe before the smoke workflow uses it."},
     },
     "scripts/ci/stress/toolchains/godot/install_unix.sh": {
-        "source_sha256": "99a65e0743eb9870525df34201b019399c112914b900d2c922e2c5abf38db5ca",
+        "source_sha256": "0264be01fa68402424cf5efbb16978d802db46642b0d2b8161e59167c86937c5",
         "lines": {47: "Version-probes the Godot executable installed from the checksum-verified official archive."},
     },
     "scripts/ci/stress/toolchains/kotlin/install_unix.sh": {
-        "source_sha256": "b67ebb9d68296a3e7441103bb627f6ada30ad62575fc104e9f2edadc41d7c3fa",
+        "source_sha256": "f2c3b84be149632e5429fddb5be88ff18cee8dd0854ef0c89201854cf63747f8",
         "lines": {28: "Version-probes the Kotlin compiler installed from the checksum-verified official archive."},
     },
     "scripts/ci/stress/toolchains/php/install_macos.sh": {
-        "source_sha256": "38bd2161c47fd9499db47b7e68c17e5a82911d69cbaa48f8cbb07ddbf30521e1",
+        "source_sha256": "1dc8f23b447a992ba63ada5c50b190088cb4c8ce6ee10fc9deb487c8b0f5db5a",
         "lines": {6: "Version-probes the PHP executable resolved from the macOS toolchain installation."},
     },
     "scripts/ci/stress/toolchains/terraform/install_unix.sh": {
-        "source_sha256": "63dcc8a6ddaf10f06a3b0b199eb37eda25ca9de603884cd921bbcd859f38dc7c",
+        "source_sha256": "212315ad887857c138b9aeb0b19da7f19b385ef5b36d05e01c2ab84ff79633fa",
         "lines": {40: "Version-probes Terraform after validating the downloaded archive checksum."},
     },
     "scripts/release/artifact_smoke/web_install.sh": {
@@ -305,7 +322,7 @@ SHELL_SOURCE_DYNAMIC_COMMAND_REVIEWS = {
         "lines": {27: "Runs the release binary's fixed install subcommand in the cache-reuse fixture.", 46: "Runs the release binary's fixed offline install subcommand after warming the cache."},
     },
     "scripts/release/binary_e2e/web/create_install_test_build_audit.sh": {
-        "source_sha256": "01be97a4c6ae97225a1ea711a677acfc223fbe6ce8ec56e2fd607e3508f411cd",
+        "source_sha256": "661dde6fbb84b22abfe39f7eb680e7577d304b7d9da662a51cbe72d14a7bc464",
         "lines": {6: "Captures fixed web project-generation output from the selected release binary in a temporary fixture.", 20: "Runs the release binary's fixed install subcommand in the temporary fixture.", 28: "Runs the release binary's fixed test subcommand in the generated fixture.", 29: "Runs the release binary's fixed build subcommand in the generated fixture.", 39: "Runs the release binary's fixed audit subcommand in the generated fixture."},
     },
     "scripts/release/binary_e2e/web/dev_server_probe.sh": {
@@ -313,7 +330,7 @@ SHELL_SOURCE_DYNAMIC_COMMAND_REVIEWS = {
         "lines": {7: "Sources the fixed sibling process-probe helper from the repository-owned test directory.", 19: "Starts the selected release binary with fixed dev-server arguments on the isolated probe port.", 22: "Starts the selected release binary with fixed dev-server arguments on the isolated probe port."},
     },
     "scripts/release/binary_e2e/web/run_script_probe.sh": {
-        "source_sha256": "d76452e93b1743207849096b52d86ca8e45981679a351ab5aa6e99e645786f57",
+        "source_sha256": "f1a6c25c9c83f6f0eeb045efde47f2f11d8b33571ddb99db4ecaaa4b5a5e5e06",
         "lines": {7: "Sources the fixed sibling process-probe helper from the repository-owned test directory.", 28: "Runs the generated fixture script through the selected release binary without shell re-evaluation."},
     },
     "scripts/release/binary_e2e/web/web_lifecycle.sh": {

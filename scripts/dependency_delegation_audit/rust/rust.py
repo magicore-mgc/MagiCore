@@ -75,7 +75,10 @@ def _classify(rel_path: str, fn_name: str):
     # This exception is path+symbol scoped; a directory name alone is not
     # enough to waive arbitrary external execution.
     # (Chỉ probe OS/version chính xác của doctor; không miễn cả directory.)
-    if rel_path.replace(os.sep, "/") == "cli/src/commands/doctor.rs" and fn_name in {
+    if rel_path.replace(os.sep, "/") in {
+        "cli/src/commands/doctor/toolchain/toolchain.rs",
+        "cli/src/commands/doctor/storage/storage.rs",
+    } and fn_name in {
         "tool_version",
         "fs_avail",
     }:

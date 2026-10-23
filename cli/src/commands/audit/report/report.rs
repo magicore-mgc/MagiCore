@@ -1,10 +1,14 @@
 //! Render human tables and machine-readable audit payloads.
 //! Render bảng human và payload audit cho máy.
-
 use super::*;
 use anyhow::Result;
 use colored::Colorize;
 use mgc_types::adapter::AuditReport;
+
+#[path = "machine_payload/mod.rs"]
+mod machine_payload;
+
+use machine_payload::print_machine_payload;
 
 /// Render an audit report with zero exit decisions (always Ok unless
 /// rendering itself fails). Used by --fix flows before mutating.
@@ -107,28 +111,6 @@ fn print_table_report(core: &str, report: &AuditReport) -> Result<()> {
 }
 
 /// Machine-path rendering: print the structured payload only (the
-/// exit contract lives in enforce_audit_exit, shared with the table).
-/// Finisher đường máy: chỉ in payload cấu trúc.
-/// (Machine-path rendering — print only.)
-fn print_machine_payload(report: &AuditReport, fmt: OutputFormat) -> Result<()> {
-    match fmt {
-        OutputFormat::Json => {
-            let envelope = mgc_audit::output::json::JsonAuditEnvelope::from_report(report);
-            println!("{}", envelope.to_json()?);
-        }
-        OutputFormat::Sarif => {
-            let log = mgc_audit::output::sarif::to_sarif(report);
-            println!("{}", serde_json::to_string_pretty(&log)?);
-        }
-        OutputFormat::CycloneDx => {
-            let bom = mgc_audit::output::cyclonedx::to_cyclonedx(report);
-            println!("{}", serde_json::to_string_pretty(&bom)?);
-        }
-        OutputFormat::Table => unreachable!("table handled by the human path"),
-    }
-    Ok(())
-}
-
 /// Human-table labels per finding class (R4/F2): policy, provenance,
 /// and artifact rows must never masquerade as CVEs — the id line is
 /// labeled by what the row actually is.

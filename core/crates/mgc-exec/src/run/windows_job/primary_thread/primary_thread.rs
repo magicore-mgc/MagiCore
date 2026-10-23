@@ -4,6 +4,12 @@
 #[cfg(windows)]
 use super::super::super::error::WindowsJobError;
 
+// SAFETY: the toolhelp snapshot and THREADENTRY32 struct are created locally,
+// initialised to zero, and every Win32 walk call is checked before the next
+// entry is read; handles obtained from the snapshot are closed in this scope.
+// AN TOÀN: snapshot toolhelp và struct THREADENTRY32 tạo cục bộ, khởi tạo 0,
+// mọi lời gọi walk đều được kiểm trước khi đọc entry kế; handle lấy từ
+// snapshot được đóng trong scope này.
 #[cfg(windows)]
 #[allow(unsafe_code)]
 pub(in crate::run::implementation::windows_job::implementation) fn resume_primary_thread(

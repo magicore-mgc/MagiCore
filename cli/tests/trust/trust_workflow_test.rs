@@ -185,7 +185,15 @@ fn test_policy_strict_mode_fails_on_unsigned() {
     write_empty_lockfile(&lockfile_path);
 
     // Mock CI environment + strict policy
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { env::set_var("CI", "true") };
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { env::set_var("MGC_TRUST_POLICY", "strict") };
 
     // This would be called in install.rs
@@ -193,7 +201,15 @@ fn test_policy_strict_mode_fails_on_unsigned() {
     // assert!(result.is_err());
 
     // Cleanup
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { env::remove_var("CI") };
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { env::remove_var("MGC_TRUST_POLICY") };
 }
 

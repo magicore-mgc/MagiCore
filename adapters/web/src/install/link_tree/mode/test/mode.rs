@@ -27,6 +27,10 @@ impl EnvGuard {
     }
 
     fn set(&self, value: Option<&str>) {
+        // SAFETY: test-only operation on process-local state / FFI with
+        // caller-owned buffers kept alive for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+        // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe {
             match value {
                 Some(value) => std::env::set_var(self.key, value),
@@ -38,6 +42,10 @@ impl EnvGuard {
 
 impl Drop for EnvGuard {
     fn drop(&mut self) {
+        // SAFETY: test-only operation on process-local state / FFI with
+        // caller-owned buffers kept alive for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+        // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe {
             match self.previous.take() {
                 Some(value) => std::env::set_var(self.key, value),

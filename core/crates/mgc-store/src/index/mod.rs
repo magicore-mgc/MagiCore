@@ -10,4 +10,5 @@ mod types;
 mod upsert;
 
 pub use index::StoreIndex;
+pub use prune::file_has_no_external_hardlinks;
 pub use types::FileEntry;

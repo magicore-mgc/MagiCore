@@ -45,5 +45,5 @@ pub use simulator_provider::SimulatorProvider;
 pub use unsupported_capability::unsupported_capability;
 
 #[cfg(test)]
-#[path = "test_support/mod.rs"]
+#[path = "test/support/mod.rs"]
 mod test_support;

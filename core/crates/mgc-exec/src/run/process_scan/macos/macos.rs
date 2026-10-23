@@ -23,6 +23,12 @@ pub(in crate::run::implementation) fn macos_process_snapshot(
     let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::zeroed();
     // Read only BSD process identity fields; sysinfo also queries arguments and thread state.
     // Chỉ đọc trường định danh BSD; sysinfo còn truy vấn command line và trạng thái thread.
+    // SAFETY: the output buffer is a correctly sized `proc_bsdinfo` that
+    // stays alive across the call, and the return value is checked to equal
+    // the struct size before any field is read.
+    // AN TOÀN: buffer ra là `proc_bsdinfo` đúng kích thước, còn sống trong
+    // suốt lời gọi, và giá trị trả về được kiểm bằng kích thước struct trước
+    // khi đọc field.
     #[allow(unsafe_code)]
     let info = unsafe {
         let read = libc::proc_pidinfo(
@@ -59,6 +65,12 @@ pub(in crate::run::implementation) fn macos_process_snapshots()
                 libc::c_int::try_from(capacity.checked_mul(std::mem::size_of::<libc::pid_t>())?)
                     .ok()?;
             let mut pids = vec![0 as libc::pid_t; capacity];
+            // SAFETY: proc_listpids writes into a Vec buffer of `capacity`
+            // pid_t sized via with_capacity; the returned byte count is checked
+            // before the length is set, so only initialised pids are read.
+            // AN TOÀN: proc_listpids ghi vào buffer Vec đủ `capacity` phần tử
+            // pid_t; số byte trả về được kiểm trước khi set_len nên chỉ đọc pid
+            // đã khởi tạo.
             #[allow(unsafe_code)]
             let count = unsafe { libc::proc_listallpids(pids.as_mut_ptr().cast(), capacity_bytes) };
             if count < 0 {
@@ -87,6 +99,10 @@ pub(in crate::run::implementation) fn macos_process_snapshots()
 
 #[cfg(target_os = "macos")]
 fn macos_process_count() -> Result<libc::c_int> {
+    // SAFETY: a null buffer with size 0 is the documented size query; no
+    // pointer is dereferenced and the returned count is validated.
+    // AN TOÀN: buffer null với size 0 là truy vấn kích thước theo tài liệu;
+    // không deref con trỏ và kết quả được kiểm.
     #[allow(unsafe_code)]
     let count = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
     if count < 1 {

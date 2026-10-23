@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use dashmap::DashMap;
 
-use super::super::cache_entry::CacheEntry;
+use super::cache_entry::CacheEntry;
 
 pub(in crate::cache) fn insert_bounded<T>(
     entries: &DashMap<String, Arc<CacheEntry<T>>>,

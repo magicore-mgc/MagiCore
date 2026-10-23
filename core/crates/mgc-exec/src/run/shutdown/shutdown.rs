@@ -30,6 +30,12 @@ fn install_signal_handlers() -> std::result::Result<(), ShutdownError> {
 
 #[cfg(unix)]
 fn install_unix_signal_handlers() -> std::result::Result<(), ShutdownError> {
+    // SAFETY: installing a C signal handler is a process-wide FFI operation;
+    // the handler only performs an atomic store (async-signal-safe) and the
+    // signal numbers come from libc constants, so no Rust invariants are
+    // violated.
+    // AN TOÀN: cài signal handler C là thao tác FFI toàn process; handler chỉ
+    // store atomic (async-signal-safe) và số hiệu signal lấy từ libc.
     #[allow(unsafe_code)]
     unsafe {
         extern "C" fn flag_shutdown(_signal: libc::c_int) {
@@ -73,6 +79,11 @@ fn install_unix_signal_handlers() -> std::result::Result<(), ShutdownError> {
 
 #[cfg(windows)]
 fn install_windows_console_handler() -> std::result::Result<(), ShutdownError> {
+    // SAFETY: SetConsoleCtrlHandler receives a Windows console callback; the
+    // callback body only performs an atomic store and returns TRUE, which is
+    // the documented contract for handler routines.
+    // AN TOÀN: SetConsoleCtrlHandler nhận callback console Windows; thân
+    // callback chỉ store atomic và trả TRUE đúng contract của handler.
     #[allow(unsafe_code)]
     unsafe {
         unsafe extern "system" fn flag_shutdown_console(_ctrl: u32) -> i32 {

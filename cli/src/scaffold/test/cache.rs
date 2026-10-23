@@ -1,7 +1,9 @@
 //! Versioned cache compatibility API regressions using isolated roots.
 //! Kiểm cache cũ bằng archive thật; không đổi environment toàn process.
 use super::*;
+use crate::commands::template::read_template_cache_version;
 use crate::scaffold::spec::{CoreKind, ScaffoldRef};
+use std::fs;
 
 fn spec(core: CoreKind) -> ScaffoldSpec {
     ScaffoldSpec {

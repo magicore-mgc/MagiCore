@@ -50,6 +50,10 @@ pub(in crate::run) fn test_process_is_alive(pid: u32) -> bool {
     // SAFETY: signal 0 is a read-only process existence check.
     // (An toàn: signal 0 chỉ kiểm tra process còn tồn tại.)
     #[allow(unsafe_code)]
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe {
         libc::kill(pid, 0) == 0
     }
@@ -70,6 +74,10 @@ pub(in crate::run) fn force_kill_test_process_group(pid_file: &Path) {
     // short-lived fixture under a unique temporary directory.
     // (An toàn: PID/group do fixture tạm của test này ghi lại.)
     #[allow(unsafe_code)]
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe {
         let process_group = libc::getpgid(pid);
         if process_group > 0 {

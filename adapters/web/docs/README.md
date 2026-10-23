@@ -11,7 +11,7 @@ Implements npm/Node.js package lifecycle: project detection, resolution, registr
 
 - [`lib.rs`](../src/lib.rs)
 - [`install/mod.rs`](../src/install/mod.rs)
-- [`provider.rs`](../src/provider.rs)
+- [`provider.rs`](../src/provider/)
 - [supply-chain owner](../src/supply_chain/README.md)
 
 ## Handoff and review

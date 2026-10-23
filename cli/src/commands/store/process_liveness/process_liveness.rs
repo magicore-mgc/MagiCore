@@ -17,9 +17,17 @@
 /// liệu — signal 0 KHÔNG gửi gì tới đích, kernel chỉ kiểm tra process
 /// tồn tại và quyền. Không chạm bộ nhớ, không invariant phải giữ; đối
 /// số duy nhất là số nguyên thuần.)
+// SAFETY: kill(pid, 0) only probes existence/permission; it carries no pointer,
+// touches no process memory, and its only argument is a plain integer.
+// AN TOÀN: kill(pid, 0) chỉ kiểm tồn tại/quyền; không con trỏ, không chạm bộ
+// nhớ process, đối số duy nhất là số nguyên.
 #[cfg(unix)]
 #[allow(unsafe_code)]
 pub(in crate::commands::store) fn pid_alive_on_this_os(pid: u32) -> Option<bool> {
+    // SAFETY: kill(pid, 0) only probes existence/permission; it carries no
+    // pointer, touches no process memory, and its only argument is an integer.
+    // AN TOÀN: kill(pid, 0) chỉ kiểm tồn tại/quyền; không con trỏ, không chạm
+    // bộ nhớ process, đối số duy nhất là số nguyên.
     let ret = unsafe { libc::kill(pid as libc::pid_t, 0) };
     match ret {
         0 => Some(true),

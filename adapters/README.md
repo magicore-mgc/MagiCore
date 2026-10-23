@@ -46,5 +46,5 @@ The web adapter is the most mature and serves as the reference implementation fo
 
 1. Copy `adapters/lib/` as a starting point.
 2. Implement all traits from `core/crates/mgc-adapter-base/`.
-3. Register the adapter in `cli/src/dispatch/per_core.rs`.
+3. Register the adapter in `cli/src/dispatch/core/`.
 4. Add integration tests under `adapters/<name>/tests/`.

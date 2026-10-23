@@ -2,6 +2,8 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
+use crate::engine::GameEngine;
+use mgc_types::MgError;
 
 #[tokio::test]
 async fn package_install_fails_closed_for_every_game_engine() {

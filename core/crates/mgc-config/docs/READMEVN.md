@@ -10,10 +10,10 @@ Sở hữu model cấu hình project/user, chuỗi registry, credential/registry
 ## Sơ đồ source
 
 - [`lib.rs`](../src/lib.rs)
-- [`project.rs`](../src/project.rs)
+- [`project.rs`](../src/project/)
 - [`chain.rs`](../src/chain.rs)
 - [Module owner npmrc](../src/npmrc/README.md)
-- [`attestation.rs`](../src/attestation.rs)
+- [`attestation.rs`](../src/attestation/)
 
 ## Bàn giao và review
 

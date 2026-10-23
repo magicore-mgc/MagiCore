@@ -9,10 +9,10 @@
 
 ## Sơ đồ source
 
-- [`adapter.rs`](../src/adapter.rs)
-- [`language.rs`](../src/language.rs)
-- [`manifest.rs`](../src/manifest.rs)
-- [`native/engine.rs`](../src/native/engine.rs)
+- [`adapter.rs`](../src/adapter/)
+- [`language.rs`](../src/language/)
+- [`manifest.rs`](../src/manifest/)
+- [`native/engine.rs`](../src/native/engine/)
 
 ## Bàn giao và review
 

@@ -1,19 +1,21 @@
 //! Compatibility API for versioned scaffold archives; live CLI uses the processor-visible cache.
-//! API cache version cũ giữ tương thích; không dùng directory/marker đơn lẻ làm bằng chứng cache hit.
+//! API cache version cũ giữ tương tác; không dùng directory/marker đơn lẻ làm bằng chứng cache hit.
 
 use anyhow::Result;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use super::spec::ScaffoldSpec;
-use crate::commands::template::{
-    extract_tarball_into, lock_template_cache_layer, read_template_cache_version,
-    template_cache_is_link, template_layer_has_contract,
-};
 
-fn cache_root_with_override(override_root: Option<PathBuf>, default_root: PathBuf) -> PathBuf {
-    override_root.unwrap_or(default_root)
-}
+mod entry;
+mod identity;
+mod root;
+mod store;
+
+use entry::validated_entry;
+use root::cache_root as resolve_cache_root;
+#[cfg(test)]
+pub(crate) use root::cache_root_with_override;
+use store::{clear_at, list_versions_at, write_at};
 
 pub struct ScaffoldCache;
 
@@ -63,127 +65,7 @@ impl ScaffoldCache {
     }
 
     fn cache_root() -> PathBuf {
-        let default_root = mgc_platform::paths::mgc_data_dir().join("scaffolds");
-        let override_root = std::env::var_os("MGC_SCAFFOLDS_DIR").map(PathBuf::from);
-        cache_root_with_override(override_root, default_root)
-    }
-}
-
-fn layer_key(spec: &ScaffoldSpec) -> String {
-    format!("{}/{}", spec.core.as_str(), spec.normalized_name)
-}
-
-fn validate_identity(spec: &ScaffoldSpec) -> Result<()> {
-    let name = &spec.normalized_name;
-    if name.is_empty()
-        || name.contains(['\\', ':'])
-        || name.chars().any(char::is_control)
-        || name
-            .split('/')
-            .any(|part| part.is_empty() || part.ends_with(['.', ' ']))
-    {
-        return Err(super::error::template_layer_identity_invalid());
-    }
-    Ok(())
-}
-
-fn validate_existing_directory(path: &Path) -> Result<bool> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) if template_cache_is_link(&metadata) || !metadata.is_dir() => {
-            Err(super::error::template_cache_unsafe_path(path))
-        }
-        Ok(_) => Ok(true),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(error.into()),
-    }
-}
-
-fn resolve_base(root: &Path, spec: &ScaffoldSpec, create: bool) -> Result<Option<PathBuf>> {
-    validate_identity(spec)?;
-    if create {
-        fs::create_dir_all(root)?;
-    }
-    if !validate_existing_directory(root)? {
-        return Ok(None);
-    }
-    let mut base = root.canonicalize()?;
-    for part in std::iter::once(spec.core.as_str()).chain(spec.normalized_name.split('/')) {
-        base.push(part);
-        validate_existing_directory(&base)?;
-    }
-    Ok(Some(base))
-}
-
-fn validated_entry(root: &Path, spec: &ScaffoldSpec, version: &str) -> Result<Option<PathBuf>> {
-    semver::Version::parse(version).map_err(|_| super::error::template_metadata_invalid())?;
-    let Some(base) = resolve_base(root, spec, false)? else {
-        return Ok(None);
-    };
-    let target = base.join(version);
-    if !validate_existing_directory(&target)?
-        || !template_layer_has_contract(&target)?
-        || read_template_cache_version(&target)?.as_deref() != Some(version)
-    {
-        return Ok(None);
-    }
-    Ok(Some(target))
-}
-
-fn write_at(root: &Path, spec: &ScaffoldSpec, version: &str, tarball: &[u8]) -> Result<()> {
-    semver::Version::parse(version).map_err(|_| super::error::template_metadata_invalid())?;
-    let base = resolve_base(root, spec, true)?
-        .ok_or_else(|| super::error::template_cache_unsafe_path(root))?;
-    let canonical_root = root.canonicalize()?;
-    let _lock = lock_template_cache_layer(&canonical_root, &layer_key(spec))?;
-    if validated_entry(&canonical_root, spec, version)?.is_some() {
-        return Ok(());
-    }
-    fs::create_dir_all(&base)?;
-    extract_tarball_into(tarball, &base.join(version), Some(version))
-}
-
-fn list_versions_at(root: &Path, spec: &ScaffoldSpec) -> Vec<String> {
-    let Ok(Some(base)) = resolve_base(root, spec, false) else {
-        return vec![];
-    };
-    let Ok(entries) = fs::read_dir(base) else {
-        return vec![];
-    };
-    let mut versions = entries
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            let name = entry.file_name().into_string().ok()?;
-            let parsed = semver::Version::parse(&name).ok()?;
-            validated_entry(root, spec, &name).ok().flatten()?;
-            Some((parsed, name))
-        })
-        .collect::<Vec<_>>();
-    versions.sort_by(|a, b| b.0.cmp(&a.0));
-    versions.into_iter().map(|(_, name)| name).collect()
-}
-
-fn clear_at(root: &Path, spec: &ScaffoldSpec, version: Option<&str>) -> Result<()> {
-    if let Some(version) = version {
-        semver::Version::parse(version).map_err(|_| super::error::template_metadata_invalid())?;
-    }
-    let Some(base) = resolve_base(root, spec, false)? else {
-        return Ok(());
-    };
-    let target = version.map_or(base.clone(), |version| base.join(version));
-    if !validate_existing_directory(&target)? {
-        return Ok(());
-    }
-    let canonical_root = root.canonicalize()?;
-    let _lock = lock_template_cache_layer(&canonical_root, &layer_key(spec))?;
-    validate_existing_directory(&target)?;
-    remove_if_present(&target)
-}
-
-fn remove_if_present(path: &Path) -> Result<()> {
-    match fs::remove_dir_all(path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error.into()),
+        resolve_cache_root()
     }
 }
 

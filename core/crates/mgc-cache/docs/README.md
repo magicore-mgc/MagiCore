@@ -10,7 +10,7 @@ Implements a package cache with integrity-aware reads, store/invalidation/prunin
 ## Source map
 
 - [`lib.rs`](../src/lib.rs)
-- [`memory.rs`](../src/memory.rs)
+- [`memory.rs`](../src/memory/)
 
 ## Handoff and review
 

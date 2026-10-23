@@ -10,9 +10,9 @@ Generates SBOM documents from dependency inventory in supported CycloneDX and SP
 ## Source map
 
 - [`lib.rs`](../src/lib.rs)
-- [`generator.rs`](../src/generator.rs)
-- [`cyclonedx.rs`](../src/cyclonedx.rs)
-- [`spdx.rs`](../src/spdx.rs)
+- [`generator.rs`](../src/generator/)
+- [`cyclonedx.rs`](../src/cyclonedx/)
+- [`spdx.rs`](../src/spdx/)
 
 ## Handoff and review
 

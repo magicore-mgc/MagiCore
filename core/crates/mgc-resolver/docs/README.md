@@ -10,10 +10,10 @@ Resolves dependency graphs with version sets, registry cache, patches, and PubGr
 ## Source map
 
 - [`lib.rs`](../src/lib.rs)
-- [`graph.rs`](../src/graph.rs)
+- [`graph.rs`](../src/graph/)
 - [`protocols/mod.rs`](../src/protocols/mod.rs)
-- [`solver/pubgrub.rs`](../src/solver/pubgrub.rs)
-- [`patches.rs`](../src/patches.rs)
+- [`solver/pubgrub.rs`](../src/solver/pubgrub/)
+- [`patches.rs`](../src/patches/)
 
 ## Handoff and review
 

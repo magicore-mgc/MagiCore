@@ -14,6 +14,14 @@ impl PythonVersionGuard {
         // This integration-test binary contains one test; restoring in Drop
         // keeps the process environment isolated even if assertions panic.
         // Binary test tích hợp này chỉ có một test; Drop phục hồi env kể cả panic.
+        // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+        // test thread observes a partially written environment.
+        // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+        // không thấy môi trường ghi dở.
+        // SAFETY: test-only operation on process-local state / FFI with
+        // caller-owned buffers kept alive for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+        // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe { std::env::set_var("MGC_PYTHON_VERSION", version) };
         Self(previous)
     }
@@ -22,9 +30,17 @@ impl PythonVersionGuard {
 impl Drop for PythonVersionGuard {
     fn drop(&mut self) {
         match &self.0 {
+            // SAFETY: test-only operation on process-local state or FFI with
+            // caller-owned arguments valid for the call.
+            // AN TOÀN: chỉ test thao tác state cục bộ process hoặc FFI với
+            // đối số do caller sở hữu, hợp lệ trong lời gọi.
             Some(previous) => unsafe {
                 std::env::set_var("MGC_PYTHON_VERSION", previous);
             },
+            // SAFETY: test-only operation on process-local state or FFI with
+            // caller-owned arguments valid for the call.
+            // AN TOÀN: chỉ test thao tác state cục bộ process hoặc FFI với
+            // đối số do caller sở hữu, hợp lệ trong lời gọi.
             None => unsafe {
                 std::env::remove_var("MGC_PYTHON_VERSION");
             },

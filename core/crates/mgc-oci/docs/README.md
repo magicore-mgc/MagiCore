@@ -9,9 +9,9 @@ Implements OCI Distribution operations for catalog/tag listing, blob and manifes
 
 ## Source map
 
-- [`client.rs`](../src/client.rs)
-- [`manifest.rs`](../src/manifest.rs)
-- [`ref.rs`](../src/ref.rs)
+- [`client.rs`](../src/client/)
+- [`manifest.rs`](../src/manifest/)
+- [`ref.rs`](../src/ref/)
 
 ## Handoff and review
 

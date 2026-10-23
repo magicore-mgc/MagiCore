@@ -21,28 +21,28 @@ import sys
 #           (impl PackageAdapter at adapters/web/src/lib.rs:265, install/
 #           orchestrator + CAS + mgc.lock).
 #   lib   → TRUE×3: TRUE for the TS lane — LibAdapter delegates resolve/
-#           fetch to the embedded web engine (adapters/lib/src/adapter.rs).
+#           fetch to the embedded web engine (adapters/lib/src/adapter).
 #           P0-B (2026-09-16): resolve/fetch now FAIL CLOSED for the
 #           toolchain-owned languages (rust/python/go/java/dotnet) — the
 #           core-level row stays TRUE because the TS lane's mgc-owned ops
 #           are real; delegated lib lanes never claim mgc owners.
 #   ai    → TRUE×3: implemented fail-closed (requires uv.lock /
-#           requirements.lock) — adapters/ai/src/adapter/adapter.rs:57/61/65.
+#           requirements.lock) — adapters/ai/src/adapter:57/61/65.
 #   app   → TRUE×3: implemented (flutter pub orchestration) —
-#           adapters/app/src/adapter.rs:52/56/60.
+#           adapters/app/src/adapter:52/56/60.
 #   game  → adapter protocol lacks generic resolve/fetch, but the Bevy CLI
 #           route invokes the Lib/Rust native engine (install/game.rs).
 #   iot   → adapter protocol lacks generic resolve/fetch, but esp32-rust
 #           CLI route invokes the Lib/Rust native engine (install/iot.rs).
 #   clo   → resolve/fetch FALSE outside the embedded web engine —
 #           terraform/CDK modules are fetched by `terraform init`
-#           (adapters/cloud/src/adapter.rs:78/93); install TRUE
+#           (adapters/cloud/src/adapter:78/93); install TRUE
 #           (adapter.rs:106).
 #   hardware → FALSE×3: MgError::Unsupported for resolve/fetch/install
-#           (adapters/hardware/src/adapter.rs:55/67/77), plus
+#           (adapters/hardware/src/adapter:55/67/77), plus
 #           write_manifest (:41) and update (:111).
 #   cicd  → FALSE×3: MgError::Unsupported for resolve/fetch/install
-#           (adapters/cicd/src/adapter.rs:65/75/83), plus write_manifest
+#           (adapters/cicd/src/adapter:65/75/83), plus write_manifest
 #           (:52); add/remove/update → "cicd has no package manager".
 # (Bảng năng lực adapter theo core; CLI route override phải được nêu đích
 # danh vì một adapter Unsupported không phủ định một route MGC khác.)

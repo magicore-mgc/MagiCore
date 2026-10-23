@@ -10,10 +10,10 @@ Triển khai private server `mgc-registry` cùng luồng npm/PyPI/OCI, auth, sto
 ## Sơ đồ source
 
 - [`lib.rs`](../src/lib.rs)
-- [`auth.rs`](../src/auth.rs)
-- [`npm.rs`](../src/npm.rs)
-- [`storage.rs`](../src/storage.rs)
-- [`trusted.rs`](../src/trusted.rs)
+- [`auth.rs`](../src/auth/)
+- [`npm.rs`](../src/npm/)
+- [`storage.rs`](../src/storage/)
+- [`trusted.rs`](../src/trusted/)
 
 ## Bàn giao và review
 

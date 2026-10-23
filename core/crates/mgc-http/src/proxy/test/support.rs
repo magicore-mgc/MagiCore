@@ -58,6 +58,10 @@ impl ProxyEnvGuard {
             // state in `Drop`. (SAFETY: mutation env được tuần tự hoá toàn
             // process bởi `env_lock` giữ trong `self._lock`; mỗi biến được
             // khôi phục về trạng thái đã capture trong `Drop`.)
+            // SAFETY: test-only operation on process-local state / FFI with
+            // caller-owned buffers kept alive for the call.
+            // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+            // buffer do caller sở hữu và còn sống trong lời gọi.
             unsafe { env::remove_var(key) };
         }
         Self { _lock: lock, saved }
@@ -72,6 +76,10 @@ impl Drop for ProxyEnvGuard {
             // (guard field outlives this drop); restores the captured state.
             // (SAFETY: vẫn trong đoạn `env_lock` mở ở `new` (field guard sống
             // dài hơn drop này); khôi phục đúng trạng thái đã capture.)
+            // SAFETY: test-only operation on process-local state / FFI with
+            // caller-owned buffers kept alive for the call.
+            // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+            // buffer do caller sở hữu và còn sống trong lời gọi.
             unsafe {
                 match value {
                     Some(v) => env::set_var(key, v),

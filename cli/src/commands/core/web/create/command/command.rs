@@ -1,7 +1,12 @@
 // Coordinate the Web create command — điều phối lệnh tạo project Web.
 // Web create command orchestration.
 use super::*;
+
+#[path = "framework_pick/mod.rs"]
+mod framework_pick;
+
 use crate::commands::core::web::implementation::project_context::project_root::install_hint_command;
+use framework_pick::native_web_starter_framework;
 
 pub async fn run_create_with_options(
     framework: &str,
@@ -139,24 +144,6 @@ pub async fn run_create_with_options(
     drop(generator_workspace);
 
     Ok(())
-}
-
-fn native_web_starter_framework<'a>(
-    requested_ref: &crate::scaffold::spec::ScaffoldRef,
-    sub_type: &str,
-    framework: Option<&'a str>,
-) -> Option<&'a str> {
-    if matches!(requested_ref, crate::scaffold::spec::ScaffoldRef::Default)
-        && framework.is_some_and(|framework| {
-            crate::scaffold::processors::web::WebProcessor::supports_native_project(
-                sub_type, framework,
-            )
-        })
-    {
-        framework
-    } else {
-        None
-    }
 }
 
 #[cfg(test)]

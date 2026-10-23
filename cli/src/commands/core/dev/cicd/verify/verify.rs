@@ -50,7 +50,7 @@ pub async fn verify() -> Result<()> {
                 // Chuỗi verify là cổng phát hành: scanner thiếu coverage phải lỗi cả local lẫn CI.
                 crate::commands::audit::run_strict(None, false, None).await?;
             }
-            "test" => super::test_step::run_test_step(&root, &core).await?,
+            "test" => super::step_runner::run_test_step(&root, &core).await?,
             "build" => {
                 super::build_step::ensure_build_step_supported(&core)?;
                 crate::commands::build::run(None, None, None, None).await?;

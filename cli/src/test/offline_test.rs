@@ -12,6 +12,14 @@ use super::*;
 #[test]
 fn test_offline_mode_flag_lifecycle() {
     // Default off — mặc định tắt (SAFETY: sequential single-test env writes).
+    // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+    // test thread observes a partially written environment.
+    // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+    // không thấy môi trường ghi dở.
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { std::env::remove_var("MGC_OFFLINE_MODE") };
     assert!(!is_offline_mode());
 
@@ -40,6 +48,14 @@ fn test_offline_mode_flag_lifecycle() {
     }
 
     // Cleanup — dọn env sau test (SAFETY: sequential single-test env writes).
+    // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+    // test thread observes a partially written environment.
+    // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+    // không thấy môi trường ghi dở.
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { std::env::remove_var("MGC_OFFLINE_MODE") };
     assert!(!is_offline_mode());
 }

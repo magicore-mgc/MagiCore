@@ -14,7 +14,7 @@
 //! `mgc-ai-adapter` retarget is S09b (NOT this batch — ai still goes through
 //! the lib facades).
 //!
-//! Callers / Nơi gọi: `adapters/lib/src/manifest.rs` facades (6 fns),
+//! Callers / Nơi gọi: `adapters/lib/src/manifest/` facades (6 fns),
 //! `adapters/lib/src/install/mod.rs` facades (8 fns); indirect: `ai`
 //! (`supports_native_python_project` via lib re-export), `cli`
 //! (`native_python_path_entries`, body stays in lib).

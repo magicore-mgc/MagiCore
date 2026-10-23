@@ -1,20 +1,15 @@
 //! Tarball integrity verification (SRI checksums).
 //! Xác minh integrity tarball (checksum SRI).
-
 use base64::Engine;
 use mgc_types::adapter::ResolvedPackage;
 use mgc_types::{MgError, MgResult};
 
 use crate::lockfile::{compute_sha512_b64, compute_tarball_integrity, strict_integrity_enforced};
 
-/// Compute SHA-256 hash of bytes and return as base64 string (SRI format).
-/// Hàm helper cho integrity verification — tính hash của tarball bytes.
-pub fn compute_sha256_b64_str(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    base64::engine::general_purpose::STANDARD.encode(hasher.finalize())
-}
+#[path = "hashing/mod.rs"]
+mod hashing;
+
+pub use hashing::compute_sha256_b64_str;
 
 /// Verify tarball integrity against package SRI field.
 /// Wrapper cho verify_sri_integrity — entry point chính.

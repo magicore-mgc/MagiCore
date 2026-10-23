@@ -292,6 +292,10 @@ fn command_timeout_kills_hung_tool() {
         // (An toàn: kill(pid, 0) không gửi signal — đây là phép dò sống-chết
         // chuẩn, không tác động process đích.)
         #[allow(unsafe_code)]
+        // SAFETY: test-only operation on process-local state or FFI with
+        // caller-owned arguments valid for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process hoặc FFI với
+        // đối số do caller sở hữu, hợp lệ trong lời gọi.
         let alive = unsafe { libc::kill(grandchild as i32, 0) } == 0;
         if !alive {
             still_alive = false;

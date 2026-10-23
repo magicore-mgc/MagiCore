@@ -133,7 +133,7 @@ If you want to add support for a new ecosystem (e.g., a new game engine or cloud
 
 1. **Create the adapter crate** under `adapters/<name>/` by copying `adapters/lib/` as a template.
 2. **Implement the core traits** from `core/crates/mgc-adapter-base/` (install, add, remove, list, audit).
-3. **Wire the adapter** in `cli/src/commands/definitions.rs` (add new `Commands` variants) and `cli/src/dispatch/`.
+3. **Wire the adapter** in `cli/src/commands/definitions/` (add new `Commands` variants) and `cli/src/dispatch/`.
 4. **Write tests** under `adapters/<name>/tests/` with at minimum: install, add, scaffold, audit.
 5. Open a PR describing what ecosystem is supported and link relevant documentation.
 

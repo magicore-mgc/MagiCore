@@ -8,6 +8,8 @@ mod ordering;
 mod parse;
 mod precedence_cmp;
 #[cfg(test)]
+#[cfg(test)]
+#[path = "test/support/mod.rs"]
 mod test_support;
 mod version;
 

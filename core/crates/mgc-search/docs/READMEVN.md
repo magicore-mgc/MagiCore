@@ -10,10 +10,10 @@
 ## Sơ đồ source
 
 - [`lib.rs`](../src/lib.rs)
-- [`orchestrator.rs`](../src/orchestrator.rs)
+- [`orchestrator.rs`](../src/orchestrator/)
 - [`clients/mod.rs`](../src/clients/mod.rs)
-- [`ranking.rs`](../src/ranking.rs)
-- [`types.rs`](../src/types.rs)
+- [`ranking.rs`](../src/ranking/)
+- [`types.rs`](../src/types/)
 
 ## Bàn giao và review
 

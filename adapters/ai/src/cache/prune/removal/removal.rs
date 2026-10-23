@@ -70,7 +70,7 @@ fn remove_entry(path: &Path) -> PruneOutcome<Option<u64>> {
     Ok(Some(bytes))
 }
 
-fn remove_regular_sidecar(path: &Path) -> PruneOutcome<u64> {
+pub(super) fn remove_regular_sidecar(path: &Path) -> PruneOutcome<u64> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),

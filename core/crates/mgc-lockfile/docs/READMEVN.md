@@ -10,10 +10,10 @@ Sở hữu schema/chuyển đổi lockfile cho graph tái lập: parse/serialize
 ## Sơ đồ source
 
 - [`lib.rs`](../src/lib.rs)
-- [`canonical.rs`](../src/canonical.rs)
-- [`v4.rs`](../src/v4.rs)
-- [`verifier.rs`](../src/verifier.rs)
-- [`writer.rs`](../src/writer.rs)
+- [`canonical.rs`](../src/canonical/)
+- [`v4.rs`](../src/v4/)
+- [`verifier.rs`](../src/verifier/)
+- [`writer.rs`](../src/writer/)
 
 ## Bàn giao và review
 

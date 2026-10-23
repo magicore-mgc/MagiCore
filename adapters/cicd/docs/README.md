@@ -9,8 +9,8 @@ Recognizes GitHub Actions, GitLab, CircleCI, Cloudflare, AWS, GCP, and Argo CD m
 
 ## Source map
 
-- [`adapter.rs`](../src/adapter.rs)
-- [`provider.rs`](../src/provider.rs)
+- [`adapter.rs`](../src/adapter/)
+- [`provider.rs`](../src/provider/)
 - [`lib.rs`](../src/lib.rs)
 
 ## Handoff and review

@@ -40,5 +40,5 @@ Web là adapter trưởng thành nhất và làm implementation tham chiếu cho
 
 1. Dùng `adapters/lib/` làm điểm khởi đầu.
 2. Triển khai các trait trong `core/crates/mgc-adapter-base/`.
-3. Đăng ký adapter trong `cli/src/dispatch/per_core.rs`.
+3. Đăng ký adapter trong `cli/src/dispatch/core/`.
 4. Thêm integration test trong `adapters/<name>/tests/`.

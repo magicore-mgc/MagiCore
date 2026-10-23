@@ -16,16 +16,40 @@ fn env_lock() -> std::sync::MutexGuard<'static, ()> {
 #[test]
 fn chain_env_overrides_everything() {
     let _guard = env_lock();
+    // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+    // test thread observes a partially written environment.
+    // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+    // không thấy môi trường ghi dở.
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { std::env::set_var(WEB_REGISTRY_URL_ENV, "http://127.0.0.1:9") };
     let chain = registry_chain(None, None);
     assert_eq!(chain.len(), 1);
     assert_eq!(chain[0].url, "http://127.0.0.1:9");
+    // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+    // test thread observes a partially written environment.
+    // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+    // không thấy môi trường ghi dở.
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { std::env::remove_var(WEB_REGISTRY_URL_ENV) };
 }
 
 #[test]
 fn chain_defaults_to_npmjs_without_config() {
     let _guard = env_lock();
+    // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+    // test thread observes a partially written environment.
+    // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+    // không thấy môi trường ghi dở.
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { std::env::remove_var(WEB_REGISTRY_URL_ENV) };
     let chain = registry_chain(None, None);
     assert_eq!(chain.len(), 1);
@@ -35,6 +59,14 @@ fn chain_defaults_to_npmjs_without_config() {
 #[test]
 fn chain_dedupes_same_url() {
     let _guard = env_lock();
+    // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+    // test thread observes a partially written environment.
+    // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+    // không thấy môi trường ghi dở.
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { std::env::remove_var(WEB_REGISTRY_URL_ENV) };
     let mut cfg = mgc_config::project::ProjectConfig::new("x", "web");
     cfg.registries.push(Registry::new(

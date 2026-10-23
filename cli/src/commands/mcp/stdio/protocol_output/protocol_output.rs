@@ -51,15 +51,28 @@ impl McpProtocolOutput {
 
             // Duplicate protocol stdout, then send ordinary fd 1 output to stderr.
             // Nhân đôi stdout giao thức, rồi chuyển output fd 1 thông thường sang stderr.
+            // SAFETY: dup returns a new fd owned by this process; the result is
+            // checked before use and later wrapped in `File`.
+            // AN TOÀN: dup trả fd mới thuộc process này; kết quả được kiểm
+            // trước khi dùng và sau đó bọc trong `File`.
             let protocol_fd = unsafe { libc::dup(libc::STDOUT_FILENO) };
             if protocol_fd < 0 {
                 return Err(io::Error::last_os_error()).context("cannot preserve MCP stdout");
             }
+            // SAFETY: both fds are the process's own stdio descriptors and the
+            // return value is checked before continuing.
+            // AN TOÀN: cả hai fd là stdio của process và giá trị trả về được kiểm.
             if unsafe { libc::dup2(libc::STDERR_FILENO, libc::STDOUT_FILENO) } < 0 {
                 let error = io::Error::last_os_error();
+                // SAFETY: `protocol_fd` came from `dup` above and is not owned
+                // elsewhere on this error path.
+                // AN TOÀN: `protocol_fd` đến từ `dup` ở trên và chưa owner khác
+                // trên nhánh lỗi này.
                 unsafe { libc::close(protocol_fd) };
                 return Err(error).context("cannot redirect CLI output to stderr");
             }
+            // SAFETY: ownership of `protocol_fd` transfers to `File` exactly once.
+            // AN TOÀN: quyền sở hữu `protocol_fd` chuyển cho `File` đúng một lần.
             let protocol = unsafe { File::from_raw_fd(protocol_fd) };
             Ok(Self { protocol })
         }
@@ -129,9 +142,17 @@ impl Drop for McpProtocolOutput {
             use std::os::fd::AsRawFd;
             // Restore process stdout after the MCP session ends.
             // Khôi phục stdout tiến trình khi phiên MCP kết thúc.
+            // SAFETY: `protocol` owns a live fd and STDOUT_FILENO is the process
+            // stdout being restored on Drop.
+            // AN TOÀN: `protocol` sở hữu fd còn sống, STDOUT_FILENO là stdout
+            // process được khôi phục trong Drop.
             unsafe { libc::dup2(self.protocol.as_raw_fd(), libc::STDOUT_FILENO) };
         }
         #[cfg(windows)]
+        // SAFETY: restores the handle saved by `redirect_cli_output`; it stays
+        // valid for the process lifetime.
+        // AN TOÀN: khôi phục handle đã lưu bởi `redirect_cli_output`; handle
+        // còn hiệu lực suốt vòng đời process.
         unsafe {
             SetStdHandle(WIN_STD_OUTPUT_HANDLE, self.original_stdout);
         }

@@ -3,4 +3,6 @@
 mod audit_command;
 mod common;
 mod deploy_command;
+mod dev_route;
+mod publish_route;
 pub use common::dispatch_common;

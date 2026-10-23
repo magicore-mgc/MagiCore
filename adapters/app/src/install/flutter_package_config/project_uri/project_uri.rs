@@ -25,6 +25,12 @@ pub(super) fn flutter_project_root_uri_inner(
         .map_err(|_| FlutterProjectUriError::EncodeProjectRoot)
 }
 
+// SAFETY: GetLongPathNameW receives a NUL-terminated wide buffer built from
+// the OsStr in this scope and a caller-owned output buffer whose length is
+// passed explicitly; the returned length is checked before conversion.
+// AN TOÀN: GetLongPathNameW nhận buffer wide có NUL dựng từ OsStr trong scope
+// và buffer ra do caller sở hữu với độ dài truyền tường minh; độ dài trả về
+// được kiểm trước khi chuyển đổi.
 #[cfg(windows)]
 #[allow(unsafe_code)]
 fn expand_windows_short_path(path: &Path) -> Result<PathBuf, FlutterProjectUriError> {

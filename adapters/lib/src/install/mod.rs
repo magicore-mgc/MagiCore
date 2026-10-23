@@ -31,7 +31,8 @@ pub(crate) use lock_read::{
     complete_lock_packages_from_existing, needs_existing_lock_rows, read_existing_lock,
 };
 pub(super) use lock_write::{direct_package_ids, write_canonical_lock_with_roots};
-pub(super) use native_install_context::{content_store, entry_from_package};
+pub(super) use native_install_context::content_store;
+pub use native_install_context::entry_from_package;
 pub(crate) use python_runtime::native_python_installed_packages;
 pub(super) use python_runtime::python_project_owner;
 pub use python_runtime::{native_python_path_entries, native_python_path_entries_from_store};

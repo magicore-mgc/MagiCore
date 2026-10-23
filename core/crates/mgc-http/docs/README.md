@@ -10,10 +10,10 @@ Provides shared outbound HTTP operations: TLS, timeouts, retries, proxy, offline
 ## Source map
 
 - [`lib.rs`](../src/lib.rs)
-- [`methods.rs`](../src/methods.rs)
-- [`retry.rs`](../src/retry.rs)
-- [`tls.rs`](../src/tls.rs)
-- [`upload.rs`](../src/upload.rs)
+- [`methods.rs`](../src/methods/)
+- [`retry.rs`](../src/retry/)
+- [`tls.rs`](../src/tls/)
+- [`upload.rs`](../src/upload/)
 
 ## Handoff and review
 

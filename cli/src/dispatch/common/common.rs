@@ -40,36 +40,15 @@ pub async fn dispatch_common(
             clear,
             compat_runtime,
             compat_runner,
-        } => {
-            commands::dev::run(
-                core,
-                host,
-                port,
-                clear,
-                compat_runtime.as_deref(),
-                compat_runner.as_deref(),
-            )
-            .await
-        }
+        } => super::dev_route::dev(core, host, port, clear, compat_runtime, compat_runner).await,
         CommonCommand::Build {
             target,
             compat_runtime,
             compat_runner,
-        } => {
-            commands::build::run(
-                core,
-                target,
-                compat_runtime.as_deref(),
-                compat_runner.as_deref(),
-            )
-            .await
-        }
-        #[cfg(feature = "iot")]
+        } => super::dev_route::build(core, target, compat_runtime, compat_runner).await,
         CommonCommand::Flash { board, skip_build } => {
-            commands::core::dev::iot::flash(board.as_deref(), skip_build).await
+            super::dev_route::flash(board, skip_build).await
         }
-        #[cfg(not(feature = "iot"))]
-        CommonCommand::Flash { .. } => Err(crate::error::core_not_in_build("iot")),
         CommonCommand::Deploy { run } => super::deploy_command::dispatch(run).await,
         #[cfg(feature = "cicd")]
         CommonCommand::CiGenerate => commands::core::dev::cicd::ci_generate(),
@@ -113,29 +92,12 @@ pub async fn dispatch_common(
             args,
             compat_runtime,
             compat_runner,
-        } => {
-            commands::run::run(
-                script,
-                args,
-                core,
-                compat_runtime.as_deref(),
-                compat_runner.as_deref(),
-            )
-            .await
-        }
+        } => super::dev_route::run(script, args, core, compat_runtime, compat_runner).await,
         CommonCommand::Test {
             args,
             compat_runtime,
             compat_runner,
-        } => {
-            commands::test::test(
-                args,
-                core,
-                compat_runtime.as_deref(),
-                compat_runner.as_deref(),
-            )
-            .await
-        }
+        } => super::dev_route::test(args, core, compat_runtime, compat_runner).await,
         CommonCommand::Optimizer { force } => commands::optimizer::run(core, force).await,
         CommonCommand::Dlx {
             package,
@@ -208,33 +170,31 @@ pub async fn dispatch_common(
             trusted,
             trusted_audience,
         } => {
-            commands::publish::run(
-                crate::commands::publish::PublishArgs {
-                    protocol,
-                    package,
-                    version,
-                    artifacts,
-                    image,
-                    tag,
-                    access,
-                    dry_run,
-                    json,
-                    otp,
-                    force,
-                    ignore_scripts,
-                    allow_scripts,
-                    no_git_checks,
-                    publish_branch,
-                    batch,
-                    report_summary,
-                    patch,
-                    minor,
-                    major,
-                    registry,
-                    token,
-                    trusted,
-                    trusted_audience,
-                },
+            super::publish_route::dispatch(
+                protocol,
+                package,
+                version,
+                artifacts,
+                image,
+                tag,
+                access,
+                dry_run,
+                json,
+                otp,
+                force,
+                ignore_scripts,
+                allow_scripts,
+                no_git_checks,
+                publish_branch,
+                batch,
+                report_summary,
+                patch,
+                minor,
+                major,
+                registry,
+                token,
+                trusted,
+                trusted_audience,
                 core,
                 recursive,
             )

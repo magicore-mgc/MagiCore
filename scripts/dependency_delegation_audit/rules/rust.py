@@ -52,7 +52,13 @@ PLATFORM_PROCESS_BOUNDARY_REVIEWS = {
 # against the selected project root; dynamic refs follow --end-of-options.
 # Git check của publish chỉ nhận enum truy vấn đóng, chỉ đọc, chạy tại root
 # project được chọn; ref động nằm sau --end-of-options.
-AUDITED_EXECUTOR_ROUTES = {('tools/mgc-dist/src/main.rs', 'build_package', 'cargo'): 'mgc-exec BuildRunner with --locked --offline; '
+AUDITED_EXECUTOR_ROUTES = {('core/crates/mgc-exec/src/run/process_policy/invocation_shape/invocation_shape.rs', 'safe_pm_argument_shape', 'swift'): 'constant allow-list of safe Swift/PM subcommands; '
+                                                                                                                    'no process is spawned here, the list only '
+                                                                                                                    'shapes arguments for the guarded executor',
+('cli/src/commands/exec/exec.rs', 'run', '<dynamic:command>'): 'mgc exec runs the user command through the mgc-exec allowlist with '
+                                                                                 'ExecutionScope::ScriptRunner; the allowlist and exec audit '
+                                                                                 'gate every spawn before it happens',
+('tools/mgc-dist/src/main.rs', 'build_package', 'cargo'): 'mgc-exec BuildRunner with --locked --offline; '
                                                            'package build route',
  ('tools/mgc-dist/src/main.rs', 'detect_host_target', 'rustc'): 'mgc-exec BuildRunner restricted to rustc '
                                                                 '-vV; read-only host query',
@@ -229,7 +235,7 @@ AUDITED_EXECUTOR_ROUTES = {('tools/mgc-dist/src/main.rs', 'build_package', 'carg
                                                                                        'builders + '
                                                                                        'DevServer/DeviceControl '
                                                                                        'mgc-exec scopes',
- ('cli/src/commands/exec.rs', 'run', '<dynamic:command>'): 'explicit user-selected executable passes '
+ ('cli/src/commands/exec/exec.rs', 'run', '<dynamic:command>'): 'explicit user-selected executable passes '
                                                            'mgc-exec allowlist and dependency-resolution '
                                                            'guards',
  ('cli/src/commands/run/task_execution/executor/executor.rs', 'execute_task_with_bin', '<dynamic:program>'): 'parsed '

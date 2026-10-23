@@ -1,5 +1,5 @@
 //! `cache/metadata.rs` — Cache metadata tracking for lib adapter.
-//! Tracks package metadata in cache (similar to web cache_metadata.rs).
+//! Tracks package metadata in cache (similar to the web `cache_metadata/` owner).
 
 use mgc_types::{MgError, MgResult, PackageId};
 use serde::{Deserialize, Serialize};

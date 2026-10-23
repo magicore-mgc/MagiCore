@@ -6,9 +6,9 @@ use std::time::Duration;
 
 use dashmap::DashMap;
 
-use crate::cache::bounded_insert::insert_bounded;
-use crate::cache::cache_entry::CacheEntry;
-use crate::cache::fresh_read::get_fresh;
+use crate::cache::cache::bounded_insert::insert_bounded;
+use crate::cache::cache::cache_entry::CacheEntry;
+use crate::cache::cache::fresh_read::get_fresh;
 use crate::solver::ResolvedDep;
 
 const DEFAULT_TTL: Duration = Duration::from_secs(300);

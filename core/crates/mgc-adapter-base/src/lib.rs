@@ -99,3 +99,7 @@ pub trait BaseAdapter: PackageAdapter + Send + Sync {
         ))
     }
 }
+
+mod sbom_bridge;
+
+pub use sbom_bridge::generate_sbom;

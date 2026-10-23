@@ -222,11 +222,35 @@ fn insecure_loopback_requires_explicit_opt_in() {
     let old = std::env::var_os("MAGICORE_WEB_ALLOW_INSECURE_LOCALHOST");
     let restore = |previous: Option<std::ffi::OsString>| {
         if let Some(value) = previous {
+            // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+            // test thread observes a partially written environment.
+            // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+            // không thấy môi trường ghi dở.
+            // SAFETY: test-only operation on process-local state / FFI with
+            // caller-owned buffers kept alive for the call.
+            // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+            // buffer do caller sở hữu và còn sống trong lời gọi.
             unsafe { std::env::set_var("MAGICORE_WEB_ALLOW_INSECURE_LOCALHOST", value) };
         } else {
+            // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+            // test thread observes a partially written environment.
+            // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+            // không thấy môi trường ghi dở.
+            // SAFETY: test-only operation on process-local state / FFI with
+            // caller-owned buffers kept alive for the call.
+            // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+            // buffer do caller sở hữu và còn sống trong lời gọi.
             unsafe { std::env::remove_var("MAGICORE_WEB_ALLOW_INSECURE_LOCALHOST") };
         }
     };
+    // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+    // test thread observes a partially written environment.
+    // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+    // không thấy môi trường ghi dở.
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { std::env::remove_var("MAGICORE_WEB_ALLOW_INSECURE_LOCALHOST") };
     assert!(!crate::audit::allow_insecure_loopback_url(
         "http://127.0.0.1:4315/x"
@@ -234,6 +258,14 @@ fn insecure_loopback_requires_explicit_opt_in() {
     assert!(!crate::audit::allow_insecure_loopback_url(
         "https://registry.npmjs.org/x"
     ));
+    // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+    // test thread observes a partially written environment.
+    // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+    // không thấy môi trường ghi dở.
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { std::env::set_var("MAGICORE_WEB_ALLOW_INSECURE_LOCALHOST", "1") };
     assert!(crate::audit::allow_insecure_loopback_url(
         "http://127.0.0.1:4315/x"

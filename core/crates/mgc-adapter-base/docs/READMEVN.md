@@ -10,8 +10,8 @@ Cung cấp default `BaseAdapter` và helper file project có kiểm tra. Crate p
 ## Sơ đồ source
 
 - [`lib.rs`](../src/lib.rs)
-- [`cargo_manifest.rs`](../src/cargo_manifest.rs)
-- [`project_file.rs`](../src/project_file.rs)
+- [`cargo_manifest.rs`](../src/cargo_manifest/)
+- [`project_file.rs`](../src/project_file/)
 
 ## Bàn giao và review
 

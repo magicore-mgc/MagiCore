@@ -9,8 +9,8 @@ Nhận diện GitHub Actions, GitLab, CircleCI, Cloudflare, AWS, GCP và Argo CD
 
 ## Sơ đồ source
 
-- [`adapter.rs`](../src/adapter.rs)
-- [`provider.rs`](../src/provider.rs)
+- [`adapter.rs`](../src/adapter/)
+- [`provider.rs`](../src/provider/)
 - [`lib.rs`](../src/lib.rs)
 
 ## Bàn giao và review

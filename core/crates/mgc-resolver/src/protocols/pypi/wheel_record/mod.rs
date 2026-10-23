@@ -12,5 +12,5 @@ pub(super) mod record_verification;
 pub(super) mod runtime_verification;
 
 #[cfg(test)]
-#[path = "test_support/mod.rs"]
+#[path = "test/support/mod.rs"]
 pub(in crate::protocols::pypi) mod test_support;

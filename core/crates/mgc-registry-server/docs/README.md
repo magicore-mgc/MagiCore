@@ -10,10 +10,10 @@ Implements the separate `mgc-registry` private server and npm/PyPI/OCI, auth, st
 ## Source map
 
 - [`lib.rs`](../src/lib.rs)
-- [`auth.rs`](../src/auth.rs)
-- [`npm.rs`](../src/npm.rs)
-- [`storage.rs`](../src/storage.rs)
-- [`trusted.rs`](../src/trusted.rs)
+- [`auth.rs`](../src/auth/)
+- [`npm.rs`](../src/npm/)
+- [`storage.rs`](../src/storage/)
+- [`trusted.rs`](../src/trusted/)
 
 ## Handoff and review
 

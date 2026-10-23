@@ -2577,6 +2577,7 @@ dependencies = [
  "async-trait",
  "libc",
  "mgc-lockfile",
+ "mgc-sbom",
  "mgc-types",
  "mgc-ui",
  "rustix",

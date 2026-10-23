@@ -61,6 +61,10 @@ pub(crate) fn memo_survives_nothing_same_length_rewrite_with_mtime_restore() {
             // (An toàn: utimensat với path tuyệt đối, mảng timespec thuần
             // theo tham chiếu, không dùng UTIME_OMIT — syscall mỏng, không
             // diễn giải lại bộ nhớ; kernel tự validate path.)
+            // SAFETY: test-only operation on process-local state or FFI with
+            // caller-owned arguments valid for the call.
+            // AN TOÀN: chỉ test thao tác state cục bộ process hoặc FFI với
+            // đối số do caller sở hữu, hợp lệ trong lời gọi.
             let ret = unsafe { libc::utimensat(libc::AT_FDCWD, c.as_ptr(), times.as_ptr(), 0) };
             assert_eq!(ret, 0, "attack setup: utimensat must succeed");
         }

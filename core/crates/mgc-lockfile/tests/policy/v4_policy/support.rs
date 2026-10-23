@@ -54,6 +54,10 @@ fn unsafe_env_set(key: &str, value: &str) {
     // (AN TOÀN: chỉ trong test, giữ SERIAL, caller phục hồi trước khi
     // nhả.)
     #[allow(unsafe_code)]
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe {
         std::env::set_var(key, value);
     }
@@ -61,6 +65,10 @@ fn unsafe_env_set(key: &str, value: &str) {
 
 fn unsafe_env_remove(key: &str) {
     #[allow(unsafe_code)]
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe {
         std::env::remove_var(key);
     }
@@ -70,6 +78,10 @@ fn restore_env(key: &str, value: Option<std::ffi::OsString>) {
     // SAFETY: test-only, called while holding SERIAL to restore process env.
     // (AN TOÀN: chỉ trong test, đang giữ SERIAL để khôi phục env tiến trình.)
     #[allow(unsafe_code)]
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe {
         if let Some(value) = value {
             std::env::set_var(key, value);

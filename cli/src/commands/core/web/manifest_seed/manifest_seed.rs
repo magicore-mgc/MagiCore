@@ -2,6 +2,14 @@
 // Web manifest package seeding.
 use super::*;
 
+#[path = "declared/mod.rs"]
+mod declared;
+#[path = "scripts/mod.rs"]
+mod scripts;
+
+use declared::has_declared_package;
+use scripts::ensure_script;
+
 pub(in crate::commands::core::web::implementation) async fn resolve_primary_version(
     request: &FrameworkRequest,
     package: &str,
@@ -59,25 +67,6 @@ pub(in crate::commands::core::web::implementation) fn ensure_primary_package(
         ensure_package(root, "dependencies", package, version);
     }
 }
-/// Preserve declared generator/user constraints before resolving defaults.
-/// Giữ constraint của generator/user thay vì tự nâng toolchain ngoài ý muốn.
-pub(super) fn has_declared_package(root: &Map<String, Value>, package: &str) -> bool {
-    [
-        "dependencies",
-        "devDependencies",
-        "optionalDependencies",
-        "peerDependencies",
-    ]
-    .iter()
-    .any(|section| {
-        root.get(*section)
-            .and_then(Value::as_object)
-            .and_then(|packages| packages.get(package))
-            .and_then(Value::as_str)
-            .is_some_and(|version| !version.is_empty())
-    })
-}
-
 async fn apply_web_manifest_seed(
     package_json_path: &Path,
     request: &FrameworkRequest,
@@ -211,17 +200,6 @@ async fn apply_web_manifest_seed(
 }
 /// Insert a scripts entry only when the scaffold did not define it —
 /// user/template choices win over the default baseline.
-/// Chèn mục scripts chỉ khi scaffold chưa định nghĩa — lựa chọn của
-/// user/template thắng baseline mặc định.
-pub(super) fn ensure_script(root: &mut Map<String, Value>, name: &str, command: &str) {
-    let scripts = root
-        .entry("scripts".to_string())
-        .or_insert_with(|| Value::Object(Map::new()));
-    if let Value::Object(map) = scripts {
-        map.entry(name.to_string())
-            .or_insert_with(|| Value::String(command.to_string()));
-    }
-}
 pub(crate) async fn enrich_web_project_manifest(
     project_dir: &Path,
     frontend: &FrameworkRequest,

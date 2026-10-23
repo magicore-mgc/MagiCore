@@ -12,6 +12,8 @@ mod extracted_file_write;
 mod tar_extraction;
 use self::error::{ArchiveError, ArchiveResult};
 #[cfg(test)]
+#[cfg(test)]
+#[path = "test/support/mod.rs"]
 mod test_support;
 
 pub use self::archive::{cargo_source_file_hashes, extract_crate_tar_gz, extract_tar_gz};

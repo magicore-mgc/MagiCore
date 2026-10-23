@@ -3,7 +3,8 @@
 #![cfg(test)]
 #![allow(clippy::unwrap_used)]
 
-use super::sidecar::{find_unique_sidecar, remove_regular_sidecar};
+use super::sidecar::find_unique_sidecar;
+use crate::cache::prune::removal::removal::remove_regular_sidecar;
 use tempfile::TempDir;
 
 #[test]

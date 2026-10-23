@@ -6,18 +6,34 @@ pub(in crate::commands::core::web::implementation) fn web_features(
     flags: &ScaffoldFlags,
 ) -> Vec<String> {
     let mut features = Vec::new();
+    push_language(flags, &mut features);
+    push_styling(flags, &mut features);
+    push_state(flags, &mut features);
+    push_backend(flags, &mut features);
+    push_database_orm(flags, &mut features);
+    push_validation(flags, &mut features);
+    push_auth(flags, &mut features);
+    push_testing(flags, &mut features);
+    push_linting(flags, &mut features);
+    push_monorepo(flags, &mut features);
+    push_api(flags, &mut features);
+    push_deployment(flags, &mut features);
+    push_misc(flags, &mut features);
+    push_extra(flags, &mut features);
 
-    // Language
-    // Ngôn ngữ
+    features
+}
+
+fn push_language(flags: &ScaffoldFlags, features: &mut Vec<String>) {
     if flags.ts {
         features.push("typescript".into());
     }
     if flags.js {
         features.push("javascript".into());
     }
+}
 
-    // Styling
-    // Giao diện
+fn push_styling(flags: &ScaffoldFlags, features: &mut Vec<String>) {
     if flags.tailwindcss || flags.shadcn || flags.daisyui {
         features.push("tailwindcss".into());
     }
@@ -39,9 +55,9 @@ pub(in crate::commands::core::web::implementation) fn web_features(
     if flags.daisyui {
         features.push("daisyui".into());
     }
+}
 
-    // State
-    // State management
+fn push_state(flags: &ScaffoldFlags, features: &mut Vec<String>) {
     if flags.zustand {
         features.push("zustand".into());
     }
@@ -60,9 +76,9 @@ pub(in crate::commands::core::web::implementation) fn web_features(
     if flags.tanstack_query {
         features.push("tanstack-query".into());
     }
+}
 
-    // Backend
-    // Backend
+fn push_backend(flags: &ScaffoldFlags, features: &mut Vec<String>) {
     if flags.express {
         features.push("express".into());
     }
@@ -81,9 +97,9 @@ pub(in crate::commands::core::web::implementation) fn web_features(
     if flags.trpc {
         features.push("trpc".into());
     }
+}
 
-    // Database / ORM
-    // Cơ sở dữ liệu / ORM
+fn push_database_orm(flags: &ScaffoldFlags, features: &mut Vec<String>) {
     if flags.prisma {
         features.push("prisma".into());
     }
@@ -108,9 +124,9 @@ pub(in crate::commands::core::web::implementation) fn web_features(
     if flags.mongodb {
         features.push("mongodb".into());
     }
+}
 
-    // Validation
-    // Kiểm tra dữ liệu
+fn push_validation(flags: &ScaffoldFlags, features: &mut Vec<String>) {
     if flags.zod {
         features.push("zod".into());
     }
@@ -123,9 +139,9 @@ pub(in crate::commands::core::web::implementation) fn web_features(
     if flags.valibot {
         features.push("valibot".into());
     }
+}
 
-    // Auth
-    // Xác thực
+fn push_auth(flags: &ScaffoldFlags, features: &mut Vec<String>) {
     if flags.nextauth {
         features.push("nextauth".into());
     }
@@ -141,9 +157,9 @@ pub(in crate::commands::core::web::implementation) fn web_features(
     if flags.oauth {
         features.push("oauth".into());
     }
+}
 
-    // Testing
-    // Kiểm thử
+fn push_testing(flags: &ScaffoldFlags, features: &mut Vec<String>) {
     if flags.vitest {
         features.push("vitest".into());
     }
@@ -159,9 +175,9 @@ pub(in crate::commands::core::web::implementation) fn web_features(
     if flags.testing_library {
         features.push("testing-library".into());
     }
+}
 
-    // Linting
-    // Lint và định dạng
+fn push_linting(flags: &ScaffoldFlags, features: &mut Vec<String>) {
     if flags.eslint {
         features.push("eslint".into());
     }
@@ -180,9 +196,9 @@ pub(in crate::commands::core::web::implementation) fn web_features(
     if flags.commitlint {
         features.push("commitlint".into());
     }
+}
 
-    // Monorepo
-    // Monorepo
+fn push_monorepo(flags: &ScaffoldFlags, features: &mut Vec<String>) {
     if flags.monorepo {
         features.push("monorepo".into());
     }
@@ -198,9 +214,9 @@ pub(in crate::commands::core::web::implementation) fn web_features(
     if flags.changesets {
         features.push("changesets".into());
     }
+}
 
-    // API
-    // API
+fn push_api(flags: &ScaffoldFlags, features: &mut Vec<String>) {
     if flags.rest {
         features.push("rest".into());
     }
@@ -213,9 +229,9 @@ pub(in crate::commands::core::web::implementation) fn web_features(
     if flags.grpc {
         features.push("grpc".into());
     }
+}
 
-    // Deployment
-    // Triển khai
+fn push_deployment(flags: &ScaffoldFlags, features: &mut Vec<String>) {
     if flags.docker || flags.k8s {
         features.push("docker".into());
     }
@@ -234,9 +250,9 @@ pub(in crate::commands::core::web::implementation) fn web_features(
     if flags.fly {
         features.push("fly".into());
     }
+}
 
-    // Misc
-    // Tùy chọn khác
+fn push_misc(flags: &ScaffoldFlags, features: &mut Vec<String>) {
     if flags.dotenv {
         features.push("dotenv".into());
     }
@@ -255,14 +271,12 @@ pub(in crate::commands::core::web::implementation) fn web_features(
     if flags.analytics {
         features.push("analytics".into());
     }
+}
 
-    // Extra
-    // Feature bổ sung
+fn push_extra(flags: &ScaffoldFlags, features: &mut Vec<String>) {
     for feature in &flags.features {
         if !features.contains(feature) {
             features.push(feature.clone());
         }
     }
-
-    features
 }

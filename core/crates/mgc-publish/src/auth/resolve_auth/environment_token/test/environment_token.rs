@@ -22,6 +22,10 @@ impl RestoreEnvironment {
 
 impl Drop for RestoreEnvironment {
     fn drop(&mut self) {
+        // SAFETY: test-only operation on process-local state / FFI with
+        // caller-owned buffers kept alive for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+        // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe {
             match self.mgc.take() {
                 Some(value) => std::env::set_var("MGC_NPM_TOKEN", value),
@@ -38,6 +42,10 @@ impl Drop for RestoreEnvironment {
 #[test]
 fn mgc_token_precedes_npm_token() {
     let _restore = RestoreEnvironment::capture();
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe {
         std::env::set_var("MGC_NPM_TOKEN", "mgc-token");
         std::env::set_var("NPM_TOKEN", "npm-token");

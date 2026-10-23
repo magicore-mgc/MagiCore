@@ -14,6 +14,9 @@ fn replacement_publishes_new_bytes_and_consumes_staging_path() {
 
     atomic_replace_file(&staging, &destination).expect("test operation must succeed");
 
-    assert_eq!(std::fs::read(&destination).expect("test operation must succeed"), b"new lock");
+    assert_eq!(
+        std::fs::read(&destination).expect("test operation must succeed"),
+        b"new lock"
+    );
     assert!(!staging.exists());
 }

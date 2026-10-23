@@ -3,6 +3,8 @@
 //! Adapter tests
 
 use super::*;
+use crate::engine::GameEngine;
+use std::collections::HashMap;
 
 use tempfile::TempDir;
 

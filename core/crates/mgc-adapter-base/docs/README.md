@@ -10,8 +10,8 @@ Provides shared `BaseAdapter` defaults and guarded project-file helpers. It pars
 ## Source map
 
 - [`lib.rs`](../src/lib.rs)
-- [`cargo_manifest.rs`](../src/cargo_manifest.rs)
-- [`project_file.rs`](../src/project_file.rs)
+- [`cargo_manifest.rs`](../src/cargo_manifest/)
+- [`project_file.rs`](../src/project_file/)
 
 ## Handoff and review
 

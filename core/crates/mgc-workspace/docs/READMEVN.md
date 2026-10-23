@@ -10,10 +10,10 @@ Khám phá member/catalog, dựng quan hệ dependency, lọc project, cache com
 ## Sơ đồ source
 
 - [`lib.rs`](../src/lib.rs)
-- [`discover.rs`](../src/discover.rs)
-- [`graph.rs`](../src/graph.rs)
-- [`filter.rs`](../src/filter.rs)
-- [`topo.rs`](../src/topo.rs)
+- [`discover.rs`](../src/discover/)
+- [`graph.rs`](../src/graph/)
+- [`filter.rs`](../src/filter/)
+- [`topo.rs`](../src/topo/)
 
 ## Bàn giao và review
 

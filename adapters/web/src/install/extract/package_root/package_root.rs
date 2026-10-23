@@ -1,6 +1,5 @@
 //! Package-root location and cache-backed extraction.
 //! Tìm package root và giải nén từ cache.
-
 use super::super::{
     claims::{cas_claim_context, claim_ctx},
     materialize::ensure_extracted_package_root_with_marker,
@@ -13,7 +12,6 @@ use mgc_fetcher::extract::{
     extract_tarball_to_rebuildable_cas_and_verify_existing_root,
 };
 use std::fs::File;
-use std::io::{Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -27,24 +25,13 @@ use crate::install::package_marker::{
     expected_extracted_package_marker_from_reader,
 };
 
-pub fn locate_package_dir(extract_root: &Path) -> MgResult<PathBuf> {
-    let package_dir = extract_root.join("package");
-    if package_dir.is_dir() {
-        return Ok(package_dir);
-    }
+#[path = "locate/mod.rs"]
+mod locate;
+#[path = "opening/mod.rs"]
+mod opening;
 
-    let first_dir = std::fs::read_dir(extract_root)?
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .find(|path| path.is_dir());
-
-    first_dir.ok_or_else(|| {
-        MgError::Other(format!(
-            "extracted tarball missing package root in '{}'",
-            extract_root.display()
-        ))
-    })
-}
+pub use locate::locate_package_dir;
+use opening::{open_rewound_cache_file, open_tarball_path};
 
 pub fn ensure_extracted_package_root(
     layout: &Layout,
@@ -161,27 +148,6 @@ where
             .map_err(|e| MgError::Other(e.to_string()))
         },
     )
-}
-
-fn open_tarball_path(pkg: &ResolvedPackage, path: &Path) -> MgResult<File> {
-    mgc_platform::open_regular_file_no_follow(path).map_err(|err| {
-        MgError::Other(format!(
-            "failed to open tarball '{}' for '{}': {}",
-            path.display(),
-            pkg.id.name_str(),
-            err
-        ))
-    })
-}
-
-fn open_rewound_cache_file(source: &Arc<Mutex<File>>) -> MgResult<File> {
-    let mut file = source
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    file.seek(SeekFrom::Start(0))
-        .map_err(|err| MgError::Other(format!("failed to rewind verified cache file: {err}")))?;
-    file.try_clone()
-        .map_err(|err| MgError::Other(format!("failed to clone verified cache file: {err}")))
 }
 
 #[cfg(test)]

@@ -9,6 +9,11 @@ const WINDOWS_JOB_INITIAL_PROCESS_CAPACITY: usize = 128;
 #[cfg(windows)]
 const WINDOWS_JOB_MAX_PROCESS_CAPACITY: usize = 8192;
 
+// SAFETY: every Win32 job-object query below passes the borrowed `job` handle
+// and caller-owned buffers sized before each call; return codes are checked and
+// buffers are re-read only after a success.
+// AN TOÀN: mọi truy vấn job object bên dưới truyền handle `job` mượn và buffer
+// do caller sở hữu đúng kích thước; mã trả về được kiểm trước khi đọc buffer.
 #[cfg(windows)]
 #[allow(unsafe_code)]
 pub(in crate::run::implementation::windows_job::implementation) fn active_process_ids(

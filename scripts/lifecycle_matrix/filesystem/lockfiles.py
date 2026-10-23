@@ -19,7 +19,7 @@ def _lockfile_candidates(project_dir: str, language: str) -> list:
     cho ngôn ngữ đó, không bao giờ đoán pass.)"""
     if language in ("javascript", "typescript", "pulumi"):
         # mgc.lock is written as TOML `[[package]]` on disk (see
-        # core/crates/mgc-lockfile/src/writer.rs — toml::to_string_pretty);
+        # core/crates/mgc-lockfile/src/export — toml::to_string_pretty);
         # the JSON spelling is a legacy fallback probe, never a guess.
         # (mgc.lock ghi ra đĩa là TOML `[[package]]`; JSON là probe dự
         # phòng cho legacy, không phải đoán.)

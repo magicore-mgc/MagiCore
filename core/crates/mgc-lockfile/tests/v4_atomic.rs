@@ -151,6 +151,10 @@ fn kill_child(child: &mut std::process::Child) {
     // cannot address anything else.
     // (AN TOÀN: pid từ child do chính ta spawn, wait bên dưới.)
     #[allow(unsafe_code)]
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe {
         libc::kill(child.id() as libc::pid_t, libc::SIGKILL);
     }

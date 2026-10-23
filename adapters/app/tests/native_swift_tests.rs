@@ -132,6 +132,10 @@ async fn app_swift_project_resolves_and_installs_natively() {
     // SAFETY: test-only env overrides (process-local, restored below).
     // (SAFETY: env override chỉ trong test (cục bộ process, phục hồi bên
     // dưới).)
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe {
         std::env::set_var("MGC_SWIFT_REGISTRY_URL", &base);
         std::env::set_var("MGC_SWIFT_STORE_ROOT", store_root.path());
@@ -185,6 +189,10 @@ async fn app_swift_project_resolves_and_installs_natively() {
         Ok::<_, mgc_types::MgError>(())
     }
     .await;
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe {
         std::env::remove_var("MGC_SWIFT_REGISTRY_URL");
         std::env::remove_var("MGC_SWIFT_STORE_ROOT");
@@ -269,6 +277,10 @@ async fn app_swift_manifest_parses_without_spawning_toolchain() {
     // An empty PATH proves manifest parsing is in-process, not SwiftPM.
     let empty_dir = tempfile::tempdir().unwrap();
     let original_path = std::env::var("PATH").unwrap_or_default();
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe {
         std::env::set_var("PATH", empty_dir.path().as_os_str());
     }
@@ -277,6 +289,10 @@ async fn app_swift_manifest_parses_without_spawning_toolchain() {
         adapter.parse_manifest(tmp.path()).await
     }
     .await;
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe {
         std::env::set_var("PATH", original_path);
     }

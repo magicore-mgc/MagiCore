@@ -12,7 +12,7 @@ Cung cấp API filesystem đa nền tảng tầng thấp hiện tại: path chu�
 - [`lib.rs`](../src/lib.rs)
 - [`paths/mod.rs`](../src/paths/mod.rs)
 - [`paths/shell/`](../src/paths/shell/) — API PATH dùng chung và owner theo OS.
-- [`fs_semaphore.rs`](../src/fs_semaphore.rs)
+- [`fs_semaphore.rs`](../src/fs_semaphore/)
 - [`reflink/`](../src/reflink/mod.rs) — dispatch ổn định, owner implementation theo nền tảng và owner lỗi cục bộ.
 
 ## Bàn giao và review

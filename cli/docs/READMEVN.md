@@ -9,9 +9,9 @@ Xây binary giao diện người dùng: định nghĩa command, context project/
 
 ## Sơ đồ source
 
-- [`commands/definitions.rs`](../src/commands/definitions.rs)
+- [`commands/definitions.rs`](../src/commands/definitions/)
 - [`dispatch/mod.rs`](../src/dispatch/mod.rs)
-- [`context.rs`](../src/context.rs)
+- [`context.rs`](../src/context/)
 - [`scaffold/mod.rs`](../src/scaffold/mod.rs)
 
 ## Bàn giao và review

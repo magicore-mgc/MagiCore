@@ -74,6 +74,10 @@ impl Drop for EnvRestoreGuard {
             // other test in this process can concurrently inspect/mutate
             // these process-global environment variables.
             // (AN TOÀN: test giữ ENV_LOCK suốt scope.)
+            // SAFETY: test-only operation on process-local state / FFI with
+            // caller-owned buffers kept alive for the call.
+            // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+            // buffer do caller sở hữu và còn sống trong lời gọi.
             unsafe {
                 match value {
                     Some(value) => std::env::set_var(key, value),
@@ -253,12 +257,20 @@ async fn app_rn_multi_tier_install_fails_closed_without_atomic_commit() {
     // dưới).)
     // Loopback http requires explicit opt-in (default deny); the mock
     // registry below is test infrastructure, not production traffic.
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe {
         std::env::set_var("MAGICORE_WEB_ALLOW_INSECURE_LOCALHOST", "1");
     }
     // SAFETY: test-only env overrides (process-local, restored below).
     // (SAFETY: env override chỉ trong test (cục bộ process, phục hồi bên
     // dưới).)
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe {
         std::env::set_var("MGC_MAVEN_REPO_URL", &base);
         std::env::set_var("MGC_MAVEN_STORE_ROOT", maven_store.path());
@@ -343,6 +355,10 @@ async fn app_rn_podspec_checksum_mismatch_fails_closed() {
     // SAFETY: test-only env override (process-local, restored below).
     // (SAFETY: env override chỉ trong test (cục bộ process, phục hồi bên
     // dưới).)
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe {
         std::env::set_var("MGC_COCOAPODS_CDN_URL", &base);
     }
@@ -354,6 +370,10 @@ async fn app_rn_podspec_checksum_mismatch_fails_closed() {
             .map(|_| mgc_types::ResolvedGraph::empty())
     }
     .await;
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe {
         match original_cdn {
             Some(v) => std::env::set_var("MGC_COCOAPODS_CDN_URL", v),

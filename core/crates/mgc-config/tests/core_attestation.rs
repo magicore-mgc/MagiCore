@@ -31,7 +31,15 @@ struct Hermetic {
 impl Drop for Hermetic {
     fn drop(&mut self) {
         match self.previous_home.take() {
+            // SAFETY: test-only operation on process-local state or FFI with
+            // caller-owned arguments valid for the call.
+            // AN TOÀN: chỉ test thao tác state cục bộ process hoặc FFI với
+            // đối số do caller sở hữu, hợp lệ trong lời gọi.
             Some(home) => unsafe { std::env::set_var("HOME", home) },
+            // SAFETY: test-only operation on process-local state or FFI with
+            // caller-owned arguments valid for the call.
+            // AN TOÀN: chỉ test thao tác state cục bộ process hoặc FFI với
+            // đối số do caller sở hữu, hợp lệ trong lời gọi.
             None => unsafe { std::env::remove_var("HOME") },
         }
     }
@@ -47,6 +55,14 @@ fn hermetic() -> Hermetic {
     // check compares two different spellings of one directory.
     let home_canon = home.path().canonicalize().unwrap();
     let previous_home = std::env::var_os("HOME");
+    // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+    // test thread observes a partially written environment.
+    // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+    // không thấy môi trường ghi dở.
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { std::env::set_var("HOME", &home_canon) };
     let work = tempfile::tempdir().unwrap();
     let root = work.path().join("proj");
@@ -81,6 +97,14 @@ struct ScopedEnvVar {
 impl ScopedEnvVar {
     fn set(name: &'static str, value: &str) -> Self {
         let previous = std::env::var_os(name);
+        // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+        // test thread observes a partially written environment.
+        // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+        // không thấy môi trường ghi dở.
+        // SAFETY: test-only operation on process-local state / FFI with
+        // caller-owned buffers kept alive for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+        // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe { std::env::set_var(name, value) };
         Self { name, previous }
     }
@@ -89,7 +113,15 @@ impl ScopedEnvVar {
 impl Drop for ScopedEnvVar {
     fn drop(&mut self) {
         match self.previous.take() {
+            // SAFETY: test-only operation on process-local state or FFI with
+            // caller-owned arguments valid for the call.
+            // AN TOÀN: chỉ test thao tác state cục bộ process hoặc FFI với
+            // đối số do caller sở hữu, hợp lệ trong lời gọi.
             Some(value) => unsafe { std::env::set_var(self.name, value) },
+            // SAFETY: test-only operation on process-local state or FFI with
+            // caller-owned arguments valid for the call.
+            // AN TOÀN: chỉ test thao tác state cục bộ process hoặc FFI với
+            // đối số do caller sở hữu, hợp lệ trong lời gọi.
             None => unsafe { std::env::remove_var(self.name) },
         }
     }

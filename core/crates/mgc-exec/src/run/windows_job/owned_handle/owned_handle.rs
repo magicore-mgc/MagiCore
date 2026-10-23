@@ -92,6 +92,11 @@ impl WindowsOwnedHandle {
 
 #[cfg(windows)]
 impl Drop for WindowsOwnedHandle {
+    // SAFETY: `as_raw()` returns a handle this owner created via a Win32 API
+    // that transferred ownership; Drop runs exactly once, so CloseHandle sees
+    // a live handle and no other owner closes it.
+    // AN TOÀN: `as_raw()` trả handle do owner này tạo qua API Win32 chuyển
+    // quyền sở hữu; Drop chạy đúng một lần nên CloseHandle nhận handle còn sống.
     #[allow(unsafe_code)]
     fn drop(&mut self) {
         let closed = unsafe { windows_sys::Win32::Foundation::CloseHandle(self.as_raw()) };

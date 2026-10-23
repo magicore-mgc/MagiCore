@@ -13,6 +13,8 @@ mod profile;
 mod tarball_file;
 mod tarball_reader;
 #[cfg(test)]
+#[cfg(test)]
+#[path = "test/support/mod.rs"]
 mod test_support;
 
 use self::error::{ExtractionError, ExtractionResult};

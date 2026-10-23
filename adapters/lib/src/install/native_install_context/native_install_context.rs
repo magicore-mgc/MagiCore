@@ -7,7 +7,7 @@ use mgc_types::{MgError, MgResult, ResolvedPackage};
 
 /// Reconstruct a protocol `ResolvedEntry` from a resolved graph package.
 /// Dựng lại `ResolvedEntry` của protocol từ một package trong graph đã resolve.
-pub(crate) fn entry_from_package(pkg: &ResolvedPackage) -> ResolvedEntry {
+pub fn entry_from_package(pkg: &ResolvedPackage) -> ResolvedEntry {
     ResolvedEntry {
         name: pkg.id.name_str().to_string(),
         version: pkg.id.version().to_string(),

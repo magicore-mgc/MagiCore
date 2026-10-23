@@ -23,7 +23,7 @@ Own the MGC-native Python lane's pure domain logic:
 ## Non-goals (stay with current owners) / Không thuộc phạm vi
 
 - Generic resolve→lock wiring (`resolve_with_protocol{,_including_dev}` in
-  `adapters/lib/src/native/engine.rs`): shared by Rust/Go/Java/DotNet lanes
+  `adapters/lib/src/native/engine/`): shared by Rust/Go/Java/DotNet lanes
   and app Flutter/Swift callers — extraction deferred to the P04 wave
   (S06 D013), not moved for Python alone.
 - `install_python_native` orchestration, `native_python_path_entries{,_from_store}`,

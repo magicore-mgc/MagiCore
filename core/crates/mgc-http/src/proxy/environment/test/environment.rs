@@ -30,6 +30,10 @@ fn no_proxy_env_overrides_defaults() {
     // SAFETY: inside the serialised `env_lock` section owned by `_guard`,
     // restored on drop. (SAFETY: nằm trong đoạn `env_lock` tuần tự hoá do
     // `_guard` giữ, được khôi phục khi drop.)
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { env::set_var("NO_PROXY", "internal.example") };
 
     let cfg = ProxyConfig::from_env();

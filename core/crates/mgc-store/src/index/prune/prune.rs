@@ -4,6 +4,8 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+use super::hardlink_check::file_has_no_external_hardlinks;
+
 use anyhow::Result;
 
 use crate::database::Database;
@@ -61,19 +63,4 @@ fn path_is_older_than(path: &Path, max_age: std::time::Duration) -> bool {
         .and_then(|metadata| metadata.modified())
         .map(|modified| modified.elapsed().map(|age| age > max_age).unwrap_or(false))
         .unwrap_or(false)
-}
-
-fn file_has_no_external_hardlinks(path: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        std::fs::metadata(path)
-            .map(|metadata| metadata.nlink() <= 1)
-            .unwrap_or(false)
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = path;
-        false
-    }
 }

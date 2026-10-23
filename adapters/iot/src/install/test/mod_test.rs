@@ -3,6 +3,7 @@
 //! Adapter tests
 
 use super::*;
+use crate::framework::IotFramework;
 
 use tempfile::TempDir;
 

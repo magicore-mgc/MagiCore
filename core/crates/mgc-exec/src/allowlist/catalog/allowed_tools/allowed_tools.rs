@@ -94,7 +94,7 @@ pub const ALLOWED_TOOLS: &[&str] = &[
     "xcodebuild",
     // xcrun simctl is the iOS counterpart of adb: simulator/device
     // control only (P0 delegation finding — direct Command::new("xcrun")
-    // in cli/src/commands/core/dev/app.rs bypassed the executor).
+    // in cli/src/commands/core/dev/app/ bypassed the executor).
     // Restricted to DeviceControl scope like adb.
     // xcrun simctl là đối tác iOS của adb: chỉ điều khiển
     // simulator/thiết bị (P0 finding — Command::new("xcrun") trực tiếp

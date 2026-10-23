@@ -10,8 +10,8 @@ Cung cấp helper download và giải nén archive tầng thấp dùng chung. L�
 ## Sơ đồ source
 
 - [`lib.rs`](../src/lib.rs)
-- [`download.rs`](../src/download.rs)
-- [`extract.rs`](../src/extract.rs)
+- [`download.rs`](../src/download/)
+- [`extract.rs`](../src/extract/)
 
 ## Bàn giao và review
 

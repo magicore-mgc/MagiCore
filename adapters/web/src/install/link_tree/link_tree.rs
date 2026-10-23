@@ -11,6 +11,8 @@ mod error;
 mod mode;
 #[path = "pool/mod.rs"]
 mod pool;
+#[path = "symlink/mod.rs"]
+mod symlink;
 #[path = "tree/mod.rs"]
 mod tree;
 
@@ -18,4 +20,5 @@ pub use backing_file::backing_link_file;
 pub use entry::{link_package_tree, link_package_tree_with_profile};
 pub use mode::{StrictTreeLinkMode, strict_tree_link_mode};
 pub use pool::{default_hardlink_threads, hardlink_pool, hardlink_thread_count};
+pub use symlink::create_symlink;
 pub use tree::{hardlink_tree, hardlink_tree_with_profile};

@@ -7,13 +7,7 @@ pub(in crate::commands) const TRUSTED_TOKEN_REFRESH_MARGIN_SECS: u64 = 60;
 
 pub(in crate::commands) const TRUSTED_TOKEN_EXPIRY_SKEW_SECS: u64 = 5;
 
-pub(in crate::commands) const TRUSTED_DOCKER_MAX_PUSH_SECS: u64 = 1800;
-
-pub(in crate::commands) const TRUSTED_NPM_REQUEST_TIMEOUT_SECS: u64 = 600;
-
 pub(in crate::commands) const TRUSTED_PYPI_REQUEST_TIMEOUT_SECS: u64 = 300;
-
-pub(in crate::commands) const TRUSTED_OCI_REQUEST_MAX_TIMEOUT_SECS: u64 = 1800;
 
 impl TrustedPublishSession {
     pub(in crate::commands::publish) fn token(&self) -> &str {
@@ -62,6 +56,14 @@ impl TrustedPublishSession {
     }
 }
 
+#[path = "request_timeout/mod.rs"]
+mod request_timeout;
+
+pub(in crate::commands) use request_timeout::{
+    TRUSTED_NPM_REQUEST_TIMEOUT_SECS, TRUSTED_OCI_REQUEST_MAX_TIMEOUT_SECS, docker_push_timeout,
+    oci_request_timeout, trusted_npm_request_timeout,
+};
+
 pub(in crate::commands) fn trusted_token_expires_within(
     now: tokio::time::Instant,
     expires_at: tokio::time::Instant,
@@ -75,30 +77,6 @@ pub(in crate::commands) fn trusted_token_deadline(
     expires_in: Duration,
 ) -> tokio::time::Instant {
     exchange_started + expires_in
-}
-
-pub(in crate::commands) fn docker_push_timeout(remaining: Duration) -> Result<Duration> {
-    let usable = remaining
-        .checked_sub(Duration::from_secs(TRUSTED_TOKEN_EXPIRY_SKEW_SECS))
-        .filter(|duration| !duration.is_zero())
-        .ok_or_else(|| anyhow!("trusted publish token expires too soon to start a Docker push"))?;
-    Ok(usable.min(Duration::from_secs(TRUSTED_DOCKER_MAX_PUSH_SECS)))
-}
-
-pub(in crate::commands) fn oci_request_timeout(remaining: Duration) -> Result<Duration> {
-    let usable = remaining
-        .checked_sub(Duration::from_secs(TRUSTED_TOKEN_EXPIRY_SKEW_SECS))
-        .filter(|duration| !duration.is_zero())
-        .ok_or_else(|| anyhow!("trusted publish token expires too soon for an OCI request"))?;
-    Ok(usable.min(Duration::from_secs(TRUSTED_OCI_REQUEST_MAX_TIMEOUT_SECS)))
-}
-
-pub(in crate::commands) fn trusted_npm_request_timeout(remaining: Duration) -> Result<Duration> {
-    let usable = remaining
-        .checked_sub(Duration::from_secs(TRUSTED_TOKEN_EXPIRY_SKEW_SECS))
-        .filter(|duration| !duration.is_zero())
-        .ok_or_else(|| anyhow!("trusted publish token expires too soon for an npm request"))?;
-    Ok(usable.min(Duration::from_secs(TRUSTED_NPM_REQUEST_TIMEOUT_SECS)))
 }
 
 /// Refreshes trusted npm credentials and bounds one registry request by token expiry.

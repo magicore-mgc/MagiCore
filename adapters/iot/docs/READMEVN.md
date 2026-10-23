@@ -9,8 +9,8 @@ Nhận diện ESP32 Rust, PlatformIO và Zephyr; cung cấp metadata board/targe
 
 ## Sơ đồ source
 
-- [`adapter.rs`](../src/adapter.rs)
-- [`framework.rs`](../src/framework.rs)
+- [`adapter.rs`](../src/adapter/)
+- [`framework.rs`](../src/framework/)
 - [`scaffold/mod.rs`](../src/scaffold/mod.rs)
 - [`flash/mod.rs`](../src/flash/mod.rs)
 

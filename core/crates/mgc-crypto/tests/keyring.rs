@@ -141,6 +141,10 @@ fn test_keyring_load_rejects_fifo_without_blocking() {
     let dir = keyring_test_dir();
     let path = dir.path().join("keyring.fifo");
     let c_path = CString::new(path.as_os_str().as_bytes()).expect("test operation must succeed");
+    // SAFETY: test-only operation on process-local state or FFI with
+    // caller-owned arguments valid for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process hoặc FFI với
+    // đối số do caller sở hữu, hợp lệ trong lời gọi.
     let mkfifo_result = unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) };
     assert_eq!(
         mkfifo_result,

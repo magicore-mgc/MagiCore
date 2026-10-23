@@ -9,8 +9,8 @@ Nhận diện Flutter, Kotlin, Swift, React Native, Objective-C và project đa 
 
 ## Sơ đồ source
 
-- [`adapter.rs`](../src/adapter.rs)
-- [`language.rs`](../src/language.rs)
+- [`adapter.rs`](../src/adapter/)
+- [`language.rs`](../src/language/)
 - [`manifest/mod.rs`](../src/manifest/mod.rs)
 - [`native/mod.rs`](../src/native/mod.rs)
 

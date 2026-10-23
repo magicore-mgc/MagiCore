@@ -9,8 +9,8 @@ Adapts AI projects to MagiCore core, capability, audit, cache, and install inter
 
 ## Source map
 
-- [`adapter.rs`](../src/adapter/adapter.rs)
-- [`framework.rs`](../src/framework.rs)
+- [`adapter.rs`](../src/adapter/adapter/)
+- [`framework.rs`](../src/framework/)
 - [`install/mod.rs`](../src/install/mod.rs)
 - [Native Hugging Face client owners](../src/native/hf_client/README.md)
 

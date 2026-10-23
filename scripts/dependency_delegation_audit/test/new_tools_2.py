@@ -31,7 +31,7 @@ class NewToolDetectionPart2(unittest.TestCase):
 
     def test_dynamic_command_new_in_unclassified_production_path_is_blocker(self):
         findings = scan_snippet(
-            "cli/src/commands/hooks.rs",
+            "cli/src/commands/hooks",
             'fn run_hook(program: &str) -> Result<()> {\n'
             '    std::process::Command::new(program).status()?;\n'
             '    Ok(())\n'
@@ -43,7 +43,7 @@ class NewToolDetectionPart2(unittest.TestCase):
 
     def test_mgc_run_dispatcher_is_not_misidentified_as_process_spawn(self):
         findings = scan_snippet(
-            "cli/src/commands/core/dev/cicd.rs",
+            "cli/src/commands/core/dev/cicd",
             'async fn run_test_step() -> Result<()> {\n'
             '    crate::commands::run::run("test".to_string(), args, core, None).await?;\n'
             '    Ok(())\n'
@@ -53,7 +53,7 @@ class NewToolDetectionPart2(unittest.TestCase):
 
     def test_other_cli_run_functions_are_not_process_spawn_patterns(self):
         findings = scan_snippet(
-            "cli/src/commands/add.rs",
+            "cli/src/commands/core/add",
             'async fn dispatch_add(package: String) -> Result<()> {\n'
             '    crate::commands::core::add::run(package, args).await?;\n'
             '    Ok(())\n'
@@ -90,7 +90,7 @@ class NewToolDetectionPart2(unittest.TestCase):
 
     def test_production_test_command_cannot_delegate_to_package_manager(self):
         findings = scan_snippet(
-            "cli/src/commands/core/dev/cicd.rs",
+            "cli/src/commands/core/dev/cicd",
             'fn run_test_step() -> Result<()> {\n'
             '    std::process::Command::new("cargo").arg("test").status()?;\n'
             '    Ok(())\n'

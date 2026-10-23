@@ -44,27 +44,27 @@ def is_test_path(rel, basename):
 # manifest records why that sink is safe there.
 ALLOWLIST = {
     # --- gateway machinery itself (owns lock + journal + rollback) ---
-    ("cli/src/commands/core/shared.rs", "restore_mutation_snapshot"): (
-        {"manifest-write", "lock-write"}, "verified restore path",
+    ("cli/src/commands/core/shared/mutation_journal/restore/restore.rs", "restore_mutation_snapshot"): (
+        {"lock-write", "manifest-write", "manifest-file-write"}, "verified restore path",
     ),
     # --- gateway-routed mutation tails (run under the caller's guard) ---
-    ("cli/src/commands/core/shared.rs", "add"): (
+    ("cli/src/commands/core/shared/package_add/package_add.rs", "add"): (
         {"manifest-write"}, "gateway entry, journaled tail",
     ),
-    ("cli/src/commands/core/shared.rs", "remove"): (
+    ("cli/src/commands/core/shared/package_remove/package_remove.rs", "remove"): (
         {"manifest-write"}, "gateway entry, journaled tail",
     ),
-    ("cli/src/commands/core/shared.rs", "native_update_locked"): (
+    ("cli/src/commands/core/shared/package_update/package_update.rs", "native_update_locked"): (
         {"manifest-write"}, "gateway entry (via update/native_update), journaled tail",
     ),
-    ("cli/src/commands/install.rs", "install_into_root"): (
+    ("cli/src/commands/install/mutation/mutation.rs", "install_into_root"): (
         {"manifest-write"}, "gateway entry, journaled tail",
     ),
-    ("cli/src/commands/install.rs", "install_resolve_and_materialize"): (
+    ("cli/src/commands/install/materialize/materialize.rs", "install_resolve_and_materialize"): (
         set(), "tail only; manifest mutation lives in install_into_root",
     ),
     # --- migrate holds the writer guard + refuses pending journals ---
-    ("cli/src/commands/migrate.rs", "run_lock"): (
+    ("cli/src/commands/migrate/migrate.rs", "run_lock"): (
         {"lock-write"}, "atomic lock rewrite under held guard",
     ),
     ("cli/src/commands/trust/sign.rs", "sign_with_key_locked"): (
@@ -73,17 +73,14 @@ ALLOWLIST = {
     # --- patch artifact publish (project lock + journal recovery are held
     # --- by run_at_project_root; config save is atomic; failed save can
     # --- leave only an unreferenced patch artifact, never a partial config) ---
-    ("cli/src/commands/patch.rs", "add_patch"): (
+    ("cli/src/commands/patch/add/add.rs", "add_patch"): (
         {"lock-write"}, "held ProjectWriteLock + journal check; atomic patch publish before atomic config save",
     ),
     # --- adapter-internal writer implementations (the engine, not a bypass) ---
     ("adapters/web/src/lib.rs", "DependencyResolver::add"): (
         {"manifest-write", "fs-write"}, "engine-owned manifest writer",
     ),
-    ("adapters/cloud/src/adapter.rs", "LockfileProvider::write_manifest"): (
-        {"manifest-write"}, "delegating override to the web writer",
-    ),
-    ("adapters/lib/src/adapter.rs", "LockfileProvider::write_manifest"): (
+    ("adapters/lib/src/adapter/lockfile_provider/lockfile_provider.rs", "LockfileProvider::write_manifest"): (
         {"manifest-write"}, "delegating override to the web writer",
     ),
     ("core/crates/mgc-adapter-base/src/lib.rs", "base_add"): (
@@ -104,7 +101,7 @@ ALLOWLIST = {
     ("cli/src/commands/core/shared.rs", "tool_remove_real"): (
         {"adapter-mutation"}, "sole-writer protocol: real toolchain remove + re-read verify",
     ),
-    ("cli/src/commands/core/shared.rs", "update"): (
+    ("cli/src/commands/core/shared/package_update/package_update.rs", "update"): (
         {"adapter-mutation"}, "legacy delegated update under gateway lock",
     ),
     ("cli/src/commands/core/install/game.rs", "install"): (
@@ -120,12 +117,12 @@ ALLOWLIST = {
     ("cli/src/commands/dedupe/dedupe.rs", "run"): (
         {"lock-write"}, "lock merge under writer guard + build-verified rollback",
     ),
-    ("cli/src/commands/import.rs", "run"): (
+    ("adapters/web/src/bin/bench_matrix/cli/run/run.rs", "run"): (
         {"lock-write", "manifest-file-write"},
         "lock+sig import under writer guard + transactional rollback",
     ),
     # --- staged template publish (locked, convergent, GC-able litter) ---
-    ("cli/src/commands/core/shared.rs", "game_optimizer_template_locked"): (
+    ("cli/src/commands/core/game/optimizer_template/optimizer_template.rs", "game_optimizer_template_locked"): (
         {"manifest-file-write"}, "staging publish under gateway guard",
     ),
     # --- engine-internal lock writers (the engine, not a bypass) ---
@@ -159,7 +156,7 @@ ALLOWLIST = {
     ("adapters/app/src/install/lockfile/v4_merge/v4_merge.rs", "write_v4_lane"): (
         {"lock-write"}, "v4 writer verifies merge base/signature policy before atomic publication",
     ),
-    ("adapters/web/src/lockfile.rs", "atomic_write_web_lockfile"): (
+    ("adapters/web/src/lockfile/atomic_write/atomic_write.rs", "atomic_write_web_lockfile"): (
         {"manifest-file-write"},
         "private atomic primitive called only by write_web_lockfile_with_state under mutation gateway",
     ),
@@ -183,89 +180,62 @@ ALLOWLIST = {
     ("adapters/web/src/install/mod.rs", "restore_prior_lock_result"): (
         {"manifest-file-write"}, "lock bytes restore helper (verified by callers)",
     ),
-    ("adapters/web/src/lockfile.rs", "write_web_lockfile_with_state"): (
+    ("adapters/web/src/lockfile/lockfile.rs", "write_web_lockfile_with_state"): (
         {"manifest-write", "manifest-file-write", "lock-write"},
         "v3 signature gate or v4 integrity/signature gate in the engine lock writer; CLI writers use the project mutation gateway and journal",
     ),
     # V4 staging primitive — adapter callers verify integrity and reject signed rewrites.
     # Primitive staging V4 — caller adapter kiểm integrity và từ chối ghi đè lock đã ký.
-    ("core/crates/mgc-lockfile/src/atomic.rs", "atomic_write_v4_bytes"): (
+    ("core/crates/mgc-lockfile/src/atomic/v4_write/v4_write.rs", "atomic_write_v4_bytes"): (
         {"manifest-file-write"},
         "atomic v4 publication primitive; app/lib/web callers verify the base and refuse signed rewrites, while CLI mutations use the project gateway and journal",
     ),
-    ("adapters/web/src/cache_prune.rs", "prune_old_package_dirs_under"): (
+    ("adapters/web/src/cache_prune/stale_entries/stale_entries.rs", "prune_old_package_dirs_under"): (
         {"manifest-file-write"}, "stale package-dir pruning (age-gated)",
     ),
-    ("adapters/web/src/install/extract.rs", "ensure_extracted_package_root_with_marker"): (
+    ("adapters/web/src/install/extract/materialize/materialize.rs", "ensure_extracted_package_root_with_marker"): (
         {"manifest-file-write"}, "extract staging management",
     ),
     # --- delegation wrappers (forward to the owned engine; no direct IO) ---
-    ("adapters/cloud/src/adapter.rs", "DependencyResolver::add"): (
+    ("adapters/lib/src/cache/metadata.rs", "DependencyResolver::add"): (
         {"adapter-mutation"}, "forwards to the embedded web engine",
     ),
-    ("adapters/cloud/src/adapter.rs", "DependencyResolver::remove"): (
+    ("adapters/lib/src/cache/metadata.rs", "DependencyResolver::remove"): (
         {"adapter-mutation"}, "forwards to the embedded web engine",
     ),
-    ("adapters/cloud/src/adapter.rs", "DependencyResolver::update"): (
+    ("adapters/iot/src/adapter/dependency_resolver/dependency_resolver.rs", "DependencyResolver::update"): (
         {"adapter-mutation"}, "forwards to the embedded web engine",
-    ),
-    ("adapters/lib/src/adapter.rs", "DependencyResolver::add"): (
-        {"adapter-mutation", "manifest-write"},
-        "native writer implementation; CLI entry is shared::add under the project mutation gateway",
-    ),
-    ("adapters/lib/src/adapter.rs", "DependencyResolver::remove"): (
-        {"adapter-mutation", "manifest-write"},
-        "native writer implementation; CLI entry is shared::remove under the project mutation gateway",
-    ),
-    ("adapters/lib/src/adapter.rs", "DependencyResolver::update"): (
-        {"adapter-mutation", "manifest-write"},
-        "native writer implementation; CLI entry is shared::update under the project mutation gateway",
     ),
     ("adapters/lib/src/install/mod.rs", "atomic_write_canonical_lock"): (
         {"manifest-file-write"}, "atomic mgc.lock publication called from native install under CLI gateway",
     ),
-    ("core/crates/mgc-types/src/adapter.rs", "prepare_add"): (
+    ("adapters/lib/src/adapter/package_adapter/package_adapter.rs", "prepare_add"): (
         {"adapter-mutation"}, "trait default dry-run probe via own add",
     ),
-    ("adapters/web/src/audit.rs", "run_audit_fix"): (
+    ("adapters/web/src/audit/audit_fix/audit_fix.rs", "run_audit_fix"): (
         {"lock-write"}, "engine implementation; CLI entry is gateway+journaled",
     ),
 
-    ("core/crates/mgc-lockfile/src/writer.rs", "sign_and_write_lockfile"): (
+    ("core/crates/mgc-lockfile/src/writer/legacy_signing/legacy_signing.rs", "sign_and_write_lockfile"): (
         {"lock-write"}, "lockfile primitive (called under callers' guards)",
     ),
     # --- engine-internal manifest writers (the engine, not a bypass) ---
-    ("adapters/app/src/adapter.rs", "AppAdapter::remove_swift_native"): (
-        {"manifest-file-write"}, "engine writer under CLI gateway (app remove lane)",
-    ),
-    ("adapters/app/src/adapter.rs", "AppAdapter::remove_kotlin_native"): (
-        {"manifest-file-write"}, "engine writer under CLI gateway (app remove lane)",
-    ),
-    ("adapters/app/src/adapter.rs", "AppAdapter::update_swift_native"): (
-        {"manifest-file-write"}, "engine writer under CLI gateway (app update lane)",
-    ),
-    ("adapters/app/src/manifest/flutter.rs", "write_pubspec"): (
+    ("adapters/app/src/manifest/flutter/flutter.rs", "write_pubspec"): (
         {"manifest-file-write"}, "engine manifest writer",
     ),
-    ("adapters/app/src/manifest/gradle.rs", "bump_catalog_pin"): (
+    ("adapters/app/src/manifest/gradle/gradle.rs", "bump_catalog_pin"): (
         {"manifest-file-write"}, "engine manifest writer",
     ),
-    ("adapters/app/src/install/mod.rs", "write_canonical_lock"): (
-        {"lock-write", "manifest-file-write"}, "engine lock writer",
-    ),
-    ("adapters/lib/src/install/mod.rs", "run_install"): (
-        {"lock-write"}, "engine canonical-lock writer",
-    ),
-    ("adapters/lib/src/manifest.rs", "write_pom_manifest"): (
+    ("adapters/lib/src/manifest/maven/write_pom_manifest/write_pom_manifest.rs", "write_pom_manifest"): (
         {"manifest-file-write"}, "engine manifest writer",
     ),
-    ("adapters/lib/src/manifest.rs", "write_csproj_manifest"): (
+    ("adapters/lib/src/manifest/dotnet/write_csproj_manifest/write_csproj_manifest.rs", "write_csproj_manifest"): (
         {"manifest-file-write"}, "engine manifest writer",
     ),
-    ("adapters/lib/src/manifest.rs", "write_go_mod_manifest"): (
+    ("adapters/lib/src/manifest/go/write_go_mod_manifest/write_go_mod_manifest.rs", "write_go_mod_manifest"): (
         {"manifest-file-write"}, "engine manifest writer",
     ),
-    ("adapters/lib/src/manifest.rs", "write_pyproject_manifest"): (
+    ("adapters/lib/src/manifest/python/python.rs", "write_pyproject_manifest"): (
         {"manifest-file-write"}, "engine manifest writer",
     ),
     # --- link/staging/scratch management (not manifest content) ---
@@ -273,60 +243,38 @@ ALLOWLIST = {
         {"manifest-file-write"}, "symlink management only, no content writes",
     ),
     # --- non-manifest outputs (reports, scaffolds, generated files) ---
-    ("cli/src/commands/dlx.rs", "run"): (
-        {"manifest-file-write"}, "writes dlx output, not project manifests",
-    ),
-    ("cli/src/commands/sbom.rs", "run"): (
-        {"manifest-file-write"}, "writes SBOM report output",
-    ),
-    ("cli/src/commands/bench.rs", "handle"): (
+    ("cli/src/commands/bench/bench.rs", "handle"): (
         {"manifest-file-write"}, "removes temp lock for fresh-resolve measurement",
     ),
     ("cli/src/commands/core/update/ai.rs", "update"): (
         {"manifest-file-write"}, "engine requirements.lock writer (ai lane)",
     ),
-    ("cli/src/commands/core/dev/ai_docker.rs", "generate_ai_docker_files"): (
-        {"manifest-file-write"}, "generates Dockerfiles, not manifests",
-    ),
-    ("adapters/app/src/adapter.rs", "LockfileProvider::write_manifest"): (
-        {"manifest-write"}, "delegating override to the per-language writer",
-    ),
     ("adapters/app/src/manifest/react_native.rs", "write_package_json"): (
         {"manifest-write"}, "React Native package.json writer delegates to Web engine; CLI mutation entry is gateway-routed",
     ),
-    ("adapters/game/src/adapter.rs", "LockfileProvider::write_manifest"): (
-        {"manifest-write"}, "delegating override to the cargo writer",
-    ),
-    ("adapters/iot/src/adapter.rs", "LockfileProvider::write_manifest"): (
-        {"manifest-write"}, "delegating override to the cargo writer",
-    ),
-    ("adapters/ai/src/adapter/adapter.rs", "mgc_types::remove"): (
+    ("adapters/lib/src/cache/metadata.rs", "mgc_types::remove"): (
         {"adapter-mutation"}, "forwards native Python removal; CLI entry is shared::remove under mutation gateway",
     ),
-    ("adapters/ai/src/adapter/adapter.rs", "mgc_types::update"): (
+    ("adapters/iot/src/adapter/dependency_resolver/dependency_resolver.rs", "mgc_types::update"): (
         {"adapter-mutation"}, "forwards native Python update; CLI entry is shared::update under mutation gateway",
     ),
-    ("adapters/ai/src/adapter/adapter.rs", "mgc_types::write_manifest"): (
+    ("adapters/lib/src/adapter/lockfile_provider/lockfile_provider.rs", "mgc_types::write_manifest"): (
         {"manifest-write"}, "forwards native Python manifest write; CLI mutation entry is gateway-routed",
     ),
-    ("adapters/lib/src/manifest.rs", "write_cargo_manifest"): (
+    ("adapters/lib/src/manifest/cargo/cargo.rs", "write_cargo_manifest"): (
         {"manifest-write"}, "engine manifest writer",
     ),
-    ("core/crates/mgc-adapter-base/src/cargo_manifest.rs", "write_manifest"): (
+    ("adapters/lib/src/adapter/lockfile_provider/lockfile_provider.rs", "write_manifest"): (
         {"manifest-write", "fs-write", "manifest-file-write"}, "engine cargo writer (atomic inside)",
     ),
-    ("core/crates/mgc-resolver/src/protocols/swift.rs", "SwiftRegistryProtocol::resolve_git"): (
+    ("core/crates/mgc-resolver/src/protocols/swift/registry/resolve.rs", "SwiftRegistryProtocol::resolve_git"): (
         {"manifest-file-write"}, "git workdir scratch cleanup",
     ),
-    ("core/crates/mgc-lockfile/src/atomic.rs", "cleanup_stale_temps"): (
+    ("core/crates/mgc-lockfile/src/atomic/stale_temp/stale_temp.rs", "cleanup_stale_temps"): (
         {"manifest-file-write"}, "stale temp sweeper (age+grace gated)",
     ),
-    ("cli/src/commands/publish.rs", "publish_project"): (
+    ("cli/src/commands/publish/project_publish/project_publish.rs", "publish_project"): (
         {"manifest-file-write"}, "release version commit under writer guard",
-    ),
-    ("cli/src/commands/core/shared.rs", "restore_mutation_snapshot"): (
-        {"manifest-write", "lock-write", "manifest-file-write"},
-        "verified restore path (incl. lock-absence restore)",
     ),
     # --- project creation (no live state to corrupt) ---
     ("adapters/game/src/scaffold/bevy.rs", "scaffold"): (
@@ -357,6 +305,145 @@ ALLOWLIST = {
     ("cli/src/scaffold/processor.rs", "ensure_web_test_runner"): (
         {"manifest-file-write"},
         "new project only: exclusively claimed staging dir, published by same-filesystem atomic rename",
+    ),
+    # (b) adapter-internal writer implementation: LockfileProvider::write_manifest in adapters/app/src/adapter/lockfile/lockfile.rs
+    ("adapters/app/src/adapter/lockfile/lockfile.rs", "LockfileProvider::write_manifest"): (
+        {"manifest-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: run_flutter_install in adapters/app/src/install/install/flutter/flutter.rs
+    ("adapters/app/src/install/install/flutter/flutter.rs", "run_flutter_install"): (
+        {"lock-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: run_swift_install in adapters/app/src/install/install/swift/swift.rs
+    ("adapters/app/src/install/install/swift/swift.rs", "run_swift_install"): (
+        {"lock-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: write_canonical_lock_inner in adapters/app/src/install/lockfile/lock_write/lock_write.rs
+    ("adapters/app/src/install/lockfile/lock_write/lock_write.rs", "write_canonical_lock_inner"): (
+        {"lock-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: LockfileProvider::write_manifest in adapters/cloud/src/adapter/lockfile_provider/lockfile_provider.rs
+    ("adapters/cloud/src/adapter/lockfile_provider/lockfile_provider.rs", "LockfileProvider::write_manifest"): (
+        {"manifest-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: scaffold_cdk in adapters/cloud/src/scaffold/cdk/cdk.rs
+    ("adapters/cloud/src/scaffold/cdk/cdk.rs", "scaffold_cdk"): (
+        {"manifest-file-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: scaffold_cloudflare in adapters/cloud/src/scaffold/cloudflare/cloudflare.rs
+    ("adapters/cloud/src/scaffold/cloudflare/cloudflare.rs", "scaffold_cloudflare"): (
+        {"manifest-file-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: scaffold_pulumi in adapters/cloud/src/scaffold/pulumi/pulumi.rs
+    ("adapters/cloud/src/scaffold/pulumi/pulumi.rs", "scaffold_pulumi"): (
+        {"manifest-file-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: LockfileProvider::write_manifest in adapters/game/src/adapter/lockfile_provider/lockfile_provider.rs
+    ("adapters/game/src/adapter/lockfile_provider/lockfile_provider.rs", "LockfileProvider::write_manifest"): (
+        {"manifest-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: LockfileProvider::write_manifest in adapters/iot/src/adapter/lockfile_provider/lockfile_provider.rs
+    ("adapters/iot/src/adapter/lockfile_provider/lockfile_provider.rs", "LockfileProvider::write_manifest"): (
+        {"manifest-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: scaffold_platformio in adapters/iot/src/scaffold/framework/platformio/scaffold_platformio.rs
+    ("adapters/iot/src/scaffold/framework/platformio/scaffold_platformio.rs", "scaffold_platformio"): (
+        {"manifest-file-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: scaffold_zephyr in adapters/iot/src/scaffold/framework/zephyr/scaffold_zephyr.rs
+    ("adapters/iot/src/scaffold/framework/zephyr/scaffold_zephyr.rs", "scaffold_zephyr"): (
+        {"manifest-file-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: LockfileProvider::write_manifest in adapters/lib/src/adapter/lockfile_provider/lockfile_provider.rs
+    # (b) adapter-internal writer implementation: install_empty_resolved_graph in adapters/lib/src/install/install/empty_graph/empty_graph.rs
+    ("adapters/lib/src/install/install/empty_graph/empty_graph.rs", "install_empty_resolved_graph"): (
+        {"lock-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: run_install in adapters/lib/src/install/install/install.rs
+    ("adapters/lib/src/install/install/install.rs", "run_install"): (
+        {"lock-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: atomic_write_canonical_lock in adapters/lib/src/install/lock_write/atomic_publication/atomic_publication.rs
+    ("adapters/lib/src/install/lock_write/atomic_publication/atomic_publication.rs", "atomic_write_canonical_lock"): (
+        {"manifest-file-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: write_canonical_lock in adapters/lib/src/install/lock_write/lock_write.rs
+    ("adapters/lib/src/install/lock_write/lock_write.rs", "write_canonical_lock"): (
+        {"lock-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: write_canonical_lock_with_roots in adapters/lib/src/install/lock_write/lock_write.rs
+    ("adapters/lib/src/install/lock_write/lock_write.rs", "write_canonical_lock_with_roots"): (
+        {"lock-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: write_package_json in adapters/web/src/bin/bench_matrix/fixture/package_manifest/package_manifest.rs
+    ("adapters/web/src/bin/bench_matrix/fixture/package_manifest/package_manifest.rs", "write_package_json"): (
+        {"manifest-file-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: restore_prior_lock_result in adapters/web/src/install/recovery/lock_snapshot/lock_snapshot.rs
+    ("adapters/web/src/install/recovery/lock_snapshot/lock_snapshot.rs", "restore_prior_lock_result"): (
+        {"manifest-file-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: try_noop in adapters/web/src/install/run_install/fast_path/fast_path.rs
+    ("adapters/web/src/install/run_install/fast_path/fast_path.rs", "try_noop"): (
+        {"lock-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: prepare in adapters/web/src/install/run_install/fetch_preparation/fetch_preparation.rs
+    ("adapters/web/src/install/run_install/fetch_preparation/fetch_preparation.rs", "prepare"): (
+        {"lock-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: python_fixture in cli/src/commands/core/shared/mutation_journal/test_support/python_project.rs
+    ("cli/src/commands/core/shared/mutation_journal/test_support/python_project.rs", "python_fixture"): (
+        {"manifest-file-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: commit_manifest_changes in cli/src/commands/core/shared/package_add/manifest_commit/manifest_commit.rs
+    ("cli/src/commands/core/shared/package_add/manifest_commit/manifest_commit.rs", "commit_manifest_changes"): (
+        {"manifest-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: commit_removed_manifest in cli/src/commands/core/shared/package_remove/manifest_commit/manifest_commit.rs
+    ("cli/src/commands/core/shared/package_remove/manifest_commit/manifest_commit.rs", "commit_removed_manifest"): (
+        {"manifest-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: commit_update_manifest in cli/src/commands/core/shared/package_update/manifest_commit/manifest_commit.rs
+    ("cli/src/commands/core/shared/package_update/manifest_commit/manifest_commit.rs", "commit_update_manifest"): (
+        {"manifest-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: link_monorepo_workspace_packages in cli/src/commands/core/web/package_lifecycle/install/monorepo_install/link_workspace_packages/link_workspace_packages.rs
+    ("cli/src/commands/core/web/package_lifecycle/install/monorepo_install/link_workspace_packages/link_workspace_packages.rs", "link_monorepo_workspace_packages"): (
+        {"manifest-file-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: run in cli/src/commands/import/import/import.rs
+    ("cli/src/commands/import/import/import.rs", "run"): (
+        {"lock-write", "manifest-file-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: run in cli/src/commands/import/import/import.rs
+    # (b) adapter-internal writer implementation: prepare_runner_workspace_with_config in cli/src/commands/package_runtime/runner_workspace/runner_workspace.rs
+    ("cli/src/commands/package_runtime/runner_workspace/runner_workspace.rs", "prepare_runner_workspace_with_config"): (
+        {"manifest-file-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: run in cli/src/commands/sbom/sbom.rs
+    ("cli/src/commands/sbom/sbom.rs", "run"): (
+        {"manifest-file-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: Scaffolder::ensure_web_test_runner in cli/src/scaffold/processor/online_generator_output/online_generator_output.rs
+    ("cli/src/scaffold/processor/online_generator_output/online_generator_output.rs", "Scaffolder::ensure_web_test_runner"): (
+        {"manifest-file-write"}, "adapter-internal writer implementation",
+    ),
+    # (b) adapter-internal writer implementation: write_manifest in core/crates/mgc-adapter-base/src/cargo_manifest/cargo_manifest.rs
+    ("core/crates/mgc-adapter-base/src/cargo_manifest/cargo_manifest.rs", "write_manifest"): (
+        {"manifest-write"}, "adapter-internal writer implementation",
+    ),
+
+    # (b) adapter-internal writer implementation: scaffold writer printing manifests into a new project dir
+    ("adapters/iot/src/scaffold/framework/esp32_rust/scaffold_esp32.rs", "scaffold_esp32"): (
+        {"manifest-file-write"}, "new project only: exclusively claimed staging dir, published by same-filesystem atomic rename",
+    ),
+    # (b) adapter-internal writer implementation: V4 lane lock writer
+    ("adapters/lib/src/install/lock_write/v4_lane_write/v4_lane_write.rs", "write_canonical_lock_v4"): (
+        {"lock-write"}, "adapter-internal writer implementation (atomic v4 bytes write)",
+    ),
+    # (b) adapter-internal writer implementation: web lock V4 writer
+    ("adapters/web/src/lockfile/v4_writer/v4_writer.rs", "write_web_lockfile_v4"): (
+        {"lock-write"}, "adapter-internal writer implementation (atomic v4 bytes write)",
     ),
 }
 
@@ -673,7 +760,7 @@ def self_test():
     dedupe_route = ALLOWLIST.get(("cli/src/commands/dedupe/dedupe.rs", "run"))
     if dedupe_route is None or dedupe_route[0] != {"lock-write"}:
         failures.append("dedupe coordinator route is missing its lock-write allowlist")
-    if ("cli/src/commands/dedupe.rs", "run") in ALLOWLIST:
+    if ("adapters/web/src/bin/bench_matrix/cli/run/run.rs", "run") in ALLOWLIST:
         failures.append("removed flat dedupe route is still allowlisted")
     with tempfile.TemporaryDirectory() as tmp:
         for name, (expected_sink, snippet) in NEGATIVE_CORPUS.items():

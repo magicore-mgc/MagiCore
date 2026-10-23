@@ -26,8 +26,20 @@ pub(crate) async fn audit_lib_project_reports_scanner_truthfully() {
     // A refused loopback port deterministically exercises tool/network
     // failure without binding sockets or depending on public OSV uptime.
     // (Port loopback đóng tạo lỗi mạng tất định, không cần server/mạng ngoài.)
+    // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+    // test thread observes a partially written environment.
+    // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+    // không thấy môi trường ghi dở.
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { std::env::set_var("MGC_OSV_API_BASE", "http://127.0.0.1:1/v1") };
     let report_result = a.audit(&dir).await;
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe {
         if let Some(value) = prior_osv_base {
             std::env::set_var("MGC_OSV_API_BASE", value);

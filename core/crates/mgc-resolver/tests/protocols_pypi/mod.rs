@@ -6,6 +6,8 @@
 use mgc_resolver::protocols::sha256_hex;
 use mgc_resolver::protocols::{PypiProtocol, RegistryProtocol};
 
+#[cfg(test)]
+#[path = "test/support/mod.rs"]
 mod test_support;
 use test_support::*;
 

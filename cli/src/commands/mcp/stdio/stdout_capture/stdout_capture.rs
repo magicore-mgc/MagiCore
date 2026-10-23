@@ -25,6 +25,10 @@ pub(in crate::commands::mcp) struct McpStdoutCapture {
 pub(in crate::commands::mcp) struct McpStdoutCapture;
 
 impl McpStdoutCapture {
+    // SAFETY: dup/dup2 operate on fds owned by this process; saved fds are
+    // closed in Drop and every call's return value is checked before use.
+    // AN TOÀN: dup/dup2 thao tác trên fd của process này; fd đã lưu được đóng
+    // trong Drop và mọi giá trị trả về được kiểm trước khi dùng.
     #[allow(unsafe_code)]
     pub(in crate::commands::mcp::stdio) fn begin() -> Result<Self> {
         #[cfg(unix)]
@@ -34,17 +38,31 @@ impl McpStdoutCapture {
             let output = tempfile::tempfile().context("cannot create MCP output capture")?;
             // Save session stderr fd 1, then redirect command output to a private temp file.
             // Lưu fd 1 của stderr phiên, rồi chuyển output command vào file tạm riêng.
+            // SAFETY: dup returns a new fd owned by this process; the result is
+            // checked and later wrapped in `File`.
+            // AN TOÀN: dup trả fd mới thuộc process; kết quả được kiểm và sau
+            // đó bọc trong `File`.
             let previous_fd = unsafe { libc::dup(libc::STDOUT_FILENO) };
             if previous_fd < 0 {
                 return Err(io::Error::last_os_error()).context("cannot preserve MCP stderr route");
             }
+            // SAFETY: `output` owns a live fd and STDOUT_FILENO is this process's
+            // stdout; the return value is checked.
+            // AN TOÀN: `output` sở hữu fd còn sống và STDOUT_FILENO là stdout
+            // của process; giá trị trả về được kiểm.
             if unsafe { libc::dup2(output.as_raw_fd(), libc::STDOUT_FILENO) } < 0 {
                 let error = io::Error::last_os_error();
+                // SAFETY: `previous_fd` came from `dup` above and has no other
+                // owner on this error path.
+                // AN TOÀN: `previous_fd` đến từ `dup` ở trên và không có owner
+                // khác trên nhánh lỗi này.
                 unsafe { libc::close(previous_fd) };
                 return Err(error).context("cannot capture command stdout");
             }
             Ok(Self {
                 output,
+                // SAFETY: ownership of `previous_fd` transfers to `File` once.
+                // AN TOÀN: quyền sở hữu `previous_fd` chuyển cho `File` một lần.
                 previous_stdout: unsafe { File::from_raw_fd(previous_fd) },
                 restored: false,
             })
@@ -90,6 +108,10 @@ impl McpStdoutCapture {
         if !self.restored {
             // Restore the session stderr route before reading or replying.
             // Khôi phục đường stderr phiên trước khi đọc capture hoặc trả response.
+            // SAFETY: `previous_stdout` owns a live fd; STDOUT_FILENO is
+            // restored exactly once guarded by `restored`.
+            // AN TOÀN: `previous_stdout` sở hữu fd còn sống; STDOUT_FILENO
+            // được khôi phục đúng một lần nhờ cờ `restored`.
             unsafe { libc::dup2(self.previous_stdout.as_raw_fd(), libc::STDOUT_FILENO) };
             self.restored = true;
         }

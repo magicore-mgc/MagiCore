@@ -51,6 +51,14 @@ fn osv_lane_findings_stay_vulnerability_class() {
     // Override endpoint chết để không cần mạng: lane phải Failed đóng,
     // không bao giờ phát hành dòng sai class.
     let saved = std::env::var("MGC_OSV_API_BASE").ok();
+    // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+    // test thread observes a partially written environment.
+    // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+    // không thấy môi trường ghi dở.
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { std::env::set_var("MGC_OSV_API_BASE", "http://127.0.0.1:1/v1") };
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -60,7 +68,15 @@ fn osv_lane_findings_stay_vulnerability_class() {
         .block_on(mgc_audit::scanners::audit_osv_pins(&pins))
         .unwrap();
     match saved {
+        // SAFETY: test-only operation on process-local state or FFI with
+        // caller-owned arguments valid for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process hoặc FFI với
+        // đối số do caller sở hữu, hợp lệ trong lời gọi.
         Some(v) => unsafe { std::env::set_var("MGC_OSV_API_BASE", v) },
+        // SAFETY: test-only operation on process-local state or FFI with
+        // caller-owned arguments valid for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process hoặc FFI với
+        // đối số do caller sở hữu, hợp lệ trong lời gọi.
         None => unsafe { std::env::remove_var("MGC_OSV_API_BASE") },
     }
     assert!(
@@ -89,6 +105,14 @@ fn osv_many_pins_against_dead_endpoint_fail_closed() {
         })
         .collect();
     let saved = std::env::var("MGC_OSV_API_BASE").ok();
+    // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+    // test thread observes a partially written environment.
+    // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+    // không thấy môi trường ghi dở.
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { std::env::set_var("MGC_OSV_API_BASE", "http://127.0.0.1:1/v1") };
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -98,7 +122,15 @@ fn osv_many_pins_against_dead_endpoint_fail_closed() {
         .block_on(mgc_audit::scanners::audit_osv_pins(&pins))
         .unwrap();
     match saved {
+        // SAFETY: test-only operation on process-local state or FFI with
+        // caller-owned arguments valid for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process hoặc FFI với
+        // đối số do caller sở hữu, hợp lệ trong lời gọi.
         Some(v) => unsafe { std::env::set_var("MGC_OSV_API_BASE", v) },
+        // SAFETY: test-only operation on process-local state or FFI with
+        // caller-owned arguments valid for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process hoặc FFI với
+        // đối số do caller sở hữu, hợp lệ trong lời gọi.
         None => unsafe { std::env::remove_var("MGC_OSV_API_BASE") },
     }
     assert!(

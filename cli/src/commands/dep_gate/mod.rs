@@ -30,7 +30,7 @@ pub use ownership::DepOwner;
 pub use split_languages::SPLIT_LANGUAGES;
 
 #[cfg(test)]
-#[path = "test_support/mod.rs"]
+#[path = "test/support/mod.rs"]
 pub(crate) mod test_support;
 
 #[cfg(test)]

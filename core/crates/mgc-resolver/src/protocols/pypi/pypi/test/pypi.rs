@@ -136,6 +136,10 @@ fn consumer_python_reads_env() {
     // SAFETY: test-only, held SERIAL, restored below before release.
     // AN TOÀN: chỉ test, giữ khóa SERIAL và khôi phục trước khi nhả khóa.
     #[allow(unsafe_code)]
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe {
         std::env::set_var("MGC_PYTHON_VERSION", "3.9");
         assert_eq!(consumer_python(), Some((3, 9)));

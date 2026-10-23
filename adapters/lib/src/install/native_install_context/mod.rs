@@ -3,4 +3,5 @@
 
 mod native_install_context;
 
-pub(crate) use native_install_context::{content_store, entry_from_package};
+pub(crate) use native_install_context::content_store;
+pub use native_install_context::entry_from_package;

@@ -1,7 +1,13 @@
 //! Resolve project files without exposing hidden or out-of-root targets.
 //! Resolve file project, không lộ hidden hoặc target ngoài root.
+#[path = "path_privacy/mod.rs"]
+mod path_privacy;
 
-use std::path::{Component, Path, PathBuf};
+use path_privacy::{
+    has_private_component, is_public_well_known_request, is_public_well_known_target,
+};
+
+use std::path::{Path, PathBuf};
 
 use super::super::request_path::request_path_is_safe;
 use super::SourceFileResolutionError;
@@ -105,56 +111,6 @@ async fn resolve_file(
     }
 
     Ok(None)
-}
-
-fn is_public_well_known_request(path: &Path) -> bool {
-    matches!(
-        path.components().next(),
-        Some(Component::Normal(component)) if component == ".well-known"
-    )
-}
-
-fn is_public_well_known_target(path: &Path) -> bool {
-    let mut components = path.components();
-    matches!(
-        (components.next(), components.next()),
-        (Some(Component::Normal(public)), Some(Component::Normal(well_known)))
-            if public == "public" && well_known == ".well-known"
-    )
-}
-
-fn has_private_component(path: &Path, allow_well_known: bool, project_relative: bool) -> bool {
-    let mut normal_component_index = 0;
-    let mut first_component_is_public = false;
-
-    for component in path.components() {
-        let Component::Normal(value) = component else {
-            continue;
-        };
-        let value = value.to_string_lossy();
-
-        if value.starts_with('.') {
-            if !allow_well_known || value != ".well-known" {
-                return true;
-            }
-
-            let well_known_is_public = if project_relative {
-                normal_component_index == 1 && first_component_is_public
-            } else {
-                normal_component_index == 0
-            };
-            if !well_known_is_public {
-                return true;
-            }
-        }
-
-        if normal_component_index == 0 {
-            first_component_is_public = value == "public";
-        }
-        normal_component_index += 1;
-    }
-
-    false
 }
 
 #[cfg(test)]

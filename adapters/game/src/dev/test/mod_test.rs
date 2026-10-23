@@ -3,6 +3,7 @@
 //! Adapter tests
 
 use super::*;
+use crate::engine::GameEngine;
 
 use tempfile::TempDir;
 

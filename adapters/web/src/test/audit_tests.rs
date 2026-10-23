@@ -307,13 +307,29 @@ async fn test_audit_gradle_sidecar_uses_shared_osv_maven_lane() {
     .unwrap();
 
     let saved = std::env::var("MGC_OSV_API_BASE").ok();
+    // SAFETY: test-only env mutation; callers hold `env_lock` so no other
+    // test thread observes a partially written environment.
+    // AN TOÀN: chỉ test đổi env; caller giữ `env_lock` nên thread test khác
+    // không thấy môi trường ghi dở.
+    // SAFETY: test-only operation on process-local state / FFI with
+    // caller-owned buffers kept alive for the call.
+    // AN TOÀN: chỉ test thao tác state cục bộ process / FFI với
+    // buffer do caller sở hữu và còn sống trong lời gọi.
     unsafe { std::env::set_var("MGC_OSV_API_BASE", "http://127.0.0.1:1/v1") };
     let adapter = WebAdapter::new().unwrap();
     let report = mgc_types::capabilities::AuditProvider::audit(&adapter, dir.path())
         .await
         .unwrap();
     match saved {
+        // SAFETY: test-only operation on process-local state or FFI with
+        // caller-owned arguments valid for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process hoặc FFI với
+        // đối số do caller sở hữu, hợp lệ trong lời gọi.
         Some(v) => unsafe { std::env::set_var("MGC_OSV_API_BASE", v) },
+        // SAFETY: test-only operation on process-local state or FFI with
+        // caller-owned arguments valid for the call.
+        // AN TOÀN: chỉ test thao tác state cục bộ process hoặc FFI với
+        // đối số do caller sở hữu, hợp lệ trong lời gọi.
         None => unsafe { std::env::remove_var("MGC_OSV_API_BASE") },
     }
     match &report.scanner_status {

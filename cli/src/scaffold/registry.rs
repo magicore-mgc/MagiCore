@@ -1,10 +1,15 @@
 //! Scaffold registry client (fetch artifacts from remote registry).
 
 use anyhow::{Context, Result, bail};
-use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 use super::spec::{ScaffoldRef, ScaffoldSpec};
+
+mod naming;
+mod types;
+
+use naming::package_name;
+use types::DistTags;
 
 /// Registry client for fetching scaffold artifacts.
 pub struct ScaffoldRegistry {
@@ -52,7 +57,7 @@ impl ScaffoldRegistry {
 
     /// Fetch scaffold tarball for a specific spec and resolved version.
     pub async fn fetch(&self, spec: &ScaffoldSpec, version: &str) -> Result<Vec<u8>> {
-        let package_name = Self::package_name(spec);
+        let package_name = package_name(spec);
         let url = format!(
             "{}/api/v1/scaffolds/{}/{}/-/{}-{}.tgz",
             self.base_url,
@@ -100,7 +105,7 @@ impl ScaffoldRegistry {
 
     /// Fetch dist-tag mapping (latest → 15.5.0).
     async fn fetch_dist_tag(&self, spec: &ScaffoldSpec, tag: &str) -> Result<String> {
-        let package_name = Self::package_name(spec);
+        let package_name = package_name(spec);
         let url = format!(
             "{}/api/v1/scaffolds/{}/{}/dist-tags",
             self.base_url,
@@ -133,11 +138,6 @@ impl ScaffoldRegistry {
         })
     }
 
-    /// Package name convention: mgc-create-{core}-{name}.
-    fn package_name(spec: &ScaffoldSpec) -> String {
-        format!("mgc-create-{}-{}", spec.core.as_str(), spec.normalized_name)
-    }
-
     /// Check if registry is reachable (health check).
     pub async fn health_check(&self) -> Result<()> {
         let url = format!("{}/health", self.base_url);
@@ -157,61 +157,6 @@ impl ScaffoldRegistry {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-struct DistTags {
-    #[serde(flatten)]
-    tags: std::collections::HashMap<String, String>,
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::scaffold::spec::CoreKind;
-
-    #[test]
-    fn test_package_name_convention() {
-        let spec = ScaffoldSpec {
-            core: CoreKind::Web,
-            name: "nextjs".to_string(),
-            normalized_name: "nextjs".to_string(),
-            requested_ref: ScaffoldRef::DistTag("latest".to_string()),
-        };
-
-        assert_eq!(
-            ScaffoldRegistry::package_name(&spec),
-            "mgc-create-web-nextjs"
-        );
-    }
-
-    #[test]
-    fn test_explicit_version_resolve() {
-        let spec = ScaffoldSpec {
-            core: CoreKind::Web,
-            name: "nextjs@15.5.0".to_string(),
-            normalized_name: "nextjs".to_string(),
-            requested_ref: ScaffoldRef::Version("15.5.0".to_string()),
-        };
-
-        // Synchronous version - no async needed
-        match &spec.requested_ref {
-            ScaffoldRef::Version(v) => assert_eq!(v, "15.5.0"),
-            _ => panic!("Expected version ref"),
-        }
-    }
-
-    #[test]
-    fn test_userinfo_stripped_from_custom_url() {
-        let registry = ScaffoldRegistry::with_url("https://user:s3cret@example.com/reg/").unwrap();
-        assert!(
-            !registry.base_url.contains("s3cret"),
-            "credential leaked into base URL: {}",
-            registry.base_url
-        );
-        assert!(registry.base_url.starts_with("https://example.com/"));
-    }
-
-    #[test]
-    fn test_garbage_url_refused() {
-        assert!(ScaffoldRegistry::with_url("not a url :::").is_err());
-    }
-}
+#[path = "test/registry.rs"]
+mod registry_tests;

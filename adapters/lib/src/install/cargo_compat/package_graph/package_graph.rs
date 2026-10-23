@@ -4,6 +4,12 @@ use mgc_types::{MgError, MgResult};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+#[path = "identity/mod.rs"]
+mod identity;
+
+use identity::is_cargo_dependency_edge_marker;
+pub(in crate::install) use identity::package_id;
+
 pub(in crate::install) fn rust_packages(lock: &Lockfile) -> MgResult<Vec<&Package>> {
     let mut packages = lock
         .packages
@@ -97,21 +103,6 @@ pub(in crate::install) fn validate_build_ownership(
 
 /// Accept only resolver marker forms whose dependency remains in the exact
 /// Cargo lock closure: a valid optional crate name or a non-empty target cfg.
-/// Chấp nhận marker chỉ khi dependency vẫn nằm trong Cargo lock closure:
-/// optional crate hợp lệ hoặc target cfg không rỗng.
-pub(in crate::install) fn is_cargo_dependency_edge_marker(marker: &str) -> bool {
-    if let Some(name) = marker.strip_prefix("optional:") {
-        return !name.is_empty() && mgc_types::PackageName::new(name.to_string()).is_ok();
-    }
-    marker
-        .strip_prefix("target:")
-        .is_some_and(|target| !target.trim().is_empty())
-}
-
-pub(in crate::install) fn package_id(package: &Package) -> String {
-    format!("{}@{}", package.name, package.version)
-}
-
 pub(in crate::install) fn resolve_locked_dependency(
     value: &str,
     by_id: &BTreeMap<String, &Package>,

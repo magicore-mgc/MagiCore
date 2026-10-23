@@ -8,6 +8,7 @@ mod project_toml_read;
 mod project_toml_write;
 mod redaction;
 #[cfg(test)]
+#[path = "test/support/mod.rs"]
 pub(super) mod test_support;
 
 pub(super) use atomic_writer::atomic_write_config_file;

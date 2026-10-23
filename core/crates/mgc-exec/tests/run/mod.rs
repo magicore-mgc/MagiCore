@@ -2,6 +2,7 @@
 //! Wiring owner cho integration test executor.
 
 #[path = "test_support/mod.rs"]
+#[cfg(test)]
 mod test_support;
 
 #[path = "execution_contracts/mod.rs"]

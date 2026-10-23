@@ -314,10 +314,10 @@ fn ownership_ledger_loads_deduped_entries() {
   "tools": ["cargo", "pip", "deno"],
   "summary": {"total": 4, "allowed": 1, "delegated_documented": 3, "violation": 0},
   "findings": [
-    {"file": "adapters/game/src/adapter.rs", "line": 104, "tool": "cargo", "op_class": "install", "function": "install", "status": "delegated-documented"},
-    {"file": "adapters/game/src/adapter.rs", "line": 199, "tool": "cargo", "op_class": "add", "function": "add", "status": "delegated-documented"},
+    {"file": "adapters/game/src/adapter/", "line": 104, "tool": "cargo", "op_class": "install", "function": "install", "status": "delegated-documented"},
+    {"file": "adapters/game/src/adapter/", "line": 199, "tool": "cargo", "op_class": "add", "function": "add", "status": "delegated-documented"},
     {"file": "cli/src/commands/core/install/ai.rs", "line": 40, "tool": "pip", "op_class": "install", "function": "ai_install_command", "status": "delegated-documented"},
-    {"file": "adapters/web/src/audit.rs", "line": 101, "tool": "deno", "op_class": "run", "function": "run_audit", "status": "allowed"}
+    {"file": "adapters/web/src/audit/", "line": 101, "tool": "deno", "op_class": "run", "function": "run_audit", "status": "allowed"}
   ]
 }"#;
 
@@ -358,7 +358,7 @@ fn ownership_ledger_fails_closed_on_unknown_status() {
     let ledger = r#"{
   "generated_at": "2026-09-16T10:36:03Z",
   "findings": [
-    {"file": "adapters/game/src/adapter.rs", "tool": "cargo", "status": "violation"}
+    {"file": "adapters/game/src/adapter/", "tool": "cargo", "status": "violation"}
   ]
 }"#;
 

@@ -10,10 +10,10 @@ Coordinates implemented npm, crates.io, Go, and PyPI discovery clients; normaliz
 ## Source map
 
 - [`lib.rs`](../src/lib.rs)
-- [`orchestrator.rs`](../src/orchestrator.rs)
+- [`orchestrator.rs`](../src/orchestrator/)
 - [`clients/mod.rs`](../src/clients/mod.rs)
-- [`ranking.rs`](../src/ranking.rs)
-- [`types.rs`](../src/types.rs)
+- [`ranking.rs`](../src/ranking/)
+- [`types.rs`](../src/types/)
 
 ## Handoff and review
 

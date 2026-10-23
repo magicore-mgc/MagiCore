@@ -6,7 +6,7 @@ members = [
     "tools/*",
     "tests/e2e",
 ]
-exclude = ["tools/core-web-lab", "tools/mgc-mcp"]
+exclude = ["tools/mgc-mcp"]
 resolver = "2"
 
 [workspace.package]

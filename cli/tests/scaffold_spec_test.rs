@@ -1,4 +1,4 @@
-//! Tests for scaffold spec parser (cli/src/scaffold/spec.rs)
+//! Tests for scaffold spec parser (cli/src/scaffold/spec/)
 
 #![allow(clippy::unwrap_used)]
 

@@ -11,27 +11,6 @@ pub mod iot;
 pub mod lib;
 pub mod web;
 
-use std::path::Path;
+mod common;
 
-use anyhow::Result;
-
-/// Ghi file — atomic-ish: tạo parent dirs trước khi write.
-pub(crate) fn write_file(path: &Path, content: &str) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(path, content)?;
-    Ok(())
-}
-
-pub(crate) fn slugify(name: &str) -> String {
-    name.chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect()
-}
+pub(crate) use common::{slugify, write_file};

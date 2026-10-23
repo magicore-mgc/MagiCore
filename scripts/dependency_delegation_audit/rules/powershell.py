@@ -23,31 +23,31 @@ PS_PROCESS_ALIASES = {
 # Hash toàn file ràng buộc các lệnh process với guard và checksum đã rà soát.
 POWERSHELL_SOURCE_PROCESS_REVIEWS = {
     "scripts/ci/lifecycle/swift/install_windows.ps1": {
-        "source_sha256": "498a5a1442ad9b117e4ce6ab78c07511be72ddda0071cf110a7f87b502fd4a82",
+        "source_sha256": "a316accc4ffec26366b501e3707036bc969088e9336999bf41a044125cac076f",
         "lines": {22: "Version-probes the fixed Swift installation selected after validating its version."},
     },
     "scripts/ci/lifecycle/swift/preserve_python_windows.ps1": {
-        "source_sha256": "ffaba5a1a6b041686811f496106069221372167a106084f6f4f1a33da35df04b",
+        "source_sha256": "489d2fd6c0dcc91f8eb2bc75f00df72d5140a7793d49c503c040cb4121652b0a",
         "lines": {3: "Version-probes the Python executable supplied by the pinned setup-python action.", 14: "Version-probes the preserved Python executable copied from the validated setup-python installation."},
     },
     "scripts/ci/stress/toolchains/gcc/expose_windows.ps1": {
-        "source_sha256": "be7aac72b9ab3c514845c62987aa7a119605ceedf748cbdeb52205e8d21348bf",
+        "source_sha256": "f84491f869c1e904400442fb6da18ecb2be7918ecab70c2815132d55707b8659",
         "lines": {12: "Version-probes GCC from the selected directory only after confirming both compiler executables exist.", 13: "Version-probes G++ from the selected directory only after confirming both compiler executables exist."},
     },
     "scripts/ci/stress/toolchains/godot/install_windows.ps1": {
-        "source_sha256": "8a411f959cf121ce05bbd07cf9c4aca7744bca59d1d56ca02554dca1c75dadf3",
+        "source_sha256": "89eb28f8907d488c97c76a0b7fcd01dce01370acdf12901f25ffaac704bf1b65",
         "lines": {16: "Version-probes Godot after validating the official archive checksum."},
     },
     "scripts/ci/stress/toolchains/kotlin/install_windows.ps1": {
-        "source_sha256": "c43dac28d3d207e0029942fa12f34475b9ecc5db12a4d2985872b783f20b25f7",
+        "source_sha256": "4cca0cc0c489297d2a701cca95a3ce669b0739982334db1cff59834786dc680e",
         "lines": {13: "Version-probes Kotlin from the installed official compiler distribution."},
     },
     "scripts/ci/stress/toolchains/swift/install_windows.ps1": {
-        "source_sha256": "8c326bf911b73d8de233987079130877aad1470627d322458055aa213c77afd3",
+        "source_sha256": "383cc237eb24c2084da11c10b3ab5e28ca144b2cb5ff0e3552e345ccb3319d85",
         "lines": {20: "Version-probes the Swift installation after validating the installer version."},
     },
     "scripts/ci/stress/toolchains/terraform/install_windows.ps1": {
-        "source_sha256": "ef9b421628b8eaeb9edf50b097f32434d68bfe21ac9d98550cb49dca53778386",
+        "source_sha256": "8e7c27b73f58b000173fa3f7372aa61976b5d6415bc63f94e3c1344f01c8c156",
         "lines": {10: "Version-probes Terraform after validating the downloaded archive checksum."},
     },
     "scripts/release/artifact_smoke/web_install.ps1": {

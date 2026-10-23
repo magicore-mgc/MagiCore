@@ -10,9 +10,9 @@ Tạo SBOM từ inventory dependency theo format CycloneDX/SPDX được hỗ tr
 ## Sơ đồ source
 
 - [`lib.rs`](../src/lib.rs)
-- [`generator.rs`](../src/generator.rs)
-- [`cyclonedx.rs`](../src/cyclonedx.rs)
-- [`spdx.rs`](../src/spdx.rs)
+- [`generator.rs`](../src/generator/)
+- [`cyclonedx.rs`](../src/cyclonedx/)
+- [`spdx.rs`](../src/spdx/)
 
 ## Bàn giao và review
 

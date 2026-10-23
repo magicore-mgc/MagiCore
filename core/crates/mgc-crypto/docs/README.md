@@ -10,9 +10,9 @@ Provides BLAKE3, checksums, Ed25519 signing/verification, integrity types, keyri
 ## Source map
 
 - [`lib.rs`](../src/lib.rs)
-- [`ed25519_signer.rs`](../src/ed25519_signer.rs)
+- [`ed25519_signer.rs`](../src/ed25519_signer/)
 - [keyring owner](../src/keyring/README.md)
-- [`integrity.rs`](../src/integrity.rs)
+- [`integrity.rs`](../src/integrity/)
 - [source owners](../src/README.md)
 - [BLAKE3 signer owner](../src/blake3_signer/README.md)
 
