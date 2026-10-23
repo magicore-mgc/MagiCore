@@ -35,7 +35,7 @@ pub enum CreateCommands {
         #[arg(value_name = "PROJECT")]
         project_name: String,
         #[command(flatten)]
-        flags: crate::commands::core::web::scaffold_flags::WebScaffoldFlags,
+        flags: crate::commands::web_scaffold_flags::WebScaffoldFlags,
     },
     #[command(
         name = "create-game",

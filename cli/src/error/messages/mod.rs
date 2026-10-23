@@ -26,6 +26,7 @@ mod template;
 mod test_quality;
 mod trust;
 mod web;
+#[cfg(feature = "web")]
 mod web_scaffold;
 
 pub use audit::*;
@@ -88,4 +89,5 @@ pub use trust::*;
 
 pub use web::*;
 
+#[cfg(feature = "web")]
 pub use web_scaffold::*;

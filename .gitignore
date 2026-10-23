@@ -13,9 +13,9 @@ bazel-bin/
 bazel-genfiles/
 .bazelrc.local
 
-# Nix
-result
-result-*
+# Nix (anchored to repo root: a bare `result` also swallowed src/result/ modules)
+/result
+/result-*
 
 # TypeScript/Node
 node_modules/

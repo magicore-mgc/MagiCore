@@ -1,12 +1,14 @@
 //! Web manifest enrichment after scaffolding.
 //! Bổ sung manifest Web sau khi scaffold.
 
-use crate::commands::core::create::web::{enrich_web_project_manifest, parse_framework_request};
-use crate::commands::core::web::scaffold_flags::WebScaffoldFlags;
+#[cfg(feature = "web")]
+use crate::commands::core::web::{enrich_web_project_manifest, parse_framework_request};
+use crate::commands::web_scaffold_flags::WebScaffoldFlags;
 use crate::wizard::engine::ScaffoldConfig;
 use anyhow::Result;
 use std::path::Path;
 
+#[cfg(feature = "web")]
 pub(in crate::commands::init) async fn seed_web_deps(
     project_dir: &Path,
     config: &ScaffoldConfig,
@@ -42,4 +44,15 @@ pub(in crate::commands::init) async fn seed_web_deps(
         }
         _ => enrich_web_project_manifest(project_dir, &frontend, None, &flags).await,
     }
+}
+
+#[cfg(not(feature = "web"))]
+pub(in crate::commands::init) async fn seed_web_deps(
+    _project_dir: &Path,
+    _config: &ScaffoldConfig,
+) -> Result<()> {
+    // Nothing to seed without the web adapter; scaffolding of non-web cores
+    // never reaches this function.
+    // Không có gì để seed khi thiếu web adapter; scaffold core khác không gọi.
+    Ok(())
 }

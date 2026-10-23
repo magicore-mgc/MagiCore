@@ -93,7 +93,7 @@ pub(in crate::commands::install) async fn install_resolve_and_materialize(
     let opts = mgc_types::adapter::InstallOptions {
         ignore_scripts,
         allow_scripts,
-        legacy_flat: crate::commands::core::web::should_use_legacy_flat_layout(adapter.name()),
+        legacy_flat: crate::commands::core::shared::should_use_legacy_flat_layout(adapter.name()),
         frozen,
         offline,
         replay_from_lock: used_lockfile,

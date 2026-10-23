@@ -112,18 +112,27 @@ pub async fn dispatch_common(
             yes,
             dry_run,
         } => commands::cache::run(action, target, yes, dry_run, core).await,
+        #[cfg(feature = "web")]
         CommonCommand::Link { package } => {
             let ctx = ProjectContext::load_with_core(core)?;
             commands::core::web::link(ctx.adapter(), ctx.root(), package.as_deref()).await
         }
+        #[cfg(not(feature = "web"))]
+        CommonCommand::Link { .. } => Err(crate::error::core_not_in_build("web")),
+        #[cfg(feature = "web")]
         CommonCommand::Unlink { package } => {
             let ctx = ProjectContext::load_with_core(core)?;
             commands::core::web::unlink(ctx.adapter(), ctx.root(), package.as_deref()).await
         }
+        #[cfg(not(feature = "web"))]
+        CommonCommand::Unlink { .. } => Err(crate::error::core_not_in_build("web")),
+        #[cfg(feature = "web")]
         CommonCommand::Why { package } => {
             let ctx = ProjectContext::load_with_core(core)?;
             commands::core::web::why(ctx.adapter(), ctx.root(), &package).await
         }
+        #[cfg(not(feature = "web"))]
+        CommonCommand::Why { .. } => Err(crate::error::core_not_in_build("web")),
         CommonCommand::Login {
             registry,
             username,

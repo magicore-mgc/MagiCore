@@ -63,9 +63,11 @@ use shared::{
     ensure_native_build_mode, find_root, go_offline_env, project_manifest_present,
     should_use_legacy_rust_build,
 };
+#[cfg(feature = "web")]
+use web_engine::build_web;
 use web_engine::{
-    build_rust_with_env, build_rust_with_managed_source, build_web, detect_app_runtime,
-    detect_lib_runtime, prepend_path, run_allowlisted_tool, run_allowlisted_tool_with_env,
+    build_rust_with_env, build_rust_with_managed_source, detect_app_runtime, detect_lib_runtime,
+    prepend_path, run_allowlisted_tool, run_allowlisted_tool_with_env,
 };
 #[cfg(feature = "web")]
 use web_go_backend::{GO_BACKEND_LANGUAGE, build_web_go_backend};

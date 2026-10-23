@@ -42,6 +42,7 @@ pub async fn run(
         ));
     }
     match ctx.adapter().name() {
+        #[cfg(feature = "web")]
         "web" => {
             // Native Go web backends use the Go compiler instead of the JS bundler.
             // Backend Go dùng compiler Go, không bị rơi sang JS bundler.
@@ -72,6 +73,8 @@ pub async fn run(
             )
             .await
         }
+        #[cfg(not(feature = "web"))]
+        "web" => Err(crate::error::core_not_in_build("web")),
         #[cfg(feature = "app")]
         "app" => build_app(&root).await,
         #[cfg(not(feature = "app"))]

@@ -41,14 +41,14 @@ pub(in crate::commands::freshness) fn check_flutter_manifest_freshness(
 ) -> Result<bool> {
     #[cfg(not(feature = "app"))]
     {
-        check_manifest_file(
-            project_root,
-            "pubspec.yaml",
-            require_lock,
-            "app",
-            mgc_lockfile::EcosystemTag::Dart,
-            |content| Ok(declared_flutter_deps(content)),
-        )
+        // Without the app adapter there is no pubspec parser, so freshness
+        // cannot be verified; fail closed instead of claiming it is fresh.
+        // Không có app adapter thì không có parser pubspec nên không thể xác
+        // minh freshness; fail-closed thay vì báo hợp lệ giả.
+        let _ = (project_root, require_lock);
+        Err(crate::error::stale_lock_needs_install(
+            "flutter freshness requires the `app` feature",
+        ))
     }
     #[cfg(feature = "app")]
     {

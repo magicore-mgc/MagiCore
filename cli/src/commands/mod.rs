@@ -63,4 +63,5 @@ pub mod tool;
 pub mod trust;
 #[path = "web_registry_config/mod.rs"]
 pub mod web_registry_config;
+pub mod web_scaffold_flags;
 pub mod workspace;

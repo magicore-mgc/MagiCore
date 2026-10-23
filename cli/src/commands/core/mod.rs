@@ -19,4 +19,5 @@ pub mod scaffold_flags;
 #[path = "shared.rs"]
 pub mod shared;
 pub mod update;
+#[cfg(feature = "web")]
 pub mod web;

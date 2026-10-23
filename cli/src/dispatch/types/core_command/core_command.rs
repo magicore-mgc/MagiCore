@@ -6,7 +6,7 @@ pub enum CoreCommand {
     CreateWeb {
         framework: String,
         project_name: String,
-        flags: crate::commands::core::web::scaffold_flags::WebScaffoldFlags,
+        flags: crate::commands::web_scaffold_flags::WebScaffoldFlags,
     },
     CreateGame {
         framework: String,

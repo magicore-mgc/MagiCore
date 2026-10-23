@@ -16,6 +16,7 @@ pub mod hardware;
 pub mod iot;
 #[cfg(feature = "lib")]
 pub mod library;
+#[cfg(feature = "web")]
 pub mod web;
 
 // Router `run(core)` cũ đã bị loại; package dispatch hiện nằm tại `dispatch::core::package_ops`.

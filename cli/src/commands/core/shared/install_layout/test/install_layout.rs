@@ -1,7 +1,7 @@
 //! Web install-layout parsing contract tests.
 //! Test contract parse layout install Web.
 
-use super::super::implementation::legacy_flat_layout_for;
+use super::super::install_layout::legacy_flat_layout_for;
 
 #[test]
 fn legacy_values_select_the_flat_layout_after_normalization() {

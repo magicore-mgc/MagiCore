@@ -10,6 +10,7 @@ use std::{ffi::OsStr, ffi::OsString, path::PathBuf};
 
 use clap::Parser;
 
+#[cfg(feature = "web")]
 mod bundler;
 mod commands;
 mod context;

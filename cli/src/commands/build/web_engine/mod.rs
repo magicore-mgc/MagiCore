@@ -5,6 +5,7 @@
 mod entry_point;
 #[path = "framework_script/mod.rs"]
 mod framework_script;
+#[cfg(feature = "web")]
 #[path = "web_engine.rs"]
 mod implementation;
 #[path = "native_engine/mod.rs"]
@@ -26,6 +27,7 @@ pub(crate) use framework_script::run_framework_build_if_supported;
 pub(crate) use framework_script::{
     map_framework_build_chain, map_framework_build_script, reject_external_package_manager_script,
 };
+#[cfg(feature = "web")]
 pub(crate) use implementation::build_web;
 pub(crate) use native_engine::build_native_engine;
 pub(crate) use native_engine::find_native_engine_crate;

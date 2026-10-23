@@ -44,6 +44,7 @@ pub async fn dispatch(command: CoreCommand) -> Result<()> {
         commands::core::create::validate_project_name(&project_name)?;
     }
     match command {
+        #[cfg(feature = "web")]
         CoreCommand::CreateWeb {
             framework,
             project_name,
@@ -56,6 +57,8 @@ pub async fn dispatch(command: CoreCommand) -> Result<()> {
             )
             .await
         }
+        #[cfg(not(feature = "web"))]
+        CoreCommand::CreateWeb { .. } => Err(crate::error::core_not_in_build("web")),
         #[cfg(feature = "game")]
         CoreCommand::CreateGame {
             framework,

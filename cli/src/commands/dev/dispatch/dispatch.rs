@@ -40,6 +40,7 @@ pub(in crate::commands::dev::dev) async fn dispatch(
     compat_runner: Option<&str>,
 ) -> anyhow::Result<()> {
     match route_for(core) {
+        #[cfg(feature = "web")]
         DevRoute::Web => {
             if clear {
                 mgc_ui::info("--clear is delegated to the selected web framework when supported.");
@@ -56,6 +57,8 @@ pub(in crate::commands::dev::dev) async fn dispatch(
             )
             .await
         }
+        #[cfg(not(feature = "web"))]
+        DevRoute::Web => Err(crate::error::core_not_in_build("web")),
         #[cfg(feature = "game")]
         DevRoute::Game => crate::commands::core::dev::game::dev(root).await,
         #[cfg(not(feature = "game"))]

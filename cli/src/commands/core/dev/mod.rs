@@ -20,6 +20,7 @@ pub(crate) mod game;
 #[path = "iot/mod.rs"]
 pub mod iot;
 #[path = "web/mod.rs"]
+#[cfg(feature = "web")]
 pub mod web;
 
 // Router chung nằm tại commands::dev; các module tại đây sở hữu lifecycle theo core.

@@ -3,6 +3,7 @@
 #![cfg_attr(test, allow(clippy::duplicate_mod, unused_imports))]
 #![allow(clippy::unwrap_used)]
 
+#[cfg(feature = "web")]
 pub mod bundler;
 pub mod commands;
 pub mod context;

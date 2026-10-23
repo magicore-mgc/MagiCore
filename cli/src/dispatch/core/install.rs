@@ -5,6 +5,9 @@ use crate::commands;
 use super::super::types::CoreCommand;
 
 pub fn matches(command: &CoreCommand) -> bool {
+    if matches!(command, CoreCommand::InstallWeb { .. }) {
+        return cfg!(feature = "web");
+    }
     matches!(
         command,
         CoreCommand::InstallWeb { .. }
@@ -20,7 +23,12 @@ pub fn matches(command: &CoreCommand) -> bool {
 }
 
 pub async fn dispatch(command: CoreCommand) -> Result<()> {
+    if let CoreCommand::InstallWeb { .. } = command {
+        #[cfg(not(feature = "web"))]
+        return Err(crate::error::core_not_in_build("web"));
+    }
     match command {
+        #[cfg(feature = "web")]
         CoreCommand::InstallWeb {
             packages,
             frozen,

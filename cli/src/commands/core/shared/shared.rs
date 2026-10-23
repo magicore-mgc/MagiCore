@@ -36,11 +36,13 @@ mod install_policy;
 #[path = "manifest_delta/mod.rs"]
 mod manifest_delta;
 use manifest_delta::{AddedPackage, build_delta_manifest, merge_graphs};
+#[path = "install_layout/mod.rs"]
+mod install_layout;
 #[path = "install_profile/mod.rs"]
 mod install_profile;
 #[cfg(feature = "ai")]
 pub use crate::commands::core::ai::{ai_dev, ai_project_root, require_native_ai_python};
-pub use crate::commands::core::web::should_use_legacy_flat_layout;
+pub use install_layout::should_use_legacy_flat_layout;
 pub(crate) use install_policy::refresh_locked_graph_for_age_gate;
 use install_profile::profile_install_mark;
 

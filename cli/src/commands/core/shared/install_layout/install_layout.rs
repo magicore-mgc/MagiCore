@@ -11,10 +11,7 @@ pub fn should_use_legacy_flat_layout(core_type: &str) -> bool {
     legacy_flat_layout_for(core_type, env_value.as_deref())
 }
 
-pub(in crate::commands::core::web::install_layout) fn legacy_flat_layout_for(
-    core_type: &str,
-    env_value: Option<&str>,
-) -> bool {
+pub(super) fn legacy_flat_layout_for(core_type: &str, env_value: Option<&str>) -> bool {
     if core_type != "web" {
         return false;
     }

@@ -16,4 +16,5 @@ pub mod hardware;
 pub mod iot;
 #[cfg(feature = "lib")]
 pub mod library;
+#[cfg(feature = "web")]
 pub mod web;
