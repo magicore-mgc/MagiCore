@@ -12,6 +12,22 @@ pub enum StoreCmd {
         #[arg(long, help = "output JSON")]
         json: bool,
     },
+    /// Review and reclaim package store bytes no project references anymore.
+    /// Lists unused packages with their size first; deleting needs --apply
+    /// and then --yes. Reports only by default.
+    /// (Rà và thu hồi dung lượng store không còn project nào dùng. Liệt kê
+    /// kèm dung lượng trước; xoá cần --apply rồi --yes. Mặc định chỉ báo cáo.)
+    Reclaim {
+        #[arg(
+            long,
+            help = "plan deletion after listing (still needs --yes to delete)"
+        )]
+        apply: bool,
+        #[arg(long, help = "confirm deletion together with --apply")]
+        yes: bool,
+        #[arg(long, help = "output JSON")]
+        json: bool,
+    },
     /// Show package store summary
     Status,
     /// Back up the store to a target directory
@@ -62,6 +78,21 @@ pub enum StoreCmd {
         #[arg(long, help = "emit machine-readable JSON status")]
         json: bool,
     },
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct ReclaimReport {
+    /// Unreferenced packages with their on-disk size.
+    /// Package không còn tham chiếu kèm dung lượng trên đĩa.
+    pub candidates: Vec<ReclaimCandidate>,
+    pub total_bytes: u64,
+    pub deleted: bool,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct ReclaimCandidate {
+    pub name: String,
+    pub bytes: u64,
 }
 
 #[derive(Debug, serde::Serialize)]

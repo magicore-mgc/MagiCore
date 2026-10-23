@@ -18,6 +18,7 @@ mod path_overlap;
 mod process_liveness;
 mod project_ownership;
 mod prune;
+mod reclaim;
 mod restore;
 mod route_selection;
 mod staging_lease;
@@ -26,7 +27,7 @@ mod store_status;
 mod web_doctor;
 
 pub use command_runner::run;
-pub use command_types::{PruneReport, StoreCmd};
+pub use command_types::{PruneReport, ReclaimCandidate, ReclaimReport, StoreCmd};
 #[cfg(test)]
 use global_root_doctor::inspect_shared_root;
 pub(super) use maintenance_lock::{MaintenanceLockError, acquire_maintenance_lock};

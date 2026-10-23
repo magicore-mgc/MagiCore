@@ -43,6 +43,9 @@ pub async fn run(cmd: StoreCmd) -> anyhow::Result<()> {
         StoreCmd::Prune { dry_run, json } => {
             super::super::prune::run_prune(&project_root, dry_run, json)
         }
+        StoreCmd::Reclaim { apply, yes, json } => {
+            super::super::reclaim::run_reclaim(&project_root, apply, yes, json)
+        }
         StoreCmd::Status => super::super::store_status::run_status(&project_root),
         StoreCmd::Backup { path } => super::super::backup::run_backup(&project_root, path),
         StoreCmd::Restore { path } => super::super::restore::run_restore(&project_root, path),
