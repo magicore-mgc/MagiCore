@@ -4,3 +4,7 @@
 #[path = "github_actions.rs"]
 mod implementation;
 pub(super) use implementation::write;
+
+#[cfg(test)]
+#[path = "test/mod.rs"]
+mod tests;

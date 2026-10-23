@@ -1,16 +1,112 @@
 //! GitHub Actions output implementation.
 //! Triển khai output GitHub Actions.
+//!
+//! Honesty rules (spec D-A1..A6): never emit a placeholder `echo` step, take
+//! build/test commands only from `mgc.toml [ci]`, refuse to write a file when
+//! the configuration is missing, and only emit the trusted-publishing job when
+//! the release/trusted-publishing inputs are present.
+//! Quy tắc trung thực: không sinh bước `echo`, lệnh build/test chỉ lấy từ
+//! `mgc.toml [ci]`, từ chối ghi file khi thiếu cấu hình, và chỉ sinh job
+//! trusted publishing khi có đủ đầu vào.
 
 use std::path::Path;
 
 use anyhow::Result;
 
 use crate::scaffold::processors::write_file;
+use mgc_config::project::ProjectConfig;
 
-pub(in crate::scaffold::processors::cicd::implementation) fn write(target: &Path) -> Result<()> {
+const CHECKOUT_PIN: &str = "actions/checkout@11d5960a326750d5838078e36cf38b85af677262";
+const UPLOAD_PIN: &str = "actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882";
+const DOWNLOAD_PIN: &str = "actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16";
+
+pub(in crate::scaffold::processors::cicd::implementation) fn write(
+    target: &Path,
+    config: &ProjectConfig,
+) -> Result<()> {
+    let ci = config.ci.as_ref();
+    let Some(ci) = ci.filter(|ci| ci.verifiable()) else {
+        // Missing build/test: stop with a message naming the field, never
+        // write a workflow that would only prove an echo ran.
+        // Thiếu build/test: dừng và nêu đúng trường cần khai, không ghi
+        // workflow chỉ chứng minh một lệnh echo đã chạy.
+        let missing = match config.ci.as_ref() {
+            None => "ci.build and ci.test",
+            Some(ci) if ci.build.trim().is_empty() && ci.test.trim().is_empty() => {
+                "ci.build and ci.test"
+            }
+            Some(ci) if ci.build.trim().is_empty() => "ci.build",
+            Some(_) => "ci.test",
+        };
+        return Err(crate::error::ci_config_required(
+            missing,
+            &config.ecosystem,
+            config.frameworks.first().map(String::as_str).unwrap_or(""),
+        ));
+    };
+
+    let mut yaml = String::from(
+        "name: CI\n\npermissions:\n  contents: read\n\non:\n  push:\n  pull_request:\n\njobs:\n",
+    );
+    yaml.push_str("  verify:\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n");
+    yaml.push_str(&format!(
+        "      # SHA pin does not prove the app builds or passes tests; the steps below do.\n      # Ghim SHA không chứng minh app build/test đúng; các bước dưới mới chứng minh.\n      - uses: {CHECKOUT_PIN}\n"
+    ));
+    yaml.push_str("      - run: mgc install --frozen\n");
+    yaml.push_str(&format!(
+        "      - name: Declared production build\n        run: {}\n",
+        ci.build
+    ));
+    yaml.push_str(&format!(
+        "      - name: Declared test\n        run: {}\n",
+        ci.test
+    ));
+
+    if ci.verifies_production() {
+        yaml.push_str(&format!(
+            "      - name: Build production artifact\n        run: |\n          docker build -t app:${{{{ github.sha }}}} -f {dockerfile} .\n          docker save app:${{{{ github.sha }}}} -o \"$RUNNER_TEMP/artifact.tar\"\n        env:\n          DOCKER_BUILDKIT: '1'\n",
+            dockerfile = ci.production
+        ));
+        yaml.push_str(&format!(
+            "      - uses: {UPLOAD_PIN}\n        with:\n          name: app-image\n          path: ${{{{ runner.temp }}}}/artifact.tar\n          if-no-files-found: error\n"
+        ));
+        yaml.push_str("\n  stage-artifact:\n    needs: [verify]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    outputs:\n      digest: ${{ steps.digest.outputs.value }}\n    steps:\n");
+        yaml.push_str(&format!(
+            "      # Staging uses its own credentials, never production secrets. It cannot\n      # promise the same data, load or hardware as production.\n      # Staging dùng credential riêng, không dùng secret production. Không bảo\n      # đảm giống production về dữ liệu, tải hay phần cứng.\n      - uses: {DOWNLOAD_PIN}\n        with:\n          name: app-image\n"
+        ));
+        yaml.push_str("      - run: docker load -i artifact.tar\n");
+        yaml.push_str("      - name: Start artifact\n        run: |\n          docker run -d --name smoke -p 4315:4315 app:${{ github.sha }}\n          for _ in $(seq 1 30); do docker inspect -f '{{{{.State.Running}}}}' smoke | grep -q true && break; sleep 2; done\n          docker inspect -f '{{{{.State.Running}}}}' smoke | grep -q true\n");
+        if ci.smoke.trim().is_empty() {
+            yaml.push_str(
+                "      # No smoke command declared: this workflow must not claim the artifact works.\n      # Chưa khai smoke: workflow không được tuyên bố artifact chạy được.\n      - run: |\n          echo \"::error::ci.smoke is required to verify the production artifact\"\n          exit 1\n",
+            );
+        } else {
+            yaml.push_str(&format!(
+                "      - name: Smoke check on the built artifact\n        run: {}\n",
+                ci.smoke
+            ));
+        }
+        yaml.push_str(
+            "      - id: digest\n        run: echo \"value=$(docker inspect --format '{{.Id}}' app:${{ github.sha }})\" >> \"$GITHUB_OUTPUT\"\n",
+        );
+    }
+
+    if !ci.production.trim().is_empty() {
+        yaml.push_str("\n  publish:\n    if: startsWith(github.ref, 'refs/tags/') && vars.MAGICORE_TRUSTED_PUBLISH == 'true'\n    needs: [stage-artifact]\n    permissions:\n      contents: read\n      id-token: write\n    runs-on: ubuntu-latest\n    steps:\n");
+        yaml.push_str(&format!(
+            "      - uses: {CHECKOUT_PIN}\n        with:\n          persist-credentials: false\n"
+        ));
+        yaml.push_str(&format!(
+            "      - uses: {DOWNLOAD_PIN}\n        with:\n          name: app-image\n"
+        ));
+        yaml.push_str("      - run: docker load -i artifact.tar\n");
+        yaml.push_str(
+            "      # Promote exactly the digest that passed staging; never rebuild here.\n      # Promote đúng digest đã qua staging; không build lại ở đây.\n      - name: Promote verified artifact\n        env:\n          MGC_REGISTRY_URL: ${{ vars.MAGICORE_REGISTRY_URL }}\n          MGC_OIDC_AUDIENCE: ${{ vars.MAGICORE_OIDC_AUDIENCE }}\n          MGC_PUBLISH_CORE: ${{ vars.MAGICORE_PUBLISH_CORE }}\n          MGC_PUBLISH_PACKAGE: ${{ vars.MAGICORE_PUBLISH_PACKAGE }}\n          VERIFIED_DIGEST: ${{ needs.stage-artifact.outputs.digest }}\n        run: mgc publish --trusted --protocol oci --core \"$MGC_PUBLISH_CORE\" --package \"$MGC_PUBLISH_PACKAGE\" --version \"${{ github.ref_name }}\" --artifact-digest \"$VERIFIED_DIGEST\" --registry \"$MGC_REGISTRY_URL\" --trusted-audience \"$MGC_OIDC_AUDIENCE\"\n",
+        );
+    }
+
     write_file(
         &target.join(".github").join("workflows").join("ci.yml"),
-        "name: CI\n\npermissions:\n  contents: read\n\non:\n  push:\n  pull_request:\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      # actions/checkout v4.4.0 pinned to its verified commit. / Ghim actions/checkout v4.4.0 vào commit đã xác minh.\n      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262\n      - run: echo \"MagiCore CI scaffold\"\n\n  publish:\n    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && vars.MAGICORE_TRUSTED_PUBLISH == 'true'\n    permissions:\n      contents: read\n      id-token: write\n    runs-on: ubuntu-latest\n    steps:\n      # actions/checkout v4.4.0 pinned to its verified commit. / Ghim actions/checkout v4.4.0 vào commit đã xác minh.\n      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262\n        with:\n          persist-credentials: false\n      - name: Install pinned MagiCore CLI\n        shell: bash\n        env:\n          MAGICORE_CLI_VERSION: ${{ vars.MAGICORE_CLI_VERSION }}\n          MAGICORE_CLI_SHA256: ${{ vars.MAGICORE_CLI_SHA256 }}\n        run: |\n          if [[ ! \"$MAGICORE_CLI_VERSION\" =~ ^v?[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then echo \"::error::Set MAGICORE_CLI_VERSION to a valid release version\"; exit 1; fi\n          if [[ ! \"$MAGICORE_CLI_SHA256\" =~ ^[a-fA-F0-9]{64}$ ]]; then echo \"::error::Set MAGICORE_CLI_SHA256 to the release archive SHA-256\"; exit 1; fi\n          VERSION_NUMBER=\"${MAGICORE_CLI_VERSION#v}\"\n          ARCHIVE=\"magicore-${VERSION_NUMBER}-linux-x64.tar.gz\"\n          curl -fsSL --proto '=https' --tlsv1.2 \"https://github.com/mingd-153/MagiCore/releases/download/v${VERSION_NUMBER}/${ARCHIVE}\" -o \"$RUNNER_TEMP/$ARCHIVE\"\n          printf '%s  %s\\n' \"$MAGICORE_CLI_SHA256\" \"$RUNNER_TEMP/$ARCHIVE\" | sha256sum --check --strict -\n          mkdir -p \"$RUNNER_TEMP/bin\" \"$RUNNER_TEMP/mgc-extract\"\n          tar -xzf \"$RUNNER_TEMP/$ARCHIVE\" -C \"$RUNNER_TEMP/mgc-extract\"\n          if [[ -f \"$RUNNER_TEMP/mgc-extract/mgc\" ]]; then BIN=\"$RUNNER_TEMP/mgc-extract/mgc\"; elif [[ -f \"$RUNNER_TEMP/mgc-extract/magicore/mgc\" ]]; then BIN=\"$RUNNER_TEMP/mgc-extract/magicore/mgc\"; else echo \"::error::mgc binary missing from verified archive\"; exit 1; fi\n          install \"$BIN\" \"$RUNNER_TEMP/bin/mgc\"\n          echo \"$RUNNER_TEMP/bin\" >> \"$GITHUB_PATH\"\n      - name: Publish OCI artifact with trusted OIDC\n        env:\n          MGC_REGISTRY_URL: ${{ vars.MAGICORE_REGISTRY_URL }}\n          MGC_OIDC_AUDIENCE: ${{ vars.MAGICORE_OIDC_AUDIENCE }}\n          MGC_PUBLISH_CORE: ${{ vars.MAGICORE_PUBLISH_CORE }}\n          MGC_PUBLISH_PACKAGE: ${{ vars.MAGICORE_PUBLISH_PACKAGE }}\n          MGC_PUBLISH_ARTIFACT: ${{ vars.MAGICORE_PUBLISH_ARTIFACT }}\n          MGC_PUBLISH_VERSION: ${{ github.ref_name }}\n        run: |\n          if [[ -z \"$MGC_REGISTRY_URL\" || -z \"$MGC_OIDC_AUDIENCE\" || -z \"$MGC_PUBLISH_CORE\" || -z \"$MGC_PUBLISH_PACKAGE\" || -z \"$MGC_PUBLISH_VERSION\" ]]; then echo \"::error::Set the registry, audience, core, package, and version workflow variables\"; exit 1; fi\n          case \"$MGC_PUBLISH_CORE\" in web|ai|app|lib|game|iot|cloud|cicd|hardware) ;; *) echo \"::error::MGC_PUBLISH_CORE must name a supported MagiCore core\"; exit 1 ;; esac\n          if [[ -z \"$MGC_PUBLISH_ARTIFACT\" ]]; then MGC_PUBLISH_ARTIFACT=\"$RUNNER_TEMP/mgc-source.tar.gz\"; git archive --format=tar.gz --output=\"$MGC_PUBLISH_ARTIFACT\" HEAD; fi\n          if [[ ! -f \"$MGC_PUBLISH_ARTIFACT\" ]]; then echo \"::error::MGC_PUBLISH_ARTIFACT must point to a file or be empty to publish the tagged source archive\"; exit 1; fi\n          mgc publish --trusted --protocol oci --core \"$MGC_PUBLISH_CORE\" --package \"$MGC_PUBLISH_PACKAGE\" --version \"$MGC_PUBLISH_VERSION\" --artifact \"$MGC_PUBLISH_ARTIFACT\" --registry \"$MGC_REGISTRY_URL\" --trusted-audience \"$MGC_OIDC_AUDIENCE\"\n",
-    )?;
-    Ok(())
+        &yaml,
+    )
 }

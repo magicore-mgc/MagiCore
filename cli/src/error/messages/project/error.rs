@@ -141,3 +141,14 @@ pub fn detect_core_failed(kind: &str) -> Error {
     };
     anyhow!(msg)
 }
+
+pub fn ci_config_required(missing: &str, core: &str, framework: &str) -> Error {
+    let target = if framework.is_empty() {
+        format!("core '{core}'")
+    } else {
+        format!("core '{core}' framework '{framework}'")
+    };
+    anyhow!(
+        "CI scaffold requires {missing} for {target}; add [ci] build/test commands to mgc.toml (for example: mgc config set ci.build \"<build command>\"). No workflow was written."
+    )
+}

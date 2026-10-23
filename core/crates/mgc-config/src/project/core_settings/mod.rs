@@ -18,6 +18,9 @@ mod lib;
 
 pub use ai::AiConfig;
 pub use app::AppConfig;
+mod ci;
+
+pub use ci::CiConfig;
 pub use cicd::CicdConfig;
 pub use cloud::CloudConfig;
 pub use game::GameConfig;

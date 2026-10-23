@@ -21,6 +21,7 @@ impl ProjectConfig {
             registries: vec![],
             patches: vec![],
             dedupe: DedupeConfig::default(),
+            ci: None,
             lib: None,
             game: None,
             iot: None,

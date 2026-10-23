@@ -31,7 +31,7 @@ use execution::default_execution_for;
 #[path = "core_settings/mod.rs"]
 mod core_settings;
 pub use core_settings::{
-    AiConfig, AppConfig, CicdConfig, CloudConfig, GameConfig, IotConfig, LibConfig,
+    AiConfig, AppConfig, CiConfig, CicdConfig, CloudConfig, GameConfig, IotConfig, LibConfig,
 };
 #[path = "dedupe/mod.rs"]
 mod dedupe;

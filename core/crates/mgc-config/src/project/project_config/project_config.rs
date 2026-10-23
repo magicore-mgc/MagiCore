@@ -84,6 +84,10 @@ pub struct ProjectConfig {
     /// Cấu hình framework của core AI.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ai: Option<AiConfig>,
+    /// CI config (mgc.toml [ci]) — declared build/test commands for CI scaffolds.
+    /// Cấu hình CI trong mgc.toml: lệnh build/test cho scaffold CI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ci: Option<crate::project::CiConfig>,
     /// Security config (mgc.toml [security]) — min_release_age per ecosystem.
     /// Chính sách tuổi phát hành tối thiểu theo hệ sinh thái.
     #[serde(default, skip_serializing_if = "Option::is_none")]

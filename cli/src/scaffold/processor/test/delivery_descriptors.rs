@@ -2,37 +2,29 @@
 // Kiểm thử scaffold output và descriptor triển khai.
 
 #[test]
-fn github_actions_publish_job_uses_trusted_oidc_and_is_opt_in() {
+fn github_actions_scaffold_refuses_without_declared_ci_commands() {
     let root = tempfile::tempdir().unwrap();
-    crate::scaffold::processors::cicd::CicdProcessor::files(
+    // No mgc.toml [ci] and no MGC_CI_* environment: the generator must refuse
+    // instead of writing a placeholder workflow.
+    // Không có [ci] và không có biến MGC_CI_*: generator phải từ chối.
+    let error = crate::scaffold::processors::cicd::CicdProcessor::files(
         root.path(),
         "sample",
         "github-actions",
     )
-    .unwrap();
-    let workflow = std::fs::read_to_string(root.path().join(".github/workflows/ci.yml")).unwrap();
-    assert!(workflow.contains("id-token: write"));
-    assert!(workflow.contains("vars.MAGICORE_TRUSTED_PUBLISH == 'true'"));
-    assert!(workflow.contains("mgc publish --trusted"));
-    assert!(workflow.contains("--protocol oci --core \"$MGC_PUBLISH_CORE\""));
-    assert!(workflow.contains("MGC_PUBLISH_PACKAGE"));
-    assert!(workflow.contains("MGC_PUBLISH_ARTIFACT"));
-    assert!(workflow.contains("git archive --format=tar.gz"));
-    for core in [
-        "web", "ai", "app", "lib", "game", "iot", "cloud", "cicd", "hardware",
-    ] {
-        assert!(workflow.contains(core), "workflow omits core {core}");
-    }
-    assert!(workflow.contains("MAGICORE_CLI_VERSION"));
-    assert!(workflow.contains("actions/checkout@11d5960a326750d5838078e36cf38b85af677262"));
-    assert!(workflow.contains("MAGICORE_CLI_SHA256"));
-    assert!(workflow.contains("sha256sum --check --strict -"));
-    assert!(workflow.contains("persist-credentials: false"));
-    assert!(!workflow.contains("raw.githubusercontent.com/mingd-153/MagiCore/"));
+    .expect_err("must refuse without ci.build/ci.test");
+    assert!(error.to_string().contains("ci.build and ci.test"));
+    assert!(!root.path().join(".github/workflows/ci.yml").exists());
 }
+
 #[test]
-fn github_actions_scaffold_declares_least_privilege_workflow_permissions() {
+fn github_actions_scaffold_writes_declared_commands_and_least_privilege() {
     let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("mgc.toml"),
+        "name = \"sample\"\nversion = \"0.1.0\"\necosystem = \"web\"\nframeworks = [\"django\"]\n\n[ci]\nbuild = \"python -m build --wheel\"\ntest = \"pytest -q\"\n",
+    )
+    .unwrap();
     crate::scaffold::processors::cicd::CicdProcessor::files(
         root.path(),
         "sample",
@@ -40,9 +32,14 @@ fn github_actions_scaffold_declares_least_privilege_workflow_permissions() {
     )
     .unwrap();
     let workflow = std::fs::read_to_string(root.path().join(".github/workflows/ci.yml")).unwrap();
+    assert!(!workflow.contains("echo \"MagiCore CI scaffold\""));
+    assert!(workflow.contains("python -m build --wheel"));
+    assert!(workflow.contains("pytest -q"));
     assert!(workflow.contains("permissions:\n  contents: read\n"));
-    assert!(workflow.contains("    permissions:\n      contents: read\n      id-token: write\n"));
+    // Publish only appears together with a declared production artifact.
+    assert!(!workflow.contains("publish:"));
 }
+
 #[test]
 fn cicd_cloud_provider_scaffolds_have_native_build_descriptors() {
     let root = tempfile::tempdir().unwrap();
