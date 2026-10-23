@@ -9,7 +9,6 @@ use super::super::astro::write_astro_frontend;
 use super::super::common::write_baseline_files;
 use super::super::go_backend::write_go_backend;
 use super::super::node_backend::{write_fastify, write_hono, write_trpc};
-use super::super::python_backend::django::write_django;
 use super::super::python_backend::{write_fastapi, write_flask};
 use super::super::rust_backend::{write_actix_web, write_axum};
 
@@ -25,7 +24,6 @@ pub(crate) fn write_project(
         ("backend", "actix-web") => write_actix_web(target, name)?,
         ("backend", "fastapi") => write_fastapi(target, name)?,
         ("backend", "flask") => write_flask(target, name)?,
-        ("backend", "django") => write_django(target, name)?,
         ("backend", "echo" | "fiber" | "gin") => write_go_backend(target, name, framework)?,
         ("backend", "fastify") => write_fastify(target, name)?,
         ("backend", "hono") => write_hono(target, name)?,

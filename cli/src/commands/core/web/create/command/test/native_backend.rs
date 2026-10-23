@@ -62,14 +62,8 @@ fn native_web_starters_route_supported_default_frameworks_without_version_overri
         native_web_starter_framework(&ScaffoldRef::Default, "frontend", Some("axum")),
         None
     );
-    // django gained a native starter in the CI-ready scaffold pass.
-    // django đã có starter native trong đợt scaffold CI-ready.
     assert_eq!(
         native_web_starter_framework(&ScaffoldRef::Default, "backend", Some("django")),
-        Some("django")
-    );
-    assert_eq!(
-        native_web_starter_framework(&ScaffoldRef::Default, "backend", Some("laravel")),
         None
     );
 }
