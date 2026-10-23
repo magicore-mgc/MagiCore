@@ -9,6 +9,7 @@ pub(crate) fn supports_native_project(sub_type: &str, framework: &str) -> bool {
             "backend",
             "axum"
                 | "actix-web"
+                | "django"
                 | "echo"
                 | "fastapi"
                 | "fastify"
