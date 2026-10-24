@@ -14,11 +14,6 @@ use mgc_ui::info;
 #[path = "versions/mod.rs"]
 mod versions;
 pub use versions::error as version_errors;
-#[path = "online_generator/mod.rs"]
-mod online_generator;
-pub(crate) use online_generator::{
-    OnlineGeneratorArgument, OnlineWebGenerator, online_web_generator,
-};
 #[path = "workspace_layout/mod.rs"]
 mod workspace_layout;
 use workspace_layout::{

@@ -35,7 +35,7 @@ mod simple_words;
 mod tool_check;
 
 pub use allowlist::{check_tool, is_react_native_subdir};
-pub use catalog::{ALLOWED_TOOLS, FORBIDDEN_TOOLS, QUALIFIED_COMPAT_RUNNERS};
+pub use catalog::{ALLOWED_TOOLS, FORBIDDEN_TOOLS, JS_PACKAGE_MANAGERS, QUALIFIED_COMPAT_RUNNERS};
 pub use compat_runner::{compat_runner_allows, parse_compat_runner};
 pub use forbidden_script::{find_forbidden_tool_in_script, reject_forbidden_pm_script};
 pub use invocation::ScriptInvocation;

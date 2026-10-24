@@ -42,18 +42,26 @@ pub async fn run_create_with_options(
         "backend" => config.frameworks.last(),
         _ => None,
     };
-    let online_generator =
-        scaffold_framework.and_then(|framework| online_web_generator(&config.sub_type, framework));
+    let initializer = scaffold_framework.and_then(|framework| {
+        let mode = super::Mode::parse(&config.sub_type)?;
+        super::lookup(mode, framework)
+    });
     let mut generator_workspace = None;
     let provenance_layers;
 
-    if let Some(generator) = online_generator {
+    if let Some(record) = initializer {
+        // The initializer is the only path that runs framework-published code.
+        // Validate its record before a single byte is downloaded.
+        // Initializer là đường duy nhất chạy code do framework phát hành. Kiểm
+        // record trước khi tải một byte nào.
+        if let Err(refusal) = super::check(&record) {
+            anyhow::bail!("refusing initializer: {}", refusal.message());
+        }
         info(&format!(
             "Creating from the official '{}' initializer through MagiCore",
-            generator.package
+            record.package
         ));
-        let (workspace, source) =
-            run_create_initializer(&mut config, project_name, generator).await?;
+        let (workspace, source) = run_create_initializer(&mut config, project_name, record).await?;
         generator_workspace = Some(workspace);
         provenance_layers = vec![source];
     } else {

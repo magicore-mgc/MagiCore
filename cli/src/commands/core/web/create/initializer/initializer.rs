@@ -5,7 +5,7 @@ use super::*;
 pub(in crate::commands::core::web::implementation) async fn run_create_initializer(
     config: &mut crate::wizard::engine::ScaffoldConfig,
     project_name: &str,
-    generator: OnlineWebGenerator,
+    generator: super::super::InitializerRecord,
 ) -> Result<(tempfile::TempDir, String)> {
     crate::commands::core::create::validate_project_name(project_name)?;
     let target = Path::new(project_name);
@@ -17,13 +17,13 @@ pub(in crate::commands::core::web::implementation) async fn run_create_initializ
         .prefix("mgc-online-scaffold-")
         .tempdir()?;
     let generated_project = workspace.path().join(project_name);
-    let package_request = format!("{}@latest", generator.package);
+    let package_request = format!("{}@{}", generator.package, generator.version.selector());
     let generator_args = generator
         .args
         .iter()
         .map(|argument| match argument {
-            OnlineGeneratorArgument::Project => project_name.to_string(),
-            OnlineGeneratorArgument::Literal(value) => (*value).to_string(),
+            super::super::ArgSlot::Project => project_name.to_string(),
+            super::super::ArgSlot::Literal(value) => (*value).to_string(),
         })
         .collect();
     let report = crate::commands::package_runtime::run_registry_package_in(

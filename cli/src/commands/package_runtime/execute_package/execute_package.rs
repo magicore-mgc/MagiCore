@@ -61,11 +61,34 @@ pub(in crate::commands::package_runtime) fn execute_verified_binary(
         (installed.bin_path.clone(), args)
     };
     let path = runner_path(&installed.bin_dir, &host_path, node_script)?;
+    let mut env = vec![("PATH".to_string(), path.to_string_lossy().into_owned())];
+    if purpose == PackageRunPurpose::CreateInitializer {
+        // Several official initializers sniff the host package manager by
+        // running it (`create-astro` calls `npm config get`). MagiCore rejects
+        // that by design, so it tells the initializer which PM invoked it
+        // through the standard `npm_config_user_agent` variable. The
+        // initializer then skips its own detection instead of being killed
+        // mid-scaffold.
+        // Nhiều initializer chính thức dò package manager bằng cách chạy nó
+        // (`create-astro` gọi `npm config get`). MagiCore từ chối điều đó theo
+        // thiết kế, nên nó cho initializer biết PM nào đã gọi qua biến chuẩn
+        // `npm_config_user_agent`. Initializer bỏ bước tự dò thay vì bị kill
+        // giữa lúc scaffold.
+        env.push((
+            "npm_config_user_agent".to_string(),
+            format!("mgc/{} npm/? node/{}", env!("CARGO_PKG_VERSION"), "unknown"),
+        ));
+        // Keep the scaffold deterministic: no PM telemetry or update checks.
+        // Giữ scaffold ổn định: không telemetry hay kiểm tra cập nhật của PM.
+        env.push(("NO_UPDATE_NOTIFIER".to_string(), "1".to_string()));
+        env.push(("ADBLOCK".to_string(), "1".to_string()));
+        env.push(("CI".to_string(), "1".to_string()));
+    }
     let options = mgc_exec::prelude::ExecOptions {
         cwd: Some(execution_cwd.to_path_buf()),
         log_path: Some(execution_cwd.join(".magicore").join("exec.log")),
         clean_env: true,
-        env: vec![("PATH".to_string(), path.to_string_lossy().into_owned())],
+        env,
         execution_scope: Some(if purpose == PackageRunPurpose::CreateInitializer {
             mgc_exec::allowlist::ExecutionScope::FrameworkInitializer
         } else {

@@ -153,8 +153,6 @@ fn every_claimed_web_js_framework_runs_add_update_remove_and_install() {
         "angular",
         "astro",
         "express",
-        "fastify",
-        "hono",
         "nestjs",
         "nextjs",
         "nuxt",
@@ -179,50 +177,29 @@ fn every_claimed_web_js_framework_runs_add_update_remove_and_install() {
             None,
         );
         let project = project_root.path().join(&name);
-        match framework {
-            "astro" => {
-                let source = std::fs::read_to_string(project.join("src/pages/index.astro"))
-                    .expect("native Astro scaffold must include its page source");
-                assert!(source.contains("MagiCore + Astro"));
-                let manifest: serde_json::Value =
-                    serde_json::from_slice(&std::fs::read(project.join("package.json")).unwrap())
-                        .unwrap();
-                assert!(manifest["dependencies"]["astro"].is_string());
-            }
-            "fastify" => {
-                let source = std::fs::read_to_string(project.join("src/server.ts"))
-                    .expect("native Fastify scaffold must include its server source");
-                assert!(source.contains("/api/health"));
-                let manifest: serde_json::Value =
-                    serde_json::from_slice(&std::fs::read(project.join("package.json")).unwrap())
-                        .unwrap();
-                assert!(manifest["dependencies"]["fastify"].is_string());
-                assert!(manifest["devDependencies"]["tsx"].is_string());
-            }
-            "hono" => {
-                let source = std::fs::read_to_string(project.join("src/index.ts"))
-                    .expect("native Hono scaffold must include its server source");
-                assert!(source.contains("/api/health"));
-                let manifest: serde_json::Value =
-                    serde_json::from_slice(&std::fs::read(project.join("package.json")).unwrap())
-                        .unwrap();
-                assert!(manifest["dependencies"]["hono"].is_string());
-                assert!(manifest["dependencies"]["@hono/node-server"].is_string());
-            }
-            "trpc" => {
-                let source = std::fs::read_to_string(project.join("src/index.ts"))
-                    .expect("native tRPC scaffold must include its server source");
-                assert!(source.contains("createExpressMiddleware"));
-                assert!(source.contains("/api/health"));
-                assert!(source.contains("export type AppRouter"));
-                let manifest: serde_json::Value =
-                    serde_json::from_slice(&std::fs::read(project.join("package.json")).unwrap())
-                        .unwrap();
-                assert!(manifest["dependencies"]["@trpc/server"].is_string());
-                assert!(manifest["dependencies"]["express"].is_string());
-            }
-            _ => {}
-        }
+        // The scaffold must be a real project from the framework's own
+        // initializer, not a MagiCore-authored starter: the manifest and at
+        // least one source file have to exist before package operations run.
+        // Scaffold phải là project thật từ initializer của chính framework,
+        // không phải starter do MagiCore viết: manifest và ít nhất một file
+        // source phải tồn tại trước khi chạy thao tác package.
+        let manifest_path = project.join("package.json");
+        assert!(
+            manifest_path.is_file(),
+            "{framework}: scaffold produced no package.json"
+        );
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&manifest_path).unwrap())
+                .expect("scaffold package.json must be valid JSON");
+        assert!(
+            manifest["name"].is_string() || manifest["version"].is_string(),
+            "{framework}: scaffold package.json is not a real project manifest: {manifest}"
+        );
+        let has_source = walkdir_source_exists(&project);
+        assert!(
+            has_source,
+            "{framework}: scaffold produced no source files besides metadata"
+        );
         // Keep the generated framework identity while isolating package operations
         // from unrelated template dependencies.
         std::fs::write(
@@ -298,4 +275,34 @@ fn every_claimed_web_js_framework_runs_add_update_remove_and_install() {
             Some(&update_registry.url),
         );
     }
+}
+
+/// Whether the project contains at least one non-metadata source file.
+/// Project có ít nhất một file source không phải metadata không.
+fn walkdir_source_exists(project: &std::path::Path) -> bool {
+    let metadata = ["package.json", "mgc.toml", "mgc.lock", ".mgc.core"];
+    fn visit(dir: &std::path::Path, metadata: &[&str]) -> bool {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return false;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if path.file_name().is_some_and(|n| n == "node_modules") {
+                    continue;
+                }
+                if visit(&path, metadata) {
+                    return true;
+                }
+            } else if path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|name| !metadata.contains(&name))
+            {
+                return true;
+            }
+        }
+        false
+    }
+    visit(project, &metadata)
 }

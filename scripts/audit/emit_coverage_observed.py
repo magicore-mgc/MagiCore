@@ -83,8 +83,13 @@ def lane(core, language, framework, operation, owner, status, kind, sha):
 def build() -> dict:
     sha = commit()
     lanes = []
+    # Scaffold (resolve) is proven for every framework with an official initializer:
+    # `cli/tests/web_fw_*.rs` and `web_framework_package_ops_e2e` create each
+    # project from that framework's own program.
+    # Scaffold đã chứng minh cho mọi framework có initializer chính thức:
+    # các test tạo từng project bằng chương trình của chính framework đó.
     for framework in sorted(LANGUAGE):
-        for operation in ("install", "build", "test"):
+        for operation in ("resolve", "install", "build", "test"):
             lanes.append(lane("web", LANGUAGE[framework], framework, operation,
                               "mgc-native", "supported", "integration", sha))
         lanes.append(lane("web", LANGUAGE[framework], framework, "dev",

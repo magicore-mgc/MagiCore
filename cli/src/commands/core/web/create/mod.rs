@@ -7,6 +7,9 @@ mod command;
 mod configuration;
 #[path = "initializer/mod.rs"]
 mod initializer;
+#[path = "initializers/mod.rs"]
+mod initializers;
 pub use command::run_create_with_options;
 pub(super) use configuration::*;
 pub(super) use initializer::*;
+pub(super) use initializers::*;

@@ -16,7 +16,8 @@ async fn online_vite_generator_rejects_path_traversal_before_running_dlx() {
     let error = super::run_create_initializer(
         &mut config,
         "../outside-project",
-        super::online_web_generator("frontend", "react-vite").unwrap(),
+        super::super::super::lookup(super::super::super::Mode::Frontend, "react-vite")
+            .expect("react-vite has an official initializer"),
     )
     .await
     .expect_err("generator must reject path traversal before launching dlx");
