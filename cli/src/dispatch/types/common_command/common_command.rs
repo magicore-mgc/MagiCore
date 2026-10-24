@@ -13,6 +13,10 @@ pub enum CommonCommand {
         compat_runtime: Option<String>,
         compat_runner: Option<String>,
     },
+    Adopt {
+        core: String,
+        path: Option<std::path::PathBuf>,
+    },
     Version {
         json: bool,
     },
@@ -114,6 +118,7 @@ pub enum CommonCommand {
         target: String,
         yes: bool,
         dry_run: bool,
+        ci: bool,
     },
     Link {
         package: Option<String>,

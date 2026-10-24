@@ -81,11 +81,13 @@ pub(in crate::dispatch) fn engine_to_common(command: EngineCommands) -> Option<C
             target,
             yes,
             dry_run,
+            ci,
         } => Some(CommonCommand::Cache {
             action,
             target,
             yes,
             dry_run,
+            ci,
         }),
     }
 }

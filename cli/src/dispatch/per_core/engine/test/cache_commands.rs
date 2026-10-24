@@ -11,17 +11,20 @@ fn maps_cache_confirmation_and_dry_run_options() {
         target: "shared".to_owned(),
         yes: true,
         dry_run: true,
+        ci: false,
     }) {
         Some(CommonCommand::Cache {
             action,
             target,
             yes,
             dry_run,
+            ci,
         }) => {
             assert_eq!(action, "prune");
             assert_eq!(target, "shared");
             assert!(yes);
             assert!(dry_run);
+            assert!(!ci);
         }
         _ => panic!("cache command or payload was changed"),
     }

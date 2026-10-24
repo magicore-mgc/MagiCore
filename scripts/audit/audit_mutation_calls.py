@@ -64,6 +64,13 @@ ALLOWLIST = {
     ("cli/src/commands/install/install_sbom/install_sbom.rs", "write_sbom"): (
         {"manifest-file-write"}, "regenerate install SBOM beside the lockfile",
     ),
+    # --- adoption writes the identity MagiCore owns ---
+    # Refuses before writing when the directory carries no core marker or the
+    # project already has an mgc.toml, so it never replaces recorded identity.
+    # (Từ chối trước khi ghi khi thư mục không có marker hoặc đã có mgc.toml.)
+    ("cli/src/commands/adopt/adopt.rs", "run"): (
+        {"manifest-file-write"}, "adoption writes core marker and mgc.toml for an unmanaged project",
+    ),
     # --- gateway machinery itself (owns lock + journal + rollback) ---
     ("cli/src/commands/core/shared/mutation_journal/restore/restore.rs", "restore_mutation_snapshot"): (
         {"lock-write", "manifest-write", "manifest-file-write"}, "verified restore path",

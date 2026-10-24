@@ -16,6 +16,17 @@ pub enum CommonCommands {
         )]
         signature: Option<String>,
     },
+    #[command(about = "Take ownership of a project another tool created")]
+    Adopt {
+        #[arg(long, help = "Core that owns the project (cicd, clo, game, iot)")]
+        core: String,
+        #[arg(
+            long,
+            value_name = "PATH",
+            help = "Project directory (defaults to the current directory)"
+        )]
+        path: Option<std::path::PathBuf>,
+    },
     #[command(about = "Print the MagiCore CLI version")]
     Version {
         #[arg(long, help = "Output as JSON")]

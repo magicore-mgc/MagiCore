@@ -1,4 +1,5 @@
 pub mod add;
+pub mod adopt;
 pub mod audit;
 pub mod bench;
 pub mod build;

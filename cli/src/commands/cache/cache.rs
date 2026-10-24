@@ -9,6 +9,7 @@ pub async fn run(
     target: String,
     yes: bool,
     dry_run: bool,
+    ci: bool,
     core: Option<&str>,
 ) -> Result<()> {
     let action = CacheAction::parse(&action)?;
@@ -18,6 +19,6 @@ pub async fn run(
     match action {
         CacheAction::Status => print_status(&entries),
         CacheAction::Clean => clean(&entries, yes),
-        CacheAction::Prune => prune(&entries, yes, dry_run, core),
+        CacheAction::Prune => prune(&entries, yes, dry_run, ci, core),
     }
 }

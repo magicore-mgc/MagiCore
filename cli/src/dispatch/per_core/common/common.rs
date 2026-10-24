@@ -12,6 +12,7 @@ pub(in crate::dispatch) fn common_to_dispatch(command: CommonCommands) -> Option
             template,
             signature,
         }),
+        CommonCommands::Adopt { core, path } => Some(CommonCommand::Adopt { core, path }),
         CommonCommands::Version { json } => Some(CommonCommand::Version { json }),
         CommonCommands::Info { package, json } => Some(CommonCommand::Info { package, json }),
         CommonCommands::Search {

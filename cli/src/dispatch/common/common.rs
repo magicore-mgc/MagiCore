@@ -64,6 +64,13 @@ pub async fn dispatch_common(
             args,
             compat_runner,
         } => commands::exec::run(core, command, args, compat_runner.as_deref()),
+        CommonCommand::Adopt { core, path } => {
+            let root = match path {
+                Some(root) => root,
+                None => std::env::current_dir()?,
+            };
+            commands::adopt::run(&core, &root)
+        }
         CommonCommand::Version { json } => commands::version::run(json),
         CommonCommand::Info { package, json } => commands::info::run(package, json).await,
         CommonCommand::Search {
@@ -112,7 +119,8 @@ pub async fn dispatch_common(
             target,
             yes,
             dry_run,
-        } => commands::cache::run(action, target, yes, dry_run, core).await,
+            ci,
+        } => commands::cache::run(action, target, yes, dry_run, ci, core).await,
         #[cfg(feature = "web")]
         CommonCommand::Link { package } => {
             let ctx = ProjectContext::load_with_core(core)?;

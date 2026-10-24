@@ -175,11 +175,13 @@ fn test_cache_command_accepts_status_and_clean_targets() {
             target,
             yes,
             dry_run,
+            ci,
         }) => {
             assert_eq!(action, "prune");
             assert_eq!(target, "shared");
             assert!(!yes);
             assert!(dry_run);
+            assert!(!ci);
         }
         _ => panic!("expected cache command"),
     }

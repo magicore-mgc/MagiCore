@@ -17,11 +17,43 @@ pub(in crate::commands::cache) fn prune(
     entries: &[CacheEntry],
     yes: bool,
     dry_run: bool,
+    ci: bool,
     core: Option<&str>,
 ) -> Result<()> {
     if !yes && !dry_run {
         println!("Refusing to prune cache without --yes.");
         print_status(entries)?;
+        return Ok(());
+    }
+
+    // CI mode: the shared store keeps only package roots a live project
+    // references, and the tarball bucket is dropped entirely. A CI machine
+    // re-downloads tarballs faster than it restores them, and keeps nothing
+    // between jobs, so an extracted tree it will never link is dead weight.
+    // Chế độ CI: shared store chỉ giữ package root mà project đang sống tham
+    // chiếu, và bỏ hẳn bucket tarball. Máy CI tải lại tarball nhanh hơn khôi
+    // phục, giữa các job không giữ gì, nên cây đã giải nén mà sẽ không bao giờ
+    // được link là gánh nặng vô ích.
+    if ci {
+        for entry in entries {
+            if entry.label != "shared" {
+                continue;
+            }
+            let unpinned = if dry_run {
+                count_web_shared_unpinned_package_roots(&entry.path)?
+            } else {
+                prune_web_shared_unpinned_package_roots(&entry.path)?
+            };
+            let tarballs = prune_unlinked_files_under(&entry.path.join("cache"), dry_run)?;
+            println!(
+                "{}\t{}\t{} unpinned package roots, {} tarball files\t{}",
+                if dry_run { "would prune" } else { "pruned" },
+                entry.label,
+                unpinned,
+                tarballs,
+                entry.path.display()
+            );
+        }
         return Ok(());
     }
 

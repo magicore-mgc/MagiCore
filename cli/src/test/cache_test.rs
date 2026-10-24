@@ -75,7 +75,7 @@ fn app_package_stores_are_not_pruned_without_live_reference_data() {
         removable: true,
     }];
 
-    prune(&entries, true, false, Some("app")).unwrap();
+    prune(&entries, true, false, false, Some("app")).unwrap();
     assert!(package.exists());
 }
 

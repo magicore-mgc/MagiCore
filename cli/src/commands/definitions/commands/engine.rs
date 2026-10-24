@@ -187,5 +187,10 @@ pub enum EngineCommands {
         yes: bool,
         #[arg(long, help = "Preview cache prune without deleting files")]
         dry_run: bool,
+        #[arg(
+            long,
+            help = "Prune as CI does: keep only package roots a live project references, drop tarballs and unlinked files"
+        )]
+        ci: bool,
     },
 }
