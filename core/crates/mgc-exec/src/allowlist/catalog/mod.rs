@@ -13,7 +13,4 @@ mod project_language_executables;
 pub use allowed_tools::ALLOWED_TOOLS;
 pub use compat_runners::QUALIFIED_COMPAT_RUNNERS;
 pub use forbidden_tools::FORBIDDEN_TOOLS;
-#[path = "js_package_managers/mod.rs"]
-mod js_package_managers;
-pub use js_package_managers::JS_PACKAGE_MANAGERS;
 pub(crate) use project_language_executables::PROJECT_LANGUAGE_EXECUTABLES;
