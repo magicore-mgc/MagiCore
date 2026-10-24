@@ -416,6 +416,44 @@ pub(crate) const BACKEND: &[(&str, InitializerRecord)] = &[
         },
     ),
     (
+        "django",
+        InitializerRecord {
+            package: "django-admin",
+            binary: "django-admin",
+            identity: "django-admin:startproject",
+            args: &[
+                L("startproject"),
+                L("--name=.env"),
+                L("--extension=py,md"),
+                P,
+                L("."),
+            ],
+            layout: Layout::InPlace,
+            version: VersionPolicy::Latest,
+            runtime: Runtime::HostTool {
+                program: "django-admin",
+                install_hint: "pip install django",
+                probe: &["--version"],
+            },
+        },
+    ),
+    (
+        "laravel",
+        InitializerRecord {
+            package: "composer",
+            binary: "composer",
+            identity: "composer:create-project-laravel",
+            args: &[L("create-project"), L("laravel/laravel"), P],
+            layout: Layout::InPlace,
+            version: VersionPolicy::Latest,
+            runtime: Runtime::HostTool {
+                program: "composer",
+                install_hint: "https://getcomposer.org/download/",
+                probe: &["--version"],
+            },
+        },
+    ),
+    (
         "express",
         InitializerRecord {
             package: "express-generator",

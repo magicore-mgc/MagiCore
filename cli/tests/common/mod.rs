@@ -461,15 +461,80 @@ pub fn work_dir() -> PathBuf {
 /// Note: --dir flag is not supported; project is always created in CWD.
 pub fn scaffold(framework: &str, project: &str) -> PathBuf {
     let base = work_dir();
-    // Framework source comes from an existing project: MagiCore embeds none.
-    // Source framework lấy từ project có sẵn: MagiCore không nhúng template.
-    let source = local_source(&base, "web", framework);
-    let result = mgc_in(
-        &base,
-        &["create-web", framework, project, "--ts", &source.flag()],
-    );
+    // A framework with an official initializer must be scaffolded through it:
+    // that is the product path, and it is what these tests exist to exercise.
+    // A framework without one falls back to a local project, which is the only
+    // other source MagiCore accepts.
+    // Framework có initializer chính thức phải được scaffold qua nó: đó là
+    // đường sản phẩm và là thứ các test này kiểm. Framework không có thì dùng
+    // project local, nguồn duy nhất còn lại MagiCore chấp nhận.
+    let result = if has_official_initializer("web", framework) {
+        mgc_in(&base, &["create-web", framework, project, "--ts"])
+    } else {
+        let source = local_source(&base, "web", framework);
+        mgc_in(
+            &base,
+            &["create-web", framework, project, "--ts", &source.flag()],
+        )
+    };
     assert!(result.0, "scaffold {framework} failed:\n{}", result.1);
     base.join(project)
+}
+
+/// Whether the framework has an official initializer, which is the product
+/// path these tests must exercise.
+/// Framework có initializer chính thức không, tức đường sản phẩm mà test phải
+/// kiểm.
+/// Whether the official initializer for this framework can actually run here.
+/// A host-tool initializer needs the language toolchain, and a CI image without
+/// it must skip rather than fail: reporting a missing JDK as a MagiCore failure
+/// would mislabel the problem.
+/// Initializer chính thức cho framework này có chạy được ở đây không. Initializer
+/// host-tool cần toolchain ngôn ngữ; image CI thiếu nó phải SKIP chứ không FAIL,
+/// vì báo thiếu toolchain thành lỗi MagiCore là dán nhãn sai vấn đề.
+pub fn initializer_available(framework: &str) -> bool {
+    match framework {
+        "django" => which("django-admin"),
+        "laravel" => which("composer"),
+        _ => has_official_initializer("web", framework),
+    }
+}
+
+/// Whether a program resolves on `PATH`.
+/// Chương trình có resolve được trên `PATH` không.
+fn which(program: &str) -> bool {
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    std::env::split_paths(&path).any(|dir| dir.join(program).is_file())
+}
+
+pub fn has_official_initializer(core: &str, framework: &str) -> bool {
+    const OFFICIAL: &[(&str, &str)] = &[
+        ("web", "vanilla"),
+        ("web", "react-vite"),
+        ("web", "vue-vite"),
+        ("web", "nextjs"),
+        ("web", "sveltekit"),
+        ("web", "nuxt"),
+        ("web", "angular"),
+        ("web", "remix"),
+        ("web", "astro"),
+        ("web", "vite"),
+        ("web", "preact"),
+        ("web", "lit"),
+        ("web", "vue-cli"),
+        ("web", "docusaurus"),
+        ("web", "vitepress"),
+        ("web", "turbo"),
+        ("web", "tauri"),
+        ("web", "express"),
+        ("web", "nestjs"),
+        ("web", "nest"),
+        ("web", "spring-boot"),
+        ("web", "quarkus"),
+        ("web", "django"),
+        ("web", "laravel"),
+    ];
+    OFFICIAL.contains(&(core, framework))
 }
 
 /// Assert file exists in project directory.
@@ -829,12 +894,16 @@ pub fn bench_scaffold(framework: &str, project: &str) -> u128 {
     // is an existing project of the same framework.
     // Đo chính pipeline scaffold, không phải độ trễ registry: nguồn là project
     // có sẵn cùng framework.
-    let source = local_source(&base, "web", framework);
     let start = Instant::now();
-    let result = mgc_in(
-        &base,
-        &["create-web", framework, project, "--ts", &source.flag()],
-    );
+    let result = if has_official_initializer("web", framework) {
+        mgc_in(&base, &["create-web", framework, project, "--ts"])
+    } else {
+        let source = local_source(&base, "web", framework);
+        mgc_in(
+            &base,
+            &["create-web", framework, project, "--ts", &source.flag()],
+        )
+    };
     let elapsed = start.elapsed().as_millis();
     assert!(result.0, "bench scaffold {framework} failed: {}", result.1);
     elapsed

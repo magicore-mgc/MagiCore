@@ -3,6 +3,12 @@
 
 #[test]
 fn test_scaffold_succeeds() {
+    if !common::initializer_available(FRAMEWORK) {
+        eprintln!(
+            "skipping {FRAMEWORK}: its official initializer needs a toolchain this machine lacks"
+        );
+        return;
+    }
     let name = format!("test-{FRAMEWORK}");
     let dir = common::scaffold(FRAMEWORK, &name);
     assert!(dir.exists(), "project dir {name} created");
@@ -13,6 +19,12 @@ fn test_scaffold_succeeds() {
 
 #[test]
 fn test_scaffold_speed() {
+    if !common::initializer_available(FRAMEWORK) {
+        eprintln!(
+            "skipping {FRAMEWORK} speed: its official initializer needs a toolchain this machine lacks"
+        );
+        return;
+    }
     let name = format!("speed-{FRAMEWORK}");
     let ms = common::bench_scaffold(FRAMEWORK, &name);
     // ponytail: 90s ceiling for parallel test runs on CI/dev machines

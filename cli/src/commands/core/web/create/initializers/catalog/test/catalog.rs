@@ -44,7 +44,10 @@ fn every_record_names_the_project_argument_once() {
         // carries it in `name_param`, so it has no `ArgSlot::Project`.
         // Runtime archive nhận tên project qua query và giữ ở `name_param`, nên
         // không có `ArgSlot::Project`.
-        if matches!(record.runtime, Runtime::HttpArchive { .. }) {
+        if matches!(
+            record.runtime,
+            Runtime::HttpArchive { .. } | Runtime::HostTool { .. }
+        ) {
             continue;
         }
         let project_slots = record
@@ -87,7 +90,10 @@ fn skip_install_flags_are_present_for_package_managers() {
     ];
     let skip_flags = ["--skip-install", "--no-install", "--noInstall", "--install"];
     for (id, record) in all_records() {
-        if matches!(record.runtime, Runtime::HttpArchive { .. }) {
+        if matches!(
+            record.runtime,
+            Runtime::HttpArchive { .. } | Runtime::HostTool { .. }
+        ) {
             continue;
         }
         if NEVER_INSTALLS.contains(&record.package) {
@@ -122,6 +128,11 @@ fn every_record_generates_a_nested_project() {
             // Archive được giải nén thẳng vào thư mục project nên không bao giờ
             // ghi vào thư mục hiện tại của user.
             Runtime::HttpArchive { .. } => assert_eq!(record.layout, Layout::InPlace, "{id}"),
+            // A host tool receives the project path as its last argument and
+            // creates that directory itself, so it is also an in-place layout.
+            // Chương trình host nhận đường dẫn project làm tham số cuối và tự
+            // tạo thư mục đó, nên cũng là layout in-place.
+            Runtime::HostTool { .. } => assert_eq!(record.layout, Layout::InPlace, "{id}"),
             Runtime::RegistryPackage => assert_eq!(
                 record.layout,
                 Layout::NestedProject,

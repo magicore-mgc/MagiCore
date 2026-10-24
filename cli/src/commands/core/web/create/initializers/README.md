@@ -46,6 +46,7 @@ A record says *how* the framework produces a project:
 |---|---|---|
 | `RegistryPackage` | MagiCore installs the package the framework team publishes, then runs its binary in a sandbox | 24 frontend, 3 backend |
 | `HttpArchive` | MagiCore asks the framework's own generator service for a project archive and extracts it | `spring-boot` (`start.spring.io`), `quarkus` (`code.quarkus.io`) |
+| `HostTool` | MagiCore runs a program the developer already installed, after proving it answers `--version` | `django` (`django-admin`), `laravel` (`composer`) |
 
 `HttpArchive` needs no local toolchain and no package manager at all: the
 framework team's service renders the project. Archive entries are validated
@@ -61,6 +62,8 @@ extra directory.
 **Backend (3):** `express` · `nestjs` · `nest`
 
 **JVM via generator service (2):** `spring-boot` · `quarkus` — scaffold works end to end; `mgc install` fails closed because a Maven parent/BOM is not resolved yet, which is a resolver gap rather than a scaffold gap.
+
+**PHP / Python via host tool (2):** `django` · `laravel` — the program must already be on `PATH`. MagiCore probes `--version` first and, when the toolchain is absent, fails with the exact install command rather than writing half a project.
 
 Each one was executed end to end on macOS arm64 with MagiCore's own dependency ecosystem (`mgc install`) and its own build (`mgc build`).
 

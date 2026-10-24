@@ -54,6 +54,39 @@ pub(in crate::commands::core::web::implementation) async fn run_create_initializ
         ));
     }
 
+    // A host-tool initializer runs a program the developer already installed.
+    // Nothing is downloaded and nothing of MagiCore's own is added.
+    // Initializer host-tool chạy chương trình lập trình viên đã cài. Không tải
+    // gì và không thêm gì của MagiCore.
+    if let super::super::Runtime::HostTool {
+        program,
+        install_hint,
+        probe,
+    } = generator.runtime
+    {
+        let args: Vec<String> = generator
+            .args
+            .iter()
+            .map(|argument| match argument {
+                super::super::ArgSlot::Project => project_name.to_string(),
+                super::super::ArgSlot::Literal(value) => (*value).to_string(),
+            })
+            .collect();
+        super::run_host_tool(program, install_hint, probe, &args, &generated_project)?;
+        let root = workspace.path().canonicalize()?;
+        let resolved = generated_project.canonicalize()?;
+        if !resolved.starts_with(&root) {
+            return Err(crate::error::web_generator_output_unsafe(
+                &generated_project,
+            ));
+        }
+        config.template_dir = resolved;
+        return Ok((
+            workspace,
+            format!("host:{program}#generator={}", generator.identity),
+        ));
+    }
+
     let package_request = format!("{}@{}", generator.package, generator.version.selector());
     let generator_args = generator
         .args

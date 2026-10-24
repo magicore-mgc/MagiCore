@@ -87,12 +87,26 @@ pub(crate) enum Runtime {
     /// runtime (`create-vite`, `create-next-app`, `sv`, …).
     /// Chương trình phát hành lên registry, chạy qua package runtime.
     RegistryPackage,
-    /// An archive served by the framework's own project generator service
-    /// (`start.spring.io`, `code.quarkus.io`). No local toolchain is needed and
-    /// no package manager is involved: the service renders the project.
-    /// Archive do dịch vụ sinh project của chính framework phục vụ. Không cần
-    /// toolchain local và không dính package manager nào: dịch vụ tự render
-    /// project.
+    /// A program the user already has on `PATH`, run directly
+    /// (`django-admin`, `composer`, `rails`). MagiCore checks the program
+    /// answers `--version` before using it, so a missing or broken toolchain is
+    /// reported instead of producing half a project.
+    /// Chương trình user đã có trên `PATH`, chạy trực tiếp. MagiCore kiểm
+    /// chương trình trả lời `--version` trước khi dùng, nên toolchain thiếu
+    /// hoặc hỏng được báo thay vì sinh nửa project.
+    HostTool {
+        /// Program name resolved through `PATH`.
+        /// Tên chương trình resolve qua `PATH`.
+        program: &'static str,
+        /// Message shown when the program is missing, with the install hint.
+        /// Thông điệp khi thiếu chương trình, kèm gợi ý cài.
+        install_hint: &'static str,
+        /// Subcommand chain for the version probe, e.g. `["--version"]`.
+        /// Chuỗi subcommand cho probe phiên bản.
+        probe: &'static [&'static str],
+    },
+    /// An archive served by the framework's own project generator service.
+    /// Archive do dịch vụ sinh project của chính framework phục vụ.
     HttpArchive {
         /// Base URL of the generator service.
         /// URL gốc của dịch vụ sinh project.
