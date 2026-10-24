@@ -14,6 +14,12 @@ pub(in crate::scaffold::processor::framework_catalog::web_framework_catalog) con
     sub_type: "backend",
     base: Some("node"),
 };
+pub(in crate::scaffold::processor::framework_catalog::web_framework_catalog) const NEST:
+    WebFrameworkConfig = WebFrameworkConfig {
+    name: "nest",
+    sub_type: "backend",
+    base: Some("node"),
+};
 pub(in crate::scaffold::processor::framework_catalog::web_framework_catalog) const NESTJS:
     WebFrameworkConfig = WebFrameworkConfig {
     name: "nestjs",

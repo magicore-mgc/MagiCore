@@ -5,5 +5,5 @@
 mod implementation;
 
 pub(in crate::scaffold::processor::framework_catalog::web_framework_catalog) use implementation::{
-    EXPRESS, FASTIFY, HONO, NESTJS, TRPC,
+    EXPRESS, FASTIFY, HONO, NEST, NESTJS, TRPC,
 };

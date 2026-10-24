@@ -1,7 +1,9 @@
 //! Policy tests: no package manager may stand in for an initializer.
 //! Test policy: không package manager nào được thay initializer.
 
-use super::super::super::super::types::{ArgSlot, InitializerRecord, Layout, VersionPolicy};
+use super::super::super::super::types::{
+    ArgSlot, InitializerRecord, Layout, Runtime, VersionPolicy,
+};
 use super::super::{Refusal, check};
 
 fn record(package: &'static str, binary: &'static str) -> InitializerRecord {
@@ -12,6 +14,7 @@ fn record(package: &'static str, binary: &'static str) -> InitializerRecord {
         args: &[ArgSlot::Project],
         layout: Layout::NestedProject,
         version: VersionPolicy::Latest,
+        runtime: Runtime::RegistryPackage,
     }
 }
 

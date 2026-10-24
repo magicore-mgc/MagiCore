@@ -12,4 +12,6 @@ mod types;
 
 pub(in crate::commands::core::web::implementation) use implementation::lookup;
 pub(in crate::commands::core::web::implementation) use policy::check;
-pub(in crate::commands::core::web::implementation) use types::{ArgSlot, InitializerRecord, Mode};
+pub(in crate::commands::core::web::implementation) use types::{
+    ArgSlot, InitializerRecord, Mode, Runtime,
+};

@@ -5,5 +5,5 @@
 mod implementation;
 
 pub(in crate::commands::core::web::implementation) use implementation::{
-    ArgSlot, InitializerRecord, Layout, Mode, VersionPolicy,
+    ArgSlot, InitializerRecord, Layout, Mode, Runtime, VersionPolicy,
 };

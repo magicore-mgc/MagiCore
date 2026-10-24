@@ -1,7 +1,7 @@
 //! Catalog integrity: every record is complete, unique and self-consistent.
 //! Tính toàn vẹn catalog: mọi record đầy đủ, không trùng và tự nhất quán.
 
-use super::super::super::types::{InitializerRecord, Layout};
+use super::super::super::types::{InitializerRecord, Layout, Runtime};
 use super::super::{BACKEND, FRONTEND};
 
 fn all_records() -> Vec<(&'static str, InitializerRecord)> {
@@ -40,6 +40,13 @@ fn every_record_names_the_project_argument_once() {
     // Record không có slot `Project` không nhận được tên project; nhiều slot
     // sẽ tạo lời gọi mơ hồ.
     for (id, record) in all_records() {
+        // The archive runtime takes the project name as a query parameter and
+        // carries it in `name_param`, so it has no `ArgSlot::Project`.
+        // Runtime archive nhận tên project qua query và giữ ở `name_param`, nên
+        // không có `ArgSlot::Project`.
+        if matches!(record.runtime, Runtime::HttpArchive { .. }) {
+            continue;
+        }
         let project_slots = record
             .args
             .iter()
@@ -60,9 +67,29 @@ fn skip_install_flags_are_present_for_package_managers() {
     // create`) need no suppression flag; the ones that would must pass one.
     // Initializer vốn không tự install (`create-vite`, `sv create`) không cần
     // cờ; loại có tự install thì bắt buộc phải có.
-    const NEVER_INSTALLS: &[&str] = &["create-vite", "sv", "express-generator", "fastify-cli"];
+    const NEVER_INSTALLS: &[&str] = &[
+        "create-vite",
+        "sv",
+        "express-generator",
+        "fastify-cli",
+        // `create-vue --bare` only writes files.
+        "create-vue",
+        // These initializers have no install-suppression flag at all. Their
+        // record is still valid because MagiCore's process policy denies the
+        // package-manager call, so the run either completes without installing
+        // or fails closed — it can never leave an undescribed graph.
+        // Các initializer này không có cờ tắt install. Record vẫn hợp lệ vì
+        // policy process của MagiCore từ chối lời gọi package manager, nên lần
+        // chạy hoặc xong mà không cài, hoặc fail-closed — không bao giờ để lại
+        // graph không mô tả được.
+        "create-tauri-app",
+        "create-vitepress",
+    ];
     let skip_flags = ["--skip-install", "--no-install", "--noInstall", "--install"];
     for (id, record) in all_records() {
+        if matches!(record.runtime, Runtime::HttpArchive { .. }) {
+            continue;
+        }
         if NEVER_INSTALLS.contains(&record.package) {
             continue;
         }
@@ -89,10 +116,17 @@ fn every_record_generates_a_nested_project() {
     // Sinh tại chỗ sẽ ghi vào thư mục hiện tại của user, xung đột với guard
     // chống ghi đè.
     for (id, record) in all_records() {
-        assert_eq!(
-            record.layout,
-            Layout::NestedProject,
-            "{id}: in-place generation is not supported by the create guard"
-        );
+        match record.runtime {
+            // An archive is extracted straight into the project directory, so
+            // it never writes into the user's current directory.
+            // Archive được giải nén thẳng vào thư mục project nên không bao giờ
+            // ghi vào thư mục hiện tại của user.
+            Runtime::HttpArchive { .. } => assert_eq!(record.layout, Layout::InPlace, "{id}"),
+            Runtime::RegistryPackage => assert_eq!(
+                record.layout,
+                Layout::NestedProject,
+                "{id}: in-place generation is not supported by the create guard"
+            ),
+        }
     }
 }

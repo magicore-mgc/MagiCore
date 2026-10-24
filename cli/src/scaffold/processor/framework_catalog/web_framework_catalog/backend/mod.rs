@@ -13,7 +13,7 @@ pub(super) use self::{
     dotnet::{DOTNET_MINIMAL, DOTNET_WEBAPI},
     go::{ECHO, FIBER, GIN},
     java::{QUARKUS, SPRING_BOOT},
-    node::{EXPRESS, FASTIFY, HONO, NESTJS, TRPC},
+    node::{EXPRESS, FASTIFY, HONO, NEST, NESTJS, TRPC},
     php::{LARAVEL, SYMFONY},
     python::{DJANGO, FASTAPI, FLASK},
     rust::{ACTIX_WEB, AXUM},

@@ -27,10 +27,16 @@ OUT = ROOT / "ci" / "evidence" / "coverage-manifest.observed.json"
 LANGUAGE = {
     "actix-web": "rust", "axum": "rust", "django": "python", "echo": "go",
     "fastapi": "python", "fiber": "go", "flask": "python", "gin": "go",
-    "laravel": "php", "quarkus": "java", "spring-boot": "java", "symfony": "php",
-    "angular": "typescript", "astro": "typescript", "nextjs": "typescript",
-    "react-vite": "typescript", "remix": "typescript", "sveltekit": "typescript",
-    "vue-vite": "typescript",
+    "laravel": "php", "symfony": "php",
+    "angular": "typescript", "astro": "typescript", "docusaurus": "typescript",
+    "lit": "typescript", "nextjs": "typescript", "nuxt": "typescript",
+    "preact": "typescript", "qwik": "typescript", "react-vite": "typescript",
+    "remix": "typescript", "solid-start": "typescript", "solidjs": "typescript",
+    "sveltekit": "typescript", "tauri": "typescript", "turbo": "typescript",
+    "spring-boot": "java", "quarkus": "java",
+    "vanilla": "typescript", "vite": "typescript", "vitepress": "typescript",
+    "vue-cli": "typescript", "vue-vite": "typescript",
+    "express": "javascript", "nest": "typescript", "nestjs": "typescript",
 }
 
 SCAFFOLD_ONLY = [

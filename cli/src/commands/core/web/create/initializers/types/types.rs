@@ -79,6 +79,38 @@ impl VersionPolicy {
     }
 }
 
+/// How the initializer produces a project.
+/// Cách initializer sinh ra project.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Runtime {
+    /// A program published to a package registry, run through the package
+    /// runtime (`create-vite`, `create-next-app`, `sv`, …).
+    /// Chương trình phát hành lên registry, chạy qua package runtime.
+    RegistryPackage,
+    /// An archive served by the framework's own project generator service
+    /// (`start.spring.io`, `code.quarkus.io`). No local toolchain is needed and
+    /// no package manager is involved: the service renders the project.
+    /// Archive do dịch vụ sinh project của chính framework phục vụ. Không cần
+    /// toolchain local và không dính package manager nào: dịch vụ tự render
+    /// project.
+    HttpArchive {
+        /// Base URL of the generator service.
+        /// URL gốc của dịch vụ sinh project.
+        endpoint: &'static str,
+        /// Query parameters appended verbatim, in order.
+        /// Tham số query nối nguyên văn, theo thứ tự.
+        params: &'static [(&'static str, &'static str)],
+        /// Query parameter that carries the project name.
+        /// Tham số query mang tên project.
+        name_param: &'static str,
+        /// Set when the archive wraps its project in a single top-level
+        /// directory that must be hoisted, as `code.quarkus.io` does.
+        /// Đặt khi archive bọc project trong một thư mục con duy nhất cần
+        /// hoist lên, như `code.quarkus.io` làm.
+        unwrap_single_root: bool,
+    },
+}
+
 /// One official framework initializer.
 /// Một initializer chính thức của framework.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,6 +133,9 @@ pub(crate) struct InitializerRecord {
     /// Package version policy.
     /// Chính sách phiên bản package.
     pub(crate) version: VersionPolicy,
+    /// How the project is produced.
+    /// Cách project được sinh ra.
+    pub(crate) runtime: Runtime,
 }
 
 /// Scaffold mode a record belongs to.

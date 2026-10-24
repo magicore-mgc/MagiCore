@@ -66,3 +66,51 @@ pub(in crate::scaffold::processor::framework_catalog::web_framework_catalog) con
 #[cfg(test)]
 #[path = "test/mod.rs"]
 mod tests;
+pub(in crate::scaffold::processor::framework_catalog::web_framework_catalog) const VITE_MGC:
+    WebFrameworkConfig = WebFrameworkConfig {
+    name: "vite",
+    sub_type: "frontend",
+    base: None,
+};
+pub(in crate::scaffold::processor::framework_catalog::web_framework_catalog) const PREACT_MGC:
+    WebFrameworkConfig = WebFrameworkConfig {
+    name: "preact",
+    sub_type: "frontend",
+    base: None,
+};
+pub(in crate::scaffold::processor::framework_catalog::web_framework_catalog) const LIT_MGC:
+    WebFrameworkConfig = WebFrameworkConfig {
+    name: "lit",
+    sub_type: "frontend",
+    base: None,
+};
+pub(in crate::scaffold::processor::framework_catalog::web_framework_catalog) const VUE_CLI_MGC:
+    WebFrameworkConfig = WebFrameworkConfig {
+    name: "vue-cli",
+    sub_type: "frontend",
+    base: None,
+};
+pub(in crate::scaffold::processor::framework_catalog::web_framework_catalog) const DOCUSAURUS_MGC:
+    WebFrameworkConfig = WebFrameworkConfig {
+    name: "docusaurus",
+    sub_type: "frontend",
+    base: None,
+};
+pub(in crate::scaffold::processor::framework_catalog::web_framework_catalog) const VITEPRESS_MGC:
+    WebFrameworkConfig = WebFrameworkConfig {
+    name: "vitepress",
+    sub_type: "frontend",
+    base: None,
+};
+pub(in crate::scaffold::processor::framework_catalog::web_framework_catalog) const TURBO_MGC:
+    WebFrameworkConfig = WebFrameworkConfig {
+    name: "turbo",
+    sub_type: "frontend",
+    base: None,
+};
+pub(in crate::scaffold::processor::framework_catalog::web_framework_catalog) const TAURI_MGC:
+    WebFrameworkConfig = WebFrameworkConfig {
+    name: "tauri",
+    sub_type: "frontend",
+    base: None,
+};
