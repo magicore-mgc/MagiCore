@@ -81,6 +81,8 @@ pub(in crate::commands::core::web::implementation) fn build_web_config(
                     project_name: project_name.to_string(),
                     features: vec![],
                     template_dir: std::path::PathBuf::new(),
+                    from_local: flags.source.from_local.clone(),
+                    no_local: flags.source.no_local,
                 }
             }
             None => {
@@ -98,6 +100,10 @@ pub(in crate::commands::core::web::implementation) fn build_web_config(
     };
 
     config.features = web_features(flags);
+    // Offline source choice belongs to MagiCore config, never to framework source.
+    // Lựa chọn nguồn offline thuộc config MagiCore, không phải source framework.
+    config.from_local = flags.source.from_local.clone();
+    config.no_local = flags.source.no_local;
 
     if config.frameworks.len() >= 2 {
         let lang = &config.frameworks[0];

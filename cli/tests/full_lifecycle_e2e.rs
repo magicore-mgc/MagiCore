@@ -9,6 +9,9 @@ use std::path::PathBuf;
 use std::process::Command;
 use tempfile::TempDir;
 
+#[path = "common/mod.rs"]
+mod common;
+
 fn find_mgc_binary() -> PathBuf {
     if let Some(value) = std::env::var_os("MGC_TEST_CLI_BINARY") {
         let binary = PathBuf::from(value);
@@ -284,6 +287,7 @@ fn test_lib_full_lifecycle() {
         .arg("create-lib")
         .arg("rust")
         .arg(project_name)
+        .arg(common::local_source(temp.path(), "lib", "rust").flag())
         .current_dir(temp.path())
         .env("HOME", &mgc_home)
         .env("USERPROFILE", &mgc_home)
@@ -303,10 +307,6 @@ fn test_lib_full_lifecycle() {
     assert!(
         project_path.join("Cargo.toml").exists(),
         "Cargo.toml not created"
-    );
-    assert!(
-        project_path.join("Cargo.lock").exists(),
-        "deterministic empty Cargo.lock not created"
     );
 
     // === STEP 2: INSTALL ===
@@ -330,6 +330,12 @@ fn test_lib_full_lifecycle() {
     assert!(
         project_path.join("mgc.lock").exists(),
         "mgc.lock not created by install-lib"
+    );
+    // Cargo.lock belongs to the install phase, not to scaffold.
+    // Cargo.lock thuộc pha install, không phải scaffold.
+    assert!(
+        project_path.join("Cargo.lock").exists(),
+        "Cargo.lock not created by install-lib"
     );
 
     // === STEP 3: BUILD ===
@@ -567,10 +573,14 @@ fn test_app_scaffold_e2e() {
 
     // === STEP 1: CREATE ===
     println!("\n=== STEP 1: mgc create-app ===");
+    // Scaffold from an existing flutter project: MagiCore holds no framework source.
+    // Scaffold từ project flutter có sẵn: MagiCore không giữ source framework.
+    let app_source = common::local_source(temp.path(), "app", "flutter");
     let create_output = Command::new(&mgc)
         .arg("create-app")
         .arg("flutter")
         .arg(project_name)
+        .arg(app_source.flag())
         .current_dir(temp.path())
         .output()
         .expect("mgc create-app failed to execute");

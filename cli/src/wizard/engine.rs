@@ -10,6 +10,12 @@ pub struct ScaffoldConfig {
     pub project_name: String,
     pub features: Vec<String>,
     pub template_dir: PathBuf,
+    /// Explicit offline source project (`--from-local`).
+    /// Project nguồn offline tường minh (`--from-local`).
+    pub from_local: Option<PathBuf>,
+    /// Disable automatic local-project discovery (`--no-local`).
+    /// Tắt tự dò project local (`--no-local`).
+    pub no_local: bool,
 }
 
 /// A wizard question with possible answers

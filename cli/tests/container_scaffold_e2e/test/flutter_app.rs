@@ -20,8 +20,12 @@ fn create_flutter_app_docker_profile_runs_lifecycle_through_mgc() {
         std::fs::create_dir_all(path).expect("isolated MGC directory");
     }
 
+    // Flutter framework source comes from an existing project.
+    // Source framework Flutter lấy từ project có sẵn.
+    let app_source = crate::common::local_source(temp.path(), "app", "flutter");
     let app_output = Command::new(env!("CARGO_BIN_EXE_mgc"))
         .args(["create-app", "flutter", "container-app", "--docker"])
+        .arg(app_source.flag())
         .current_dir(temp.path())
         .env("HOME", &home)
         .env("USERPROFILE", &home)

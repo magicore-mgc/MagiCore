@@ -61,6 +61,7 @@ pub mod template;
 pub mod test;
 pub mod tool;
 pub mod trust;
+pub mod version;
 #[path = "web_registry_config/mod.rs"]
 pub mod web_registry_config;
 pub mod web_scaffold_flags;

@@ -6,6 +6,7 @@ pub async fn run(
     framework: &str,
     project_name: &str,
     container: super::super::shared::container_flags::ContainerFlags,
+    source: crate::commands::core::shared::source_flags::SourceFlags,
 ) -> Result<()> {
     if container.k8s {
         return Err(crate::error::k8s_profile_unsupported("app"));
@@ -28,11 +29,14 @@ pub async fn run(
             sub_type: String::new(),
             features: Vec::new(),
             template_dir: std::path::PathBuf::new(),
+
+            ..Default::default()
         }
     } else {
         crate::wizard::app::AppWizard::run()
     };
     config.project_name = project_name.to_string();
+    super::source::apply(&mut config, source);
     if container.docker && !config.features.iter().any(|feature| feature == "docker") {
         config.features.push("docker".to_string());
     }
@@ -52,13 +56,13 @@ pub async fn run(
             Ok(status) if status.is_available() => {}
             Ok(_) => {
                 mgc_ui::warning(&format!(
-                    "Optional app layer 'app/{}' not found, using fallback",
+                    "Optional app layer 'app/{}' not found; the registry layer or a local project is required",
                     fw
                 ));
             }
             Err(e) if explicit_ref || !e.is_availability_failure() => return Err(e.into()),
             Err(e) => mgc_ui::warning(&format!(
-                "Optional app layer 'app/{}' is unavailable, using fallback: {}",
+                "Optional app layer 'app/{}' is unavailable; the registry layer or a local project is required: {}",
                 fw, e
             )),
         }

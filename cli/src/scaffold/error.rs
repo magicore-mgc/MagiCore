@@ -74,10 +74,6 @@ pub(crate) fn create_claim_conflict(claim: &Path) -> Error {
 
 /// Unsupported scaffold core.
 /// Core scaffold không được hỗ trợ.
-pub(crate) fn unsupported_scaffold_core(core: &str) -> Error {
-    anyhow!("Unsupported core '{core}'")
-}
-
 /// Web template path does not exist.
 /// Đường dẫn template web không tồn tại.
 pub(crate) fn web_template_path_missing(dir: &str) -> Error {
@@ -158,4 +154,10 @@ pub(crate) fn template_materialization_path_invalid(path: &str) -> Error {
 /// Giới hạn bộ nhớ trước khi parse manifest.
 pub(crate) fn template_manifest_too_large(limit: u64) -> Error {
     anyhow!("Template manifest exceeds the {} byte limit", limit)
+}
+
+pub fn scaffold_source_unavailable(core: &str, framework: &str) -> anyhow::Error {
+    anyhow::anyhow!(
+        "No scaffold source for core '{core}' framework '{framework}': the registry layer is unavailable (check network/registry) and no existing project with this framework was found on this machine. Options: (1) restore network access so the registry layer can be fetched, or (2) point at an existing project with --from-local <path>. No project was created."
+    )
 }

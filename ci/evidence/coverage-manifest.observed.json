@@ -1,0 +1,1510 @@
+{
+  "schema_version": 1,
+  "manifest_kind": "coverage-skeleton",
+  "lanes": [
+    {
+      "core": "web",
+      "language": "rust",
+      "framework": "actix-web",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "rust",
+      "framework": "actix-web",
+      "operation": "build",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "rust",
+      "framework": "actix-web",
+      "operation": "test",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "rust",
+      "framework": "actix-web",
+      "operation": "dev",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "native-experimental",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "angular",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "angular",
+      "operation": "build",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "angular",
+      "operation": "test",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "angular",
+      "operation": "dev",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "native-experimental",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "astro",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "astro",
+      "operation": "build",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "astro",
+      "operation": "test",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "astro",
+      "operation": "dev",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "native-experimental",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "rust",
+      "framework": "axum",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "rust",
+      "framework": "axum",
+      "operation": "build",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "rust",
+      "framework": "axum",
+      "operation": "test",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "rust",
+      "framework": "axum",
+      "operation": "dev",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "native-experimental",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "python",
+      "framework": "django",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "python",
+      "framework": "django",
+      "operation": "build",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "python",
+      "framework": "django",
+      "operation": "test",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "python",
+      "framework": "django",
+      "operation": "dev",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "native-experimental",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "go",
+      "framework": "echo",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "go",
+      "framework": "echo",
+      "operation": "build",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "go",
+      "framework": "echo",
+      "operation": "test",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "go",
+      "framework": "echo",
+      "operation": "dev",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "native-experimental",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "python",
+      "framework": "fastapi",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "python",
+      "framework": "fastapi",
+      "operation": "build",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "python",
+      "framework": "fastapi",
+      "operation": "test",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "python",
+      "framework": "fastapi",
+      "operation": "dev",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "native-experimental",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "go",
+      "framework": "fiber",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "go",
+      "framework": "fiber",
+      "operation": "build",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "go",
+      "framework": "fiber",
+      "operation": "test",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "go",
+      "framework": "fiber",
+      "operation": "dev",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "native-experimental",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "python",
+      "framework": "flask",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "python",
+      "framework": "flask",
+      "operation": "build",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "python",
+      "framework": "flask",
+      "operation": "test",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "python",
+      "framework": "flask",
+      "operation": "dev",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "native-experimental",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "go",
+      "framework": "gin",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "go",
+      "framework": "gin",
+      "operation": "build",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "go",
+      "framework": "gin",
+      "operation": "test",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "go",
+      "framework": "gin",
+      "operation": "dev",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "native-experimental",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "php",
+      "framework": "laravel",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "php",
+      "framework": "laravel",
+      "operation": "build",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "php",
+      "framework": "laravel",
+      "operation": "test",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "php",
+      "framework": "laravel",
+      "operation": "dev",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "native-experimental",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "nextjs",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "nextjs",
+      "operation": "build",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "nextjs",
+      "operation": "test",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "nextjs",
+      "operation": "dev",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "native-experimental",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "java",
+      "framework": "quarkus",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "java",
+      "framework": "quarkus",
+      "operation": "build",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "java",
+      "framework": "quarkus",
+      "operation": "test",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "java",
+      "framework": "quarkus",
+      "operation": "dev",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "native-experimental",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "react-vite",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "react-vite",
+      "operation": "build",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "react-vite",
+      "operation": "test",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "react-vite",
+      "operation": "dev",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "native-experimental",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "remix",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "remix",
+      "operation": "build",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "remix",
+      "operation": "test",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "remix",
+      "operation": "dev",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "native-experimental",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "java",
+      "framework": "spring-boot",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "java",
+      "framework": "spring-boot",
+      "operation": "build",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "java",
+      "framework": "spring-boot",
+      "operation": "test",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "java",
+      "framework": "spring-boot",
+      "operation": "dev",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "native-experimental",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "sveltekit",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "sveltekit",
+      "operation": "build",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "sveltekit",
+      "operation": "test",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "sveltekit",
+      "operation": "dev",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "native-experimental",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "php",
+      "framework": "symfony",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "php",
+      "framework": "symfony",
+      "operation": "build",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "php",
+      "framework": "symfony",
+      "operation": "test",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "php",
+      "framework": "symfony",
+      "operation": "dev",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "native-experimental",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "vue-vite",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "vue-vite",
+      "operation": "build",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "vue-vite",
+      "operation": "test",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "typescript",
+      "framework": "vue-vite",
+      "operation": "dev",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "native-experimental",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "javascript",
+      "framework": "package-ops",
+      "operation": "add",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "javascript",
+      "framework": "package-ops",
+      "operation": "remove",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "web",
+      "language": "javascript",
+      "framework": "package-ops",
+      "operation": "audit",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "ai",
+      "language": "python",
+      "framework": "python-agent",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "scaffold-only",
+      "status": "scaffold-only",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "app",
+      "language": "dart",
+      "framework": "flutter",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "scaffold-only",
+      "status": "scaffold-only",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "lib",
+      "language": "rust",
+      "framework": "rust",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "scaffold-only",
+      "status": "scaffold-only",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "lib",
+      "language": "python",
+      "framework": "python",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "scaffold-only",
+      "status": "scaffold-only",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "lib",
+      "language": "go",
+      "framework": "go",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "scaffold-only",
+      "status": "scaffold-only",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "cicd",
+      "language": "yaml",
+      "framework": "github-actions",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "scaffold-only",
+      "status": "scaffold-only",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "cicd",
+      "language": "yaml",
+      "framework": "github-actions",
+      "operation": "list",
+      "target": "darwin-arm64",
+      "dependency_owner": "unsupported",
+      "status": "unsupported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "clo",
+      "language": "typescript",
+      "framework": "cdk-typescript",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "scaffold-only",
+      "status": "scaffold-only",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "clo",
+      "language": "typescript",
+      "framework": "cdk-typescript",
+      "operation": "list",
+      "target": "darwin-arm64",
+      "dependency_owner": "unsupported",
+      "status": "unsupported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "iot",
+      "language": "rust",
+      "framework": "esp32-rust",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "scaffold-only",
+      "status": "scaffold-only",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "iot",
+      "language": "rust",
+      "framework": "esp32-rust",
+      "operation": "list",
+      "target": "darwin-arm64",
+      "dependency_owner": "unsupported",
+      "status": "unsupported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "game",
+      "language": "rust",
+      "framework": "bevy",
+      "operation": "install",
+      "target": "darwin-arm64",
+      "dependency_owner": "scaffold-only",
+      "status": "scaffold-only",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "game",
+      "language": "rust",
+      "framework": "bevy",
+      "operation": "list",
+      "target": "darwin-arm64",
+      "dependency_owner": "unsupported",
+      "status": "unsupported",
+      "evidence": [
+        {
+          "kind": "integration",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "hardware",
+      "language": "rust",
+      "framework": "optimizer",
+      "operation": "publish",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "unit",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    },
+    {
+      "core": "hardware",
+      "language": "rust",
+      "framework": "bench",
+      "operation": "publish",
+      "target": "darwin-arm64",
+      "dependency_owner": "mgc-native",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "unit",
+          "commit": "29085d6c1fe0c86e9864f071e0c6caceaf09e4bc",
+          "result": "pass"
+        }
+      ]
+    }
+  ]
+}

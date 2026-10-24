@@ -295,21 +295,21 @@ async fn automatic_fetch_integrity_failure_never_publishes_or_allows_fallback() 
 }
 
 #[tokio::test]
-async fn compiled_core_processors_do_not_create_unused_template_snapshot_directories() {
+async fn core_layers_never_resolve_to_a_compiled_processor() {
     use crate::scaffold::resolver::ScaffoldResolveStatus;
     let root = tempfile::tempdir().unwrap();
     let auth = mgc_publish::auth::Auth::default();
     for rel in ["ai/python-agent", "app/flutter", "lib/rust"] {
-        let status = ensure_layer_in(
-            rel,
-            root.path(),
-            Some("invalid registry must not be contacted"),
-            Some(&auth),
-        )
-        .await
-        .unwrap();
-        assert!(matches!(status, ScaffoldResolveStatus::Embedded { .. }));
+        // No builtin processor may satisfy a default ref: an unreachable
+        // registry is an availability failure, never an embedded layer.
+        // Không processor builtin nào thỏa ref mặc định: registry không tới
+        // được là lỗi khả dụng, không phải layer nhúng.
+        let error = ensure_layer_in(rel, root.path(), None, Some(&auth))
+            .await
+            .expect_err("no compiled processor may stand in for a layer");
+        assert!(error.is_availability_failure(), "{rel}: {error}");
         assert!(!root.path().join(rel).exists());
+        let _: Option<ScaffoldResolveStatus> = None;
     }
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
 }

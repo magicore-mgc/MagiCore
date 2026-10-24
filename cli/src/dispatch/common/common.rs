@@ -64,6 +64,7 @@ pub async fn dispatch_common(
             args,
             compat_runner,
         } => commands::exec::run(core, command, args, compat_runner.as_deref()),
+        CommonCommand::Version { json } => commands::version::run(json),
         CommonCommand::Info { package, json } => commands::info::run(package, json).await,
         CommonCommand::Search {
             query,

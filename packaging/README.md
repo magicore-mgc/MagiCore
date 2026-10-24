@@ -19,7 +19,7 @@ Use a version shown on the [GitHub Releases page](https://github.com/mingd-153/M
 
 ```bash
 curl -fsSLo /tmp/mgc-install-from-gh.sh \
-  https://raw.githubusercontent.com/mingd-153/MagiCore/main/scripts/install-from-gh.sh
+  https://raw.githubusercontent.com/mingd-153/MagiCore/main/scripts/install/install-from-gh.sh
 VERSION="<published-version>" # replace with a version listed on GitHub Releases
 bash /tmp/mgc-install-from-gh.sh \
   --package magicore \
@@ -63,7 +63,7 @@ The current Homebrew/Scoop checksum placeholders in source manifests are intenti
 ## Local build scope
 
 ```bash
-bash scripts/release.sh --profile release
+bash scripts/release/release.sh --profile release
 ```
 
 This command runs `mgc-dist build-all` and creates nine core-specific binaries plus build receipts for the host target under `dist/`. It does not create the ten cross-platform release archives; those are built by the GitHub Actions release matrix.

@@ -15,6 +15,8 @@ mod framework_catalog;
 use framework_catalog::*;
 #[path = "processor/online_generator_output/mod.rs"]
 mod online_generator_output;
+mod python_dev_group;
+pub(in crate::scaffold::processor) use python_dev_group::ensure_python_dev_group;
 #[path = "processor/scaffold_lifecycle/mod.rs"]
 mod scaffold_lifecycle;
 #[path = "processor/scaffold_writers/mod.rs"]
@@ -41,9 +43,10 @@ use framework_mapping::{
     legacy_template_target, normalize_web_framework,
 };
 
+pub(in crate::scaffold) use crate::scaffold::hardware_marker::write as write_hardware_marker;
 pub use framework_mapping::{infer_backend_language, is_all_in_one_fullstack};
 pub(in crate::scaffold) use generated_project_files::slugify;
-pub(crate) use template_manifest::{has_builtin_scaffold_processor, validate_template_manifest};
+pub(crate) use template_manifest::validate_template_manifest;
 
 #[cfg(test)]
 #[path = "processor/test/processor.rs"]

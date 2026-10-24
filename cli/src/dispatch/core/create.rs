@@ -63,7 +63,8 @@ pub async fn dispatch(command: CoreCommand) -> Result<()> {
         CoreCommand::CreateGame {
             framework,
             project_name,
-        } => commands::core::create::game::run(&framework, &project_name).await,
+            source,
+        } => commands::core::create::game::run(&framework, &project_name, source).await,
         #[cfg(not(feature = "game"))]
         CoreCommand::CreateGame { .. } => Err(crate::error::core_not_in_build("game")),
         #[cfg(feature = "ai")]
@@ -71,7 +72,8 @@ pub async fn dispatch(command: CoreCommand) -> Result<()> {
             framework,
             project_name,
             container,
-        } => commands::core::create::ai::run(&framework, &project_name, container).await,
+            source,
+        } => commands::core::create::ai::run(&framework, &project_name, container, source).await,
         #[cfg(not(feature = "ai"))]
         CoreCommand::CreateAi { .. } => Err(crate::error::core_not_in_build("ai")),
         #[cfg(feature = "clo")]
@@ -79,21 +81,24 @@ pub async fn dispatch(command: CoreCommand) -> Result<()> {
             framework,
             project_name,
             container,
-        } => commands::core::create::clo::run(&framework, &project_name, container).await,
+            source,
+        } => commands::core::create::clo::run(&framework, &project_name, container, source).await,
         #[cfg(not(feature = "clo"))]
         CoreCommand::CreateClo { .. } => Err(crate::error::core_not_in_build("clo")),
         #[cfg(feature = "cicd")]
         CoreCommand::CreateCicd {
             framework,
             project_name,
-        } => commands::core::create::cicd::run(&framework, &project_name).await,
+            source,
+        } => commands::core::create::cicd::run(&framework, &project_name, source).await,
         #[cfg(not(feature = "cicd"))]
         CoreCommand::CreateCicd { .. } => Err(crate::error::core_not_in_build("cicd")),
         #[cfg(feature = "iot")]
         CoreCommand::CreateIot {
             framework,
             project_name,
-        } => commands::core::create::iot::run(&framework, &project_name).await,
+            source,
+        } => commands::core::create::iot::run(&framework, &project_name, source).await,
         #[cfg(not(feature = "iot"))]
         CoreCommand::CreateIot { .. } => Err(crate::error::core_not_in_build("iot")),
         #[cfg(feature = "app")]
@@ -101,7 +106,8 @@ pub async fn dispatch(command: CoreCommand) -> Result<()> {
             framework,
             project_name,
             container,
-        } => commands::core::create::app::run(&framework, &project_name, container).await,
+            source,
+        } => commands::core::create::app::run(&framework, &project_name, container, source).await,
         #[cfg(not(feature = "app"))]
         CoreCommand::CreateApp { .. } => Err(crate::error::core_not_in_build("app")),
         #[cfg(feature = "lib")]
@@ -109,14 +115,18 @@ pub async fn dispatch(command: CoreCommand) -> Result<()> {
             framework,
             project_name,
             container,
-        } => commands::core::create::library::run(&framework, &project_name, container).await,
+            source,
+        } => {
+            commands::core::create::library::run(&framework, &project_name, container, source).await
+        }
         #[cfg(not(feature = "lib"))]
         CoreCommand::CreateLib { .. } => Err(crate::error::core_not_in_build("lib")),
         #[cfg(feature = "hardware")]
         CoreCommand::CreateHardware {
             framework,
             project_name,
-        } => commands::core::create::hardware::run(&framework, &project_name).await,
+            source,
+        } => commands::core::create::hardware::run(&framework, &project_name, source).await,
         #[cfg(not(feature = "hardware"))]
         CoreCommand::CreateHardware { .. } => Err(crate::error::core_not_in_build("hardware")),
         _ => unreachable!("non-create command routed to create dispatcher"),

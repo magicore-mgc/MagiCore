@@ -32,6 +32,8 @@ fn scaffold_preflight_selects_the_actual_framework_layer_for_each_core_lane() {
         project_name: "sample-gin".to_string(),
         features: vec![],
         template_dir: std::path::PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
     let backend_layers =
         super::required_web_layers_for_config(&backend, &super::parse_framework_request("gin"));

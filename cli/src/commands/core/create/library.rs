@@ -7,6 +7,7 @@ pub async fn run(
     framework: &str,
     project_name: &str,
     container: super::super::shared::container_flags::ContainerFlags,
+    source: crate::commands::core::shared::source_flags::SourceFlags,
 ) -> Result<()> {
     if container.k8s {
         return Err(crate::error::k8s_profile_unsupported("lib"));
@@ -28,7 +29,7 @@ pub async fn run(
         .map(|s| s.normalized_name.as_str())
         .unwrap_or("rust"); // default fallback — mặc định rust
 
-    let config = crate::wizard::engine::ScaffoldConfig {
+    let mut config = crate::wizard::engine::ScaffoldConfig {
         project_name: project_name.to_string(),
         frameworks: vec![lang.to_string()],
         core: "lib".to_string(),
@@ -39,10 +40,14 @@ pub async fn run(
             vec![]
         },
         template_dir: std::path::PathBuf::new(),
+
+        ..Default::default()
     };
 
-    // Resolve through a native MGC processor, a verified cache, or the configured registry.
-    // Resolve bằng processor native MGC, cache đã xác thực hoặc registry được cấu hình.
+    super::source::apply(&mut config, source);
+
+    // Resolve through a verified cache or the configured registry layer.
+    // Resolve bằng cache đã xác thực hoặc registry layer được cấu hình.
     let request = parsed_framework
         .as_ref()
         .map(|spec| spec.template_request())
@@ -61,7 +66,7 @@ pub async fn run(
         Ok(_) | Err(_) => {
             // Fallback: generate warning, continue with minimal scaffold — fallback: cảnh báo, tiếp với scaffold tối thiểu
             mgc_ui::warning(&format!(
-                "Optional lib layer 'lib/{}' is unavailable, using fallback",
+                "Optional lib layer 'lib/{}' is unavailable; the registry layer or a local project is required",
                 lang
             ));
         }

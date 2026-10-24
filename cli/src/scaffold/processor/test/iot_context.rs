@@ -39,6 +39,8 @@ fn test_iot_templates_materialize_all_frameworks() {
             project_name: project_dir.to_string_lossy().to_string(),
             features: vec![board.to_string()],
             template_dir: PathBuf::new(),
+            from_local: None,
+            no_local: false,
         };
 
         let out = Scaffolder::scaffold(&config).unwrap();
@@ -81,6 +83,8 @@ fn scaffold_rejects_unknown_iot_board_without_leaving_staging_or_claims() {
         project_name: target.to_string_lossy().to_string(),
         features: vec!["unknown-board".to_string()],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
 
     assert!(Scaffolder::scaffold(&config).is_err());
@@ -97,40 +101,37 @@ fn scaffold_rejects_unknown_iot_board_without_leaving_staging_or_claims() {
     );
 }
 #[test]
-fn iot_fallback_scaffold_uses_selected_platformio_board() {
-    let root = tempfile::tempdir().unwrap();
-    let project_dir = root.path().join("nodemcu-firmware");
-    let config = ScaffoldConfig {
-        core: "iot".to_string(),
-        sub_type: String::new(),
-        frameworks: vec!["platformio".to_string()],
-        project_name: project_dir.to_string_lossy().to_string(),
-        features: vec!["nodemcu-32s".to_string()],
-        template_dir: PathBuf::new(),
-    };
-
-    Scaffolder::scaffold(&config).unwrap();
-    let platformio = std::fs::read_to_string(project_dir.join("platformio.ini")).unwrap();
-    assert!(platformio.contains("[env:nodemcu-32s]"));
-    assert!(platformio.contains("board = nodemcu-32s"));
-    assert!(!platformio.contains("esp32dev"));
-}
-#[test]
-fn iot_fallback_scaffold_uses_selected_esp_hal_feature() {
-    let root = tempfile::tempdir().unwrap();
-    for board in ["esp32", "esp32c3", "esp32s3"] {
-        let project_dir = root.path().join(format!("firmware-{board}"));
+fn iot_scaffold_without_layer_or_local_source_fails_closed() {
+    for (framework, board) in [
+        ("platformio", "nodemcu-32s"),
+        ("esp32-rust", "esp32c3"),
+        ("zephyr-arm", "nrf52dk_nrf52832"),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let project_dir = root.path().join(format!("firmware-{framework}"));
         let config = ScaffoldConfig {
             core: "iot".to_string(),
             sub_type: String::new(),
-            frameworks: vec!["esp32-rust".to_string()],
+            frameworks: vec![framework.to_string()],
             project_name: project_dir.to_string_lossy().to_string(),
             features: vec![board.to_string()],
             template_dir: PathBuf::new(),
+            from_local: None,
+            no_local: true,
         };
 
-        Scaffolder::scaffold(&config).unwrap();
-        let manifest = std::fs::read_to_string(project_dir.join("Cargo.toml")).unwrap();
-        assert!(manifest.contains(&format!("features = [\"{board}\"]")));
+        // No registry layer, no local reuse: MagiCore must never synthesize
+        // IoT firmware source.
+        // Không có registry layer, không tái dùng local: MagiCore không bao
+        // giờ tự sinh source firmware IoT.
+        let error = Scaffolder::scaffold(&config).unwrap_err();
+        assert!(
+            error.to_string().contains("No scaffold source for core 'iot'"),
+            "{framework}: {error}"
+        );
+        assert!(
+            !project_dir.exists(),
+            "{framework} failure must not leave a partial project"
+        );
     }
 }

@@ -26,6 +26,8 @@ fn test_lib_templates_materialize_all_languages() {
             project_name: project_dir.to_string_lossy().to_string(),
             features: vec![],
             template_dir: PathBuf::new(),
+            from_local: None,
+            no_local: false,
         };
 
         let out = Scaffolder::scaffold(&config).unwrap();
@@ -78,6 +80,8 @@ fn test_game_templates_materialize_all_engines() {
             project_name: project_dir.to_string_lossy().to_string(),
             features: vec![],
             template_dir: PathBuf::new(),
+            from_local: None,
+            no_local: false,
         };
 
         let out = Scaffolder::scaffold(&config).unwrap();
@@ -113,6 +117,8 @@ fn test_optimizer_template_materializes() {
         project_name: optimizer_dir.to_string_lossy().to_string(),
         features: vec![],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
 
     let out = Scaffolder::scaffold(&config).unwrap();

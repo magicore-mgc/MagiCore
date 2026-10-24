@@ -16,6 +16,7 @@ impl HardwareWizard {
             project_name: String::new(),
             features: vec![],
             template_dir: PathBuf::new(),
+            ..Default::default()
         }
     }
 

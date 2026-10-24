@@ -62,20 +62,97 @@ async fn test_audit_fix_bumps_vulnerable_packages_and_rewrites_lockfile() {
         Version::parse("18.2.0").unwrap(),
     )];
 
-    let bumped = adapter.audit_fix(dir.path(), &vulnerable).await.unwrap();
-    assert_eq!(bumped, 1);
+    // The author's range must survive. Widening `^18.2.0` to `*` would silence
+    // the advisory while deleting the constraint, and `^18.2.0` cannot admit the
+    // patched 19.0.0 anyway — so the honest outcome is a refusal that tells the
+    // user to widen the range deliberately.
+    // Range của tác giả phải còn nguyên. Nới `^18.2.0` thành `*` để tắt advisory
+    // là xoá luôn ràng buộc, và `^18.2.0` vốn không chứa bản vá 19.0.0 — nên kết
+    // quả trung thực là từ chối và yêu cầu user tự nới range.
+    let error = adapter
+        .audit_fix(dir.path(), &vulnerable)
+        .await
+        .expect_err("a range that cannot admit the patch must be refused");
+    assert!(
+        error.to_string().contains("will not rewrite your constraint"),
+        "{error}"
+    );
 
     let manifest = adapter.parse_manifest(dir.path()).await.unwrap();
     let dep = manifest.find_dep("react").unwrap();
-    assert_eq!(dep.range.as_str(), "*");
+    assert_eq!(
+        dep.range.as_str(),
+        "^18.2.0",
+        "audit-fix must not rewrite the author's constraint"
+    );
+    assert!(
+        !dir.path().join("mgc.lock").exists(),
+        "a refused fix must not write a lockfile"
+    );
+}
+
+#[tokio::test]
+async fn audit_fix_accepts_a_range_that_already_admits_the_patch() {
+    // `^18.2.0 || ^19.0.0` can reach the patched 19.0.0, so the fix proceeds
+    // without touching the constraint.
+    // `^18.2.0 || ^19.0.0` chứa được bản vá 19.0.0 nên fix chạy mà không sửa gì.
+    let dir = tempfile::tempdir().unwrap();
+    let shared = tempfile::tempdir().unwrap();
+    seed_shared_metadata(
+        shared.path(),
+        "react",
+        serde_json::json!({
+            "name": "react",
+            "description": null,
+            "versions": {
+                "19.0.0": {
+                    "version": "19.0.0",
+                    "dependencies": null,
+                    "optionalDependencies": null,
+                    "os": null,
+                    "cpu": null,
+                    "dist": {
+                        "tarball": "https://registry.example.test/react-19.0.0.tgz",
+                        "integrity": "sha512-c2hhcmVk2"
+                    }
+                }
+            },
+            "dist-tags": { "latest": "19.0.0" }
+        }),
+    );
+
+    std::fs::write(
+        dir.path().join("package.json"),
+        serde_json::json!({
+            "name": "demo",
+            "version": "0.1.0",
+            "private": true,
+            "dependencies": { "react": "^18.2.0 || ^19.0.0" }
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let adapter = WebAdapter::with_registry_and_shared_cache(
+        "http://127.0.0.1:9".into(),
+        shared.path().to_path_buf(),
+    );
+    let vulnerable = vec![PackageId::new(
+        PackageName::new("react").unwrap(),
+        Version::parse("18.2.0").unwrap(),
+    )];
+
+    let bumped = adapter.audit_fix(dir.path(), &vulnerable).await.unwrap();
+    assert_eq!(bumped, 1);
+    let manifest = adapter.parse_manifest(dir.path()).await.unwrap();
+    let dep = manifest.find_dep("react").unwrap();
+    assert_eq!(dep.range.as_str(), "^18.2.0 || ^19.0.0");
 
     let lock = std::fs::read_to_string(dir.path().join("mgc.lock")).unwrap();
     let parsed: Lockfile = mgc_lockfile::parse_lockfile(&lock).unwrap();
     assert!(
-        parsed
-            .packages
-            .iter()
-            .any(|p| p.name == "react" && p.version == "19.0.0")
+        parsed.packages.iter().any(|p| p.name == "react" && p.version == "19.0.0"),
+        "the patched release must be resolved into the lockfile"
     );
 }
 

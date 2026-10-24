@@ -19,6 +19,8 @@ fn test_scaffold_is_atomic_no_partial_on_failure() {
         project_name: target.to_string_lossy().to_string(),
         features: vec![],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
     let result = Scaffolder::scaffold(&config);
     assert!(result.is_err(), "scaffold with unknown core must fail");
@@ -81,6 +83,8 @@ fn test_scaffold_rename_conflict_fails_closed() {
         project_name: target.to_string_lossy().to_string(),
         features: vec![],
         template_dir: template.path().to_path_buf(),
+        from_local: None,
+        no_local: false,
     };
     assert!(Scaffolder::scaffold(&first).is_ok());
     let before: Vec<String> = std::fs::read_dir(&target)
@@ -119,6 +123,8 @@ fn test_scaffold_success_leaves_no_staging_sibling() {
         project_name: target.to_string_lossy().to_string(),
         features: vec![],
         template_dir: template.path().to_path_buf(),
+        from_local: None,
+        no_local: false,
     };
     let out = Scaffolder::scaffold(&config).unwrap();
     assert!(out.exists());

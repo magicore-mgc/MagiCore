@@ -31,6 +31,8 @@ fn test_web_monorepo_uses_template_layers() {
         project_name: project_dir.to_string_lossy().to_string(),
         features: vec!["schema".to_string()],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
 
     let out = Scaffolder::scaffold(&config).unwrap();
@@ -105,6 +107,8 @@ fn test_fullstack_axum_falls_back_to_monorepo_composite() {
         project_name: project_dir.to_string_lossy().to_string(),
         features: vec![],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
 
     let out = Scaffolder::scaffold(&config).unwrap();
@@ -161,6 +165,8 @@ fn test_fullstack_gin_falls_back_to_monorepo_composite() {
         project_name: project_dir.to_string_lossy().to_string(),
         features: vec![],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
 
     let out = Scaffolder::scaffold(&config).unwrap();

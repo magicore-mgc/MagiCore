@@ -28,13 +28,23 @@ impl Bundler {
         builder.outdir = self.config.output_dir.to_string_lossy().to_string();
         builder.abs_working_dir = prepared.working_dir.to_string_lossy().to_string();
         builder.preserve_symlinks = false;
-        builder.platform = esbuild_rs::Platform::Browser;
+        if self.config.backend {
+            // A backend bundle runs on Node: marking `node:*` external is what
+            // keeps esbuild from trying to inline runtime builtins.
+            // Bundle backend chạy trên Node: đánh dấu `node:*` là external để
+            // esbuild không cố nhúng builtin runtime.
+            builder.platform = esbuild_rs::Platform::Node;
+            builder.external = vec!["node:*".to_string()];
+            builder.main_fields = vec!["module".to_string(), "main".to_string()];
+        } else {
+            builder.platform = esbuild_rs::Platform::Browser;
+            builder.main_fields = vec![
+                "browser".to_string(),
+                "module".to_string(),
+                "main".to_string(),
+            ];
+        }
         builder.format = esbuild_rs::Format::ESModule;
-        builder.main_fields = vec![
-            "browser".to_string(),
-            "module".to_string(),
-            "main".to_string(),
-        ];
         builder.resolve_extensions = vec![
             ".tsx".to_string(),
             ".ts".to_string(),

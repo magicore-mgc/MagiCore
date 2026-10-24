@@ -9,6 +9,7 @@ pub(super) fn command_name(command: &Commands) -> &'static str {
     match command {
         Commands::Common(CommonCommands::Init { .. }) => "init",
         Commands::Common(CommonCommands::Capabilities { .. }) => "capabilities",
+        Commands::Common(CommonCommands::Version { .. }) => "version",
         Commands::Common(CommonCommands::Info { .. }) => "info",
         Commands::Common(CommonCommands::Search { .. }) => "search",
         Commands::Common(CommonCommands::Outdated { .. }) => "outdated",

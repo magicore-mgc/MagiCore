@@ -1,9 +1,10 @@
 pub mod cache;
 mod container;
 pub(crate) mod error;
+pub mod framework_registry;
+pub(crate) mod hardware_marker;
 pub mod local_projects;
 pub mod processor;
-pub mod processors;
 pub mod provenance;
 pub mod registry;
 pub mod resolver;

@@ -149,8 +149,12 @@ fn create_web_native_backend_docker_profiles_keep_dependencies_under_mgc() {
             "ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1",
         ),
     ] {
+        // Web framework source comes from an existing project of the same framework.
+        // Source framework Web lấy từ project có sẵn cùng framework.
+        let source = crate::common::local_source(temp.path(), "web", framework);
         let output = Command::new(env!("CARGO_BIN_EXE_mgc"))
             .args(["create-web", framework, project_name, "--docker"])
+            .arg(source.flag())
             .current_dir(temp.path())
             .env("HOME", &home)
             .env("USERPROFILE", &home)
@@ -206,8 +210,10 @@ fn create_web_native_backend_docker_profiles_keep_dependencies_under_mgc() {
         }
     }
 
+    let k8s_source = crate::common::local_source(temp.path(), "web", "fastapi");
     let output = Command::new(env!("CARGO_BIN_EXE_mgc"))
         .args(["create-web", "fastapi", "container-web-python-k8s", "--k8s"])
+        .arg(k8s_source.flag())
         .current_dir(temp.path())
         .env("HOME", &home)
         .env("USERPROFILE", &home)

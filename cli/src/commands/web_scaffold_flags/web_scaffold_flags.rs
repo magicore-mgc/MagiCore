@@ -261,4 +261,8 @@ pub struct ScaffoldFlags {
     // ── Extra features / tính năng bổ sung ─────────────────────────
     #[arg(long = "feature", help = "Additional feature flag (repeatable)")]
     pub features: Vec<String>,
+
+    // ── Offline source / nguồn offline ─────────────────────────────
+    #[command(flatten)]
+    pub source: crate::commands::core::shared::source_flags::SourceFlags,
 }

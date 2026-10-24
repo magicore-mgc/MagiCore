@@ -75,6 +75,8 @@ fn materialization_rejects_manifest_escape_before_writing_any_file_for_four_core
                 project_name: "probe".to_string(),
                 features: vec![],
                 template_dir: layer_dir.clone(),
+                from_local: None,
+                no_local: false,
             };
             let result = if core == "web" {
                 let context = WebTemplateContext::new(&config, std::slice::from_ref(&layer));

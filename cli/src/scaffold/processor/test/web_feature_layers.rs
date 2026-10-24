@@ -18,6 +18,8 @@ fn test_web_typescript_feature_switches_extensions() {
         project_name: project_dir.to_string_lossy().to_string(),
         features: vec!["typescript".to_string()],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
 
     let out = Scaffolder::scaffold(&config).unwrap();
@@ -46,9 +48,18 @@ fn test_unknown_frameworks_fail_fast() {
         project_name: unsupported_dir.to_string_lossy().to_string(),
         features: vec!["typescript".to_string()],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
     let unsupported_err = Scaffolder::scaffold(&unsupported).unwrap_err();
-    assert!(unsupported_err.to_string().contains("Web template path"));
+    // No layer for an unknown framework and no local project: fail closed
+    // with the honest source-unavailable reason.
+    // Không có layer cho framework lạ và không có project local: fail-closed
+    // với lý do thiếu nguồn.
+    assert!(
+        unsupported_err.to_string().contains("No scaffold source for core 'web'"),
+        "{unsupported_err}"
+    );
 
     let broken_mono_dir = root.path().join("broken-mono");
     let broken_mono = ScaffoldConfig {
@@ -58,12 +69,19 @@ fn test_unknown_frameworks_fail_fast() {
         project_name: broken_mono_dir.to_string_lossy().to_string(),
         features: vec!["typescript".to_string()],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
     let broken_mono_err = Scaffolder::scaffold(&broken_mono).unwrap_err();
+    // The monorepo branch resolves the backend leaf first; without a layer
+    // for it the scaffold fails closed instead of guessing a source.
+    // Nhánh monorepo resolve leaf backend trước; thiếu layer thì fail-closed,
+    // không đoán nguồn.
     assert!(
         broken_mono_err
             .to_string()
-            .contains("Scaffold for monorepo frontend framework 'ember' is not implemented yet")
+            .contains("No scaffold source for core 'web'"),
+        "{broken_mono_err}"
     );
 }
 #[test]
@@ -93,6 +111,8 @@ fn test_web_feature_gated_templates_materialize_only_when_active() {
             "vitest".to_string(),
         ],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
     let out = Scaffolder::scaffold(&config).unwrap();
     assert!(out.join("prisma").join("schema.prisma").exists());
@@ -111,6 +131,8 @@ fn test_web_feature_gated_templates_materialize_only_when_active() {
         project_name: no_features.to_string_lossy().to_string(),
         features: vec!["typescript".to_string()],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
     let out_bare = Scaffolder::scaffold(&config_bare).unwrap();
     assert!(!out_bare.join("prisma").join("schema.prisma").exists());
@@ -138,6 +160,8 @@ fn test_web_docker_templates_materialize_in_base_layer() {
         project_name: docker_dir.to_string_lossy().to_string(),
         features: vec!["docker".to_string()],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
     let out = Scaffolder::scaffold(&config).unwrap();
     assert!(out.join("Dockerfile").exists());
@@ -153,6 +177,8 @@ fn test_web_docker_templates_materialize_in_base_layer() {
         project_name: no_docker.to_string_lossy().to_string(),
         features: vec!["typescript".to_string()],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
     let out_no = Scaffolder::scaffold(&config_no).unwrap();
     assert!(!out_no.join("Dockerfile").exists());
@@ -176,6 +202,8 @@ fn test_web_postgres_env_template_materializes_with_feature() {
         project_name: pg_dir.to_string_lossy().to_string(),
         features: vec!["postgres".to_string()],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
     let out = Scaffolder::scaffold(&config).unwrap();
     assert!(out.join(".env").exists());
@@ -188,6 +216,8 @@ fn test_web_postgres_env_template_materializes_with_feature() {
         project_name: no_pg.to_string_lossy().to_string(),
         features: vec![],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
     let out_no = Scaffolder::scaffold(&config_no).unwrap();
     assert!(!out_no.join(".env").exists());

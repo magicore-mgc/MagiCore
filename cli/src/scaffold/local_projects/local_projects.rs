@@ -17,15 +17,13 @@ pub struct LocalProject {
 /// Framework markers that must exist for a project to be usable as a source.
 /// Marker framework phải tồn tại để project dùng được làm nguồn.
 fn has_framework_marker(root: &Path, ecosystem: &str, framework: &str) -> bool {
-    match (ecosystem, framework) {
-        ("web", "django") => root.join("manage.py").is_file(),
-        ("web", "laravel") => root.join("artisan").is_file(),
-        ("web", "symfony") => root.join("bin").join("console").is_file(),
-        ("web", "flask") | ("web", "fastapi") => root.join("pyproject.toml").is_file(),
-        ("app", "flutter") => root.join("pubspec.yaml").is_file(),
-        ("lib", "rust") => root.join("Cargo.toml").is_file(),
-        ("lib", "python") => root.join("pyproject.toml").is_file(),
-        _ => true,
+    // Shared with the static framework directory so both sides can never
+    // disagree about what proves an identity.
+    // Dùng chung với danh mục framework tĩnh để hai phía không bao giờ lệch
+    // nhau về cái gì chứng minh danh tính.
+    match crate::scaffold::framework_registry::framework_marker(ecosystem, framework) {
+        Some(marker) => marker.iter().all(|segment| root.join(segment).exists()),
+        None => true,
     }
 }
 

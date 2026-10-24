@@ -15,6 +15,8 @@ fn iot_context_rejects_missing_board_with_typed_error() {
         project_name: "firmware".to_string(),
         features: vec![],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
 
     let error = CoreTemplateContext::try_new(&config, "firmware", "esp32-rust")

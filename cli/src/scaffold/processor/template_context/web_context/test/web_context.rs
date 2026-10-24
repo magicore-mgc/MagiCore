@@ -14,6 +14,8 @@ fn web_context_preserves_identity_typescript_and_frontend_execution_contract() {
         project_name: "react-app".to_string(),
         features: vec![" TypeScript ".to_string()],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
     let context = WebTemplateContext::new(&config, &[]);
     let required = [
@@ -46,6 +48,8 @@ fn web_context_returns_typed_error_for_unsupported_required_context() {
         project_name: "react-app".to_string(),
         features: vec![],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
     let context = WebTemplateContext::new(&config, &[]);
     let error = context

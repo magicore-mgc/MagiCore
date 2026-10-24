@@ -2,11 +2,7 @@
 // Web create command orchestration.
 use super::*;
 
-#[path = "framework_pick/mod.rs"]
-mod framework_pick;
-
 use crate::commands::core::web::implementation::project_context::project_root::install_hint_command;
-use framework_pick::native_web_starter_framework;
 
 pub async fn run_create_with_options(
     framework: &str,
@@ -48,11 +44,6 @@ pub async fn run_create_with_options(
     };
     let online_generator =
         scaffold_framework.and_then(|framework| online_web_generator(&config.sub_type, framework));
-    let native_framework = native_web_starter_framework(
-        &spec.requested_ref,
-        &config.sub_type,
-        scaffold_framework.map(String::as_str),
-    );
     let mut generator_workspace = None;
     let provenance_layers;
 
@@ -65,22 +56,9 @@ pub async fn run_create_with_options(
             run_create_initializer(&mut config, project_name, generator).await?;
         generator_workspace = Some(workspace);
         provenance_layers = vec![source];
-    } else if let Some(framework) = native_framework {
-        let workspace = tempfile::Builder::new()
-            .prefix("mgc-native-web-backend-")
-            .tempdir()?;
-        crate::scaffold::processors::web::WebProcessor::write_project(
-            workspace.path(),
-            project_name,
-            &config.sub_type,
-            framework,
-        )?;
-        config.template_dir = workspace.path().to_path_buf();
-        generator_workspace = Some(workspace);
-        provenance_layers = vec![format!("builtin:web/{}/{framework}", config.sub_type)];
     } else {
-        // Legacy modes remain explicit until their native initializer migration is complete.
-        // Các mode chưa chuyển sang initializer native vẫn kiểm tra nguồn một cách tường minh.
+        // Registry layer is the default source; verify it before scaffolding.
+        // Registry layer là nguồn mặc định; xác minh trước khi scaffold.
         let rels = required_web_layers_for_config(&config, &frontend);
         let mut report = crate::scaffold::resolver::MissingLayersReport::new();
         for rel in &rels {
@@ -90,10 +68,42 @@ pub async fn run_create_with_options(
                 Err(error) => report.add_required_failure(rel, error),
             }
         }
-        if report.has_required_missing() {
-            bail!(report.format_error("web", &frontend.normalized));
+        if let Some(source) = crate::scaffold::local_projects::resolve_offline_source(
+            &config,
+            scaffold_framework
+                .map(String::as_str)
+                .unwrap_or(&frontend.normalized),
+        )? {
+            // Registry could not supply the layers: the only permitted offline
+            // source is a project already on this machine.
+            // Registry không cung cấp được layer: nguồn offline duy nhất được
+            // phép là project đã có trên máy.
+            let workspace = tempfile::Builder::new()
+                .prefix("mgc-local-web-source-")
+                .tempdir()?;
+            let reused = crate::scaffold::local_projects::reuse_local_project(
+                &source,
+                workspace.path(),
+                &config.frameworks,
+            )?;
+            config.template_dir = workspace.path().to_path_buf();
+            generator_workspace = Some(workspace);
+            provenance_layers = vec![format!("local-project:{}", reused.display())];
+        } else {
+            if report.has_required_missing() {
+                return Err(anyhow::anyhow!(
+                    "{}\n{}",
+                    report.format_error("web", &frontend.normalized),
+                    crate::scaffold::error::scaffold_source_unavailable(
+                        "web",
+                        scaffold_framework
+                            .map(String::as_str)
+                            .unwrap_or(&frontend.normalized),
+                    )
+                ));
+            }
+            provenance_layers = rels;
         }
-        provenance_layers = rels;
     }
 
     let project_dir = crate::scaffold::Scaffolder::scaffold(&config)?;
@@ -145,7 +155,3 @@ pub async fn run_create_with_options(
 
     Ok(())
 }
-
-#[cfg(test)]
-#[path = "test/mod.rs"]
-mod tests;

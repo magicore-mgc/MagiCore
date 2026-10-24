@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""Stable runner for lifecycle matrix verdict tests.
+
+Entrypoint ổn định cho test verdict lifecycle matrix.
+"""
+
+import sys
+import unittest
+from pathlib import Path
+
+# The lifecycle_matrix package is owned by scripts/, one level up.
+# Package lifecycle_matrix thuộc scripts/, sâu lên một cấp.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "audit"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "release"))
+
+from lifecycle_matrix.validation.test import test_annotation_escape as _test_annotation_escape
+Case_GitHubWorkflowAnnotationEscaping_01 = _test_annotation_escape.GitHubWorkflowAnnotationEscaping
+from lifecycle_matrix.validation.test import test_adapter_consistency as _test_adapter_consistency
+Case_AdapterConsistencyGate_02 = _test_adapter_consistency.AdapterConsistencyGate
+from lifecycle_matrix.validation.test import test_environment_paths as _test_environment_paths
+Case_LifecycleEnvironmentIsolation_03 = _test_environment_paths.LifecycleEnvironmentIsolation
+from lifecycle_matrix.validation.test import test_flutter_sdk_bootstrap as _test_flutter_sdk_bootstrap
+Case_LifecycleEnvironmentIsolation_04 = _test_flutter_sdk_bootstrap.LifecycleEnvironmentIsolation
+from lifecycle_matrix.validation.test import test_lane_environment_isolation as _test_lane_environment_isolation
+Case_LifecycleEnvironmentIsolation_05 = _test_lane_environment_isolation.LifecycleEnvironmentIsolation
+from lifecycle_matrix.validation.test import test_pulumi_environment as _test_pulumi_environment
+Case_LifecycleEnvironmentIsolation_06 = _test_pulumi_environment.LifecycleEnvironmentIsolation
+from lifecycle_matrix.validation.test import test_toolchain_preparation as _test_toolchain_preparation
+Case_LifecycleEnvironmentIsolation_07 = _test_toolchain_preparation.LifecycleEnvironmentIsolation
+from lifecycle_matrix.validation.test import test_lane_preparation_failure as _test_lane_preparation_failure
+Case_LanePreparationFailure_08 = _test_lane_preparation_failure.LanePreparationFailure
+from lifecycle_matrix.validation.test import test_pulumi_stack_preparation as _test_pulumi_stack_preparation
+Case_LanePreparationFailure_09 = _test_pulumi_stack_preparation.LanePreparationFailure
+from lifecycle_matrix.validation.test import test_command_output_excerpt as _test_command_output_excerpt
+Case_CommandOutputExcerpt_10 = _test_command_output_excerpt.CommandOutputExcerpt
+from lifecycle_matrix.validation.test import test_native_pm_claims as _test_native_pm_claims
+Case_NativePackageManagerVerdict_11 = _test_native_pm_claims.NativePackageManagerVerdict
+from lifecycle_matrix.validation.test import test_native_pm_release_gate as _test_native_pm_release_gate
+Case_NativePackageManagerVerdict_12 = _test_native_pm_release_gate.NativePackageManagerVerdict
+from lifecycle_matrix.validation.test import test_native_pm_dimensions as _test_native_pm_dimensions
+Case_NativePackageManagerVerdict_13 = _test_native_pm_dimensions.NativePackageManagerVerdict
+from lifecycle_matrix.validation.test import test_framework_lifecycle as _test_framework_lifecycle
+Case_NativeFrameworkLifecycleCoverage_14 = _test_framework_lifecycle.NativeFrameworkLifecycleCoverage
+from lifecycle_matrix.validation.test import test_matrix_provenance as _test_matrix_provenance
+Case_MatrixProvenance_15 = _test_matrix_provenance.MatrixProvenance
+from lifecycle_matrix.validation.test import test_platform_green_contract as _test_platform_green_contract
+Case_PlatformGreenCounter_16 = _test_platform_green_contract.PlatformGreenCounter
+from lifecycle_matrix.validation.test import test_platform_green_counter as _test_platform_green_counter
+Case_PlatformGreenCounter_17 = _test_platform_green_counter.PlatformGreenCounter
+from lifecycle_matrix.validation.test import test_provenance_matrix_cleanliness as _test_provenance_matrix_cleanliness
+Case_ProvenanceMatrixCleanliness_18 = _test_provenance_matrix_cleanliness.ProvenanceMatrixCleanliness
+from lifecycle_matrix.validation.test import test_working_tree_probe as _test_working_tree_probe
+Case_WorkingTreeCleanProbe_19 = _test_working_tree_probe.WorkingTreeCleanProbe
+from lifecycle_matrix.validation.test import test_windows_matrix_runtime as _test_windows_matrix_runtime
+Case_WindowsMatrixRuntime_20 = _test_windows_matrix_runtime.WindowsMatrixRuntime
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

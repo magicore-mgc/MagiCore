@@ -372,5 +372,5 @@ jobs:
             echo "::error::expected at least eight release archives; found ${#archives[@]}" >&2
             exit 1
           fi
-          python3 scripts/verify-release-manifest-signature.py \
+          python3 scripts/release/verify-release-manifest-signature.py \
             sig-verify "$TAG_VERSION" "${archives[@]}"

@@ -2,6 +2,9 @@
 //! Lệnh cài dependency tổng quát của CLI.
 
 mod install;
+mod install_sbom;
+
+pub(crate) use install_sbom::write_sbom as write_install_sbom;
 mod locked_graph;
 mod materialize;
 mod mutation;

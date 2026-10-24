@@ -109,16 +109,10 @@ pub(in crate::commands::template) async fn ensure_layer_in(
             error::template_layer_missing_manifest(rel).to_string(),
         ));
     }
-    // A compiled processor needs no extracted snapshot or unused per-layer cache.
-    // Chỉ mặc định dùng processor builtin; version/tag tường minh vẫn phải resolve registry.
-    if matches!(&spec.requested_ref, ScaffoldRef::Default)
-        && !has_contract
-        && crate::scaffold::processor::has_builtin_scaffold_processor(rel)
-    {
-        return Ok(ScaffoldResolveStatus::Embedded {
-            layer: rel.to_string(),
-        });
-    }
+    // No compiled processor can stand in for a template layer: framework
+    // source always comes from the registry or a local project.
+    // Không processor biên dịch nào thay được template layer: source framework
+    // luôn đến từ registry hoặc project local.
     // Resolve absent layers from the configured registry only.
     // Layer chưa có chỉ được resolve từ registry đã cấu hình.
     // Use the same npm protocol, configured registry and security boundary as explicit fetch.

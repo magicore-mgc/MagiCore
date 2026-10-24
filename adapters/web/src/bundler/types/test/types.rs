@@ -12,7 +12,9 @@ fn public_configuration_and_result_fields_remain_constructible() {
         sourcemap: true,
         target: "es2020".to_string(),
         public_path: "/".to_string(),
+        backend: false,
     };
+
     let result = BundleResult { size: 17 };
 
     assert_eq!(config.target, "es2020");

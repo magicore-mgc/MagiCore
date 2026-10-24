@@ -114,5 +114,12 @@ pub async fn run(
         offline, // T4.1
         frozen,  // frozen mode
     )
-    .await
+    .await?;
+
+    // Supply-chain evidence is part of a successful install, not an extra
+    // command the user has to remember.
+    // Bằng chứng chuỗi cung ứng là một phần của install thành công, không phải
+    // lệnh phụ user phải tự nhớ.
+    super::super::install_sbom::write_sbom(ctx.root()).await?;
+    Ok(())
 }

@@ -118,7 +118,7 @@ class ShellProcessInventoryPart3(unittest.TestCase):
 
     def test_real_lockfile_fixture_writers_are_exact_and_scriptless(self):
         repo_root = REPO_ROOT
-        rel_path = "scripts/gen-real-lockfile-fixtures.sh"
+        rel_path = "scripts/maintenance/gen-real-lockfile-fixtures.sh"
         with open(os.path.join(repo_root, rel_path), encoding="utf-8") as handle:
             source = handle.read()
         findings = gate.scan_shell_text(rel_path, source)
@@ -137,7 +137,7 @@ class ShellProcessInventoryPart3(unittest.TestCase):
 
     def test_flutter_bootstrap_dynamic_commands_need_the_exact_source_review(self):
         repo_root = REPO_ROOT
-        rel_path = "scripts/bootstrap_flutter_sdk.sh"
+        rel_path = "scripts/install/bootstrap_flutter_sdk.sh"
         source_path = os.path.join(repo_root, rel_path)
         with open(source_path, encoding="utf-8") as handle:
             source = handle.read()

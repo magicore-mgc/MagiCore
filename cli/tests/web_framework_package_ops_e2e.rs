@@ -4,6 +4,9 @@ use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
 
+#[path = "common/mod.rs"]
+mod common;
+
 struct RegistryFixture {
     _server: mockito::ServerGuard,
     _mocks: Vec<mockito::Mock>,
@@ -164,9 +167,12 @@ fn every_claimed_web_js_framework_runs_add_update_remove_and_install() {
         "vue-vite",
     ] {
         let name = format!("package-ops-{framework}");
+        // Supply framework source from an existing project of the same framework.
+        // Cung cấp source framework từ project có sẵn cùng framework.
+        let source = common::local_source(project_root.path(), "web", framework);
         run_mgc(
             binary,
-            &["create-web", framework, &name, "--ts"],
+            &["create-web", framework, &name, "--ts", &source.flag()],
             project_root.path(),
             home.path(),
             &data,

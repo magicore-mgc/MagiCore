@@ -2,6 +2,7 @@
 //! Wiring module cho dịch vụ lệnh core dùng chung.
 
 pub mod container_flags;
+pub mod source_flags;
 
 #[path = "shared.rs"]
 mod implementation;

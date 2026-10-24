@@ -7,9 +7,11 @@ impl Scaffolder {
         target: &Path,
         config: &ScaffoldConfig,
     ) -> Result<()> {
-        if config.core == "web" {
-            return Ok(());
-        }
+        // Web projects come from a generator or a reused project, so the
+        // framework owns its own .gitignore/README — MagiCore only fills gaps.
+        // Project Web đến từ generator hoặc project tái dùng, nên framework tự
+        // có .gitignore/README — MagiCore chỉ điền chỗ còn thiếu.
+        let only_if_missing = config.core == "web";
 
         // Derive the display name from the config, NOT from the target path —
         // during atomic staging the target is a random temp dir name.
@@ -18,10 +20,15 @@ impl Scaffolder {
         let name = Self::config_display_name(config);
         let framework = Self::framework(config);
 
-        Self::write_file(
-            &target.join(".gitignore"),
-            &common_gitignore(&config.core, &framework),
-        )?;
+        if !(only_if_missing && target.join(".gitignore").exists()) {
+            Self::write_file(
+                &target.join(".gitignore"),
+                &common_gitignore(&config.core, &framework),
+            )?;
+        }
+        if only_if_missing && target.join("README.md").exists() {
+            return Ok(());
+        }
         Self::write_file(
             &target.join("README.md"),
             &common_readme(&name, &config.core, &framework, &config.features),

@@ -61,13 +61,13 @@ SHELL_ARGV_DISPATCH_REVIEWS = {
         'if "$@" >/dev/null 2>&1; then',
         'output=$("$@" 2>&1 || true)',
     },
-    "scripts/test-cli.sh": {
+    "scripts/test/test-cli.sh": {
         'output=$("$@" 2>&1)',
     },
 }
 
 SHELL_EXPLICIT_DYNAMIC_REVIEWS = {
-    "scripts/smoke-test.sh": {
+    "scripts/test/smoke-test.sh": {
         'if ! version_output=$("$MGC_PATH" --version 2>&1); then',
         'if ! help_output=$("$MGC_PATH" --help 2>&1); then',
         'if version_cmd=$("$MGC_PATH" version 2>&1); then',
@@ -126,24 +126,24 @@ SHELL_EXACT_DYNAMIC_COMMAND_REVIEWS = {
             "Invokes the selected executable MGC binary with fixed test args to prove optimizer profile settings reach the real test runner.",
         ),
     },
-    "scripts/bootstrap_flutter_sdk.sh": {
-        "5ff619429bcee3f0f09a19b24a46e57f87894e694794ba93041936169ad6b1ab": (
+    "scripts/install/bootstrap_flutter_sdk.sh": {
+        "4e5e71f8dd7dc89141ee3976a3c2897103f5b8c9ac9dfac4ee639b918de236b7": (
             "Resolves Pub dependencies only under Flutter SDK flutter_tools via its SDK-derived Dart executable.",
         ),
-        "a2e80d90cbe8673a991776e9bb38d6a2f4392061acef291ff63046af2834cb3a": (
+        "6ecce6da42d4f5a05d7713e920152268199a75403e0621b982cb3cb2db6e07ed": (
             "Runs the Flutter SDK version probe from the SDK root provisioned by the pinned CI setup action.",
         ),
     },
 }
 
 SHELL_SOURCE_INSPECTION_REVIEWS = {
-    "scripts/check-module-hygiene.sh": {
+    "scripts/audit/check-module-hygiene.sh": {
         'done < <(find "$dir" -name \'*.rs\' -print0 2>/dev/null | while IFS= read -r -d \'\' file; do',
     },
-    "scripts/check-no-pm.sh": {
+    "scripts/audit/check-no-pm.sh": {
         "BAD=$(grep -rnE '\\b(npm|npx|pnpm|yarn|bun)\\b' cli/src adapters core --include='*.rs' \\",
     },
-    "scripts/migrate_inline_tests.sh": {
+    "scripts/maintenance/migrate_inline_tests.sh": {
         'files_with_inline_tests=$(grep -rl "#\\[cfg(test)\\]" adapters/ core/ cli/src/ 2>/dev/null | grep -E "\\.rs$" | grep -v "/test/" || true)',
     },
 }
@@ -190,49 +190,43 @@ SHELL_DEPENDENCY_COMMAND_REVIEWS = {
         "088bb8e469a7e7743ff21353cb930eba52598f17aff8d30c5b23933b5dba976a",
         "94ab6beb2eb340b6e48066ad6891dde8c93eb9cbc69f3e3b403de2cf19afec61",
     },
-    'scripts/bench-ci.sh': {
-        "ae14ff47bf2d8510c9b31ecc367454bc63d7307692ed4c390199545bb4cecb7c",
+    'scripts/bench/bench-ci.sh': {
+        "13948de58bddac2afa0af9befdd261b246b4a8b4643b90f5c4a9bdf0c826e444",
     },
-    'scripts/bench.sh': {
-        "fa63073d82c5485e222d2b436433a8591e074bddbb3c8dffa64dc5e540402aea",
-        "fc0833bce56a3f4ed16a3c4149287cf6062227f3399c0789306d9c1ffdc57534",
-        "d30628df28d92f2d4db1805cfd18df0b9cb23d37d14c321707eea5e8777abaa9",
-        "c1e734ae4538b5070af94abd269b53518ffd57feee95b161c8f881c48e79320f",
-        "c90459835e2ca1b58772b32e5a44c6875c3cda352867cca7068b5e27937b3d70",
-        "63a1ededee0e16c504eb2de591bcd1b57300aea998b29cedcf015de8947d17c5",
-        "5f98527bdd2a6a5804e95e874e1a216078597bfaedc378ba31041d9b5563eee8",
-        "291e2847f4d0c8bc71cbf4bf8510557c035a2ebbd6f44764f8d430b2f325d5b9",
-        "50eded51c060dcd70a1e0bf9a4e8d89a8c7b54cf49cd570a3428458556efcc72",
-        "b384b1b1245c193dfb730075a7c67fdff299a52e1c7efb1175e354d2be153465",
+    'scripts/bench/bench.sh': {
+        "1cfbefa5055366f84dff70489ec88f1a8c473e493dee54279e92478ce903a545",
+        "52237beeac30d475828aa2aa9055458e7105224fda0d2fc1bd5d7bf261e5d946",
+        "62454aff28beaeb407605bdaa4c82194a9753a014d58e9cef744c1630f639dac",
+        "659c8c9696c7f3193ea9baeadcf2535dfa5daf81a15e0b43aa4b3818eeddb578",
+        "79a618976fcda9b4905ec7ec5999c278754883603e159d03f4f6f2144527c72e",
+        "b4284a45ad4b387dae366ef27c812e0efa543f0cbc122a1871a6c51e9602fdd7",
+        "bf4c722e41cbf3e422356289d5bcde1bb143b45565eea4666d565a7cf07f514f",
+        "c148f7537178d65701b4c1618974617d3df7be6ad1e43599953b121ab7d263f7",
+        "e1ef18349181fbdc173d25f2a4b6541886cfe398b7407475fa5e0ef73f90bb14",
+        "ee922d9bd0b860eb6de00bd1e16bbd5ae434cd69e7fb1f8df2fecfc786004d45",
     },
-    'scripts/build.sh': {
-        "a5184092f6314a2414644a9cae6b6f031626448804c2111f91c2fdc9d581fe7c",
-        "7b902a6dca9b5e4c72a457e4442a49162b523c7b86d12f863764034caa7ee29c",
-        "a890c9b6e122c2a1eea74d3d271e31e8b49e38cd79ee311ba2b936c3821fb1e0",
+    'scripts/bench/build.sh': {
+        "5736e0fd020d15527e595e3212f5cc46433639d47f9186f9a3e0c5acdfa8f30b",
+        "7d8bde068e755ad195c71b3015e597928d1a24aafbe0719c734e527f251ec4b7",
+        "f7c2023d4122a08269d4ba44a561b3d7700a9fc4c190e30877d3c14e33259393",
     },
-    'scripts/install.sh': {
-        "c48b21609d842a372096e81333bbcacc21b4f4bc54d7a173490d6d6cf321521e",
+    'scripts/install/install.sh': {
+        "0dead42400b503bb7a862db51f02875df1ebe6a3edec7bb1264673c1dbb93046",
     },
-    'scripts/release.sh': {
-        # Fixed `cargo run -p mgc-dist -- build-all`; review binds both argv branches.
-        # Lệnh cargo cố định cho build-all; fingerprint ràng buộc cả hai nhánh argv.
-        "94e77fed0f8ba8ce7e68d641d9049e6fc1e17b3a84b29ae112fc8eb37b4ad7b1",
-        "670c7e7c2b1b0da6b1a333e02ca655d6826088d32088c1e81342a26d9e0fde87",
+    'scripts/release/release.sh': {
+        "1571862ee6a05a49710cbe4a22520f874a74266c2015b3ff6e105152fab993bd",
+        "c880fcc18ff0231e67e72eba9702b29a72074d64a9009543f2863ae8d8dcd93d",
     },
     'cli/tests/scripts/competitive_benchmark_impl.sh': {
         "629ce7020efb842bd715a9ab592f2203ee4755659dde73f8e26c1d9ca6e8a005",
     },
-    'scripts/gen-real-lockfile-fixtures.sh': {
-        # Bounded fixture-only writers: pinned tools, temporary home/cache,
-        # and lockfile-only mode with dependency lifecycle scripts disabled.
-        # Lệnh writer chỉ sinh fixture: tool được ghim, home/cache tạm,
-        # chỉ ghi lockfile và tắt lifecycle script của dependency.
-        "04934b72569dfde146263a8666e9f309b0b38fc1deb41cd2c9d7502cdd881eca",
-        "e3713998bc60be1f7156a2196feeffa1199ed547f8e8a62c23b48c21e1519790",
+    'scripts/maintenance/gen-real-lockfile-fixtures.sh': {
+        "9d65b723b5e30c1a6cc5a148e4f508eb9334e285b606687932b79dd7551f084f",
+        "b747a9713bc0c6ccaa854c9ca06a5e1f20dd34453ab6d38fb3b6176c953f6afc",
     },
-    'scripts/publish.sh': {
-        "aed22d7245b1f5d808558dd46791d5cd374616a2a59dcba708491199619b98f5",
-        "de7828bae3eb8b9e31eb0e37ee2372d3690be736d59fff259220b2c832a69e29",
+    'scripts/release/publish.sh': {
+        "63a6ab0b735d38df5e2f8a7db33d47e297e8a7fef9f856df9c350209bec50319",
+        "e6131deb7a325e3db47c41497d69992822a1aecd72b1e6d07c27ccb1dc782cc5",
     },
 }
 
@@ -338,7 +332,7 @@ SHELL_SOURCE_DYNAMIC_COMMAND_REVIEWS = {
         "lines": {9: "Invokes a fixed repository-owned lifecycle test script with Bash.", 10: "Invokes a fixed repository-owned lifecycle test script with Bash.", 11: "Invokes a fixed repository-owned lifecycle test script with Bash.", 12: "Invokes a fixed repository-owned lifecycle test script with Bash."},
     },
     "scripts/release/prepublish/verify_archive_set.sh": {
-        "source_sha256": "ff031f67a350210f1e749c00420c4551abc1b8cb68b86ad96cf21855a381e582",
+        "source_sha256": "6d8c3b914359c0e1adc04fee77e988f9a89627c8dbdbd3f0630b17cb84c97c05",
         "lines": {14: "Reads names from the fixed repository-owned artifact-contract script; its OS/architecture/variant arguments are validated against finite allowlists."},
     },
 }

@@ -98,6 +98,18 @@ fn test_primary_non_web_create_commands_scaffold_real_projects() {
 
     for (args, project, expected_file, mgc_toml_marker) in cases {
         let dir = common::work_dir();
+        // Scaffold from a project that already exists: MagiCore never embeds
+        // framework source.
+        // Scaffold từ project có sẵn: MagiCore không nhúng source framework.
+        let (core, framework) = match project {
+            "ai-demo" => ("ai", "python-agent"),
+            "app-demo" => ("app", "flutter"),
+            "lib-demo" => ("lib", "rust"),
+            other => unreachable!("no source mapping for {other}"),
+        };
+        let source = common::local_source(&dir, core, framework);
+        let mut args = args;
+        args.push(source.flag().leak());
         let (ok, out) = common::mgc_in(&dir, &args);
         assert!(ok, "{args:?} failed\n{out}");
         common::assert_file_exists(&dir.join(project), expected_file);

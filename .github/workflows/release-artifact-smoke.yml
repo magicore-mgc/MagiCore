@@ -119,7 +119,7 @@ jobs:
           # chỉ để hiển thị — ánh xạ trước khi gọi.
           CONTRACT_VARIANT="all"
           if [[ "${{ matrix.variant }}" == "web" ]]; then CONTRACT_VARIANT="web"; fi
-          names=$(./scripts/release-artifact-contract.sh "$VERSION" "${{ matrix.os_name }}" "${{ matrix.arch }}" "$CONTRACT_VARIANT")
+          names=$(./scripts/release/release-artifact-contract.sh "$VERSION" "${{ matrix.os_name }}" "${{ matrix.arch }}" "$CONTRACT_VARIANT")
           ARTIFACT=$(echo "$names" | grep "^ARCHIVE=" | cut -d= -f2)
           echo "name=$ARTIFACT" >> $GITHUB_OUTPUT
           echo "Testing artifact: $ARTIFACT"

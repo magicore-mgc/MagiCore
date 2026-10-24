@@ -18,7 +18,7 @@ class ScanBoundaryCoverage(unittest.TestCase):
             for path in gate._iter_rust_files()
         }
         self.assertIn("cli/src/main.rs", scanned)
-        self.assertIn("cli/src/commands/python_runtime.rs", scanned)
+        self.assertIn("cli/src/commands/python_runtime/python_runtime.rs", scanned)
         self.assertIn("cli/tests/native_engine_spawn_audit.rs", scanned)
         self.assertIn("core/crates/mgc-exec/src/run/run.rs", scanned)
         self.assertIn("core/crates/mgc-resolver/src/protocols/swift/registry/registry.rs", scanned)
@@ -31,7 +31,7 @@ class ScanBoundaryCoverage(unittest.TestCase):
             ".",
         ):
             self.assertIn(root, gate.PYTHON_SCAN_ROOTS)
-        self.assertIn("scripts/lifecycle_capability_matrix.py", python_scanned)
+        self.assertIn("scripts/audit/lifecycle_capability_matrix.py", python_scanned)
         self.assertIn("benchmark/scripts/bench_v2.py", python_scanned)
         shell_scanned = {
             os.path.relpath(path, repo_root).replace(os.sep, "/")
@@ -46,7 +46,7 @@ class ScanBoundaryCoverage(unittest.TestCase):
             os.path.relpath(path, repo_root).replace(os.sep, "/")
             for path in gate._iter_shell_files()
         }
-        self.assertIn("scripts/install-from-gh.sh", shell_scanned)
+        self.assertIn("scripts/install/install-from-gh.sh", shell_scanned)
         self.assertIn("cli/tests/scripts/runtime_full_e2e.sh", shell_scanned)
 
     def test_project_kind_check_is_not_a_spawn(self):

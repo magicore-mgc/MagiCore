@@ -6,6 +6,7 @@ pub async fn run(
     framework: &str,
     project_name: &str,
     container: super::super::shared::container_flags::ContainerFlags,
+    source: crate::commands::core::shared::source_flags::SourceFlags,
 ) -> Result<()> {
     if container.k8s {
         return Err(crate::error::k8s_profile_unsupported("clo"));
@@ -30,11 +31,14 @@ pub async fn run(
             project_name: project_name.to_string(),
             features: Vec::new(),
             template_dir: std::path::PathBuf::new(),
+
+            ..Default::default()
         }
     } else {
         crate::wizard::cloud::CloudWizard::run()
     };
     config.project_name = project_name.to_string();
+    super::source::apply(&mut config, source);
     if container.docker && !config.features.iter().any(|feature| feature == "docker") {
         config.features.push("docker".to_string());
     }
@@ -58,22 +62,28 @@ pub async fn run(
             Ok(status) if status.is_available() => {}
             Ok(_) => {
                 mgc_ui::warning(&format!(
-                    "Optional cloud layer 'cloud/{}' not found, using fallback",
+                    "Optional cloud layer 'cloud/{}' not found; the registry layer or a local project is required",
                     fw
                 ));
             }
             Err(e) if explicit_ref || !e.is_availability_failure() => return Err(e.into()),
             Err(e) => {
-                // Built-in generator fallback — but ONLY for frameworks
-                // this core's processor actually generates; anything else
-                // keeps the honest layer-required error (no mislabeled scaffold).
-                // (Fallback generator nội bộ — chỉ framework processor hỗ trợ.)
-                if crate::scaffold::processors::clo::CloProcessor::supports(fw) {
+                // No built-in generator exists: a registry layer failure is
+                // only recoverable when a project with this framework already
+                // lives on this machine.
+                // Không tồn tại generator nội bộ: lỗi registry layer chỉ cứu
+                // được khi máy đã có project cùng framework.
+                if crate::scaffold::framework_registry::is_supported("clo", fw) {
                     mgc_ui::warning(&format!(
-                        "Registry layer unavailable ({e}) — using built-in cloud generator",
+                        "Registry layer unavailable ({e}) — will reuse a local '{}' project if one exists",
+                        fw
                     ));
                 } else {
-                    anyhow::bail!("Required cloud template layer missing: {}", e)
+                    anyhow::bail!(
+                        "Unsupported clo framework '{}' and registry layer unavailable: {}",
+                        fw,
+                        e
+                    )
                 }
             }
         }

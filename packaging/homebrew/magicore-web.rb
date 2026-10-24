@@ -6,16 +6,16 @@ class MagicoreWeb < Formula
   # DO-NOT-PUBLISH placeholders — the v1.1.0-rc.10 archives do not exist
   # yet, so NO real hash can be computed. Publishing this manifest as-is
   # would guarantee install failure (hash mismatch). Rerun
-  # scripts/update-release-hashes.sh after the v1.1.0-rc.10 release assets
-  # are published, then confirm `python3 scripts/verify_release_manifests.py`
+  # scripts/release/update-release-hashes.sh after the v1.1.0-rc.10 release assets
+  # are published, then confirm `python3 scripts/release/verify_release_manifests.py`
   # exits 0 — it FAILS (exit 1) while any PENDING_/UNAVAILABLE_ placeholder
   # remains.
   # (CỔNG RELEASE E (P0-3): giá trị SHA256 dưới đây là placeholder
   # CẤM-PUBLISH — archive v1.1.0-rc.10 chưa tồn tại nên KHÔNG THỂ tính hash
   # thật. Publish manifest này nguyên trạng thì install chắc chắn hỏng
-  # (hash lệch). Chạy lại scripts/update-release-hashes.sh sau khi asset
+  # (hash lệch). Chạy lại scripts/release/update-release-hashes.sh sau khi asset
   # release v1.1.0-rc.10 có thật, rồi xác nhận `python3
-  # scripts/verify_release_manifests.py` exit 0 — script FAIL (exit 1)
+  # scripts/release/verify_release_manifests.py` exit 0 — script FAIL (exit 1)
   # khi còn bất kỳ placeholder PENDING_/UNAVAILABLE_ nào.)
   license "MIT"
   head "https://github.com/mingd-153/MagiCore.git", branch: "main"

@@ -9,6 +9,9 @@
 use std::process::Command;
 use tempfile::TempDir;
 
+#[path = "common/mod.rs"]
+mod common;
+
 /// Find mgc binary in target/debug or target/release
 fn find_mgc_binary() -> String {
     // CARGO_BIN_EXE_mgc: cargo-provided path to the JUST-BUILT binary —
@@ -75,10 +78,15 @@ fn test_lib_rust_lifecycle_create_build() {
     let mgc = find_mgc_binary();
 
     // Step 1: mgc create-lib rust <name>
+    // The scaffold source is an existing rust project, because MagiCore does
+    // not embed framework source.
+    // Nguồn scaffold là project rust có sẵn, vì MagiCore không nhúng source FW.
+    let source = common::local_source(temp.path(), "lib", "rust");
     let output = Command::new(&mgc)
         .arg("create-lib")
         .arg("rust") // framework required, not --lang
         .arg(project_name)
+        .arg(source.flag())
         .current_dir(temp.path())
         .output()
         .expect("mgc create-lib failed");
@@ -186,10 +194,12 @@ fn test_ai_lifecycle_create_only() {
     let mgc = find_mgc_binary();
 
     // mgc create-ai python-agent <name>
+    let source = common::local_source(temp.path(), "ai", "python-agent");
     let output = Command::new(&mgc)
         .arg("create-ai")
         .arg("python-agent") // framework required, not --framework
         .arg(project_name)
+        .arg(source.flag())
         .current_dir(temp.path())
         .output()
         .expect("mgc create-ai failed");

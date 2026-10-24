@@ -53,7 +53,7 @@ jobs:
       - name: Regenerate capability matrix at this commit
         run: |
           cargo build -p mgc --locked
-          python3 scripts/audit_capability_matrix.py
+          python3 scripts/audit/audit_capability_matrix.py
 
       - name: "Enforce release gate (expected manifest: every lane supported, fresh)"
         # P0-1 (2026-09-11): the REQUIRED scope comes from the matrix's

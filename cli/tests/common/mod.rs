@@ -5,6 +5,10 @@ use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+mod local_source;
+
+pub use local_source::local_source;
+
 const MANIFEST: &str = env!("CARGO_MANIFEST_DIR");
 const EVIDENCE_HASH_BUFFER_BYTES: usize = 64 * 1024;
 const COMMAND_TIMEOUT_SECS: u64 = 300;
@@ -457,7 +461,13 @@ pub fn work_dir() -> PathBuf {
 /// Note: --dir flag is not supported; project is always created in CWD.
 pub fn scaffold(framework: &str, project: &str) -> PathBuf {
     let base = work_dir();
-    let result = mgc_in(&base, &["create-web", framework, project, "--ts"]);
+    // Framework source comes from an existing project: MagiCore embeds none.
+    // Source framework lấy từ project có sẵn: MagiCore không nhúng template.
+    let source = local_source(&base, "web", framework);
+    let result = mgc_in(
+        &base,
+        &["create-web", framework, project, "--ts", &source.flag()],
+    );
     assert!(result.0, "scaffold {framework} failed:\n{}", result.1);
     base.join(project)
 }
@@ -815,8 +825,16 @@ fn dev_http_status(address: SocketAddr) -> Option<u16> {
 /// Time scaffold execution, return duration in ms.
 pub fn bench_scaffold(framework: &str, project: &str) -> u128 {
     let base = work_dir();
+    // Benchmark the scaffold pipeline itself, not registry latency: the source
+    // is an existing project of the same framework.
+    // Đo chính pipeline scaffold, không phải độ trễ registry: nguồn là project
+    // có sẵn cùng framework.
+    let source = local_source(&base, "web", framework);
     let start = Instant::now();
-    let result = mgc_in(&base, &["create-web", framework, project, "--ts"]);
+    let result = mgc_in(
+        &base,
+        &["create-web", framework, project, "--ts", &source.flag()],
+    );
     let elapsed = start.elapsed().as_millis();
     assert!(result.0, "bench scaffold {framework} failed: {}", result.1);
     elapsed

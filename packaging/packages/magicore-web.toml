@@ -5,4 +5,4 @@ mode = "single-core"
 primary_core = "web"
 no_default_features = true
 features = ["web"]
-install_hint = "Install a published GitHub release: bash scripts/install-from-gh.sh --package magicore-web --version <published-version> --dir <bin-directory>"
+install_hint = "Install a published GitHub release: bash scripts/install/install-from-gh.sh --package magicore-web --version <published-version> --dir <bin-directory>"

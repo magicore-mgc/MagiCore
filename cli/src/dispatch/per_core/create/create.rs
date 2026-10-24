@@ -18,66 +18,82 @@ pub(in crate::dispatch) fn map(command: CreateCommands) -> Option<CoreCommand> {
         CreateCommands::CreateGame {
             framework,
             project_name,
+            source,
         } => Some(CoreCommand::CreateGame {
             framework,
             project_name,
+            source,
         }),
         CreateCommands::CreateAi {
             framework,
             project_name,
             container,
+            source,
         } => Some(CoreCommand::CreateAi {
             framework,
             project_name,
             container,
+            source,
         }),
         CreateCommands::CreateClo {
             framework,
             project_name,
             container,
+            source,
         } => Some(CoreCommand::CreateClo {
             framework,
             project_name,
             container,
+            source,
         }),
         CreateCommands::CreateCicd {
             framework,
             project_name,
+            source,
         } => Some(CoreCommand::CreateCicd {
             framework,
             project_name,
+            source,
         }),
         CreateCommands::CreateIot {
             framework,
             project_name,
+            source,
         } => Some(CoreCommand::CreateIot {
             framework,
             project_name,
+            source,
         }),
         CreateCommands::CreateApp {
             framework,
             project_name,
             container,
+            source,
         } => Some(CoreCommand::CreateApp {
             framework,
             project_name,
             container,
+            source,
         }),
         CreateCommands::CreateLib {
             framework,
             project_name,
             container,
+            source,
         } => Some(CoreCommand::CreateLib {
             framework,
             project_name,
             container,
+            source,
         }),
         CreateCommands::CreateHardware {
             framework,
             project_name,
+            source,
         } => Some(CoreCommand::CreateHardware {
             framework,
             project_name,
+            source,
         }),
         _ => None,
     }

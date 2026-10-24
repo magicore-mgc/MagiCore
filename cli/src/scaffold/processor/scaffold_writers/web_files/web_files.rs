@@ -26,7 +26,29 @@ impl Scaffolder {
             return Self::ensure_web_test_runner(target, name);
         }
 
-        let layers = Self::resolve_web_template_layers(config)?;
+        // No prepared template_dir: either the registry layers or a reused
+        // local project must supply the framework source.
+        // Không có template_dir chuẩn bị sẵn: registry layer hoặc project local
+        // tái dùng phải cung cấp source framework.
+        let layers = match Self::resolve_web_template_layers(config) {
+            Ok(layers) => layers,
+            Err(layer_error) => {
+                if let Some(source) =
+                    crate::scaffold::local_projects::resolve_offline_source(config, framework)?
+                {
+                    crate::scaffold::local_projects::reuse_local_project(
+                        &source,
+                        target,
+                        &config.frameworks,
+                    )?;
+                    Self::ensure_framework_storage_ignores(target, framework)?;
+                    return Ok(());
+                }
+                return Err(layer_error.context(
+                    crate::scaffold::error::scaffold_source_unavailable("web", framework),
+                ));
+            }
+        };
         Self::materialize_web_templates(target, config, &layers)?;
         Self::ensure_framework_storage_ignores(target, framework)?;
         if effective_web_mode(config) == "monorepo" {

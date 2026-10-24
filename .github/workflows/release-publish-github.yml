@@ -43,12 +43,12 @@ jobs:
           REQUESTED_RELEASE_VERSION: ${{ inputs.version }}
         run: |
           VERSION="${REQUESTED_RELEASE_VERSION}"
-          ./scripts/update-manifests.sh --version "$VERSION" --artifacts release-assets
-          ./scripts/update-manifests.sh --version "$VERSION" --artifacts release-assets --verify-only
+          ./scripts/release/update-manifests.sh --version "$VERSION" --artifacts release-assets
+          ./scripts/release/update-manifests.sh --version "$VERSION" --artifacts release-assets --verify-only
           # Check every generated Homebrew/Scoop entry, not only the subset
           # sampled by update-manifests.sh --verify-only.
           # Kiểm mọi entry Homebrew/Scoop, không chỉ các hash được updater lấy mẫu.
-          python3 scripts/verify_release_manifests.py
+          python3 scripts/release/verify_release_manifests.py
 
       - name: Stage package manager manifests
         run: |
@@ -80,15 +80,15 @@ jobs:
         run: |
           export VERSION="${REQUESTED_RELEASE_VERSION}"
           # Manifest builder lives in scripts/ (tested by
-          # scripts/test-release-manifest.sh — RC dashes parse from the
+          # scripts/release/test-release-manifest.sh — RC dashes parse from the
           # right, missing VERSION fails closed, no KeyError).
           # Builder manifest nằm ở scripts/ (có test — version RC parse
           # từ phải, thiếu VERSION fail rõ ràng).
-          python3 scripts/release-manifest.py --require-matrix release-assets
+          python3 scripts/release/release-manifest.py --require-matrix release-assets
           # Sign with the JUST-BUILT binary (ring backend, locked in
           # Cargo.lock — no pip/network at signing time; P0). The python
           # signer stays as the independent cross-check oracle in
-          # scripts/test-release-manifest.sh and the verify-distribution
+          # scripts/release/test-release-manifest.sh and the verify-distribution
           # workflow.
           # (Ký bằng CHÍNH binary vừa build — backend ring đã khóa.)
           BOOTSTRAP_DIR="$(mktemp -d)"
@@ -105,7 +105,7 @@ jobs:
           VERSION="${REQUESTED_RELEASE_VERSION}"
           shopt -s nullglob
           archives=(release-assets/magicore-*.tar.gz release-assets/magicore-*.zip)
-          python3 scripts/verify-release-manifest-signature.py \
+          python3 scripts/release/verify-release-manifest-signature.py \
             release-assets "$VERSION" "${archives[@]}"
 
       # Note: Attestations already generated in pre-publish-verification

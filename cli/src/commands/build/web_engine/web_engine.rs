@@ -78,6 +78,9 @@ pub(crate) async fn build_web(
         sourcemap: true,
         target: "es2020".to_string(),
         public_path: "/".to_string(),
+        // A project without a browser entry point is a server build.
+        // Project không có browser entry point là build phía server.
+        backend: super::is_backend_project(root),
     };
 
     let bundler = Bundler::new(config.clone());

@@ -108,13 +108,14 @@ which mgc  # Should fail
 **Shell Script Install**:
 ```bash
 # Install
-curl -fsSL https://raw.githubusercontent.com/magicore/magicore/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/magicore/magicore/main/scripts/install/install.sh | sh
 
 # Verify
 mgc --version
 
-# Uninstall
-curl -fsSL https://raw.githubusercontent.com/magicore/magicore/main/scripts/uninstall.sh | sh
+# Uninstall: no dedicated uninstaller ships yet — remove the installed binary.
+# Gỡ cài đặt: chưa có uninstaller riêng — xoá binary đã cài.
+rm -f "$(command -v mgc)"
 which mgc  # Should fail
 ```
 
@@ -207,7 +208,7 @@ distribution-test:
     - name: Package distribution
       run: |
         # Create tar.gz/zip based on OS
-        # See packaging/scripts/package.sh
+        # Archiving is owned by tools/mgc-dist (`mgc-dist build-all`).
 
     - name: Test install
       run: |

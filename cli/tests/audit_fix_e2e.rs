@@ -217,10 +217,13 @@ fn audit_without_fix_reports_findings_and_changes_nothing() {
 }
 
 #[test]
-fn audit_fix_mutates_and_reaudits_clean() {
-    // Vulnerable fixture + --fix → mutation qua gateway, re-audit sạch,
-    // exit 0, manifest lên 1.0.1, hết journal.
-    // (--fix mutates through the gateway and exits on the POST report.)
+fn audit_fix_refuses_to_widen_a_pinned_range() {
+    // A manifest pinned to the vulnerable release has no range that admits a
+    // clean version. The fix must refuse and leave the pin intact; rewriting it
+    // to `*` would silence the advisory by deleting the constraint.
+    // Manifest ghim đúng bản dính lỗ hổng thì không range nào chứa được bản
+    // sạch. Fix phải từ chối và giữ nguyên pin; đổi thành `*` là tắt advisory
+    // bằng cách xoá ràng buộc.
     let temp = TempDir::new().unwrap();
     let project = setup_project(&temp);
     let fixture = AuditFixture::new(false, false);
@@ -229,29 +232,50 @@ fn audit_fix_mutates_and_reaudits_clean() {
     std::fs::create_dir_all(&log_dir).unwrap();
     install_locked(&mgc, &project, &fixture.url, &log_dir);
 
+    let manifest_before = std::fs::read(project.join("package.json")).unwrap();
+    let lock_before = std::fs::read(project.join("mgc.lock")).unwrap();
+
     let mut cmd = mgc_cmd(&mgc, &project, &fixture.url, &log_dir, "fix");
     cmd.arg("audit").arg("--fix");
     let status = cmd.status().unwrap();
     assert!(
-        status.success(),
-        "fixed project must re-audit clean (exit 0):\n{}",
-        read_log(&log_dir, "fix", "err")
+        !status.success(),
+        "a fix that cannot satisfy the constraint must fail:\n{}",
+        read_log(&log_dir, "fix", "out")
     );
-    let manifest = std::fs::read_to_string(project.join("package.json")).unwrap();
+    let stderr = read_log(&log_dir, "fix", "err");
     assert!(
-        !manifest.contains("\"mgc-audit-vuln\": \"1.0.0\""),
-        "fix must lift the vulnerable pin from the manifest:\n{manifest}"
+        stderr.contains("will not rewrite your constraint"),
+        "refusal must explain why:\n{stderr}"
     );
-    let lock = std::fs::read_to_string(project.join("mgc.lock")).unwrap();
-    assert!(
-        lock.contains("1.0.1"),
-        "fix must resolve the clean version into the lock:\n{lock}"
+
+    // The manifest restores SEMANTICALLY (documented contract: writers
+    // normalize formatting, so byte identity is impossible); the mgc-owned
+    // lock restores byte-identical.
+    // Manifest phục hồi theo NGHĨA (hợp đồng đã ghi: writer chuẩn hoá format
+    // nên không thể giống byte); lock do mgc sở hữu phục hồi giống byte.
+    let manifest_after: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(project.join("package.json")).unwrap()).unwrap();
+    let manifest_was: serde_json::Value = serde_json::from_slice(&manifest_before).unwrap();
+    assert_eq!(
+        manifest_after, manifest_was,
+        "a refused fix must preserve every manifest constraint"
+    );
+    assert_eq!(
+        manifest_after["dependencies"]["mgc-audit-vuln"],
+        serde_json::json!("1.0.0"),
+        "the author's pin must survive the refusal"
+    );
+    assert_eq!(
+        std::fs::read(project.join("mgc.lock")).unwrap(),
+        lock_before,
+        "a refused fix must leave the lockfile byte-identical"
     );
     assert!(
         !project
             .join(".magicore/journal/dependency-mutation/journal.json")
             .exists(),
-        "no journal may survive a successful fix"
+        "no journal may survive a refused fix"
     );
 }
 

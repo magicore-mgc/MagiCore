@@ -19,9 +19,9 @@ on:
       - "core/crates/**"
       - "scripts/dependency_delegation_audit/**"
       - "scripts/lifecycle_matrix/**"
-      - "scripts/audit_dependency_delegation.py"
-      - "scripts/lifecycle_capability_matrix.py"
-      - "scripts/test_security_workflow_paths.py"
+      - "scripts/audit/audit_dependency_delegation.py"
+      - "scripts/audit/lifecycle_capability_matrix.py"
+      - "scripts/test/test_security_workflow_paths.py"
   push:
     paths:
       - "Cargo.lock"
@@ -35,9 +35,9 @@ on:
       - "core/crates/**"
       - "scripts/dependency_delegation_audit/**"
       - "scripts/lifecycle_matrix/**"
-      - "scripts/audit_dependency_delegation.py"
-      - "scripts/lifecycle_capability_matrix.py"
-      - "scripts/test_security_workflow_paths.py"
+      - "scripts/audit/audit_dependency_delegation.py"
+      - "scripts/audit/lifecycle_capability_matrix.py"
+      - "scripts/test/test_security_workflow_paths.py"
   workflow_dispatch:
 
 # Replace superseded validation runs on the same ref. — Hủy lượt kiểm cũ khi ref có lượt mới.
@@ -72,6 +72,14 @@ jobs:
       - name: Run audit
         # All known advisories have been fixed as of 2026-08-31 (commit 0a9804c)
         run: cargo audit --color never
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --version 0.19.0 --locked
+      - name: Enforce deny.toml policy
+        # deny.toml existed but nothing ran it, so its bans/licenses/advisory
+        # policy could silently rot. Gate every PR on it.
+        # deny.toml tồn tại nhưng không ai chạy, nên policy bans/licenses/advisory
+        # có thể mục âm thầm. Chặn mọi PR bằng nó.
+        run: cargo deny check --all-features
       - name: Verify lockfile is reproducible
         run: cargo check --workspace --locked
 
@@ -161,7 +169,7 @@ jobs:
       - name: Test-runner security (scope enforcement + audit log)
         run: cargo test -p mgc --test test_runner_security --locked -- --nocapture
       - name: Generate capability matrix from E2E evidence
-        run: python3 scripts/audit_capability_matrix.py
+        run: python3 scripts/audit/audit_capability_matrix.py
       - name: Upload capability matrix artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -284,7 +292,7 @@ jobs:
 
       - name: Resolve Flutter SDK dependencies before MGC process guard
         shell: bash
-        run: bash scripts/bootstrap_flutter_sdk.sh
+        run: bash scripts/install/bootstrap_flutter_sdk.sh
 
       - name: Install cargo-audit (rust parity lane on this SHA)
         run: cargo install cargo-audit --version 0.22.2 --locked

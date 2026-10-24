@@ -115,10 +115,10 @@ jobs:
           python-version: "3.15.0"
 
       - name: Test native-PM verdict and matrix provenance guards
-        run: ${{ matrix.python_cmd }} scripts/test_native_pm_verdict.py
+        run: ${{ matrix.python_cmd }} scripts/test/test_native_pm_verdict.py
 
       - name: Test binary-to-matrix ownership cross-check
-        run: ${{ matrix.python_cmd }} scripts/test_dep_gate_consistency.py
+        run: ${{ matrix.python_cmd }} scripts/test/test_dep_gate_consistency.py
 
       - name: Setup Node.js (web lane)
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -189,7 +189,7 @@ jobs:
       # Giải quyết Pub thuộc SDK trước khi mgc-exec giám sát thao tác app.
       - name: Resolve Flutter SDK dependencies before MGC process guard
         shell: bash
-        run: bash scripts/bootstrap_flutter_sdk.sh
+        run: bash scripts/install/bootstrap_flutter_sdk.sh
         env:
           HOME: ${{ runner.temp }}/flutter-sdk-home
           USERPROFILE: ${{ runner.temp }}/flutter-sdk-home
@@ -265,7 +265,7 @@ jobs:
         # POSIX-spelled MGC_LIFECYCLE_BIN works on every OS.
         # (Script tự quy về binary Windows (mgc.exe), nên MGC_LIFECYCLE_BIN
         # viết kiểu POSIX chạy trên mọi OS.)
-        run: ${{ matrix.python_cmd }} scripts/lifecycle_capability_matrix.py
+        run: ${{ matrix.python_cmd }} scripts/audit/lifecycle_capability_matrix.py
         env:
           MGC_LIFECYCLE_BIN: ./target/release/mgc
           MGC_LIFECYCLE_MATRIX_OUT: docs/specs/lifecycleCapabilityMatrix.json

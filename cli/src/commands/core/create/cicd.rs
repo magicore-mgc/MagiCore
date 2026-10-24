@@ -2,7 +2,11 @@
 
 use anyhow::Result;
 
-pub async fn run(framework: &str, project_name: &str) -> Result<()> {
+pub async fn run(
+    framework: &str,
+    project_name: &str,
+    source: crate::commands::core::shared::source_flags::SourceFlags,
+) -> Result<()> {
     // Phase 4: Parse scaffold spec sớm với typo detection
     use crate::scaffold::spec::{CoreKind, parse_scaffold_spec};
     let parsed_framework = if framework.is_empty() {
@@ -22,11 +26,14 @@ pub async fn run(framework: &str, project_name: &str) -> Result<()> {
             project_name: project_name.to_string(),
             features: Vec::new(),
             template_dir: std::path::PathBuf::new(),
+
+            ..Default::default()
         }
     } else {
         crate::wizard::cicd::CicdWizard::run()
     };
     config.project_name = project_name.to_string();
+    super::source::apply(&mut config, source);
     if let Some(fw) = config.frameworks.first() {
         // Phase 3: Handle typed result
         let request = parsed_framework
@@ -43,22 +50,28 @@ pub async fn run(framework: &str, project_name: &str) -> Result<()> {
             Ok(status) if status.is_available() => {}
             Ok(_) => {
                 mgc_ui::warning(&format!(
-                    "Optional cicd layer 'cicd/{}' not found, using fallback",
+                    "Optional cicd layer 'cicd/{}' not found; the registry layer or a local project is required",
                     fw
                 ));
             }
             Err(e) if explicit_ref || !e.is_availability_failure() => return Err(e.into()),
             Err(e) => {
-                // Built-in generator fallback — but ONLY for frameworks
-                // this core's processor actually generates; anything else
-                // keeps the honest layer-required error (no mislabeled scaffold).
-                // (Fallback generator nội bộ — chỉ framework processor hỗ trợ.)
-                if crate::scaffold::processors::cicd::CicdProcessor::supports(fw) {
+                // No built-in generator exists: a registry layer failure is
+                // only recoverable when a project with this framework already
+                // lives on this machine.
+                // Không tồn tại generator nội bộ: lỗi registry layer chỉ cứu
+                // được khi máy đã có project cùng framework.
+                if crate::scaffold::framework_registry::is_supported("cicd", fw) {
                     mgc_ui::warning(&format!(
-                        "Registry layer unavailable ({e}) — using built-in cicd generator",
+                        "Registry layer unavailable ({e}) — will reuse a local '{}' project if one exists",
+                        fw
                     ));
                 } else {
-                    anyhow::bail!("Required cicd template layer missing: {}", e)
+                    anyhow::bail!(
+                        "Unsupported cicd framework '{}' and registry layer unavailable: {}",
+                        fw,
+                        e
+                    )
                 }
             }
         }

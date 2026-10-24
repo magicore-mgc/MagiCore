@@ -42,7 +42,16 @@ fn assert_native_web_framework_lifecycle(framework: &str) {
 
     let workspace = tempfile::tempdir().expect("create isolated framework workspace");
     let project_name = format!("runtime-{framework}");
-    let args = ["create-web", framework, project_name.as_str(), "--ts"];
+    // The framework source comes from an existing project of the same framework.
+    // Source framework lấy từ project có sẵn cùng framework.
+    let source = common::local_source(workspace.path(), "web", framework);
+    let args = [
+        "create-web",
+        framework,
+        project_name.as_str(),
+        "--ts",
+        &source.flag(),
+    ];
     let (ok, output) = common::mgc_in(workspace.path(), &args);
     assert!(ok, "{framework} scaffold failed:\n{output}");
 

@@ -6,8 +6,6 @@ include!("generator_safety.rs");
 include!("template_root.rs");
 include!("delivery_descriptors.rs");
 include!("web_smoke_tests.rs");
-include!("cloud_ai_scaffolds.rs");
-include!("app_frameworks.rs");
 include!("core_templates.rs");
 include!("web_leaf_materialization.rs");
 include!("web_feature_layers.rs");

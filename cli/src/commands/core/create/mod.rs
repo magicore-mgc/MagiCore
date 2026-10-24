@@ -7,6 +7,7 @@
 //! boundary — mọi create-<core> đều đi qua đây trước khi chạm filesystem.
 
 mod metadata;
+mod source;
 mod validation;
 
 pub(crate) use metadata::scaffold_and_save_metadata;

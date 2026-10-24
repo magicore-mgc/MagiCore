@@ -30,19 +30,19 @@ cargo test -p mgc
 
 ```bash
 # Criterion benches
-./scripts/bench.sh cold
-./scripts/bench.sh stress
-./scripts/bench.sh install
+./scripts/bench/bench.sh cold
+./scripts/bench/bench.sh stress
+./scripts/bench/bench.sh install
 
 # Standardized install/materialization matrix
-./scripts/bench.sh matrix
-./scripts/bench.sh matrix-heavy
+./scripts/bench/bench.sh matrix
+./scripts/bench/bench.sh matrix-heavy
 
 # Save/load matrix baseline
-./scripts/bench.sh matrix-baseline
-./scripts/bench.sh matrix-diff
-./scripts/bench.sh matrix-heavy-baseline
-./scripts/bench.sh matrix-heavy-diff
+./scripts/bench/bench.sh matrix-baseline
+./scripts/bench/bench.sh matrix-diff
+./scripts/bench/bench.sh matrix-heavy-baseline
+./scripts/bench/bench.sh matrix-heavy-diff
 ```
 
 The matrix runner isolates five install/resolve scenarios so numbers are easier to compare across changes:

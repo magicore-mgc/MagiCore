@@ -134,7 +134,7 @@ jobs:
         shell: bash
         run: |
           PY=$(command -v python3 || command -v python)
-          "$PY" scripts/audit_capability_matrix.py
+          "$PY" scripts/audit/audit_capability_matrix.py
         env:
           MGC_AUDIT_MATRIX_OUT: docs/specs/auditCapabilityMatrix-${{ runner.os }}.json
 
@@ -191,7 +191,7 @@ jobs:
               # (old schema / hand-made) cannot be evaluated — reject.
               # Hợp đồng format: matrix thiếu manifest kỳ vọng → chặn.
               if not data.get("expected_lanes"):
-                  failures.append(f"{path}: matrix has no expected_lanes manifest — regenerate via scripts/audit_capability_matrix.py")
+                  failures.append(f"{path}: matrix has no expected_lanes manifest — regenerate via scripts/audit/audit_capability_matrix.py")
                   continue
               by_lane = {(l["core"], l["language"], l["scanner"]): l for l in data.get("capability", [])}
               for lane in data.get("expected_lanes", []):

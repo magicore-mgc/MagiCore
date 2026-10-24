@@ -22,7 +22,8 @@ PYTHON_PROCESS_FUNCTIONS = {
 # call invalidates its entry and returns the route to review-required.
 # Fingerprints bind the review to the argv construction and subprocess options,
 # while the reason records why that exact process boundary is expected.
-PYTHON_PROCESS_REVIEWS = {'tests/test_scaffold_acceptance_runner.py': {('subprocess.run', 'bfb5000bd69ce3452a1825e37bbc0cacd76cb7cbc7ff6c1139036d68f8848936'): (1,
+PYTHON_PROCESS_REVIEWS = {'scripts/audit/emit_coverage_observed.py': {('subprocess.run', 'cbe3112779eb145b37d6aa7abe98f84cdb1af5cc855aec6c6ec6dbe5c92e2b0e'): (1, 'Reads the current commit SHA for local evidence metadata; fixed argv, no network, no package install.')},
+'tests/test_scaffold_acceptance_runner.py': {('subprocess.run', 'bfb5000bd69ce3452a1825e37bbc0cacd76cb7cbc7ff6c1139036d68f8848936'): (1,
                                                                                                                                        'Runs '
                                                                                                                                        'only '
                                                                                                                                        'the '
@@ -125,7 +126,7 @@ PYTHON_PROCESS_REVIEWS = {'tests/test_scaffold_acceptance_runner.py': {('subproc
                                                                                                                             'isolated '
                                                                                                                             'fixture '
                                                                                                                             'directory.')},
- 'scripts/audit_capability_matrix.py': {('subprocess.run', '4e9ac2d91afa104d26afe1fe48e3aa3ee6bf165b4b1d3f44c824250b25fcd44d'): (1,
+ 'scripts/audit/audit_capability_matrix.py': {('subprocess.run', '4e9ac2d91afa104d26afe1fe48e3aa3ee6bf165b4b1d3f44c824250b25fcd44d'): (1,
                                                                                                                                  'Reads '
                                                                                                                                  'the '
                                                                                                                                  'current '
@@ -159,7 +160,7 @@ PYTHON_PROCESS_REVIEWS = {'tests/test_scaffold_acceptance_runner.py': {('subproc
                                                                                                                                  'a '
                                                                                                                                  'configured '
                                                                                                                                  'timeout.')},
- 'scripts/provenance_chain.py': {('subprocess.run', 'da765a20acc92310eb3d7ea67493e8d4e06607601d66e345801501bb18ce591c'): (1,
+ 'scripts/release/provenance_chain.py': {('subprocess.run', 'da765a20acc92310eb3d7ea67493e8d4e06607601d66e345801501bb18ce591c'): (1,
                                                                                                                           'Git '
                                                                                                                           'metadata '
                                                                                                                           'helper; '
@@ -181,11 +182,11 @@ PYTHON_PROCESS_REVIEWS = {'tests/test_scaffold_acceptance_runner.py': {('subproc
                                                                                                                           'read-only '
                                                                                                                           'git '
                                                                                                                           'arguments.')},
- 'scripts/test_release_script.py': {('subprocess.run', '30189088871d987f63f90637069f395153c2256ba8d9fe638e82440f4b03ea11'): (1,
+ 'scripts/release/test_release_script.py': {('subprocess.run', '30189088871d987f63f90637069f395153c2256ba8d9fe638e82440f4b03ea11'): (1,
                                                                                                                              'Runs '
                                                                                                                              'the '
                                                                                                                              'local '
-                                                                                                                             'release.sh '
+                                                                                                                             'scripts/release/release.sh '
                                                                                                                              'against '
                                                                                                                              'a '
                                                                                                                              'temporary '
@@ -201,7 +202,7 @@ PYTHON_PROCESS_REVIEWS = {'tests/test_scaffold_acceptance_runner.py': {('subproc
                                                                                                                              'or '
                                                                                                                              'publishes '
                                                                                                                              'artifacts.')},
- 'scripts/test_audit_capability_matrix.py': {('subprocess.run', 'd8794996e3739e075be94219477e820eb1884f5178a30c5050c2dac04c6a60aa'): (1,
+ 'scripts/test/test_audit_capability_matrix.py': {('subprocess.run', 'd8794996e3739e075be94219477e820eb1884f5178a30c5050c2dac04c6a60aa'): (1,
                                                                                                                                       'Creates '
                                                                                                                                       'an '
                                                                                                                                       'isolated '
@@ -329,7 +330,7 @@ PYTHON_PROCESS_REVIEWS = {'tests/test_scaffold_acceptance_runner.py': {('subproc
                                                                                                                                                                      'or '
                                                                                                                                                                      'network '
                                                                                                                                                                      'mutation.')},
- 'scripts/test_github_action_pin.py': {('subprocess.run', 'b47a6572ab2b6f53fef5ad59a30ea2d07e32efd59aee7c826620234a1e126f21'): (1,
+ 'scripts/test/test_github_action_pin.py': {('subprocess.run', 'b47a6572ab2b6f53fef5ad59a30ea2d07e32efd59aee7c826620234a1e126f21'): (1,
                                                                                                                                 'Runs '
                                                                                                                                 'a '
                                                                                                                                 'test-only '
@@ -346,7 +347,7 @@ PYTHON_PROCESS_REVIEWS = {'tests/test_scaffold_acceptance_runner.py': {('subproc
                                                                                                                                 'the '
                                                                                                                                 'test '
                                                                                                                                 'PATH.')},
- 'scripts/test_inventory.py': {('subprocess.run', '8dceba98656b0f0b839e2fd1b3b0788e5f94ad93029626a1bc999942cbc4bf7c'): (2,
+ 'scripts/test/test_inventory.py': {('subprocess.run', '8dceba98656b0f0b839e2fd1b3b0788e5f94ad93029626a1bc999942cbc4bf7c'): (2,
                                                                                                                         'Reads '
                                                                                                                         'HEAD '
                                                                                                                         'for '

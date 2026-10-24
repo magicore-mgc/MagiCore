@@ -63,8 +63,27 @@ fn create_non_web_docker_profiles_run_lifecycle_through_mgc() {
             "RUN mgc install --frozen",
         ),
     ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_mgc"))
-            .args(args)
+        // Supply the framework source as an existing project: the registry
+        // layer is not assumed inside this E2E.
+        // Cung cấp source framework bằng project có sẵn: E2E này không giả định
+        // có registry layer.
+        let flags = ["create-ai", "create-app", "create-clo", "create-lib"];
+        let source = if flags.contains(&args[0]) {
+            Some(match args[0] {
+                "create-ai" => crate::common::local_source(temp.path(), "ai", args[1]),
+                "create-app" => crate::common::local_source(temp.path(), "app", args[1]),
+                "create-clo" => crate::common::local_source(temp.path(), "cloud", args[1]),
+                _ => crate::common::local_source(temp.path(), "lib", args[1]),
+            })
+        } else {
+            None
+        };
+        let mut command = Command::new(env!("CARGO_BIN_EXE_mgc"));
+        command.args(&args);
+        if let Some(source) = &source {
+            command.arg(source.flag());
+        }
+        let output = command
             .current_dir(temp.path())
             .env("HOME", &home)
             .env("USERPROFILE", &home)
@@ -93,12 +112,16 @@ fn create_non_web_docker_profiles_run_lifecycle_through_mgc() {
         assert!(dockerfile.contains("ENTRYPOINT [\"/usr/local/bin/mgc-container-entrypoint\"]"));
         assert!(dockerfile.contains(expected_command));
         if expected_runtime.starts_with("python:") {
+            // The scaffold must keep the reused framework manifest and add the
+            // MagiCore-owned test/build pins to it.
+            // Scaffold giữ manifest framework tái dùng và thêm pin test/build
+            // do MagiCore sở hữu.
             let pyproject = std::fs::read_to_string(project.join("pyproject.toml"))
                 .expect("Python scaffold must include its PEP 735 dependency group");
-            assert!(pyproject.contains("[dependency-groups]"));
-            assert!(pyproject.contains("pytest==9.1.1"));
-            assert!(pyproject.contains("build==1.6.1"));
-            assert!(pyproject.contains("setuptools==84.0.0"));
+            assert!(pyproject.contains("[dependency-groups]"), "{pyproject}");
+            assert!(pyproject.contains("pytest==9.1.1"), "{pyproject}");
+            assert!(pyproject.contains("build==1.6.1"), "{pyproject}");
+            assert!(pyproject.contains("setuptools==84.0.0"), "{pyproject}");
         }
         assert!(dockerfile.contains("RUN mgc test"));
         assert!(dockerfile.contains("RUN mgc build"));

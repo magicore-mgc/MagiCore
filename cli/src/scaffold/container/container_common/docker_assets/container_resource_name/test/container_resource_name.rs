@@ -13,6 +13,8 @@ fn config(core: &str, project_name: &str) -> ScaffoldConfig {
         project_name: project_name.to_owned(),
         features: Vec::new(),
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     }
 }
 

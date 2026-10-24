@@ -16,7 +16,7 @@ if data.get("working_tree_clean") is not True:
 #    Hợp đồng format: matrix thiếu manifest kỳ vọng → chặn.
 expected = data.get("expected_lanes")
 if not expected:
-    failures.append("matrix has no expected_lanes manifest — regenerate via scripts/audit_capability_matrix.py")
+    failures.append("matrix has no expected_lanes manifest — regenerate via scripts/audit/audit_capability_matrix.py")
 
 # 2. Stale check: the matrix must be evidence at THIS commit.
 #    Kiểm tra stale: matrix phải là bằng chứng tại commit này.

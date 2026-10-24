@@ -14,6 +14,8 @@ fn iot_template_context_rejects_unknown_board() {
         project_name: "firmware".to_string(),
         features: vec!["unknown-board".to_string()],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
 
     let error = CoreTemplateContext::try_new(&config, "firmware", "esp32-rust")
@@ -29,6 +31,8 @@ fn iot_template_context_rejects_board_from_another_framework() {
         project_name: "firmware".to_string(),
         features: vec!["nrf52dk_nrf52832".to_string()],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
 
     let error = CoreTemplateContext::try_new(&config, "firmware", "esp32-rust")
@@ -44,6 +48,8 @@ fn iot_template_context_uses_registered_board_target() {
         project_name: "firmware".to_string(),
         features: vec!["esp32c3".to_string()],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
 
     let context = CoreTemplateContext::try_new(&config, "firmware", "esp32-rust")
@@ -62,6 +68,8 @@ fn non_iot_template_context_retains_legacy_target_value() {
         project_name: "agent".to_string(),
         features: vec!["custom-feature".to_string()],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
 
     let context = CoreTemplateContext::try_new(&config, "agent", "python-agent")

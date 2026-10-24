@@ -26,12 +26,20 @@ jobs:
         with:
           fetch-depth: 0
       - name: Validate CI, release, and action-pin contracts
-        run: bash scripts/test_ci_workflow_contract.sh
+        run: bash scripts/test/test_ci_workflow_contract.sh
       - name: Validate Phase 0 coverage schema, fixture, and anti-laundering rules
         run: |
           python3 -m json.tool ci/evidence/coverage-manifest.schema.json >/dev/null
-          python3 scripts/test_coverage_manifest.py
-          python3 scripts/validate_coverage_manifest.py
+          python3 scripts/test/test_coverage_manifest.py
+          python3 scripts/test/validate_coverage_manifest.py
+      - name: Validate observed coverage manifest
+        # The observed manifest is generated evidence, so it must stay schema
+        # valid and must never silently shrink to zero lanes.
+        # Manifest quan sát là bằng chứng sinh tự động: phải hợp schema và
+        # không được âm thầm rỗng.
+        run: |
+          python3 scripts/audit/emit_coverage_observed.py
+          python3 scripts/test/test_coverage_observed.py
       - name: Keep Docker benchmark lifecycle attached to the MGC binary
         run: python3 tests/test_benchmark_container_contract.py
 
@@ -204,15 +212,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Dependency ownership audit negative controls
-        run: python3 scripts/test_audit_dependency_delegation.py
+        run: python3 scripts/test/test_audit_dependency_delegation.py
       - name: Audit matrix source provenance tests
-        run: python3 scripts/test_audit_capability_matrix.py
+        run: python3 scripts/test/test_audit_capability_matrix.py
       - name: Audit dependency ownership (fail on any delegation)
-        run: python3 scripts/audit_dependency_delegation.py
+        run: python3 scripts/audit/audit_dependency_delegation.py
       - name: Audit mutation-writer call manifest (fail on gateway bypass)
-        run: python3 scripts/audit_mutation_calls.py
+        run: python3 scripts/audit/audit_mutation_calls.py
       - name: Mutation-gate negative controls (fail if the gate is blind)
-        run: python3 scripts/audit_mutation_calls.py --self-test
+        run: python3 scripts/audit/audit_mutation_calls.py --self-test
       - name: Audit ledger stays gitignored (local-only)
         run: git check-ignore -q docs/specs/dependencyDelegationAudit.json
 
@@ -240,7 +248,7 @@ jobs:
 
       - name: Resolve Flutter SDK dependencies before MGC process guard
         shell: bash
-        run: bash scripts/bootstrap_flutter_sdk.sh
+        run: bash scripts/install/bootstrap_flutter_sdk.sh
 
       - name: Setup Go (esbuild-rs build script needs go on PATH)
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -283,11 +291,11 @@ jobs:
       - name: cargo check
         run: cargo check --workspace --all-targets --locked
       - name: module hygiene
-        run: bash scripts/check-module-hygiene.sh
+        run: bash scripts/audit/check-module-hygiene.sh
       - name: no npm/npx/pnpm/yarn/bun (L94)
-        run: bash scripts/check-no-pm.sh
+        run: bash scripts/audit/check-no-pm.sh
       - name: release hash updater syntax
-        run: bash -n scripts/update-release-hashes.sh
+        run: bash -n scripts/release/update-release-hashes.sh
       - name: package manifests syntax
         # Windows fix (2026-09-11): this job's default shell on Windows
         # is pwsh — `>/dev/null` is a bash-ism that pwsh misreads as the
@@ -308,7 +316,7 @@ jobs:
       - name: analyzer regression tests
         run: python3 benchmark/scripts/test_analyzer_strict.py
       - name: manifest updater integration tests
-        run: bash scripts/test_manifest_updater.sh
+        run: bash scripts/release/test_manifest_updater.sh
       - name: internal specs stay ignored
         run: |
           git check-ignore -q docs/specs/magiCoreChangeLog.md
@@ -441,7 +449,7 @@ jobs:
 
       - name: Resolve Flutter SDK dependencies before MGC process guard
         shell: bash
-        run: bash scripts/bootstrap_flutter_sdk.sh
+        run: bash scripts/install/bootstrap_flutter_sdk.sh
 
       - name: Build optimized mgc binary for lifecycle E2E
         run: cargo build --release --bin mgc --locked

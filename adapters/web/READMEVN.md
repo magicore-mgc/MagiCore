@@ -26,15 +26,15 @@ cargo test -p mgc
 ## Benchmark
 
 ```bash
-./scripts/bench.sh cold
-./scripts/bench.sh stress
-./scripts/bench.sh install
-./scripts/bench.sh matrix
-./scripts/bench.sh matrix-heavy
-./scripts/bench.sh matrix-baseline
-./scripts/bench.sh matrix-diff
-./scripts/bench.sh matrix-heavy-baseline
-./scripts/bench.sh matrix-heavy-diff
+./scripts/bench/bench.sh cold
+./scripts/bench/bench.sh stress
+./scripts/bench/bench.sh install
+./scripts/bench/bench.sh matrix
+./scripts/bench/bench.sh matrix-heavy
+./scripts/bench/bench.sh matrix-baseline
+./scripts/bench/bench.sh matrix-diff
+./scripts/bench/bench.sh matrix-heavy-baseline
+./scripts/bench/bench.sh matrix-heavy-diff
 ```
 
 Ma trận benchmark chuẩn hóa năm trường hợp install/materialize: cache cục bộ lạnh với tarball có sẵn; cài lại khi cache nóng; resolve qua mock registry cục bộ với cache rỗng; khởi tạo từ shared cache; và cài offline khi registry không truy cập được nhưng cache đã có tarball/package. Profile `heavy` thêm đồ thị phụ thuộc lớn, sâu, có nhiều phiên bản trùng tên và tải materialize gần hơn với monorepo frontend. Ma trận này đo trước hành vi install/materialize; tải package lạnh từ registry trực tuyến là một hướng benchmark riêng.

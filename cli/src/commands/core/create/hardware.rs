@@ -2,9 +2,17 @@
 
 use anyhow::Result;
 
-pub async fn run(framework: &str, project_name: &str) -> Result<()> {
+pub async fn run(
+    framework: &str,
+    project_name: &str,
+    source: crate::commands::core::shared::source_flags::SourceFlags,
+) -> Result<()> {
     let mut config = crate::wizard::hardware::HardwareWizard::run();
     config.project_name = project_name.to_string();
+    // Offline source selection is MagiCore-owned config, never framework source.
+    // Chọn nguồn offline thuộc config của MagiCore, không phải source framework.
+    config.from_local = source.from_local;
+    config.no_local = source.no_local;
     if !framework.is_empty() {
         config.frameworks = vec![framework.to_string()];
     }

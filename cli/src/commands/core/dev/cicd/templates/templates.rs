@@ -6,15 +6,15 @@ pub(in crate::commands::core::dev::cicd) const MGC_RELEASE_TAG: &str =
 /// Install source used by generated CI templates: the latest GitHub Release
 /// installer downloaded from an IMMUTABLE commit SHA — never from the
 /// mutable `main` branch (P0-E, 2026-09-16 supply-chain gate). Update the
-/// SHA to the last commit that touched `scripts/install-from-gh.sh`
+/// SHA to the last commit that touched `scripts/install/install-from-gh.sh`
 /// whenever MGC_RELEASE_TAG moves.
 /// (P0-E: installer trong template CI được tải từ commit SHA BẤT BIẾN —
 /// không bao giờ từ branch `main` mutable. Cập nhật SHA theo commit cuối
-/// chạm `scripts/install-from-gh.sh` mỗi khi MGC_RELEASE_TAG dịch chuyển.)
+/// chạm `scripts/install/install-from-gh.sh` mỗi khi MGC_RELEASE_TAG dịch chuyển.)
 pub(in crate::commands::core::dev::cicd) const MGC_INSTALLER_SHA: &str =
     "80a383763377413c4a50d8de3bd815a0f8f01284";
 
-/// Embedded SHA-256 of `scripts/install-from-gh.sh` at `MGC_INSTALLER_SHA`.
+/// Embedded SHA-256 of `scripts/install/install-from-gh.sh` at `MGC_INSTALLER_SHA`.
 /// Contract (P0-E/T0.5):
 /// - empty → the generated pipeline prints a loud WARNING and still runs
 ///   (no break for existing pipelines);

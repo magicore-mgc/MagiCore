@@ -42,6 +42,8 @@ fn test_scaffold_writes_baseline_for_all_cores() {
             project_name: project_dir.to_string_lossy().to_string(),
             features: vec![],
             template_dir: PathBuf::new(),
+            from_local: None,
+            no_local: false,
         };
 
         let out = Scaffolder::scaffold(&config).unwrap();

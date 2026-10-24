@@ -108,7 +108,7 @@ mgc install  # In test project
 
 **Method 2: Shell Script Install**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/magicore/magicore/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/magicore/magicore/main/scripts/install/install.sh | sh
 mgc --version
 ```
 

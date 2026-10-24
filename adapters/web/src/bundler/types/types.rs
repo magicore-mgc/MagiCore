@@ -13,6 +13,11 @@ pub struct BundlerConfig {
     pub sourcemap: bool,
     pub target: String,
     pub public_path: String,
+    /// Bundle for a Node backend: keep `node:` builtins external and use the
+    /// node platform so server packages resolve their own entry points.
+    /// Bundle cho backend Node: giữ builtin `node:` là external và dùng
+    /// platform node để package server resolve đúng entry point của chúng.
+    pub backend: bool,
 }
 
 /// Summary of the generated bundled output.

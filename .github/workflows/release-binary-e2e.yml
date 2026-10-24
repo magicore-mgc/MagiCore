@@ -205,7 +205,7 @@ jobs:
 
       - name: Resolve Flutter SDK dependencies before MGC process guard
         shell: bash
-        run: bash scripts/bootstrap_flutter_sdk.sh
+        run: bash scripts/install/bootstrap_flutter_sdk.sh
 
       - name: Setup Swift installer Python (Windows)
         if: matrix.os == 'windows-2022'

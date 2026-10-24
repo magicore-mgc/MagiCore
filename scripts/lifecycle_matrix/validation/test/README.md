@@ -2,11 +2,11 @@
 
 `test_*.py` owns one lifecycle-matrix behavior: environment/toolchain setup, native package-manager verdicts, framework inventory, provenance, platform-green evidence, working-tree cleanliness, or Windows runtime contracts. `support.py` contains only shared imports, repository path roots, and synthetic fixtures.
 
-Each file keeps its test method names and assertions. The stable GitHub entrypoint remains `python scripts/test_native_pm_verdict.py`; the same modules can be discovered with `python -m unittest discover -s scripts/lifecycle_matrix/validation/test -t scripts -p 'test_*.py'`. Runtime verification of this move is pending.
+Each file keeps its test method names and assertions. The stable GitHub entrypoint remains `python scripts/test/test_native_pm_verdict.py`; the same modules can be discovered with `python -m unittest discover -s scripts/lifecycle_matrix/validation/test -t scripts -p 'test_*.py'`. Runtime verification of this move is pending.
 
 Mỗi file `test_*.py` sở hữu một hành vi của lifecycle matrix: chuẩn bị environment/toolchain, verdict package manager native, inventory framework, provenance, platform-green, trạng thái working tree hoặc hợp đồng runtime Windows. `support.py` chỉ giữ import/helper/path root và fixture tổng hợp dùng chung.
 
-Tên test method và assertion được giữ nguyên. Entrypoint GitHub ổn định vẫn là `python scripts/test_native_pm_verdict.py`; có thể discover các module bằng lệnh trong phần tiếng Anh. Chưa chạy xác minh runtime cho lần di chuyển này.
+Tên test method và assertion được giữ nguyên. Entrypoint GitHub ổn định vẫn là `python scripts/test/test_native_pm_verdict.py`; có thể discover các module bằng lệnh trong phần tiếng Anh. Chưa chạy xác minh runtime cho lần di chuyển này.
 
 ## Source review status / Trạng thái rà source
 

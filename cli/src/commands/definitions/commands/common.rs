@@ -16,6 +16,11 @@ pub enum CommonCommands {
         )]
         signature: Option<String>,
     },
+    #[command(about = "Print the MagiCore CLI version")]
+    Version {
+        #[arg(long, help = "Output as JSON")]
+        json: bool,
+    },
     #[command(about = "Show package information")]
     Info {
         package: String,

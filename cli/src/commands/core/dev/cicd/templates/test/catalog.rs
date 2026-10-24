@@ -42,7 +42,7 @@ fn generated_ci_installer_pin_matches_current_release_contract() {
     // (Digest nhúng thuộc installer commit bất biến, không phải bản đang
     // sửa trong worktree; CI contract đối chiếu trực tiếp Git object.)
     const TRACKED_INSTALLER: &[u8] =
-        include_bytes!("../../../../../../../../scripts/install-from-gh.sh");
+        include_bytes!("../../../../../../../../scripts/install/install-from-gh.sh");
     assert_eq!(
         MGC_INSTALLER_SHA,
         "80a383763377413c4a50d8de3bd815a0f8f01284"

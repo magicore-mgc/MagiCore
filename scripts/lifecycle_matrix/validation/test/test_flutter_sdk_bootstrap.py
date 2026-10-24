@@ -32,7 +32,7 @@ class LifecycleEnvironmentIsolation(unittest.TestCase):
         matrix = workflow.index("Generate lifecycle matrix (real binary, real steps)")
         self.assertLess(setup, warm)
         self.assertLess(warm, matrix)
-        self.assertIn("run: bash scripts/bootstrap_flutter_sdk.sh", workflow[warm:matrix])
+        self.assertIn("run: bash scripts/install/bootstrap_flutter_sdk.sh", workflow[warm:matrix])
         job_cache = "PUB_CACHE: ${{ runner.temp }}/flutter-pub-cache"
         self.assertIn(job_cache, workflow[warm:matrix])
         self.assertIn(job_cache, workflow[matrix:])
@@ -59,7 +59,7 @@ class LifecycleEnvironmentIsolation(unittest.TestCase):
         tests = workflow.index("Run Windows spawn tests")
         self.assertLess(setup, warm)
         self.assertLess(warm, tests)
-        self.assertIn("run: bash scripts/bootstrap_flutter_sdk.sh", workflow[warm:tests])
+        self.assertIn("run: bash scripts/install/bootstrap_flutter_sdk.sh", workflow[warm:tests])
 
     def test_guarded_flutter_workflows_resolve_sdk_tool_dependencies(self):
         workflow_dir = REPO_ROOT / ".github" / "workflows"
@@ -99,7 +99,7 @@ class LifecycleEnvironmentIsolation(unittest.TestCase):
                 self.assertLess(setup, warm)
                 self.assertLess(warm, guarded)
                 self.assertIn(
-                    "run: bash scripts/bootstrap_flutter_sdk.sh", workflow[warm:guarded]
+                    "run: bash scripts/install/bootstrap_flutter_sdk.sh", workflow[warm:guarded]
                 )
 
     def test_runtime_e2e_preserves_rust_toolchains_when_isolating_home(self):
@@ -125,7 +125,7 @@ class LifecycleEnvironmentIsolation(unittest.TestCase):
 
     def test_flutter_sdk_bootstrap_resolves_dependencies_and_warms_cli(self):
         script = (
-            REPO_ROOT / "scripts" / "bootstrap_flutter_sdk.sh"
+            REPO_ROOT / "scripts" / "install/bootstrap_flutter_sdk.sh"
         ).read_text(encoding="utf-8")
 
         self.assertIn('executable="dart.exe"', script)
@@ -144,7 +144,7 @@ class LifecycleEnvironmentIsolation(unittest.TestCase):
 
     def test_flutter_sdk_bootstrap_invokes_dart_and_cli_for_posix_and_windows_paths(self):
         script = (
-            REPO_ROOT / "scripts" / "bootstrap_flutter_sdk.sh"
+            REPO_ROOT / "scripts" / "install/bootstrap_flutter_sdk.sh"
         )
 
         with tempfile.TemporaryDirectory(prefix="flutter sdk bootstrap ") as tmp:
@@ -267,7 +267,7 @@ fn main() {
             resolve_windows_dart = (
                 'cygpath() { [ "$1" = -u ] && [ "$2" = "C:/ci/fake Flutter SDK" ] || return 2; '
                 'printf "%s\\n" "/c/ci/fake Flutter SDK"; }; '
-                'source scripts/bootstrap_flutter_sdk.sh; '
+                'source ./install/bootstrap_flutter_sdk.sh; '
                 'sdk_root="$(normalize_flutter_sdk_root "$1" "$2")"; '
                 'resolve_flutter_sdk_dart_bin "$sdk_root" "$2"'
             )

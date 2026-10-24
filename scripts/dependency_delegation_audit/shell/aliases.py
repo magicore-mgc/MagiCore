@@ -64,7 +64,7 @@ def _shell_command_aliases(text: str) -> dict:
         aliases["HASH_CMD"] = "checksum-tool"
 
     contract_paths = assignments.get("CONTRACT", [])
-    if contract_paths and all("release-artifact-contract.sh" in value for value in contract_paths):
+    if contract_paths and all("scripts/release/release-artifact-contract.sh" in value for value in contract_paths):
         aliases["CONTRACT"] = "shell-script"
 
     for name in ("SCRIPT_DIR", "ROOT", "REPO_ROOT", "PROJECT_ROOT"):

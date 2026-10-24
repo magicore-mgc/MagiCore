@@ -3,7 +3,12 @@ ignore = [
     "RUSTSEC-2025-0141",
     "RUSTSEC-2025-0119",
     "RUSTSEC-2024-0436",
-    "RUSTSEC-2026-0002",
+    # RUSTSEC-2026-0002 (lru IterMut unsoundness) is NOT listed: lru 0.18.5 is
+    # already past the patched 0.16.3 boundary, and magiCore only calls
+    # `get`/`pop`, never `IterMut`. Listing it would hide a future regression.
+    # RUSTSEC-2026-0002 không được liệt kê: lru 0.18.5 đã qua bản vá 0.16.3 và
+    # MagiCore chỉ gọi `get`/`pop`, không dùng `IterMut`. Giữ nó trong danh sách
+    # ignore sẽ che mất hồi quy về sau.
 ]
 
 [bans]

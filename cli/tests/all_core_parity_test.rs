@@ -10,6 +10,9 @@ use std::path::PathBuf;
 use std::process::Command;
 use tempfile::TempDir;
 
+#[path = "common/mod.rs"]
+mod common;
+
 fn mgc_binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_mgc"))
 }
@@ -82,9 +85,15 @@ fn test_all_core_parity_online_web_and_native_core_processors() {
         "web: .mgc.core marker not created"
     );
 
-    // 2. AI python-agent uses its native MGC processor.
+    // 2. AI python-agent reuses an existing python-agent project: the offline
+    // branch MagiCore promises when the registry layer cannot supply a layer.
+    // AI/python-agent tái dùng project có sẵn: nhánh offline sản phẩm cam kết.
+    let ai_source = common::local_source(workspace_path, "ai", "python-agent");
     let ai_output = hermetic_command(_temp_home.path())
-        .args(&["create-ai", "python-agent", "test-ai"])
+        .arg("create-ai")
+        .arg("python-agent")
+        .arg("test-ai")
+        .arg(ai_source.flag())
         .current_dir(workspace_path)
         .output()
         .expect("Failed to execute mgc create-ai");
@@ -103,9 +112,14 @@ fn test_all_core_parity_online_web_and_native_core_processors() {
         "ai: .mgc.core marker not created"
     );
 
-    // 3. App flutter uses its native MGC processor.
+    // 3. App flutter reuses an existing flutter project.
+    // App/flutter tái dùng project có sẵn.
+    let app_source = common::local_source(workspace_path, "app", "flutter");
     let app_output = hermetic_command(_temp_home.path())
-        .args(&["create-app", "flutter", "test-app"])
+        .arg("create-app")
+        .arg("flutter")
+        .arg("test-app")
+        .arg(app_source.flag())
         .current_dir(workspace_path)
         .output()
         .expect("Failed to execute mgc create-app");
@@ -124,10 +138,14 @@ fn test_all_core_parity_online_web_and_native_core_processors() {
         "app: .mgc.core marker not created"
     );
 
-    // The default uses the compiled processor; registry template tags are a separate lane.
-    // Kiểm default builtin riêng; tag template không phải version của Rust toolchain.
+    // 4. Lib rust reuses an existing rust project.
+    // Lib/rust tái dùng project có sẵn.
+    let lib_source = common::local_source(workspace_path, "lib", "rust");
     let lib_output = hermetic_command(_temp_home.path())
-        .args(&["create-lib", "rust", "test-lib"])
+        .arg("create-lib")
+        .arg("rust")
+        .arg("test-lib")
+        .arg(lib_source.flag())
         .current_dir(workspace_path)
         .output()
         .expect("Failed to execute mgc create-lib");

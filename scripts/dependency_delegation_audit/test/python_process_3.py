@@ -51,7 +51,7 @@ class PythonProcessInventoryPart3(unittest.TestCase):
 
     def test_python_process_review_matches_exact_call_ast(self):
         approved = gate.scan_python_text(
-            "scripts/audit_capability_matrix.py",
+            "scripts/audit/audit_capability_matrix.py",
             "import subprocess\n"
             "subprocess.run(\n"
             '    ["git", "status", "--porcelain", "--untracked-files=all"],\n'
@@ -64,7 +64,7 @@ class PythonProcessInventoryPart3(unittest.TestCase):
         self.assertIn("fixed git arguments", reviewed[0]["review_reason"])
 
         changed = gate.scan_python_text(
-            "scripts/audit_capability_matrix.py",
+            "scripts/audit/audit_capability_matrix.py",
             "import subprocess\n"
             "subprocess.run(\n"
             '    ["git", "status", "--porcelain", "--ignored", "--untracked-files=all"],\n'
@@ -77,7 +77,7 @@ class PythonProcessInventoryPart3(unittest.TestCase):
 
     def test_removed_python_process_call_leaves_a_stale_review_blocker(self):
         stale = gate.review_python_process_calls(
-            [], expected_files={"scripts/audit_capability_matrix.py"}
+            [], expected_files={"scripts/audit/audit_capability_matrix.py"}
         )
         self.assertEqual(len(stale), 3)
         self.assertTrue(all(item["review_status"] == "stale-review" for item in stale))

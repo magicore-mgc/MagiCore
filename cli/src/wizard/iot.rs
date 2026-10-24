@@ -22,6 +22,7 @@ impl IotWizard {
             project_name: String::new(),
             features: vec![board],
             template_dir: PathBuf::new(),
+            ..Default::default()
         }
     }
 

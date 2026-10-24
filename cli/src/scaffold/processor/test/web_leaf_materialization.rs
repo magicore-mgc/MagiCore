@@ -27,6 +27,8 @@ fn test_web_leaf_templates_materialize_framework_specific_files() {
         project_name: react_dir.to_string_lossy().to_string(),
         features: vec![],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
     let react_out = Scaffolder::scaffold(&react).unwrap();
     assert!(react_out.join("package.json").exists());
@@ -72,6 +74,8 @@ fn test_web_leaf_templates_materialize_framework_specific_files() {
         project_name: next_dir.to_string_lossy().to_string(),
         features: vec![],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
     let next_out = Scaffolder::scaffold(&next).unwrap();
     assert!(next_out.join("next.config.mjs").exists());
@@ -101,6 +105,8 @@ fn test_web_leaf_templates_materialize_framework_specific_files() {
         project_name: vue_dir.to_string_lossy().to_string(),
         features: vec!["typescript".to_string()],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
     let vue_out = Scaffolder::scaffold(&vue).unwrap();
     assert!(vue_out.join("package.json").exists());
@@ -144,6 +150,8 @@ fn test_web_leaf_templates_materialize_framework_specific_files() {
         project_name: vanilla_dir.to_string_lossy().to_string(),
         features: vec!["typescript".to_string()],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
     let vanilla_out = Scaffolder::scaffold(&vanilla).unwrap();
     assert!(vanilla_out.join("package.json").exists());
@@ -174,6 +182,8 @@ fn test_web_leaf_templates_materialize_framework_specific_files() {
         project_name: react_express_dir.to_string_lossy().to_string(),
         features: vec!["typescript".to_string()],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
     let react_express_out = Scaffolder::scaffold(&react_express).unwrap();
     assert!(react_express_out.join("package.json").exists());
@@ -202,6 +212,8 @@ fn test_web_leaf_templates_materialize_framework_specific_files() {
         project_name: solid_dir.to_string_lossy().to_string(),
         features: vec!["typescript".to_string()],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
     let solid_out = Scaffolder::scaffold(&solid).unwrap();
     assert!(solid_out.join("package.json").exists());
@@ -231,6 +243,8 @@ fn test_web_leaf_templates_materialize_framework_specific_files() {
         project_name: fastify_dir.to_string_lossy().to_string(),
         features: vec![],
         template_dir: PathBuf::new(),
+        from_local: None,
+        no_local: false,
     };
     let fastify_out = Scaffolder::scaffold(&fastify).unwrap();
     assert!(fastify_out.join("src").join("server.js").exists());

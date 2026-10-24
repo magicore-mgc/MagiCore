@@ -25,6 +25,7 @@ fn process_assets_rewrites_root_index_html_to_built_bundle() {
         sourcemap: true,
         target: "es2020".to_string(),
         public_path: "/".to_string(),
+        backend: false,
     };
 
     materialize_index_html(root, &config).unwrap();

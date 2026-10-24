@@ -177,7 +177,7 @@ class ShellProcessInventoryPart1(unittest.TestCase):
         self.assertEqual(appended[0]["review_status"], "unreviewed")
 
     def test_static_cargo_fetch_in_production_shell_is_blocking(self):
-        findings = gate.scan_shell_text("scripts/build.sh", "cargo fetch --locked\n")
+        findings = gate.scan_shell_text("scripts/bench/build.sh", "cargo fetch --locked\n")
         self.assertEqual(findings[0]["executable"], "cargo")
         self.assertEqual(findings[0]["dependency_action"], "fetch")
         self.assertEqual(findings[0]["review_status"], "unreviewed")
@@ -293,7 +293,7 @@ class ShellProcessInventoryPart1(unittest.TestCase):
         findings = [
             item
             for line in lines
-            for item in gate.scan_shell_text("scripts/smoke-test.sh", line)
+            for item in gate.scan_shell_text("scripts/test/smoke-test.sh", line)
         ]
         self.assertEqual(len(findings), 3)
         self.assertTrue(
@@ -306,7 +306,7 @@ class ShellProcessInventoryPart1(unittest.TestCase):
             )
         )
         changed = gate.scan_shell_text(
-            "scripts/smoke-test.sh",
+            "scripts/test/smoke-test.sh",
             'if ! version_output=$("$MGC_PATH" install evil 2>&1); then\n',
         )
         self.assertTrue(any(item["review_status"] == "unreviewed" for item in changed))

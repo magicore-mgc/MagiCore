@@ -11,7 +11,7 @@ for os in linux macos windows; do
     # Windows publishes x64 only; Linux and macOS publish x64 and arm64.
     # Windows chỉ phát hành x64; Linux và macOS phát hành cả x64 lẫn arm64.
     for variant in all web; do
-      names=$(./scripts/release-artifact-contract.sh "$VERSION" "$os" "$arch" "$variant")
+      names=$(./scripts/release/release-artifact-contract.sh "$VERSION" "$os" "$arch" "$variant")
       archive=$(echo "$names" | grep "^ARCHIVE=" | cut -d= -f2)
       checksum=$(echo "$names" | grep "^CHECKSUM=" | cut -d= -f2)
       sbom=$(echo "$names" | grep "^SBOM=" | cut -d= -f2)

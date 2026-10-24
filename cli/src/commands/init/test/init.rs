@@ -15,6 +15,8 @@ fn game_init_only_adds_cargo_scripts_for_bevy() {
             project_name: format!("test-{framework}"),
             features: vec![],
             template_dir: PathBuf::new(),
+            from_local: None,
+            no_local: false,
         };
 
         write_mgc_toml(project.path(), &config).expect("write project metadata");

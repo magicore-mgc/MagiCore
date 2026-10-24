@@ -12,15 +12,27 @@ pub const BENCH_PKG: &str = "bench";
 /// Materialize one Hardware package without overwriting an existing directory.
 /// Materialize một package Hardware và không ghi đè thư mục đã tồn tại.
 pub async fn materialize_template(root: &Path, framework: &str) -> Result<()> {
+    materialize_template_with(root, framework, Default::default()).await
+}
+
+/// Same as [`materialize_template`] while carrying the offline-source choice.
+/// Như [`materialize_template`] nhưng mang theo lựa chọn nguồn offline.
+pub async fn materialize_template_with(
+    root: &Path,
+    framework: &str,
+    source: crate::commands::core::shared::source_flags::SourceFlags,
+) -> Result<()> {
     let target_dir = root.join(framework);
     if existing_target_directory(&target_dir)? {
         return Ok(());
     }
 
-    // Processor-generated packages do not have a registry layer to fetch.
-    // Processor tự sinh các package này nên không có registry layer để tải.
+    // This core has no registry layer for these packages: the scaffold must
+    // reuse a local project of the same framework or fail closed.
+    // Core này không có registry layer cho các package này: scaffold phải dùng
+    // project local cùng framework hoặc fail-closed.
     if matches!(framework, BENCH_PKG | OPTIMIZER_PKG) {
-        let config = scaffold_config(&target_dir, framework);
+        let config = scaffold_config(&target_dir, framework, source.clone());
         return crate::scaffold::processor::Scaffolder::scaffold(&config)
             .map(|_| ())
             .map_err(|source| {
@@ -33,7 +45,7 @@ pub async fn materialize_template(root: &Path, framework: &str) -> Result<()> {
     let status = crate::commands::template::ensure_layer(&format!("hardware/{framework}")).await;
     require_layer_available(framework, status)?;
 
-    let config = scaffold_config(&target_dir, framework);
+    let config = scaffold_config(&target_dir, framework, source);
     crate::scaffold::processor::Scaffolder::scaffold(&config)
         .map(|_| ())
         .map_err(|source| {
@@ -93,7 +105,11 @@ pub(super) fn require_layer_available(
     }
 }
 
-fn scaffold_config(target_dir: &Path, framework: &str) -> crate::wizard::engine::ScaffoldConfig {
+fn scaffold_config(
+    target_dir: &Path,
+    framework: &str,
+    source: crate::commands::core::shared::source_flags::SourceFlags,
+) -> crate::wizard::engine::ScaffoldConfig {
     crate::wizard::engine::ScaffoldConfig {
         core: "hardware".to_string(),
         sub_type: String::new(),
@@ -101,5 +117,7 @@ fn scaffold_config(target_dir: &Path, framework: &str) -> crate::wizard::engine:
         project_name: target_dir.to_string_lossy().to_string(),
         features: vec![],
         template_dir: std::path::PathBuf::new(),
+        from_local: source.from_local,
+        no_local: source.no_local,
     }
 }

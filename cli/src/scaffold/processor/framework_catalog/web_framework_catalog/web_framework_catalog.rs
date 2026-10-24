@@ -95,5 +95,6 @@ pub fn infer_web_create_config(framework: &str, project_name: &str) -> Result<Sc
         project_name: project_name.to_string(),
         features: vec![],
         template_dir: PathBuf::new(),
+        ..Default::default()
     })
 }

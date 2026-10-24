@@ -75,6 +75,8 @@ pub async fn run(template: Option<String>, signature: Option<String>) -> Result<
                 project_name: String::new(),
                 features: vec![],
                 template_dir: std::path::PathBuf::new(),
+
+                ..Default::default()
             }
         };
         config.project_name = ask_project_name()?;

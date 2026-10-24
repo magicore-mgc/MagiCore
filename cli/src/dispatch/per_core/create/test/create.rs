@@ -17,9 +17,12 @@ macro_rules! assert_basic_variant {
             CoreCommand::$variant {
                 framework,
                 project_name,
+                source,
             } => {
                 assert_eq!(framework, "sample-framework");
                 assert_eq!(project_name, "sample-project");
+                assert_eq!(source.from_local, None);
+                assert!(!source.no_local);
             }
             _ => panic!("create adapter produced a different basic variant"),
         }
@@ -33,11 +36,14 @@ macro_rules! assert_container_variant {
                 framework,
                 project_name,
                 container,
+                source,
             } => {
                 assert_eq!(framework, "sample-framework");
                 assert_eq!(project_name, "sample-project");
                 assert_eq!(container.docker, $docker);
                 assert_eq!(container.k8s, $k8s);
+                assert_eq!(source.from_local, None);
+                assert!(!source.no_local);
             }
             _ => panic!("create adapter produced a different container variant"),
         }
@@ -50,6 +56,7 @@ fn maps_all_basic_framework_project_variants() {
         CreateCommands::CreateGame {
             framework: "sample-framework".to_owned(),
             project_name: "sample-project".to_owned(),
+            source: Default::default(),
         },
         CreateGame
     );
@@ -57,6 +64,7 @@ fn maps_all_basic_framework_project_variants() {
         CreateCommands::CreateCicd {
             framework: "sample-framework".to_owned(),
             project_name: "sample-project".to_owned(),
+            source: Default::default(),
         },
         CreateCicd
     );
@@ -64,6 +72,7 @@ fn maps_all_basic_framework_project_variants() {
         CreateCommands::CreateIot {
             framework: "sample-framework".to_owned(),
             project_name: "sample-project".to_owned(),
+            source: Default::default(),
         },
         CreateIot
     );
@@ -71,6 +80,7 @@ fn maps_all_basic_framework_project_variants() {
         CreateCommands::CreateHardware {
             framework: "sample-framework".to_owned(),
             project_name: "sample-project".to_owned(),
+            source: Default::default(),
         },
         CreateHardware
     );
@@ -86,6 +96,7 @@ fn maps_all_container_payloads_without_losing_flags() {
                 docker: true,
                 k8s: false
             },
+            source: Default::default(),
         },
         CreateAi,
         true,
@@ -99,6 +110,7 @@ fn maps_all_container_payloads_without_losing_flags() {
                 docker: false,
                 k8s: true
             },
+            source: Default::default(),
         },
         CreateClo,
         false,
@@ -112,6 +124,7 @@ fn maps_all_container_payloads_without_losing_flags() {
                 docker: true,
                 k8s: true
             },
+            source: Default::default(),
         },
         CreateApp,
         true,
@@ -125,6 +138,7 @@ fn maps_all_container_payloads_without_losing_flags() {
                 docker: false,
                 k8s: false
             },
+            source: Default::default(),
         },
         CreateLib,
         false,

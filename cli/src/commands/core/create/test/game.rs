@@ -28,6 +28,8 @@ fn scaffold_materializes_framework_structure() {
             project_name: "game-demo".to_string(),
             features: vec![],
             template_dir: std::path::PathBuf::new(),
+            from_local: None,
+            no_local: false,
         };
         let res = crate::scaffold::processor::Scaffolder::scaffold(&config);
         std::env::set_current_dir(&prev).unwrap();

@@ -70,6 +70,7 @@ fn rejects_create_and_install_commands() {
     let create = CoreCommand::CreateGame {
         framework: "fixture".to_owned(),
         project_name: "fixture".to_owned(),
+        source: Default::default(),
     };
     let install = CoreCommand::InstallWeb {
         packages: Vec::new(),

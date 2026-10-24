@@ -39,6 +39,7 @@ fn test_create_core_commands_follow_create_core_name_shape() {
             framework,
             project_name,
             container,
+            source: _,
         }) => {
             assert_eq!(framework, "python-agent");
             assert_eq!(project_name, "demo-ai");
@@ -54,6 +55,7 @@ fn test_create_core_commands_follow_create_core_name_shape() {
             framework,
             project_name,
             container,
+            source: _,
         }) => {
             assert_eq!(framework, "flutter");
             assert_eq!(project_name, "demo-app");
@@ -69,6 +71,7 @@ fn test_create_core_commands_follow_create_core_name_shape() {
             framework,
             project_name,
             container,
+            source: _,
         }) => {
             assert_eq!(framework, "rust");
             assert_eq!(project_name, "demo-lib");

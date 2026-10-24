@@ -38,8 +38,14 @@ pub async fn install(
     }
     let plan = plan::prepare(&root, &options).await?;
     if matches!(detect_project_mode(&plan.root)?, WebProjectMode::Monorepo) {
-        monorepo_install::run(&plan, &options).await
+        monorepo_install::run(&plan, &options).await?;
     } else {
-        single_target_install::run(&plan, &options).await
+        single_target_install::run(&plan, &options).await?;
     }
+    // Supply-chain evidence is part of a successful install, not an extra
+    // command the user has to remember.
+    // Bằng chứng chuỗi cung ứng là một phần của install thành công, không phải
+    // lệnh phụ user phải tự nhớ.
+    crate::commands::install::write_install_sbom(&plan.root).await?;
+    Ok(())
 }

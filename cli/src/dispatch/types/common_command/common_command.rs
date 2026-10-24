@@ -13,6 +13,9 @@ pub enum CommonCommand {
         compat_runtime: Option<String>,
         compat_runner: Option<String>,
     },
+    Version {
+        json: bool,
+    },
     Info {
         package: String,
         json: bool,

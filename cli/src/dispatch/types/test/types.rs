@@ -8,6 +8,7 @@ fn stable_facade_exposes_both_route_types() {
     let core = DispatchCommand::Core(CoreCommand::CreateGame {
         framework: "bevy".into(),
         project_name: "fixture".into(),
+        source: Default::default(),
     });
 
     assert!(matches!(

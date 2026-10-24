@@ -11,38 +11,46 @@ pub enum CoreCommand {
     CreateGame {
         framework: String,
         project_name: String,
+        source: crate::commands::core::shared::source_flags::SourceFlags,
     },
     CreateAi {
         framework: String,
         project_name: String,
         container: crate::commands::core::shared::container_flags::ContainerFlags,
+        source: crate::commands::core::shared::source_flags::SourceFlags,
     },
     CreateClo {
         framework: String,
         project_name: String,
         container: crate::commands::core::shared::container_flags::ContainerFlags,
+        source: crate::commands::core::shared::source_flags::SourceFlags,
     },
     CreateCicd {
         framework: String,
         project_name: String,
+        source: crate::commands::core::shared::source_flags::SourceFlags,
     },
     CreateIot {
         framework: String,
         project_name: String,
+        source: crate::commands::core::shared::source_flags::SourceFlags,
     },
     CreateApp {
         framework: String,
         project_name: String,
         container: crate::commands::core::shared::container_flags::ContainerFlags,
+        source: crate::commands::core::shared::source_flags::SourceFlags,
     },
     CreateLib {
         framework: String,
         project_name: String,
         container: crate::commands::core::shared::container_flags::ContainerFlags,
+        source: crate::commands::core::shared::source_flags::SourceFlags,
     },
     CreateHardware {
         framework: String,
         project_name: String,
+        source: crate::commands::core::shared::source_flags::SourceFlags,
     },
     InstallWeb {
         packages: Vec<String>,
