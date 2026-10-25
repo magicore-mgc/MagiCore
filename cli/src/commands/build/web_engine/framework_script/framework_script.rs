@@ -46,6 +46,22 @@ pub(crate) fn run_framework_build_if_supported(
             "PATH".to_string(),
             prepend_path(&local_bin)?.to_string_lossy().to_string(),
         )];
+        // The framework build is where the optimizer's measured settings have
+        // to land: `NODE_OPTIONS` for the V8 heap, the thread pool size, and the
+        // target the bundler compiles to. Without this an `mgc optimizer` run
+        // wrote files nothing read.
+        // Đây là chỗ cấu hình đo được của optimizer phải tới: `NODE_OPTIONS`
+        // cho heap V8, kích thước thread pool và target bundler biên dịch.
+        // Thiếu bước này thì `mgc optimizer` ghi file mà không ai đọc.
+        let optimizer_runtime =
+            crate::commands::optimizer::runtime_detect::DetectedRuntime::NodeJs {
+                package_manager: crate::commands::optimizer::runtime_detect::PackageManager::Npm,
+            };
+        for (key, value) in
+            crate::commands::optimizer::env_loader::load_optimizer_env(root, &optimizer_runtime)?
+        {
+            env.push((key, value));
+        }
         for (key, value) in envs {
             env.push((
                 key.to_string_lossy().to_string(),

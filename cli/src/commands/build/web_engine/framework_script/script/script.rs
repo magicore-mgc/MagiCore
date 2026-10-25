@@ -57,7 +57,20 @@ pub(crate) fn map_framework_build_script(
             )
         }
         [tool @ ("tsc" | "vue-tsc"), rest @ ..] => {
-            (node_runner(), node_bin_args(root, tool, rest)?, vec![])
+            // `tsc` and `vue-tsc` load their implementation with a relative
+            // `require('../lib/tsc.js')`. Under `--preserve-symlinks` that
+            // resolves from the `.bin` link instead of the real file and the
+            // compiler cannot start. npm and npx run them with realpath
+            // resolution, so MagiCore does the same for these two.
+            // `tsc` và `vue-tsc` nạp phần cài đặt bằng `require('../lib/tsc.js')`
+            // tương đối. Dưới `--preserve-symlinks`, require resolve từ link
+            // `.bin` chứ không từ file thật nên compiler không khởi động được.
+            // npm và npx chạy chúng với realpath, nên MagiCore cũng vậy.
+            (
+                node_runner(),
+                node_bin_args_plain(root, tool, rest)?,
+                vec![],
+            )
         }
         ["nest", "build", rest @ ..] => (
             node_runner(),
