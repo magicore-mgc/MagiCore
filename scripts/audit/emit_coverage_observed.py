@@ -33,7 +33,7 @@ LANGUAGE = {
     "preact": "typescript", "qwik": "typescript", "react-vite": "typescript",
     "remix": "typescript", "solid-start": "typescript", "solidjs": "typescript",
     "sveltekit": "typescript", "tauri": "typescript", "turbo": "typescript",
-    "spring-boot": "java", "quarkus": "java",
+    "spring-boot": "java", "quarkus": "java", "django": "python",
     "vanilla": "typescript", "vite": "typescript", "vitepress": "typescript",
     "vue-cli": "typescript", "vue-vite": "typescript",
     "express": "javascript", "nest": "typescript", "nestjs": "typescript",
@@ -55,10 +55,19 @@ SCAFFOLD_ONLY = [
 # `cli/tests/core_secondary_lifecycle.rs`. Vòng đời dependency CHƯA chứng minh:
 # MagiCore báo manifest do toolchain sở hữu và chưa có runner được duyệt — đó là
 # giới hạn sản phẩm, không phải bằng chứng hỗ trợ.
+# Cores whose framework publishes its own command-line scaffolder now have a
+# record, so their `install` lane is a real scaffold through that program.
+# Core có framework phát hành scaffolder CLI riêng giờ có record, nên lane
+# `install` là scaffold thật qua chương trình đó.
 SECONDARY_SCAFFOLD_ONLY = [
     ("cicd", "yaml", "github-actions"),
     ("clo", "typescript", "cdk-typescript"),
+    ("clo", "hcl", "terraform"),
+    ("clo", "typescript", "pulumi"),
     ("iot", "rust", "esp32-rust"),
+    ("iot", "python", "platformio"),
+    ("iot", "c", "zephyr"),
+    ("game", "gdscript", "godot"),
     ("game", "rust", "bevy"),
 ]
 
