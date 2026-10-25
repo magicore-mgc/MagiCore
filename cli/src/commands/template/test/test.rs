@@ -17,9 +17,5 @@ mod fetch_resolution;
 mod identity;
 #[path = "layer_cache/mod.rs"]
 mod layer_cache;
-#[path = "publish_discovery/mod.rs"]
-mod publish_discovery;
 #[path = "registry_security/mod.rs"]
 mod registry_security;
-#[path = "registry_upload/mod.rs"]
-mod registry_upload;

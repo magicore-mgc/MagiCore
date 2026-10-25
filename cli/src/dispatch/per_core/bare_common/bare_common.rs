@@ -17,7 +17,6 @@ pub(in crate::dispatch) fn bare_common_to_common(command: BareCommands) -> Optio
         BareCommands::Docs { output } => Some(CommonCommand::Docs { output }),
         BareCommands::Completion { shell } => Some(CommonCommand::Completion { shell }),
         BareCommands::Telemetry { cmd } => Some(CommonCommand::Telemetry { cmd }),
-        BareCommands::Template { cmd } => Some(CommonCommand::Template { cmd }),
         BareCommands::Workspace { cmd } => Some(CommonCommand::Workspace { cmd }),
         _ => None,
     }

@@ -22,7 +22,6 @@ pub(super) fn command_name(command: &Commands) -> &'static str {
         Commands::Common(CommonCommands::Publish { .. }) => "publish",
         Commands::Common(CommonCommands::Patch { .. }) => "patch",
         Commands::Common(CommonCommands::Dedupe { .. }) => "dedupe",
-        Commands::Bare(BareCommands::Template { .. }) => "template",
         Commands::Bare(BareCommands::Workspace { .. }) => "workspace",
         Commands::Bare(BareCommands::Store { .. }) => "store",
         Commands::Bare(BareCommands::Bench { .. }) => "bench",

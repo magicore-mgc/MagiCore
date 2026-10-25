@@ -1,4 +1,7 @@
-mod command_types;
-pub use command_types::TemplateCmd;
-pub use command_types::TemplateFetchArgs;
-pub use command_types::TemplatePublishArgs;
+//! Command type owner.
+//! Owner kiểu lệnh.
+
+#[path = "command_types.rs"]
+mod implementation;
+
+pub(crate) use implementation::TemplateFetchArgs;

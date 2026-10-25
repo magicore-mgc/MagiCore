@@ -1,20 +1,20 @@
+//! Argument types for the registry-layer fetch path.
+//! Kiểu tham số cho đường tải registry layer.
+//!
+//! MagiCore publishes no template. This module survives only because
+//! `ensure_layer` still resolves a registry layer at scaffold time, and the
+//! resolution path needs the request shape. There is no `mgc template`
+//! subcommand: a framework's own initializer is the only scaffolding source.
+//! MagiCore không phát hành template. Module này còn lại chỉ vì `ensure_layer`
+//! vẫn resolve registry layer lúc scaffold và đường resolve cần kiểu yêu cầu.
+//! Không có subcommand `mgc template`: initializer của chính framework là nguồn
+//! scaffold duy nhất.
+#![allow(dead_code)]
+
 use clap::Parser;
 
-/// `mgc template` subcommands
-#[derive(Debug, Parser, Clone)]
-pub enum TemplateCmd {
-    /// Fetch template layer từ registry về ~/.mgc/templates (create sẽ tự thấy)
-    #[command(about = "Fetch template layer from registry into cache ~/.mgc/templates")]
-    Fetch(TemplateFetchArgs),
-    /// Publish kernel template thành package mgc-create-<core>-<name>
-    #[command(about = "Publish kernel template layer to registry")]
-    Publish(TemplatePublishArgs),
-    /// Publish mọi layer web có template.toml+sources (registry-first source of truth)
-    #[command(about = "Publish every template layer under templates/web to registry")]
-    PublishAll,
-}
-
-/// `mgc template fetch <core> <name> [--registry URL] [--tag latest]`
+/// A request to resolve one layer from the configured registry.
+/// Yêu cầu resolve một layer từ registry đã cấu hình.
 #[derive(Debug, Parser, Clone)]
 pub struct TemplateFetchArgs {
     pub core: String,
@@ -23,15 +23,4 @@ pub struct TemplateFetchArgs {
     pub registry: Option<String>,
     #[arg(long, help = "dist-tag (default: latest)")]
     pub tag: Option<String>,
-}
-
-/// `mgc template publish <core> <name> [--registry URL] [--version]`
-#[derive(Debug, Parser, Clone)]
-pub struct TemplatePublishArgs {
-    pub core: String,
-    pub name: String,
-    #[arg(long, help = "override registry URL")]
-    pub registry: Option<String>,
-    #[arg(long, help = "package version (default: 0.1.0)")]
-    pub version: Option<String>,
 }

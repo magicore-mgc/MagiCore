@@ -85,11 +85,6 @@ pub enum BareCommands {
         #[command(subcommand)]
         cmd: crate::commands::doctor::DoctorCmd,
     },
-    #[command(about = "Manage kernel templates (publish/fetch — registry-backed)")]
-    Template {
-        #[command(subcommand)]
-        cmd: crate::commands::template::TemplateCmd,
-    },
     #[command(about = "Show workspace graph (nodes + workspace:* edges)")]
     Workspace {
         #[command(subcommand)]

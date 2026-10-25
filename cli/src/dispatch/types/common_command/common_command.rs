@@ -190,9 +190,6 @@ pub enum CommonCommand {
     Doctor {
         cmd: crate::commands::doctor::DoctorCmd,
     },
-    Template {
-        cmd: crate::commands::template::TemplateCmd,
-    },
     Workspace {
         cmd: crate::commands::workspace::WorkspaceCmd,
     },

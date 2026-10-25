@@ -1,22 +1,9 @@
-// Project command mapping — preserve template and workspace query values.
-// Mapping lệnh dự án — giữ giá trị truy vấn template và workspace.
+// Project command mapping — preserve workspace query values.
+// Mapping lệnh dự án — giữ giá trị truy vấn workspace.
 use super::super::bare_common_to_common;
 use crate::commands::definitions::commands::bare::BareCommands;
-use crate::commands::template::TemplateCmd;
 use crate::commands::workspace::WorkspaceCmd;
 use crate::dispatch::types::CommonCommand;
-
-#[test]
-fn maps_template_publish_all_subcommand() {
-    assert!(matches!(
-        bare_common_to_common(BareCommands::Template {
-            cmd: TemplateCmd::PublishAll,
-        }),
-        Some(CommonCommand::Template {
-            cmd: TemplateCmd::PublishAll
-        })
-    ));
-}
 
 #[test]
 fn maps_workspace_filter_and_output_format() {
