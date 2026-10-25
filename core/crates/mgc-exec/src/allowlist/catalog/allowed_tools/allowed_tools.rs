@@ -39,6 +39,14 @@ pub const ALLOWED_TOOLS: &[&str] = &[
     // được spawn là dependency của chính project, không phải file lạ
     // xâm nhập từ PATH.
     "vite",
+    // The Angular CLI: `ng build`, `ng test` and `ng serve` are the
+    // framework's own entry points, resolved from `node_modules/.bin` first.
+    // Angular CLI: `ng build`, `ng test`, `ng serve` là entry point của chính
+    // framework, resolve từ `node_modules/.bin` trước.
+    "ng",
+    // Framework test runners the scaffold installs and `mgc test` invokes.
+    // Runner test do scaffold cài và `mgc test` gọi.
+    "vitest",
     "go",
     "dart",
     "gradle",

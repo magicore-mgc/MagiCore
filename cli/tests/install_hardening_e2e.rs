@@ -303,9 +303,40 @@ fn sigkill_during_materialize_recovers_cleanly() {
     let (mut parked, _ready) = spawn_parked_install(&mgc, &project, "before-materialize", &[]);
     sigkill(&mut parked);
 
+    // Show what the killed run left behind before re-running.
+    let before: Vec<String> = std::fs::read_dir(project.join("node_modules"))
+        .map(|dir| {
+            dir.filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    let lock_before = std::fs::read_to_string(project.join("mgc.lock")).unwrap_or_default();
+    eprintln!(
+        "BEFORE re-run: node_modules={before:?} lock_bytes={}",
+        lock_before.len()
+    );
     let (code, out) = run_install(&mgc, &project, &[]);
     assert_eq!(code, Some(0), "post-kill re-run must succeed:\n{out}");
-    assert!(project.join("node_modules").join("esbuild").is_dir());
+    let listing: Vec<String> = std::fs::read_dir(project.join("node_modules"))
+        .map(|dir| {
+            dir.filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    let root_after: Vec<String> = std::fs::read_dir(&project)
+        .map(|dir| {
+            dir.filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    assert!(
+        project.join("node_modules").join("esbuild").is_dir(),
+        "node_modules after recovery: {listing:?}\nroot after: {root_after:?}\ninstall output:\n{out}\nmgc.toml:\n{}",
+        std::fs::read_to_string(project.join("mgc.toml")).unwrap_or_default()
+    );
     assert!(project.join("mgc.lock").is_file());
     let litter: Vec<_> = std::fs::read_dir(&project)
         .unwrap()
@@ -351,8 +382,39 @@ fn sigkill_during_rollback_recovers_cleanly() {
     );
     sigkill(&mut parked);
 
+    // Show what the killed run left behind before re-running.
+    let before: Vec<String> = std::fs::read_dir(project.join("node_modules"))
+        .map(|dir| {
+            dir.filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    let lock_before = std::fs::read_to_string(project.join("mgc.lock")).unwrap_or_default();
+    eprintln!(
+        "BEFORE re-run: node_modules={before:?} lock_bytes={}",
+        lock_before.len()
+    );
     let (code, out) = run_install(&mgc, &project, &[]);
     assert_eq!(code, Some(0), "post-kill re-run must succeed:\n{out}");
-    assert!(project.join("node_modules").join("esbuild").is_dir());
+    let listing: Vec<String> = std::fs::read_dir(project.join("node_modules"))
+        .map(|dir| {
+            dir.filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    let root_after: Vec<String> = std::fs::read_dir(&project)
+        .map(|dir| {
+            dir.filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    assert!(
+        project.join("node_modules").join("esbuild").is_dir(),
+        "node_modules after recovery: {listing:?}\nroot after: {root_after:?}\ninstall output:\n{out}\nmgc.toml:\n{}",
+        std::fs::read_to_string(project.join("mgc.toml")).unwrap_or_default()
+    );
     assert!(project.join("mgc.lock").is_file());
 }
