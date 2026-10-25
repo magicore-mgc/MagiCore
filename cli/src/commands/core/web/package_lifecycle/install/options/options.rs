@@ -16,6 +16,12 @@ pub(in crate::commands::core::web::implementation::package_lifecycle::install) s
         bool,
     pub(in crate::commands::core::web::implementation::package_lifecycle::install) repair: bool,
     pub(in crate::commands::core::web::implementation::package_lifecycle::install) offline: bool,
+    /// Reuse packages already present in `node_modules`; a plain install is
+    /// incremental, an explicit package list rebuilds the affected subset.
+    /// Dùng lại package đã có trong `node_modules`; install thường là
+    /// incremental, danh sách package tường minh dựng lại phần bị ảnh hưởng.
+    pub(in crate::commands::core::web::implementation::package_lifecycle::install) incremental:
+        bool,
     pub(in crate::commands::core::web::implementation::package_lifecycle::install) compat_runtime:
         Option<String>,
 }
@@ -30,9 +36,11 @@ impl WebInstallOptions {
         prefer_dedupe: bool,
         repair: bool,
         offline: bool,
+        incremental: bool,
         compat_runtime: Option<String>,
     ) -> Self {
         Self {
+            incremental,
             packages,
             frozen,
             ignore_scripts,

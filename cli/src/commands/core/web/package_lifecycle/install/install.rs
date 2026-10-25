@@ -22,6 +22,7 @@ pub async fn install(
     offline: bool,
     compat_runtime: Option<String>,
 ) -> Result<()> {
+    let incremental = packages.is_empty();
     let options = WebInstallOptions::new(
         packages,
         frozen,
@@ -30,6 +31,7 @@ pub async fn install(
         prefer_dedupe,
         repair,
         offline,
+        incremental,
         compat_runtime,
     );
     let root = preflight::prepare(&options)?;

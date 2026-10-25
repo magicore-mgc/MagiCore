@@ -178,7 +178,16 @@ unwrap_used = "warn"
 module_inception = "allow"
 
 [profile.release]
-opt-level = "z"          # Optimize for size
+# `opt-level = "z"` together with `lto = "fat"` miscompiled this crate: 50% of
+# `mgc install` runs died with SIGILL / KERN_PROTECTION_FAILURE on a stack guard
+# region, while the same code passed with either setting changed alone and passed
+# in every debug build. Optimising for speed keeps size close (the binary is
+# dominated by bundled assets) and the crash disappears.
+# `opt-level = "z"` cùng `lto = "fat"` làm biên dịch sai crate này: 50% lần
+# `mgc install` chết với SIGILL / KERN_PROTECTION_FAILURE tại stack guard, trong
+# khi đổi một trong hai hoặc build debug đều qua. Tối ưu tốc độ giữ kích thước
+# gần như cũ (binary chủ yếu là asset nhúng) và lỗi biến mất.
+opt-level = 3            # Optimize for speed
 lto = "fat"              # Link-time optimization (aggressive)
 codegen-units = 1        # Single codegen unit (better optimization)
 strip = true             # Remove debug symbols (T5.4)

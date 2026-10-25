@@ -26,6 +26,14 @@ pub(in crate::commands::core::web::implementation::package_lifecycle::install) a
                     repair: options.repair,
                     legacy_flat: should_use_legacy_flat_layout("web"),
                     offline: options.offline,
+                    // A warm install reuses the packages already present in
+                    // `node_modules` and materialises only what differs. Without
+                    // this every warm run re-extracted the whole graph and was
+                    // twice as slow as npm's warm install.
+                    // Warm install dùng lại package đã có trong `node_modules`
+                    // và chỉ materialize phần khác. Thiếu cờ này, mỗi lần warm
+                    // đều extract lại toàn graph, chậm gấp đôi npm.
+                    incremental: options.incremental,
                     ..Default::default()
                 },
             )

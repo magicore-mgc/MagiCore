@@ -72,6 +72,13 @@ mkdir -p "$RESULTS_DIR" "$PM_HOME/.cache" "$PM_HOME/.mgc" "$PM_HOME/pnpm-store"
 export HOME="$PM_HOME"
 export XDG_CACHE_HOME="$PM_HOME/.cache"
 export MGC_CACHE_DIR="$PM_HOME/.mgc"
+# The shared store is machine-wide state, so a run that leaves it default
+# measures a warm store against a cold npm cache. Point it inside the
+# disposable HOME like every other package-manager cache.
+# Store dùng chung là state toàn máy; để mặc định thì mỗi run đo store nóng so
+# với cache lạnh của npm. Trỏ nó vào HOME tạm như mọi cache PM khác.
+export MGC_DATA_DIR="$PM_HOME/state"
+export MAGICORE_STORE_ROOT="$PM_HOME/state/store"
 export npm_config_cache="$PM_HOME/npm-cache"
 export YARN_CACHE_FOLDER="$PM_HOME/yarn-cache"
 export BUN_INSTALL_CACHE_DIR="$PM_HOME/bun-cache"
@@ -120,7 +127,10 @@ echo -e "${YELLOW}[4/6] Running COLD install with $PM_NAME...${NC}"
 START_TIME=$(now_seconds)
 START_MEMORY=$(if command -v free &> /dev/null; then free -m | awk '/^Mem:/{print $3}'; else echo 0; fi)
 ACTIVE_INSTALL_LOG="$WORK_DIR/install.log"
-run_install > "$ACTIVE_INSTALL_LOG" 2>&1
+# A non-zero install is a result to record, not a reason to abort the harness.
+# Install lỗi là kết quả cần ghi, không phải lý do dừng harness.
+COLD_EXIT_CODE=0
+run_install > "$ACTIVE_INSTALL_LOG" 2>&1 || COLD_EXIT_CODE=$?
 
 END_TIME=$(now_seconds)
 END_MEMORY=$(if command -v free &> /dev/null; then free -m | awk '/^Mem:/{print $3}'; else echo 0; fi)
@@ -143,7 +153,8 @@ sleep 1
 
 WARM_START=$(now_seconds)
 ACTIVE_INSTALL_LOG="$WORK_DIR/install_warm.log"
-run_install > "$ACTIVE_INSTALL_LOG" 2>&1
+WARM_EXIT_CODE=0
+run_install > "$ACTIVE_INSTALL_LOG" 2>&1 || WARM_EXIT_CODE=$?
 WARM_END=$(now_seconds)
 WARM_DURATION=$(echo "$WARM_END - $WARM_START" | bc)
 
@@ -161,10 +172,12 @@ cat > "$RESULT_FILE" <<EOF
   "cold_install": {
     "duration_seconds": $DURATION,
     "disk_mb": $DISK_USAGE,
-    "memory_delta_mb": $MEMORY_USED
+    "memory_delta_mb": $MEMORY_USED,
+    "exit_code": ${COLD_EXIT_CODE:-1}
   },
   "warm_install": {
-    "duration_seconds": $WARM_DURATION
+    "duration_seconds": $WARM_DURATION,
+    "exit_code": ${WARM_EXIT_CODE:-1}
   },
   "package_count": $(cat package.json | jq '[.dependencies, .devDependencies] | add | length'),
   "logs": {

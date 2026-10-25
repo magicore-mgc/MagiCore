@@ -60,8 +60,28 @@ pub(crate) struct Cli {
 
 pub(crate) use crate::commands::definitions::Commands;
 
-#[tokio::main]
-async fn main() {
+fn main() {
+    // A blocking task's default stack is 2 MB, which a deep package-extraction
+    // path can exhaust: the install pipeline crashed with SIGILL and
+    // KERN_PROTECTION_FAILURE on the stack guard region in roughly half of 20
+    // benchmark runs. An explicit larger stack removes that failure mode
+    // without changing behaviour, and the blocking pool is capped so a large
+    // graph cannot spawn an unbounded number of them.
+    // Stack mặc định của blocking task là 2 MB, đường extract package sâu có thể
+    // làm tràn: pipeline install crash SIGILL/KERN_PROTECTION_FAILURE tại stack
+    // guard trong khoảng nửa số lần chạy benchmark 20 vòng. Đặt stack lớn hơn
+    // loại bỏ kiểu hỏng này mà không đổi hành vi, và chặn trần blocking pool để
+    // graph lớn không spawn vô hạn.
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_stack_size(8 * 1024 * 1024)
+        .max_blocking_threads(64)
+        .build()
+        .expect("build the async runtime");
+    runtime.block_on(async_main());
+}
+
+async fn async_main() {
     // Windows framework builds probe npm's version. The mgc executable doubles as a
     // native, argument-safe shim and refuses every request except that exact read-only probe.
     // Build framework trên Windows hỏi phiên bản npm. Executable mgc làm shim native an toàn
