@@ -4,8 +4,7 @@ use crate::commands::template::{
     TemplateFetchArgs, download_template_bytes, extract_tarball_into, layer_rel,
     lock_template_cache_layer, read_template_cache_version, register_fetch_auth,
     registry_package_name, select_registry, template_cache_is_link, template_layer_has_contract,
-    template_registry_url, validate_template_identity,
-    verify_template_integrity,
+    template_registry_url, validate_template_identity, verify_template_integrity,
 };
 use anyhow::Result;
 use std::fs;
@@ -15,7 +14,12 @@ use std::path::{Path, PathBuf};
 #[cfg(test)]
 #[allow(dead_code)]
 pub async fn fetch(args: TemplateFetchArgs) -> Result<PathBuf> {
-    let (path, _) = fetch_layer_at(args, &crate::commands::template::templates_cache_dir(), None).await?;
+    let (path, _) = fetch_layer_at(
+        args,
+        &crate::commands::template::templates_cache_dir(),
+        None,
+    )
+    .await?;
     Ok(path)
 }
 

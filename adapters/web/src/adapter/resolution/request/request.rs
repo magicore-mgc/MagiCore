@@ -18,6 +18,16 @@ pub(in crate::adapter::resolution) async fn prepare_request(
     profile: &mut ResolveProfile,
     started_at: Instant,
 ) -> MgResult<Option<PreparedRequest>> {
+    // Refuse a source outside the registry before anything is resolved, so the
+    // failure is a named policy rather than a confusing version conflict.
+    // Từ chối nguồn ngoài registry trước khi resolve, để lỗi là chính sách có
+    // tên chứ không phải xung đột version khó hiểu.
+    crate::supply_chain::ensure_registry_only(
+        manifest
+            .all_dependencies()
+            .map(|d| (d.name.as_str().to_string(), d.range.to_string())),
+    )?;
+
     let wanted: Vec<(PackageName, String)> = manifest
         .all_dependencies()
         .map(|d| {
