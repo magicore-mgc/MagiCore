@@ -6,6 +6,7 @@
 //! Security: `validate_project_name` chặn path traversal/absolute tại CLI
 //! boundary — mọi create-<core> đều đi qua đây trước khi chạm filesystem.
 
+mod core_initializer;
 mod metadata;
 mod source;
 mod validation;

@@ -17,7 +17,6 @@
 //! lệnh cài, thay vì để lại project viết dở.
 
 use std::path::Path;
-use std::process::Command;
 
 use anyhow::{Context, Result};
 
@@ -39,40 +38,58 @@ pub(in crate::commands::core::web::implementation) fn run_host_tool(
     // prove the toolchain is usable; MagiCore does not parse the output.
     // Probe: chương trình phải tồn tại và trả lời. Chỉ `--version` là đủ để
     // chứng minh toolchain dùng được; MagiCore không parse output.
-    let probed = Command::new(program)
-        .args(probe)
-        .output()
-        .map_err(|error| {
+    let probe_args: Vec<String> = probe.iter().map(|a| (*a).to_string()).collect();
+    let probed =
+        mgc_exec::prelude::run(program, &probe_args, &host_options(None)).map_err(|error| {
             anyhow::anyhow!(
                 "'{program}' is required to scaffold this framework but could not be run: {error}. \
-                 Install it with: {install_hint}"
+             Install it with: {install_hint}"
             )
         })?;
-    if !probed.status.success() {
+    if probed.exit_code != 0 {
         anyhow::bail!(
             "'{program} {}' failed with {}; the toolchain is present but not usable. \
              Install or repair it with: {install_hint}",
             probe.join(" "),
-            probed.status
+            probed.exit_code
         );
     }
 
     std::fs::create_dir_all(destination)?;
-    let output = Command::new(program)
-        .args(args)
-        .current_dir(destination)
-        .output()
+    let output = mgc_exec::prelude::run(program, args, &host_options(Some(destination)))
         .with_context(|| format!("run '{program} {}'", args.join(" ")))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let detail = stderr.lines().rev().take(3).collect::<Vec<_>>().join("; ");
+    // The probe already proved the toolchain works, so a failure past this
+    // point is the initializer rejecting its arguments, not a missing tool.
+    // Probe đã chứng minh toolchain chạy được, nên lỗi sau đây là initializer
+    // từ chối tham số, không phải thiếu tool.
+    if output.exit_code != 0 {
+        let detail = output
+            .stderr_tail
+            .lines()
+            .rev()
+            .take(3)
+            .collect::<Vec<_>>()
+            .join("; ");
         anyhow::bail!(
             "'{program} {}' failed with {}: {detail}",
             args.join(" "),
-            output.status
+            output.exit_code
         );
     }
     Ok(())
+}
+
+/// Exec options for a framework initializer: framework-initializer scope, no
+/// inherited environment, output captured, no timeout override.
+/// Tuỳ chọn exec cho initializer framework: scope framework-initializer, không
+/// kế thừa env, bắt output, không đổi timeout.
+fn host_options(cwd: Option<&Path>) -> mgc_exec::prelude::ExecOptions {
+    mgc_exec::prelude::ExecOptions {
+        cwd: cwd.map(|dir| dir.to_path_buf()),
+        clean_env: true,
+        execution_scope: Some(mgc_exec::allowlist::ExecutionScope::FrameworkInitializer),
+        ..Default::default()
+    }
 }
 
 #[cfg(test)]

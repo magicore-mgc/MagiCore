@@ -68,7 +68,6 @@ pub const WEB_BACKEND: &[&str] = &[
     "fastapi",
     "fiber",
     "flask",
-    "laravel",
     "nest",
     "nestjs",
     "quarkus",
@@ -138,7 +137,6 @@ pub fn ecosystem_for_core(core: &str) -> &str {
 pub fn framework_marker(ecosystem: &str, framework: &str) -> Option<&'static [&'static str]> {
     match (ecosystem, framework) {
         ("web", "django") => Some(&["manage.py"]),
-        ("web", "laravel") => Some(&["artisan"]),
         ("web", "symfony") => Some(&["bin", "console"]),
         ("web", "flask") | ("web", "fastapi") => Some(&["pyproject.toml"]),
         ("app", "flutter") => Some(&["pubspec.yaml"]),

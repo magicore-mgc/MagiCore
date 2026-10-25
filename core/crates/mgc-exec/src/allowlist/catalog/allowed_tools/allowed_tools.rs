@@ -110,4 +110,19 @@ pub const ALLOWED_TOOLS: &[&str] = &[
     // version (security.yml).
     "pip-audit",   // Official PyPA Python vulnerability scanner
     "govulncheck", // Official Go vulnerability scanner (golang.org/x/vuln)
+    // ── Framework initializers ───────────────────────────────────────────
+    // A scaffolding program the framework team publishes. Each one is probed
+    // with `--version` first, then run with a fixed argv whose only variable
+    // part is the project directory. They run in `FrameworkInitializer` scope
+    // only, never in Install/Test/Build/Dev.
+    // Chương trình scaffold do framework team phát hành. Mỗi cái được probe
+    // `--version` trước, rồi chạy với argv cố định, chỉ thư mục project là biến
+    // đổi. Chúng chỉ chạy trong scope `FrameworkInitializer`.
+    "django-admin",
+    "godot",
+    "pio",
+    "west",
+    "terraform",
+    "cdk",
+    "pulumi",
 ];

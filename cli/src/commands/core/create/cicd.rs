@@ -34,6 +34,20 @@ pub async fn run(
     };
     config.project_name = project_name.to_string();
     super::source::apply(&mut config, source);
+
+    // The framework's own program is the first source. Running it early keeps a
+    // stale local project from masking a broken initializer.
+    // Chương trình của chính framework là nguồn đầu tiên. Chạy sớm để project
+    // local cũ không che initializer hỏng.
+    if config.from_local.is_none()
+        && let Some(framework) = config.frameworks.first()
+    {
+        let target = std::path::Path::new(project_name);
+        if super::core_initializer::try_run("cicd", framework, target)? {
+            mgc_ui::success(&format!("Created cicd project: {project_name}"));
+            return Ok(());
+        }
+    }
     if let Some(fw) = config.frameworks.first() {
         // Phase 3: Handle typed result
         let request = parsed_framework

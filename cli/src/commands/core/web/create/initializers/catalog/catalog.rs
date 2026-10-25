@@ -438,22 +438,6 @@ pub(crate) const BACKEND: &[(&str, InitializerRecord)] = &[
         },
     ),
     (
-        "laravel",
-        InitializerRecord {
-            package: "composer",
-            binary: "composer",
-            identity: "composer:create-project-laravel",
-            args: &[L("create-project"), L("laravel/laravel"), P],
-            layout: Layout::InPlace,
-            version: VersionPolicy::Latest,
-            runtime: Runtime::HostTool {
-                program: "composer",
-                install_hint: "https://getcomposer.org/download/",
-                probe: &["--version"],
-            },
-        },
-    ),
-    (
         "express",
         InitializerRecord {
             package: "express-generator",

@@ -52,7 +52,12 @@ PLATFORM_PROCESS_BOUNDARY_REVIEWS = {
 # against the selected project root; dynamic refs follow --end-of-options.
 # Git check của publish chỉ nhận enum truy vấn đóng, chỉ đọc, chạy tại root
 # project được chọn; ref động nằm sau --end-of-options.
-AUDITED_EXECUTOR_ROUTES = {('core/crates/mgc-exec/src/run/process_policy/invocation_shape/invocation_shape.rs', 'safe_pm_argument_shape', 'swift'): 'constant allow-list of safe Swift/PM subcommands; '
+AUDITED_EXECUTOR_ROUTES = {
+('cli/src/commands/core/web/create/initializer/host_tool/host_tool.rs', 'run_host_tool', '<dynamic:program>'): 'framework host-tool initializer from the static catalog',
+ ('cli/src/commands/core/web/create/initializer/host_tool/host_tool.rs', 'run_host_tool', '<dynamic:program>'): 'framework host-tool initializer from the static catalog',
+ ('cli/src/scaffold/core_initializers/host_tool/host_tool.rs', 'run', '<dynamic:record>'): 'core host-tool initializer from the static catalog',
+ ('cli/src/scaffold/core_initializers/host_tool/host_tool.rs', 'run', '<dynamic:record>'): 'core host-tool initializer from the static catalog',
+('core/crates/mgc-exec/src/run/process_policy/invocation_shape/invocation_shape.rs', 'safe_pm_argument_shape', 'swift'): 'constant allow-list of safe Swift/PM subcommands; '
                                                                                                                     'no process is spawned here, the list only '
                                                                                                                     'shapes arguments for the guarded executor',
 ('cli/src/commands/exec/exec.rs', 'run', '<dynamic:command>'): 'mgc exec runs the user command through the mgc-exec allowlist with '
@@ -151,7 +156,14 @@ AUDITED_EXECUTOR_ROUTES = {('core/crates/mgc-exec/src/run/process_policy/invocat
  ('cli/src/commands/build/build/app/multi/multi.rs', 'build_multi_app', 'swift'): 'mgc-exec BuildRunner; '
                                                                                   'Swift build disables '
                                                                                   'package resolution',
- ('cli/src/commands/build/web_engine/framework_script/framework_script.rs', 'run_framework_build_if_supported', '<dynamic:program>'): 'script '
+ # Host-tool and core initializers run a program the framework team publishes.
+ # Both probe `--version` first, then run with a fixed argv whose only variable
+ # part is the project path. The program name comes from a static catalog, never
+ # from project input.
+ # (Initializer host-tool và core chạy chương trình do framework phát hành.
+ # Probe `--version` trước, argv cố định, chỉ đường dẫn project là biến đổi.
+ # Tên chương trình đến từ catalog tĩnh, không từ input project.)
+  ('cli/src/commands/build/web_engine/framework_script/framework_script.rs', 'run_framework_build_if_supported', '<dynamic:program>'): 'script '
                                                                                                                                       'parser '
                                                                                                                                       '+ '
                                                                                                                                       'framework '
