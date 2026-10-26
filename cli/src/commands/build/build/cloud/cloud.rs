@@ -22,7 +22,7 @@ pub(in crate::commands::build::implementation) fn cloud_cdk_synth_env(
     local_bin: &Path,
     home: &Path,
 ) -> Result<Vec<(String, String)>> {
-    Ok(vec![
+    let mut env = vec![
         (
             "PATH".to_string(),
             prepend_path(local_bin)?.to_string_lossy().to_string(),
@@ -38,7 +38,16 @@ pub(in crate::commands::build::implementation) fn cloud_cdk_synth_env(
         // guard cây process chỉ theo dõi đúng công việc synth.
         // Source: https://docs.aws.amazon.com/cdk/v2/guide/cli-telemetry.html
         ("CDK_DISABLE_CLI_TELEMETRY".to_string(), "true".to_string()),
-    ])
+    ];
+    // CDK synth drives a Node process, so the optimizer's Node settings apply
+    // exactly as they do to any other Node build.
+    // CDK synth điều khiển process Node, nên cấu hình Node của optimizer áp đúng
+    // như mọi build Node khác.
+    // The project root is not available here, so the environment is loaded by
+    // the caller that has it.
+    // Không có project root ở đây, nên env được caller có root nạp.
+    let _ = &mut env;
+    Ok(env)
 }
 
 #[cfg(feature = "clo")]
@@ -71,7 +80,20 @@ pub(in crate::commands::build::implementation) async fn build_cloud(root: &Path)
             // the developer's home directory or cloud credentials.
             // (Cấp profile tạm cho Node mà không đọc home hay credential cloud của user.)
             let cdk_home = tempfile::tempdir()?;
-            let env = cloud_cdk_synth_env(&local_bin, cdk_home.path())?;
+            let mut env = cloud_cdk_synth_env(&local_bin, cdk_home.path())?;
+            // CDK synth drives a Node process, so the optimizer's Node settings
+            // apply exactly as they do to any other Node build.
+            // CDK synth điều khiển process Node, nên cấu hình Node của optimizer
+            // áp đúng như mọi build Node khác.
+            if let Ok(optimizer_envs) = crate::commands::optimizer::env_loader::load_optimizer_env(
+                root,
+                &crate::commands::optimizer::runtime_detect::DetectedRuntime::NodeJs {
+                    package_manager:
+                        crate::commands::optimizer::runtime_detect::PackageManager::Npm,
+                },
+            ) {
+                env.extend(optimizer_envs);
+            }
             info(&format!("cdk synth: node {}", args.join(" ")));
             let opts = mgc_exec::prelude::ExecOptions {
                 cwd: Some(root.to_path_buf()),
