@@ -72,6 +72,7 @@ pub(in crate::commands::build::implementation) async fn build_ai(root: &Path) ->
         _ => unreachable!("AI build selects only an AI runtime"),
     }
 
+    crate::commands::build::post_build::run_for_core(root, "ai", root, false)?;
     mgc_ui::success("AI build completed");
     Ok(())
 }

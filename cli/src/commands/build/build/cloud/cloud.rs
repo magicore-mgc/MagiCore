@@ -98,5 +98,10 @@ pub(in crate::commands::build::implementation) async fn build_cloud(root: &Path)
             return Err(CloudBuildError::CloudflareBuildInCicdCore.into());
         }
     }
+    // IaC builds emit a plan rather than an artefact tree, so the thing worth
+    // describing is the configuration that was evaluated.
+    // Build IaC xuất plan chứ không phải cây artefact, nên thứ đáng mô tả là
+    // cấu hình đã được đánh giá.
+    crate::commands::build::post_build::run_for_core(root, "cloud", root, false)?;
     Ok(())
 }

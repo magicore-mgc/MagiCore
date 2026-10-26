@@ -194,78 +194,17 @@ fn project_label(root: &Path) -> String {
 
 /// Describe, examine and sign whatever `dist/` now holds.
 ///
-/// This runs whichever engine produced the output, because the question it
-/// answers — "what exactly ships" — is the same for both. A blocking finding
-/// fails the build: shipping bytes nobody examined is the failure mode this
-/// exists to prevent.
-/// Mô tả, xét và ký bất cứ thứ gì `dist/` đang giữ. Chạy bất kể engine nào tạo
-/// output, vì câu hỏi nó trả lời — "chính xác cái gì được phát hành" — giống
-/// nhau ở cả hai. Phát hiện chặn sẽ làm build fail: phát hành byte không ai xét
-/// là kiểu hỏng mà bước này tồn tại để ngăn.
+/// Delegates to the shared post-build runner so every core ships the same
+/// assurances.
+/// Giao cho runner sau build dùng chung để mọi core có cùng bảo đảm.
 fn run_post_build(root: &Path, name: String, allow_warnings: bool) -> Result<()> {
-    let dist = root.join("dist");
-    if !dist.is_dir() {
-        return Ok(());
-    }
-
-    // Order matters: the guard changes the bytes of every script, so the SBOM
-    // must be written last. Hashing before injection produced a document that
-    // described files which no longer existed — an artefact nobody could verify
-    // against its own inventory.
-    // Thứ tự quan trọng: guard đổi byte của mọi script, nên SBOM phải ghi sau
-    // cùng. Hash trước khi inject tạo tài liệu mô tả file không còn tồn tại —
-    // artefact không ai verify được với chính bản kiểm kê của nó.
-    //
-    // The guard's own statement needs the SBOM hash, so it is embedded twice:
-    // a first pass with a placeholder keeps the byte length stable, and the
-    // final pass writes the real hash. Without that, writing the hash would
-    // change the files the hash describes.
-    // Phát biểu của guard cần hash SBOM, nên nó được nhúng hai lần: lượt đầu
-    // với placeholder giữ độ dài byte ổn định, lượt cuối ghi hash thật. Thiếu
-    // bước đó, việc ghi hash sẽ đổi chính những file mà hash mô tả.
-    let placeholder = crate::commands::build::post_build::BuildIdentity {
-        name: name.clone(),
-        version: "1.0.0".to_string(),
-        sbom_sha256: "0".repeat(64),
-    };
-    crate::commands::build::post_build::inject_build_identity(&dist, &placeholder)?;
-
-    let report = crate::commands::build::post_build::scan_output(&dist)?;
-    info(&report.summary());
-    if report.has_blocking() && !allow_warnings {
-        anyhow::bail!(
-            "build output failed the security scan; fix the findings above or pass --allow-output-warnings to ship anyway"
-        );
-    }
-
-    let sbom_path = crate::commands::build::post_build::write_output_sbom(&dist, &name, "1.0.0")?;
-    let sbom_sha = crate::commands::build::post_build::sbom_sha256(&sbom_path)?;
-    let touched = crate::commands::build::post_build::inject_build_identity(
-        &dist,
-        &crate::commands::build::post_build::BuildIdentity {
-            name: name.clone(),
-            version: "1.0.0".to_string(),
-            sbom_sha256: sbom_sha,
+    crate::commands::build::post_build::run_post_build(
+        &root.join("dist"),
+        crate::commands::build::post_build::PostBuildOptions {
+            name: &name,
+            version: "1.0.0",
+            fail_on_findings: !allow_warnings,
+            embed_identity: true,
         },
-    )?;
-    // The second pass changed the bytes the SBOM recorded, so it is regenerated
-    // once more with the final content. This is the document that ships.
-    // Lượt hai đã đổi byte mà SBOM đã ghi, nên nó được sinh lại lần cuối với nội
-    // dung cuối. Đây là tài liệu được phát hành.
-    let sbom_path = crate::commands::build::post_build::write_output_sbom(&dist, &name, "1.0.0")?;
-    info(&format!(
-        "Output SBOM: {} (build identity in {touched} script(s))",
-        sbom_path.display()
-    ));
-
-    let keyring = mgc_platform::paths::mgc_data_dir().join("keyring.json");
-    match crate::commands::build::post_build::sign_artifact(&sbom_path, &keyring)? {
-        crate::commands::build::post_build::Signed::Signature(path) => {
-            info(&format!("Signed: {}", path.display()));
-        }
-        crate::commands::build::post_build::Signed::Skipped(reason) => {
-            info(&format!("Output not signed: {reason}"));
-        }
-    }
-    Ok(())
+    )
 }

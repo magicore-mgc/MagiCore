@@ -14,10 +14,11 @@ pub(in crate::commands::build::implementation) async fn build_lib(root: &Path) -
     if project_manifest_present(root, "Cargo.toml")? {
         crate::commands::freshness::check_lib_cargo_freshness(root)?;
         let store_source = mgc_lib_adapter::install::cargo_compat::validate_build(root)?;
-        return match store_source {
-            Some(source) => build_rust_with_managed_source(root, optimizer_envs, &source),
-            None => build_rust_with_env(root, optimizer_envs),
-        };
+        match store_source {
+            Some(source) => build_rust_with_managed_source(root, optimizer_envs, &source)?,
+            None => build_rust_with_env(root, optimizer_envs)?,
+        }
+        return post_build_lib(root);
     }
     if project_manifest_present(root, "pyproject.toml")? {
         let python = python_cmd();
@@ -119,11 +120,31 @@ pub(in crate::commands::build::implementation) async fn build_lib(root: &Path) -
             execution_scope: Some(mgc_exec::allowlist::ExecutionScope::BuildRunner),
             ..Default::default()
         };
-        return mgc_exec::prelude::run_inherited("node", &args, &opts).map(|_| ());
+        return mgc_exec::prelude::run_inherited("node", &args, &opts)
+            .map(|_| ())
+            .and_then(|()| post_build_lib(root));
     }
     Err(crate::error::web_missing_executable(
         "tsc",
         "mgc install",
         root,
     ))
+}
+
+/// Describe the artefact a library build produced.
+///
+/// Rust writes `target/`, Python writes `dist/` or leaves the package in place,
+/// and a TypeScript build writes wherever `tsconfig` says. The runner describes
+/// whichever directory exists, skipping the ones that do not.
+/// Mô tả artefact mà build thư viện tạo. Rust ghi `target/`, Python ghi `dist/`
+/// hoặc để package tại chỗ, TypeScript ghi theo `tsconfig`. Runner mô tả thư mục
+/// tồn tại và bỏ qua cái không có.
+fn post_build_lib(root: &Path) -> Result<()> {
+    for candidate in ["target", "dist", "build/lib"] {
+        let dir = root.join(candidate);
+        if dir.is_dir() {
+            return crate::commands::build::post_build::run_for_core(root, "lib", &dir, false);
+        }
+    }
+    Ok(())
 }

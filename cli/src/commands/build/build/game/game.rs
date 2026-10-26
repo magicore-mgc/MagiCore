@@ -11,7 +11,13 @@ pub(in crate::commands::build::implementation) async fn build_game(root: &Path) 
             let runtime = crate::commands::optimizer::runtime_detect::DetectedRuntime::RustLib;
             let optimizer_envs =
                 crate::commands::optimizer::env_loader::load_optimizer_env(root, &runtime)?;
-            build_rust_with_env(root, optimizer_envs)
+            build_rust_with_env(root, optimizer_envs)?;
+            crate::commands::build::post_build::run_for_core(
+                root,
+                "game",
+                &root.join("target"),
+                false,
+            )
         }
         Some(mgc_game_adapter::GameEngine::Godot) => Err(GameBuildError::Unsupported {
             target: "game/godot",

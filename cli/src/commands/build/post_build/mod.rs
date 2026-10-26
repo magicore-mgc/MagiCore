@@ -10,6 +10,8 @@
 
 #[path = "output_sbom/mod.rs"]
 mod output_sbom;
+#[path = "run/mod.rs"]
+mod run;
 #[path = "runtime_guard/mod.rs"]
 mod runtime_guard;
 #[path = "scan/mod.rs"]
@@ -18,6 +20,7 @@ mod scan;
 mod sign;
 
 pub(crate) use output_sbom::write as write_output_sbom;
+pub(crate) use run::{PostBuildOptions, run as run_post_build, run_for_core};
 pub(crate) use runtime_guard::{BuildIdentity, inject as inject_build_identity, sbom_sha256};
 pub(crate) use scan::scan as scan_output;
 pub(crate) use sign::{Signed, sign_artifact};

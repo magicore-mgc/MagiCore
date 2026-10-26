@@ -30,7 +30,19 @@ pub async fn run(
         let runtime = crate::commands::optimizer::runtime_detect::DetectedRuntime::RustLib;
         let optimizer_envs =
             crate::commands::optimizer::env_loader::load_optimizer_env(&root, &runtime)?;
-        return build_rust_with_env(&root, optimizer_envs);
+        build_rust_with_env(&root, optimizer_envs)?;
+        // A standalone Rust project takes this shorter path, so the post-build
+        // steps live here as well — otherwise the artefact that most Rust users
+        // produce would be the one with no inventory.
+        // Project Rust độc lập đi đường ngắn này, nên bước sau build cũng ở đây
+        // — nếu không, artefact mà đa số user Rust tạo ra lại là bản không có
+        // bản kiểm kê.
+        return crate::commands::build::post_build::run_for_core(
+            &root,
+            "lib",
+            &root.join("target"),
+            allow_output_warnings,
+        );
     }
 
     let ctx = ProjectContext::load_with_core(core)?;

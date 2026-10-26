@@ -41,6 +41,25 @@ pub(in crate::commands::build::implementation) async fn build_app(root: &Path) -
         return Err(crate::error::build_toolchain_missing(tool));
     }
     run_allowlisted_tool_with_env(root, tool, args, env_opt)?;
+    post_build_app(root)?;
     mgc_ui::success(&format!("App build completed ({language})"));
+    Ok(())
+}
+
+/// Describe the artefact a framework app build produced.
+///
+/// Flutter writes `build/`, and a web target nests `build/web/`; other targets
+/// keep their output under `build/` too. The runner picks whichever exists so a
+/// missing directory is a no-op rather than a failure.
+/// Mô tả artefact mà build app framework tạo. Flutter ghi `build/`, target web
+/// lồng `build/web/`; target khác cũng ở dưới `build/`. Runner chọn cái tồn tại
+/// nên thư mục thiếu là no-op, không phải lỗi.
+fn post_build_app(root: &Path) -> Result<()> {
+    for candidate in ["build/web", "build"] {
+        let dir = root.join(candidate);
+        if dir.is_dir() {
+            return crate::commands::build::post_build::run_for_core(root, "app", &dir, false);
+        }
+    }
     Ok(())
 }
