@@ -5,3 +5,4 @@
 mod implementation;
 pub use implementation::test;
 pub(crate) use implementation::test_at;
+pub(crate) use implementation::test_runtime_for_project;

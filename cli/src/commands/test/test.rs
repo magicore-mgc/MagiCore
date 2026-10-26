@@ -118,6 +118,22 @@ pub(crate) async fn test_at(
             crate::commands::optimizer::env_loader::load_optimizer_env(project_root, &runtime)?;
         let env: Vec<(String, String)> = optimizer_envs.into_iter().collect();
         let mut env = env;
+        // Tests are where the machine is worked hardest — the whole suite runs
+        // at once — so the optimizer's thread-pool and memory settings belong
+        // here at least as much as in a build. Without them `mgc test` ran on
+        // whatever the shell happened to export.
+        // Test là lúc máy bị ép nặng nhất — cả bộ chạy cùng lúc — nên cấu hình
+        // thread-pool và bộ nhớ của optimizer thuộc về đây ít nhất bằng lúc
+        // build. Thiếu chúng, `mgc test` chạy theo thứ shell tình cờ export.
+        let test_runtime = crate::commands::test::test_runtime_for_project(project_root);
+        if let Ok(optimizer_envs) =
+            crate::commands::optimizer::env_loader::load_optimizer_env(project_root, &test_runtime)
+        {
+            for (key, value) in optimizer_envs {
+                env.retain(|(existing, _)| existing != &key);
+                env.push((key, value));
+            }
+        }
         if runner == "go" {
             env.push(("GOPROXY".to_string(), "off".to_string()));
             env.push(("GOSUMDB".to_string(), "off".to_string()));
@@ -364,3 +380,26 @@ fn resolve_package_json_script(path: &Path, script: &str) -> Result<Option<Strin
 #[cfg(test)]
 #[path = "test_runner.rs"]
 mod tests;
+
+/// The runtime a project's tests run under, for optimizer lookups.
+/// Runtime mà test của project chạy dưới, dùng cho tra cứu optimizer.
+pub(crate) fn test_runtime_for_project(
+    project_root: &Path,
+) -> crate::commands::optimizer::runtime_detect::DetectedRuntime {
+    use crate::commands::optimizer::runtime_detect::DetectedRuntime;
+    if project_root.join("Cargo.toml").is_file() {
+        DetectedRuntime::RustLib
+    } else if project_root.join("go.mod").is_file() {
+        DetectedRuntime::GoLib
+    } else if project_root.join("pyproject.toml").is_file() {
+        DetectedRuntime::PythonLib
+    } else if project_root.join("pubspec.yaml").is_file() {
+        DetectedRuntime::Flutter
+    } else if project_root.join("package.json").is_file() {
+        DetectedRuntime::NodeJs {
+            package_manager: crate::commands::optimizer::runtime_detect::PackageManager::Npm,
+        }
+    } else {
+        DetectedRuntime::Unknown
+    }
+}
