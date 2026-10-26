@@ -165,10 +165,10 @@ SHELL_DEPENDENCY_COMMAND_REVIEWS = {
         "abe607fc46bad7a650f07ffacb5bbe020e5ec8dc90676049574c49dff1b81715",
     },
     'benchmark/scripts/run_benchmark.sh': {
-        "8a58d7f2235ca1cddb66667555ccc1fa7f1d5bfadc3c4fe9e40735a7f24af542",
-        "2dd889b391bd7760a9150d2bc7f45ca5416ac318ddd389627f99e2232183528a",
-        "9df0d55af68a92788722ec0afc412533f05d44f89b31bc26e4e7739e3c6512c2",
-        "67ef6755e580ae6f152bc677d3e5a9626766a33a1e88845126144470fddd3bca",
+        "6a0d5c6f3c5dce334291d9fcb2373dfc18390f71d286882fee4364338959333d",
+        "bdcd17b7382024d566c04ec2c1e955d46cd54a93ea5bd65ce398c20f2e11816c",
+        "d546a1a9b51d39b05b8cd7c7a6f54a3f2fcf49c9372526e01343f4fa5d9c4f76",
+        "f7062c9168c40738bc1e9c79eea920dd5942f9648c06634f9504b2865b1b5a1e",
     },
     'benchmark/scripts/run_benchmark_native.sh': {
         "c8c1e5a5cb4ea084107ee7c994621b9bdc13f2d4461296d54b32da76003439b8",
