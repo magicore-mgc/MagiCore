@@ -19,6 +19,26 @@ pub(in crate::commands::core::web::implementation) fn run_dev_launch_with_guard(
         prepend_path(&local_bin)?.to_string_lossy().to_string(),
     )];
     env.extend(native_runtime_env(&target.dir, &launch.program)?);
+    // A framework dev server is a Node process, so the optimizer's Node
+    // settings (heap, thread pool) apply here exactly as they do to a build.
+    // Dev server của framework là process Node, nên cấu hình Node của optimizer
+    // (heap, thread pool) áp ở đây đúng như khi build.
+    {
+        let mut tokens: Vec<&str> = vec![launch.program.to_str().unwrap_or("")];
+        tokens.extend(launch.args.iter().filter_map(|arg| arg.to_str()));
+        let runtime =
+            crate::commands::core::web::implementation::dev::runtime_policy::detect_runtime_from_tokens(
+                &tokens,
+            );
+        if !matches!(
+            runtime,
+            crate::commands::optimizer::runtime_detect::DetectedRuntime::Unknown
+        ) && let Ok(envs) =
+            crate::commands::optimizer::env_loader::load_optimizer_env(&target.dir, &runtime)
+        {
+            env.extend(envs);
+        }
+    }
     env.extend(launch.envs.iter().map(|(key, value)| {
         (
             key.to_string_lossy().to_string(),

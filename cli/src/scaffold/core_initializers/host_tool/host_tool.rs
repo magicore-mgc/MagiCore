@@ -37,6 +37,12 @@ pub(crate) fn run(record: &CoreInitializer, destination: &Path) -> Result<()> {
         .collect();
     args.push(destination.to_string_lossy().into_owned());
     args.extend(record.args_after.iter().map(|a| (*a).to_string()));
+    if let Some(board) = record.board {
+        // The project's own choice wins; the catalog value is only a default.
+        // Lựa chọn của project thắng; giá trị trong catalog chỉ là mặc định.
+        args.push(board.flag.to_string());
+        args.push(project_board(destination).unwrap_or_else(|| board.default.to_string()));
+    }
     let output = mgc_exec::prelude::run(record.program, &args, &host_options(Some(destination)))?;
     if output.exit_code != 0 {
         let detail = output
@@ -77,6 +83,23 @@ fn host_options(cwd: Option<&Path>) -> mgc_exec::prelude::ExecOptions {
         execution_scope: Some(mgc_exec::allowlist::ExecutionScope::FrameworkInitializer),
         ..Default::default()
     }
+}
+
+/// Board or target the project records in `mgc.toml`, if any.
+/// Board hoặc target project ghi trong `mgc.toml`, nếu có.
+fn project_board(root: &Path) -> Option<String> {
+    let raw = std::fs::read_to_string(root.join("mgc.toml")).ok()?;
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if let Some(value) = trimmed.strip_prefix("board") {
+            let value = value.trim_start().strip_prefix('=')?.trim();
+            let value = value.trim_matches('"');
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]

@@ -28,6 +28,7 @@ fn a_record_carries_its_ecosystem_and_framework() {
         probe: &["--version"],
         install_hint: "https://godotengine.org/download",
         marker: "project.godot",
+        board: None,
     };
     assert_eq!(record.ecosystem, "game");
     assert_eq!(record.framework, "godot");

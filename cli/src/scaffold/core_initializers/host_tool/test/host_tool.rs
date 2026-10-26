@@ -14,6 +14,7 @@ fn record(program: &'static str, marker: &'static str) -> CoreInitializer {
         probe: &["--version"],
         install_hint: "install it",
         marker,
+        board: None,
     }
 }
 

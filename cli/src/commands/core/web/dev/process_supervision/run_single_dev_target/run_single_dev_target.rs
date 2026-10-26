@@ -56,6 +56,24 @@ pub(in crate::commands::core::web::implementation) async fn run_single_dev_targe
                 .unwrap_or_else(|| "localhost".to_string()),
             port: target.port.unwrap_or(4315),
         };
+        // Show the compiler settings the dev server will actually use. A dev
+        // server that ran on defaults while `mgc build` used the optimizer
+        // profile would preview a different program than it ships.
+        // Hiện cấu hình compiler mà dev server thật sự dùng. Dev server chạy
+        // mặc định trong khi `mgc build` dùng profile optimizer sẽ xem trước
+        // một chương trình khác với bản sẽ phát hành.
+        match crate::commands::core::web::implementation::dev::dev_optimizer::load(&target.dir) {
+            Ok(profile) => {
+                if let Some(note) = &profile.profile_note {
+                    info(&format!("Dev compiler: {} ({note})", profile.target));
+                }
+            }
+            Err(error) => {
+                mgc_ui::warning(&format!(
+                    "optimizer profile unreadable, dev uses compiler defaults: {error}"
+                ));
+            }
+        }
         mgc_exec::prelude::ensure_signal_handlers()?;
         let server = crate::bundler::dev_server::MgDevServer::new(config);
         let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));

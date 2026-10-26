@@ -41,6 +41,34 @@ pub(crate) struct CoreInitializer {
     /// Marker file proving the tool really produced this framework's project.
     /// File marker chứng minh tool thật sự sinh đúng project của framework.
     pub(crate) marker: &'static str,
+    /// Where the tool takes a platform board or target that varies per project.
+    ///
+    /// A board baked into the catalog would be a version pinned in source: it
+    /// goes stale, and it forces every project onto one piece of hardware. The
+    /// caller supplies the value instead, and `None` means the framework has no
+    /// such choice.
+    /// Nơi tool nhận board hoặc target thay đổi theo project. Board ghi cứng
+    /// trong catalog là một version ghim vào source: nó lỗi thời và ép mọi
+    /// project dùng một phần cứng. Caller cung cấp giá trị thay thế, và `None`
+    /// nghĩa là framework không có lựa chọn đó.
+    pub(crate) board: Option<BoardFlag>,
+}
+
+/// How a board or target flag is passed to the tool.
+/// Cách cờ board hoặc target được truyền cho tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BoardFlag {
+    /// Flag the tool expects, e.g. `--board`.
+    /// Cờ tool mong đợi, ví dụ `--board`.
+    pub(crate) flag: &'static str,
+    /// Value used when the project does not choose one.
+    ///
+    /// A default belongs here rather than in the argument list: it documents
+    /// that the value is a default, not a fixed truth.
+    /// Giá trị dùng khi project không chọn. Mặc định thuộc chỗ này thay vì
+    /// trong danh sách tham số: nó ghi rõ đây là mặc định, không phải sự thật
+    /// cố định.
+    pub(crate) default: &'static str,
 }
 
 #[cfg(test)]

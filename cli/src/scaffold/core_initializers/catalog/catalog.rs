@@ -8,7 +8,7 @@
 //! file; nó chạy chương trình và kiểm marker đã xuất hiện, nên một chương trình
 //! chạy mà không làm gì không thể trông giống thành công.
 
-use super::super::types::CoreInitializer;
+use super::super::types::{BoardFlag, CoreInitializer};
 
 pub(crate) const RECORDS: &[CoreInitializer] = &[
     CoreInitializer {
@@ -24,16 +24,21 @@ pub(crate) const RECORDS: &[CoreInitializer] = &[
         probe: &["--version"],
         install_hint: "https://godotengine.org/download",
         marker: "project.godot",
+        board: None,
     },
     CoreInitializer {
         ecosystem: "iot",
         framework: "platformio",
         program: "pio",
         args_before: &["project", "init", "--project-dir"],
-        args_after: &["--board", "esp32dev"],
+        args_after: &[],
         probe: &["--version"],
         install_hint: "pip install platformio",
         marker: "platformio.ini",
+        board: Some(BoardFlag {
+            flag: "--board",
+            default: "esp32dev",
+        }),
     },
     CoreInitializer {
         ecosystem: "iot",
@@ -44,6 +49,7 @@ pub(crate) const RECORDS: &[CoreInitializer] = &[
         probe: &["--version"],
         install_hint: "pip install west",
         marker: "west.yml",
+        board: None,
     },
     CoreInitializer {
         ecosystem: "clo",
@@ -54,6 +60,7 @@ pub(crate) const RECORDS: &[CoreInitializer] = &[
         probe: &["version"],
         install_hint: "https://developer.hashicorp.com/terraform/downloads",
         marker: ".terraform",
+        board: None,
     },
     CoreInitializer {
         ecosystem: "clo",
@@ -64,6 +71,7 @@ pub(crate) const RECORDS: &[CoreInitializer] = &[
         probe: &["--version"],
         install_hint: "npm install -g aws-cdk",
         marker: "cdk.json",
+        board: None,
     },
     CoreInitializer {
         ecosystem: "clo",
@@ -74,6 +82,7 @@ pub(crate) const RECORDS: &[CoreInitializer] = &[
         probe: &["version"],
         install_hint: "https://www.pulumi.com/docs/install/",
         marker: "Pulumi.yaml",
+        board: None,
     },
 ];
 

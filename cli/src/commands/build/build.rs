@@ -35,6 +35,8 @@ mod shared;
 #[path = "build/web_go_backend/mod.rs"]
 mod web_go_backend;
 
+#[path = "post_build/mod.rs"]
+pub(crate) mod post_build;
 #[path = "web_engine/mod.rs"]
 mod web_engine;
 

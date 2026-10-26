@@ -3,6 +3,7 @@
 use super::*;
 
 mod dev;
+mod dev_optimizer;
 mod endpoint_args;
 mod native_launch;
 mod package_launch;
@@ -14,6 +15,7 @@ mod types;
 use local_binary::prepend_path;
 
 pub use dev::dev_at_root;
+
 pub(in crate::commands::core::web::implementation) use endpoint_args::append_dev_endpoint_args;
 #[cfg(test)]
 pub(in crate::commands::core::web::implementation) use native_launch::cargo_run_args_from_managed_source;

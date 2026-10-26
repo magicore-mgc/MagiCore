@@ -45,6 +45,20 @@ impl Bundler {
             ];
         }
         builder.format = esbuild_rs::Format::ESModule;
+        // React, Vue and Svelte all read `process.env.NODE_ENV` to choose
+        // between their development and production builds. Without this define
+        // esbuild cannot fold the branch, so the development build — with its
+        // warnings, prop checks and long messages — lands in the bundle. That
+        // is most of the reason a raw esbuild bundle was four times the size of
+        // a framework build.
+        // React, Vue và Svelte đều đọc `process.env.NODE_ENV` để chọn bản dev
+        // hay production. Thiếu define này esbuild không gấp được nhánh, nên bản
+        // dev — kèm cảnh báo, kiểm prop và thông điệp dài — lọt vào bundle. Đó
+        // là phần lớn lý do bundle esbuild thô lớn gấp bốn lần bản framework.
+        builder.define.insert(
+            "process.env.NODE_ENV".to_string(),
+            "\"production\"".to_string(),
+        );
         builder.resolve_extensions = vec![
             ".tsx".to_string(),
             ".ts".to_string(),

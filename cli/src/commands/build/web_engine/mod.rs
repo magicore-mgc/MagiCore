@@ -3,6 +3,8 @@
 
 #[path = "backend_detect/mod.rs"]
 mod backend_detect;
+#[path = "engine_choice/mod.rs"]
+mod engine_choice;
 mod entry_point;
 #[path = "framework_script/mod.rs"]
 mod framework_script;
@@ -23,6 +25,9 @@ mod target;
 mod tool_execution;
 
 pub(crate) use backend_detect::is_backend_project;
+pub(crate) use engine_choice::{
+    Engine as BuildEngine, Preference as EnginePreference, choose as choose_engine,
+};
 pub(crate) use entry_point::find_entry_point;
 pub(crate) use framework_script::run_framework_build_if_supported;
 #[cfg(test)]
