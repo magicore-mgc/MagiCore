@@ -48,20 +48,54 @@ pub(in crate::install::run_install) fn prepare(
             .map(|package| package.id.clone())
             .collect()
     };
+    // A package counts as present in the virtual store only when its marker
+    // still matches the recorded content signature.
+    //
+    // Version equality alone is not enough: the no-op path already refuses a
+    // tree whose bytes changed, so trusting the version here made the two paths
+    // disagree — the no-op said "not intact", the plan said "already there",
+    // `fetch_graph` came out empty, and nothing repaired the package. A tampered
+    // file survived every later install.
+    // Package chỉ được coi là có trong virtual store khi marker còn khớp chữ ký
+    // nội dung đã ghi.
+    //
+    // Chỉ bằng version là chưa đủ: đường no-op đã từ chối cây có byte đổi, nên
+    // tin version ở đây làm hai đường mâu thuẫn — no-op nói "không nguyên vẹn",
+    // plan nói "đã có", `fetch_graph` rỗng, và không gì sửa package. File bị sửa
+    // sống qua mọi lần install sau.
+    let vstore_intact = |package: &mgc_types::adapter::ResolvedPackage| {
+        let dir = crate::install::materialize::strict_vstore_package_dir(
+            &state.node_modules,
+            &package.id,
+        );
+        if !crate::lockfile::installed_package_matches(&dir, &package.id) {
+            return false;
+        }
+        match crate::install::package_marker::read_extracted_package_marker(&dir) {
+            // MagiCore always writes a marker into the virtual store it
+            // produced, so a store it made is checked byte for byte.
+            // MagiCore luôn ghi marker vào virtual store nó tạo, nên store do nó
+            // tạo được kiểm từng byte.
+            Ok(Some(marker)) => {
+                crate::install::package_marker::extracted_content_matches(&dir, &marker)
+                    .unwrap_or(false)
+            }
+            // No marker: the tree was laid down by another installer, and the
+            // version contract is all there is to check. Reinstalling on sight
+            // would refuse to work in a directory another tool owns.
+            // Không có marker: cây do installer khác dựng, chỉ có hợp đồng
+            // version để kiểm. Cài lại ngay sẽ từ chối làm việc trong thư mục do
+            // tool khác sở hữu.
+            _ => true,
+        }
+    };
     state.already_in_virtual_store = if state.opts.incremental {
         state
             .graph
             .packages
             .par_iter()
             .filter(|package| {
-                !state.opts.force_install.contains(&package.id)
-                    && crate::lockfile::installed_package_matches(
-                        &crate::install::materialize::strict_vstore_package_dir(
-                            &state.node_modules,
-                            &package.id,
-                        ),
-                        &package.id,
-                    )
+                !state.opts.force_install.contains(&package.id) && vstore_intact(package)
             })
             .map(|package| package.id.clone())
             .collect()
