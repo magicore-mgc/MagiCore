@@ -9,6 +9,10 @@ pub async fn install(
     compat_runtime: Option<String>,
 ) -> Result<()> {
     let root = super::super::shared::core_project_root("game")?;
+    // One mutation at a time per project.
+    // Mỗi lúc một mutation cho mỗi project.
+    let _install_guard =
+        crate::commands::core::shared::project_install_guard::acquire(&root, "game")?;
     let engine = mgc_game_adapter::adapter_for(&root).map(|adapter| adapter.engine());
 
     if engine == Some("bevy") && root.join("Cargo.toml").is_file() {

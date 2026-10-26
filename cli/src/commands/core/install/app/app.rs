@@ -67,6 +67,10 @@ pub async fn install(
     offline: bool,
 ) -> Result<()> {
     let root = project_root()?;
+    // One mutation at a time per project.
+    // Mỗi lúc một mutation cho mỗi project.
+    let _install_guard =
+        crate::commands::core::shared::project_install_guard::acquire(&root, "app")?;
     let lang = language(&root)?;
 
     if matches!(

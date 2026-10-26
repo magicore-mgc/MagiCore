@@ -16,6 +16,12 @@ pub async fn install(
     offline: bool,
 ) -> Result<()> {
     let root = project_root()?;
+    // One mutation at a time per project: two concurrent installs would race
+    // on the lockfile this run is about to write.
+    // Mỗi lúc một mutation cho mỗi project: hai lần cài song song sẽ tranh
+    // lockfile mà lần chạy này sắp ghi.
+    let _install_guard =
+        crate::commands::core::shared::project_install_guard::acquire(&root, "lib")?;
     // P0 install/add split: `install-lib` NEVER adds packages — it replays
     // the existing graph/lock through the native pipeline. Package args
     // previously flowed into `adapter.add()` under the Install gate, so the

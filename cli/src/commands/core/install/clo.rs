@@ -14,6 +14,10 @@ pub async fn install(
     // All cloud dependency lifecycle operations pass the same owner gate;
     // only CDK/Pulumi with package.json use the embedded MGC JS engine.
     let root = shared::core_project_root("clo")?;
+    // One mutation at a time per project.
+    // Mỗi lúc một mutation cho mỗi project.
+    let _install_guard =
+        crate::commands::core::shared::project_install_guard::acquire(&root, "clo")?;
     let cloud_kind = clo_tools::cloud_type(&root)?;
     crate::commands::dep_gate::gate_cloud_project(
         &root,

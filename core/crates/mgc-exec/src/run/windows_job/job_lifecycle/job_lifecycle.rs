@@ -31,6 +31,13 @@ impl ProcessTreeGuard {
             SetInformationJobObject,
         };
 
+        // SAFETY: both arguments are documented as optional; passing null asks
+        // the kernel for an unnamed job with default security. The returned
+        // handle is checked for null before use and owned by `WindowsOwnedHandle`,
+        // so it is closed exactly once.
+        // AN TOÀN: cả hai tham số đều là tuỳ chọn theo tài liệu; truyền null để
+        // kernel tạo job không tên với security mặc định. Handle trả về được kiểm
+        // null trước khi dùng và thuộc `WindowsOwnedHandle`, nên đóng đúng một lần.
         let handle = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
         if handle.is_null() {
             return Err(WindowsJobError::native_api(
@@ -43,6 +50,11 @@ impl ProcessTreeGuard {
         };
         let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
         limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        // SAFETY: `guard.job` is a live job handle owned by `guard`; `limits`
+        // outlives the call and its declared size matches the information-class
+        // constant passed alongside it.
+        // AN TOÀN: `guard.job` là handle job còn sống do `guard` sở hữu; `limits`
+        // sống lâu hơn lời gọi và kích thước khai báo khớp info-class truyền kèm.
         let configured = unsafe {
             SetInformationJobObject(
                 guard.job.as_raw(),

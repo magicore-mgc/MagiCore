@@ -56,6 +56,10 @@ fn expand_windows_short_path(path: &Path) -> Result<PathBuf, FlutterProjectUriEr
     let mut buffer = vec![0_u16; required as usize];
     // The buffer has `required` writable UTF-16 slots from the size query above.
     // Buffer có `required` ô UTF-16 có thể ghi, lấy từ truy vấn kích thước ở trên.
+    // SAFETY: `encoded` is NUL-terminated and unchanged since the size query;
+    // `buffer` has exactly `required` writable UTF-16 slots as returned above.
+    // AN TOÀN: `encoded` có NUL kết thúc và không đổi từ lúc truy vấn kích thước;
+    // `buffer` có đúng `required` ô UTF-16 ghi được như trả về ở trên.
     let written = unsafe { GetLongPathNameW(encoded.as_ptr(), buffer.as_mut_ptr(), required) };
     if written == 0 || written >= required {
         return Err(FlutterProjectUriError::ReadExpandedWindowsPath(

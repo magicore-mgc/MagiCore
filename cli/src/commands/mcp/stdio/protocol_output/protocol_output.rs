@@ -81,14 +81,30 @@ impl McpProtocolOutput {
         {
             use std::os::windows::io::FromRawHandle;
 
+            // SAFETY: reading a standard handle takes no arguments and the
+            // result is checked for null before any use.
+            // AN TOÀN: đọc handle chuẩn không nhận tham số và kết quả được kiểm
+            // null trước mọi lần dùng.
             let original_stdout = unsafe { GetStdHandle(WIN_STD_OUTPUT_HANDLE) };
+            // SAFETY: same as above; the handle is only compared and passed on.
+            // AN TOÀN: như trên; handle chỉ được so sánh và truyền đi.
             let stderr = unsafe { GetStdHandle(WIN_STD_ERROR_HANDLE) };
             if original_stdout.is_null() || stderr.is_null() {
                 return Err(io::Error::last_os_error())
                     .context("MCP stdio handles are unavailable");
             }
+            // SAFETY: returns a pseudo-handle for the current process; it must
+            // not be closed, and nothing here closes it.
+            // AN TOÀN: trả về pseudo-handle của process hiện tại; không được đóng,
+            // và không chỗ nào ở đây đóng nó.
             let current_process = unsafe { GetCurrentProcess() };
             let mut protocol_handle = std::ptr::null_mut();
+            // SAFETY: both handles come from the calls above and are alive for
+            // this scope; `protocol_handle` is a valid out-parameter for the
+            // duplicated handle, which is owned from here on.
+            // AN TOÀN: cả hai handle đến từ các lời gọi trên và còn sống trong
+            // scope này; `protocol_handle` là out-param hợp lệ nhận handle nhân
+            // bản, handle đó thuộc sở hữu từ đây.
             if unsafe {
                 DuplicateHandle(
                     current_process,
@@ -103,11 +119,23 @@ impl McpProtocolOutput {
             {
                 return Err(io::Error::last_os_error()).context("cannot preserve MCP stdout");
             }
+            // SAFETY: `stderr` is a handle obtained above and is not owned by
+            // this code, so redirecting the slot does not transfer ownership.
+            // AN TOÀN: `stderr` là handle lấy ở trên và không thuộc sở hữu của
+            // đoạn này, nên đổi chỗ handle không chuyển quyền sở hữu.
             if unsafe { SetStdHandle(WIN_STD_OUTPUT_HANDLE, stderr) } == 0 {
                 let error = io::Error::last_os_error();
+                // SAFETY: the duplication above succeeded, so this handle was
+                // created here and is closed exactly once on the error path.
+                // AN TOÀN: bước nhân bản ở trên thành công, nên handle này được
+                // tạo ở đây và đóng đúng một lần trên nhánh lỗi.
                 unsafe { CloseHandle(protocol_handle) };
                 return Err(error).context("cannot redirect CLI output to stderr");
             }
+            // SAFETY: ownership of the successfully duplicated handle moves into
+            // `File`, which closes it on drop; nothing else closes it.
+            // AN TOÀN: quyền sở hữu handle đã nhân bản thành công chuyển vào
+            // `File`, đóng khi drop; không chỗ nào khác đóng nó.
             let protocol = unsafe { File::from_raw_handle(protocol_handle) };
             Ok(Self {
                 protocol,

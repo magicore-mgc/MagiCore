@@ -15,6 +15,10 @@ pub async fn install(
     compat_runtime: Option<String>,
 ) -> Result<()> {
     let root = project_root()?;
+    // One mutation at a time per project.
+    // Mỗi lúc một mutation cho mỗi project.
+    let _install_guard =
+        crate::commands::core::shared::project_install_guard::acquire(&root, "iot")?;
     let compat = crate::commands::dep_gate::from_dep_flag(compat_runtime.as_deref())?;
     // Full gate context (P0#2): the detected framework id IS the iot
     // ecosystem (no separate language layer) plus the board target.

@@ -19,6 +19,10 @@ fn project_root() -> Result<PathBuf> {
 
 pub async fn install(packages: Vec<String>, compat_runtime: Option<String>) -> Result<()> {
     let root = project_root()?;
+    // One mutation at a time per project.
+    // Mỗi lúc một mutation cho mỗi project.
+    let _install_guard =
+        crate::commands::core::shared::project_install_guard::acquire(&root, "hardware")?;
     install_at(&root, packages, compat_runtime).await
 }
 

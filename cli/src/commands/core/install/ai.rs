@@ -12,6 +12,12 @@ pub async fn install(
     offline: bool,
 ) -> Result<()> {
     let root = shared::ai_project_root()?;
+    // One mutation at a time per project: two concurrent installs would race
+    // on the lockfile this run is about to write.
+    // Mỗi lúc một mutation cho mỗi project: hai lần cài song song sẽ tranh
+    // lockfile mà lần chạy này sắp ghi.
+    let _install_guard =
+        crate::commands::core::shared::project_install_guard::acquire(&root, "ai")?;
     shared::require_native_ai_python(&root, "install")?;
     if !packages.is_empty() {
         return Err(crate::error::native_dependency_engine_unavailable(
