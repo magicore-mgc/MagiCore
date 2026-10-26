@@ -58,6 +58,27 @@ impl ContentStore {
         // Kiểm tra thư mục cha của đích có symlink không (dest chưa tồn tại).
         check_symlink_ancestors(parent)?;
 
+        // Verify before serving. A blob whose bytes changed under its address
+        // would otherwise be copied out as if correct; quarantine it so a later
+        // fetch replaces it instead.
+        // Verify trước khi phục vụ. Blob có byte đổi dưới địa chỉ của nó nếu
+        // không sẽ được copy ra như đúng; cách ly nó để lần tải sau thay thế.
+        match crate::cas::store::verify_or_quarantine(&self.root, hash)? {
+            crate::cas::store::BlobState::Intact => {}
+            crate::cas::store::BlobState::Missing => {
+                return Err(StoreError::Io {
+                    path: hash.cas_path(&self.root),
+                    msg: "blob is not in the store; re-fetch it before exporting".to_string(),
+                });
+            }
+            crate::cas::store::BlobState::Quarantined { moved_to } => {
+                return Err(StoreError::Io {
+                    path: moved_to,
+                    msg: "store blob was corrupt and has been quarantined; re-fetch it".to_string(),
+                });
+            }
+        }
+
         let src = hash.cas_path(&self.root);
         let source =
             open_cas_blob_source(&src, hash).map_err(|error| error.into_store_error(&src))?;
