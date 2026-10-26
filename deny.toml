@@ -3,6 +3,16 @@ ignore = [
     "RUSTSEC-2025-0141",
     "RUSTSEC-2025-0119",
     "RUSTSEC-2024-0436",
+    # RUSTSEC-2024-0449: unsafe-libyaml is unmaintained. There is no patched
+    # release and no advisory beyond maintenance status; serde_yaml_ng is the
+    # maintained wrapper and the only YAML parser still accepting the 1.1
+    # documents MagiCore's config files use. Ignored deliberately, and removed
+    # as soon as a maintained backend exists.
+    # RUSTSEC-2024-0449: unsafe-libyaml không còn được bảo trì. Không có bản vá
+    # và không có advisory nào ngoài trạng thái bảo trì; serde_yaml_ng là wrapper
+    # còn bảo trì và là parser YAML duy nhất còn nhận tài liệu 1.1 mà file cấu
+    # hình MagiCore dùng. Bỏ qua có chủ đích, gỡ ngay khi có backend còn bảo trì.
+    "RUSTSEC-2024-0449",
     # RUSTSEC-2026-0002 (lru IterMut unsoundness) is NOT listed: lru 0.18.5 is
     # already past the patched 0.16.3 boundary, and magiCore only calls
     # `get`/`pop`, never `IterMut`. Listing it would hide a future regression.
@@ -29,9 +39,34 @@ skip = [
     { name = "core-foundation" },
     { name = "getrandom" },
     { name = "linux-raw-sys" },
-    { name = "rustix" },
-    { name = "unicode-width", version = "0.1" },
     { name = "cpufeatures" },
+    # ── Version transitions owned by upstream, not by MagiCore ──────────────
+    # MagiCore pins the newest of each pair; the older copy arrives through a
+    # dependency that has not moved yet. Collapsing them would mean pinning
+    # MagiCore backwards. The pairs are listed so the skip is deliberate and a
+    # third copy still fails.
+    # Chuyển phiên bản do upstream quyết định, không phải MagiCore. MagiCore pin
+    # bản mới của mỗi cặp; bản cũ đến qua dependency chưa chuyển. Gộp chúng nghĩa
+    # là pin MagiCore lùi lại. Các cặp được liệt kê để việc bỏ qua có chủ đích và
+    # bản thứ ba vẫn fail.
+    { name = "base64", version = "=0.22.1" },
+    { name = "block-buffer", version = "=0.10.4" },
+    { name = "const-oid", version = "=0.9.6" },
+    { name = "crypto-common", version = "=0.1.6" },
+    { name = "digest", version = "=0.10.7" },
+    { name = "itertools", version = "=0.14.0" },
+    { name = "pem", version = "=3.0.6" },
+    { name = "quick-xml", version = "=0.41.0" },
+    { name = "r-efi", version = "=5.3.0" },
+    { name = "rand", version = "=0.9.5" },
+    { name = "rand_core", version = "=0.9.5" },
+    { name = "sha1", version = "=0.10.7" },
+    { name = "sha2", version = "=0.10.9" },
+    { name = "spin", version = "=0.9.9" },
+    { name = "syn", version = "=2.0.119" },
+    { name = "tower-http", version = "=0.6.11" },
+    { name = "untrusted", version = "=0.7.1" },
+    { name = "windows_i686_gnullvm", version = "=0.52.6" },
 ]
 
 [sources]
@@ -50,4 +85,16 @@ allow = [
     "MPL-2.0",
     "BSD-3-Clause",
     "BSD-2-Clause",
+    # ISC arrives through aws-lc-rs (via jsonwebtoken in mgc-oidc). It is
+    # functionally equivalent to MIT and OSI/FSF approved.
+    # ISC đến qua aws-lc-rs (qua jsonwebtoken trong mgc-oidc). Tương đương MIT,
+    # được OSI/FSF công nhận.
+    "ISC",
+    # CDLA-Permissive-2.0 covers the CA certificate data in webpki-root-certs,
+    # reached through rustls-platform-verifier. It is a data licence, not a
+    # source licence, and the bundle contains no executable code.
+    # CDLA-Permissive-2.0 áp cho dữ liệu chứng chỉ CA trong webpki-root-certs,
+    # đến qua rustls-platform-verifier. Đây là license dữ liệu, không phải
+    # license source, và bundle không chứa code thực thi.
+    "CDLA-Permissive-2.0",
 ]
