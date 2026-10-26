@@ -47,6 +47,10 @@ pub(crate) fn hash_output(output_root: &Path) -> Result<Vec<OutputFile>> {
     Ok(files)
 }
 
+/// File name the SBOM writes itself to.
+/// Tên file SBOM tự ghi vào.
+const SELF_FILE: &str = "sbom.output.cdx.json";
+
 fn collect(root: &Path, dir: &Path, out: &mut Vec<OutputFile>) -> Result<()> {
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
@@ -80,6 +84,14 @@ fn push_file(root: &Path, logical: &Path, real: &Path, out: &mut Vec<OutputFile>
         .unwrap_or(logical)
         .to_string_lossy()
         .replace('\\', "/");
+    // The document cannot contain its own hash: writing the hash changes the
+    // file the hash describes. It is excluded so every listed component is
+    // verifiable.
+    // Tài liệu không thể chứa hash của chính nó: ghi hash sẽ đổi file mà hash mô
+    // tả. Nó bị loại để mọi component được liệt kê đều verify được.
+    if relative == SELF_FILE {
+        return Ok(());
+    }
     out.push(OutputFile {
         path: relative,
         sha256: hex(&Sha256::digest(&bytes)),

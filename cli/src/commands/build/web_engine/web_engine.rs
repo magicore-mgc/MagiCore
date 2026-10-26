@@ -201,8 +201,27 @@ fn run_post_build(root: &Path, name: String, allow_warnings: bool) -> Result<()>
         return Ok(());
     }
 
-    let sbom_path = crate::commands::build::post_build::write_output_sbom(&dist, &name, "1.0.0")?;
-    info(&format!("Output SBOM: {}", sbom_path.display()));
+    // Order matters: the guard changes the bytes of every script, so the SBOM
+    // must be written last. Hashing before injection produced a document that
+    // described files which no longer existed — an artefact nobody could verify
+    // against its own inventory.
+    // Thứ tự quan trọng: guard đổi byte của mọi script, nên SBOM phải ghi sau
+    // cùng. Hash trước khi inject tạo tài liệu mô tả file không còn tồn tại —
+    // artefact không ai verify được với chính bản kiểm kê của nó.
+    //
+    // The guard's own statement needs the SBOM hash, so it is embedded twice:
+    // a first pass with a placeholder keeps the byte length stable, and the
+    // final pass writes the real hash. Without that, writing the hash would
+    // change the files the hash describes.
+    // Phát biểu của guard cần hash SBOM, nên nó được nhúng hai lần: lượt đầu
+    // với placeholder giữ độ dài byte ổn định, lượt cuối ghi hash thật. Thiếu
+    // bước đó, việc ghi hash sẽ đổi chính những file mà hash mô tả.
+    let placeholder = crate::commands::build::post_build::BuildIdentity {
+        name: name.clone(),
+        version: "1.0.0".to_string(),
+        sbom_sha256: "0".repeat(64),
+    };
+    crate::commands::build::post_build::inject_build_identity(&dist, &placeholder)?;
 
     let report = crate::commands::build::post_build::scan_output(&dist)?;
     info(&report.summary());
@@ -212,8 +231,7 @@ fn run_post_build(root: &Path, name: String, allow_warnings: bool) -> Result<()>
         );
     }
 
-    // Embed the build's own identity so a deployed artefact can say what it is.
-    // Nhúng danh tính của chính bản build để artefact đã deploy nói được nó là gì.
+    let sbom_path = crate::commands::build::post_build::write_output_sbom(&dist, &name, "1.0.0")?;
     let sbom_sha = crate::commands::build::post_build::sbom_sha256(&sbom_path)?;
     let touched = crate::commands::build::post_build::inject_build_identity(
         &dist,
@@ -223,7 +241,15 @@ fn run_post_build(root: &Path, name: String, allow_warnings: bool) -> Result<()>
             sbom_sha256: sbom_sha,
         },
     )?;
-    info(&format!("Build identity embedded in {touched} script(s)"));
+    // The second pass changed the bytes the SBOM recorded, so it is regenerated
+    // once more with the final content. This is the document that ships.
+    // Lượt hai đã đổi byte mà SBOM đã ghi, nên nó được sinh lại lần cuối với nội
+    // dung cuối. Đây là tài liệu được phát hành.
+    let sbom_path = crate::commands::build::post_build::write_output_sbom(&dist, &name, "1.0.0")?;
+    info(&format!(
+        "Output SBOM: {} (build identity in {touched} script(s))",
+        sbom_path.display()
+    ));
 
     let keyring = mgc_platform::paths::mgc_data_dir().join("keyring.json");
     match crate::commands::build::post_build::sign_artifact(&sbom_path, &keyring)? {
