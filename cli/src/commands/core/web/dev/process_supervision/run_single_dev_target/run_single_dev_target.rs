@@ -74,6 +74,22 @@ pub(in crate::commands::core::web::implementation) async fn run_single_dev_targe
                 ));
             }
         }
+        // Surface sources a build would refuse while they are still being
+        // edited: the dev server never produces `dist/`, so the build scan
+        // would not see this file until release.
+        // Nêu source mà build sẽ từ chối ngay khi còn đang sửa: dev server không
+        // tạo `dist/`, nên scan build sẽ không thấy file này cho tới lúc phát
+        // hành.
+        match crate::commands::core::web::implementation::dev::scan_dev_sources(&target.dir) {
+            Ok(scan) => {
+                if let Some(summary) = scan.summary() {
+                    mgc_ui::warning(&summary);
+                }
+            }
+            Err(error) => {
+                mgc_ui::warning(&format!("dev source scan failed: {error}"));
+            }
+        }
         mgc_exec::prelude::ensure_signal_handlers()?;
         let server = crate::bundler::dev_server::MgDevServer::new(config);
         let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));

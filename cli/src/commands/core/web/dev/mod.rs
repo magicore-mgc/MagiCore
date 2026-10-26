@@ -4,6 +4,7 @@ use super::*;
 
 mod dev;
 mod dev_optimizer;
+mod dev_scan;
 mod endpoint_args;
 mod native_launch;
 mod package_launch;
@@ -15,6 +16,7 @@ mod types;
 use local_binary::prepend_path;
 
 pub use dev::dev_at_root;
+pub(in crate::commands::core::web::implementation) use dev_scan::scan_sources as scan_dev_sources;
 
 pub(in crate::commands::core::web::implementation) use endpoint_args::append_dev_endpoint_args;
 #[cfg(test)]
