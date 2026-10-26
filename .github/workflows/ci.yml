@@ -40,6 +40,18 @@ jobs:
         run: |
           python3 scripts/audit/emit_coverage_observed.py
           python3 scripts/test/test_coverage_observed.py
+      - name: Measure line coverage
+        # Lane coverage proves which core×framework pairs have tests; this proves
+        # how much of the code those tests execute. The floor fails a change that
+        # drops coverage below the measured baseline.
+        # Coverage lane chứng minh cặp core×framework nào có test; bước này chứng
+        # minh test chạy bao nhiêu phần code. Sàn chặn thay đổi làm tụt dưới
+        # baseline đã đo.
+        run: |
+          cargo install cargo-llvm-cov --locked
+          rustup component add llvm-tools-preview
+          bash scripts/test/coverage.sh > coverage.txt
+          python3 scripts/test/assert_coverage_floor.py coverage.txt 70
       - name: Keep Docker benchmark lifecycle attached to the MGC binary
         run: python3 tests/test_benchmark_container_contract.py
 
