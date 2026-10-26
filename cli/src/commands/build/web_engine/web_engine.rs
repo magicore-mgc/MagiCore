@@ -17,6 +17,8 @@ pub(crate) async fn build_web(
     target: Option<String>,
     compat: &crate::commands::compat::CompatMode,
     compat_runner: Option<&str>,
+    engine_preference: EnginePreference,
+    allow_output_warnings: bool,
 ) -> Result<()> {
     let start_time = Instant::now();
 
@@ -50,7 +52,7 @@ pub(crate) async fn build_web(
     let framework = read_declared_framework(root);
     let has_script = has_framework_build_script(root);
     let (engine, engine_reason) =
-        choose_engine(framework.as_deref(), has_script, EnginePreference::Auto);
+        choose_engine(framework.as_deref(), has_script, engine_preference);
     info(&format!(
         "Engine: {} — {engine_reason}",
         match engine {
@@ -84,7 +86,7 @@ pub(crate) async fn build_web(
             }
         }
 
-        run_post_build(root, project_label(root))?;
+        run_post_build(root, project_label(root), allow_output_warnings)?;
         return Ok(());
     }
 
@@ -135,7 +137,7 @@ pub(crate) async fn build_web(
         }
     }
 
-    run_post_build(root, project_label(root))?;
+    run_post_build(root, project_label(root), allow_output_warnings)?;
     Ok(())
 }
 
@@ -193,7 +195,7 @@ fn project_label(root: &Path) -> String {
 /// output, vì câu hỏi nó trả lời — "chính xác cái gì được phát hành" — giống
 /// nhau ở cả hai. Phát hiện chặn sẽ làm build fail: phát hành byte không ai xét
 /// là kiểu hỏng mà bước này tồn tại để ngăn.
-fn run_post_build(root: &Path, name: String) -> Result<()> {
+fn run_post_build(root: &Path, name: String, allow_warnings: bool) -> Result<()> {
     let dist = root.join("dist");
     if !dist.is_dir() {
         return Ok(());
@@ -204,7 +206,7 @@ fn run_post_build(root: &Path, name: String) -> Result<()> {
 
     let report = crate::commands::build::post_build::scan_output(&dist)?;
     info(&report.summary());
-    if report.has_blocking() {
+    if report.has_blocking() && !allow_warnings {
         anyhow::bail!(
             "build output failed the security scan; fix the findings above or pass --allow-output-warnings to ship anyway"
         );

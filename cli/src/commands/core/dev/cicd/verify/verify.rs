@@ -53,7 +53,7 @@ pub async fn verify() -> Result<()> {
             "test" => super::step_runner::run_test_step(&root, &core).await?,
             "build" => {
                 super::build_step::ensure_build_step_supported(&core)?;
-                crate::commands::build::run(None, None, None, None).await?;
+                crate::commands::build::run(None, None, None, None, None, false).await?;
             }
             // Unreachable (chain validated above) — kept fail-closed anyway.
             // Không thể tới đây (chain đã validate) — vẫn giữ fail-closed.

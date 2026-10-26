@@ -88,6 +88,8 @@ pub enum CommonCommand {
         target: Option<String>,
         compat_runtime: Option<String>,
         compat_runner: Option<String>,
+        engine: Option<String>,
+        allow_output_warnings: bool,
     },
     Flash {
         board: Option<String>,

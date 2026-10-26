@@ -45,7 +45,19 @@ pub async fn dispatch_common(
             target,
             compat_runtime,
             compat_runner,
-        } => super::dev_route::build(core, target, compat_runtime, compat_runner).await,
+            engine,
+            allow_output_warnings,
+        } => {
+            super::dev_route::build(
+                core,
+                target,
+                compat_runtime,
+                compat_runner,
+                engine,
+                allow_output_warnings,
+            )
+            .await
+        }
         CommonCommand::Flash { board, skip_build } => {
             super::dev_route::flash(board, skip_build).await
         }

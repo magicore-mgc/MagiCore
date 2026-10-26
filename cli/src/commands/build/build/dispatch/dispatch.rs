@@ -5,7 +5,10 @@ pub async fn run(
     target: Option<String>,
     compat_runtime: Option<&str>,
     compat_runner: Option<&str>,
+    engine: Option<&str>,
+    allow_output_warnings: bool,
 ) -> Result<()> {
+    let build_engine_preference = crate::commands::build::engine_from_flag(engine)?;
     // Reject legacy rival-runtime flags before project discovery for every core.
     // (Từ chối cờ runtime đối thủ trước khi dò project, áp dụng đồng nhất mọi core.)
     let compat = crate::commands::compat::CompatMode::from_flag(compat_runtime)?;
@@ -70,6 +73,8 @@ pub async fn run(
                 target,
                 &compat,
                 compat_runner.as_deref(),
+                build_engine_preference,
+                allow_output_warnings,
             )
             .await
         }

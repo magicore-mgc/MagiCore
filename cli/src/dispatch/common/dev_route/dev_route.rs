@@ -29,12 +29,16 @@ pub(crate) async fn build(
     target: Option<String>,
     compat_runtime: Option<String>,
     compat_runner: Option<String>,
+    engine: Option<String>,
+    allow_output_warnings: bool,
 ) -> Result<()> {
     commands::build::run(
         core,
         target,
         compat_runtime.as_deref(),
         compat_runner.as_deref(),
+        engine.as_deref(),
+        allow_output_warnings,
     )
     .await
 }

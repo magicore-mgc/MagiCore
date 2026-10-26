@@ -86,15 +86,21 @@ fn maps_build_target_and_compatibility_options() {
         target: Some("browser".to_owned()),
         compat_runtime: Some("deno".to_owned()),
         compat_runner: Some("pnpm".to_owned()),
+        engine: Some("magi".to_owned()),
+        allow_output_warnings: true,
     }) {
         CommonCommand::Build {
             target,
             compat_runtime,
             compat_runner,
+            engine,
+            allow_output_warnings,
         } => {
             assert_eq!(target.as_deref(), Some("browser"));
             assert_eq!(compat_runtime.as_deref(), Some("deno"));
             assert_eq!(compat_runner.as_deref(), Some("pnpm"));
+            assert_eq!(engine.as_deref(), Some("magi"));
+            assert!(allow_output_warnings);
         }
         _ => panic!("build command mapped to a different variant"),
     }

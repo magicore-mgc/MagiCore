@@ -43,10 +43,14 @@ pub(in crate::dispatch) fn engine_to_common(command: EngineCommands) -> Option<C
             target,
             compat_runtime,
             compat_runner,
+            engine,
+            allow_output_warnings,
         } => Some(CommonCommand::Build {
             target,
             compat_runtime,
             compat_runner,
+            engine,
+            allow_output_warnings,
         }),
         EngineCommands::Flash { board, skip_build } => {
             Some(CommonCommand::Flash { board, skip_build })

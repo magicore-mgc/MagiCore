@@ -39,6 +39,7 @@ mod web_go_backend;
 pub(crate) mod post_build;
 #[path = "web_engine/mod.rs"]
 mod web_engine;
+pub(crate) use web_engine::EnginePreference;
 
 pub use dispatch::run;
 pub(crate) use shared::{python_cmd, tool_unavailable};

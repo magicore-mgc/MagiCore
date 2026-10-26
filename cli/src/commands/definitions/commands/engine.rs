@@ -108,6 +108,22 @@ pub enum EngineCommands {
             help = "Delegate execution to a qualified package-manager runner (npm|pnpm|yarn|bun); warned + audit-logged"
         )]
         compat_runner: Option<String>,
+        /// Which engine compiles the project.
+        /// Engine nào biên dịch project.
+        #[arg(
+            long,
+            value_name = "ENGINE",
+            value_parser = ["auto", "magi", "framework"],
+            help = "Engine: auto (by framework capability), magi (in-process bundler), framework (the framework's own program)"
+        )]
+        engine: Option<String>,
+        /// Ship the output even when the scan found a blocking issue.
+        /// Vẫn phát hành output dù scan tìm thấy vấn đề chặn.
+        #[arg(
+            long,
+            help = "Do not fail the build when the output scan reports a blocking finding"
+        )]
+        allow_output_warnings: bool,
     },
     #[command(about = "Flash firmware to a device (IoT esp32)")]
     Flash {
