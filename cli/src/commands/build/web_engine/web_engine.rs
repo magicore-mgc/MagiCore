@@ -97,7 +97,14 @@ pub(crate) async fn build_web(
         entry: entry.clone(),
         output_dir: root.join("dist"),
         minify: true,
-        sourcemap: true,
+        // A source map in a shipped bundle hands an attacker the original
+        // sources and the build machine's paths. It is a debugging aid, so it
+        // follows the debug profile instead of being unconditional: a release
+        // build ships without one.
+        // Source map trong bundle phát hành trao cho kẻ tấn công source gốc và
+        // đường dẫn máy build. Nó là trợ giúp debug, nên đi theo profile debug
+        // thay vì luôn bật: bản release phát hành không có nó.
+        sourcemap: cfg!(debug_assertions),
         target: "es2020".to_string(),
         public_path: "/".to_string(),
         // A project without a browser entry point is a server build.
