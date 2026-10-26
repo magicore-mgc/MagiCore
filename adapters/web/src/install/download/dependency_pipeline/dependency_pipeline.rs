@@ -42,14 +42,28 @@ pub async fn pipeline_download_and_extract(
     std::collections::HashMap<PackageId, std::path::PathBuf>,
     Vec<tokio::task::JoinHandle<()>>,
 )> {
-    let download_sem = Arc::new(tokio::sync::Semaphore::new(download_concurrency_limit()));
+    // Bound task concurrency by the descriptor budget as well as by the network
+    // limit: each download can hold a socket, a part file and, while extracting,
+    // the archive itself. Task count alone does not bound descriptors, and
+    // hitting the kernel limit fails every later open including the one needed
+    // to report the failure.
+    // Chặn concurrency theo ngân sách descriptor lẫn giới hạn mạng: mỗi tải có
+    // thể giữ socket, file part và archive khi giải nén. Số task không chặn được
+    // descriptor, và chạm trần kernel làm mọi lần mở sau đó fail, kể cả lần cần
+    // để báo lỗi.
+    let descriptor_budget = mgc_platform::descriptor_budget();
+    let download_sem = Arc::new(tokio::sync::Semaphore::new(
+        download_concurrency_limit().min(descriptor_budget),
+    ));
     let pipeline_profile = Arc::new(PipelineProfile::from_env());
     let shared_package_cache = shared_cache
         .map(|shared| shared.package_cache())
         .transpose()
         .map_err(|e| MgError::Store(e.to_string()))?;
     let extract_concurrency = extract_concurrency_limit();
-    let extract_sem = Arc::new(tokio::sync::Semaphore::new(extract_concurrency));
+    let extract_sem = Arc::new(tokio::sync::Semaphore::new(
+        extract_concurrency.min(descriptor_budget),
+    ));
     let task_concurrency = pipeline_task_concurrency_limit(extract_concurrency);
     let scheduled_packages: Vec<ResolvedPackage> = graph
         .packages

@@ -9,10 +9,12 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
 pub mod atomic_replace;
+pub mod fd_budget;
 pub mod fs_semaphore;
 pub mod open_regular_file;
 pub mod paths;
 pub mod reflink;
 pub use self::open_regular_file::{OpenRegularFileError, open_regular_file_no_follow};
+pub use fd_budget::{descriptor_budget, global_descriptor_semaphore};
 pub use fs_semaphore::{MAX_CONCURRENT_FS_WRITES, global_fs_write_semaphore};
 pub mod prelude {}
