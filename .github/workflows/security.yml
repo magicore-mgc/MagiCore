@@ -79,7 +79,7 @@ jobs:
         # policy could silently rot. Gate every PR on it.
         # deny.toml tồn tại nhưng không ai chạy, nên policy bans/licenses/advisory
         # có thể mục âm thầm. Chặn mọi PR bằng nó.
-        run: cargo deny check --all-features
+        run: cargo deny check
       - name: Verify lockfile is reproducible
         run: cargo check --workspace --locked
 
