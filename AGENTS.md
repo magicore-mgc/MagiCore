@@ -1,6 +1,7 @@
 # AGENTS.md — MagiCore
 
 - Đọc `RULE.md` trước MỌI task — bắt buộc (DEFINE→PLAN→BUILD→VERIFY→REVIEW→SHIP, hai vòng build/verify/review, naming, song ngữ).
+- **Đọc `AGENT_CONTEXT.md` (local-only, gitignored) trước khi khảo sát code.** Đó là bản đồ codebase: dự án làm gì, luồng scaffold/install/build/dev/test, file nào tra gì, gate bắt buộc, và danh sách điều từng bị hiểu sai. Không đoán cấu trúc khi file đó có câu trả lời.
 - Nguồn chuẩn: RULE.md cho quy tắc; manifests, source và tests hiện tại cho trạng thái triển khai; docs/README.md là mục lục tài liệu. Chỉ spec được user duyệt mới là requirement/design đang hiệu lực.
 - Skeleton folder trong RULE §2 áp dụng tại package root hoặc functional owner có trách nhiệm thật; không tạo cây `src/docs/test` đệ quy/rỗng. Test module Rust có thể nằm tại `src/<module>/test/` theo RULE §5 và contract E28/R21; body test không inline trong production.
 - Báo cáo tiếng Việt; code/design không tự ý vượt phase đã duyệt.

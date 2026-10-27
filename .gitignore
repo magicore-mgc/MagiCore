@@ -125,6 +125,9 @@ MAGICORE_P2_REPORT.md
 OPTIMIZATION_SUMMARY.md
 REPORT.md
 
+# Agent context map — local only, describes the codebase for agents (nội bộ).
+AGENT_CONTEXT.md
+
 # Internal specs, guides and notes
 docs/*
 docs/internal-reports/  # Week reports, audit reports (nội bộ)
