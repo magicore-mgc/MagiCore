@@ -46,6 +46,20 @@ pub async fn run(
 
     super::source::apply(&mut config, source);
 
+    // The language's own `new`/`init` command is the first source. Before this,
+    // `create-lib` only asked for a registry layer that does not exist yet and
+    // then continued with an empty scaffold, so every lib project started blank.
+    // (Lệnh `new`/`init` của chính ngôn ngữ là nguồn đầu tiên. Trước đây
+    // `create-lib` chỉ hỏi registry layer chưa tồn tại rồi tiếp tục với
+    // scaffold rỗng, nên mọi project lib đều bắt đầu trắng.)
+    if config.from_local.is_none()
+        && super::core_initializer::try_run("lib", lang, std::path::Path::new(project_name))?
+    {
+        mgc_ui::success(&format!("Created lib project: {project_name}"));
+        mgc_ui::info("Library project created. Next: `mgc add-lib` or `mgc install`.");
+        return Ok(());
+    }
+
     // Resolve through a verified cache or the configured registry layer.
     // Resolve bằng cache đã xác thực hoặc registry layer được cấu hình.
     let request = parsed_framework

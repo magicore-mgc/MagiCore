@@ -8,11 +8,21 @@ pub(in crate::commands::core::dev::cicd) const MGC_RELEASE_TAG: &str =
 /// mutable `main` branch (P0-E, 2026-09-16 supply-chain gate). Update the
 /// SHA to the last commit that touched `scripts/install/install-from-gh.sh`
 /// whenever MGC_RELEASE_TAG moves.
+///
+/// This value MUST be the commit that actually contains the installer at
+/// `scripts/install/install-from-gh.sh`. An earlier pin named a commit that
+/// predates that file's move, so every generated pipeline fetched a 404 as its
+/// first step — the pin looked immutable and was simply wrong. The test in
+/// `test/installer_pin.rs` now derives the expected values from git, so a stale
+/// pin fails instead of shipping a broken pipeline.
 /// (P0-E: installer trong template CI được tải từ commit SHA BẤT BIẾN —
-/// không bao giờ từ branch `main` mutable. Cập nhật SHA theo commit cuối
-/// chạm `scripts/install/install-from-gh.sh` mỗi khi MGC_RELEASE_TAG dịch chuyển.)
+/// không bao giờ từ branch `main` mutable. Giá trị này PHẢI là commit thực sự
+/// chứa installer tại `scripts/install/install-from-gh.sh`. Pin cũ trỏ commit
+/// trước khi file được di chuyển, nên mọi pipeline sinh ra nhận 404 ngay bước
+/// đầu — pin trông bất biến mà sai. Test `test/installer_pin.rs` nay suy ra giá
+/// trị đúng từ git nên pin cũ sẽ fail thay vì ship pipeline hỏng.)
 pub(in crate::commands::core::dev::cicd) const MGC_INSTALLER_SHA: &str =
-    "80a383763377413c4a50d8de3bd815a0f8f01284";
+    "51acbbb942d48407af82f5282fed0ffd5038516d";
 
 /// Embedded SHA-256 of `scripts/install/install-from-gh.sh` at `MGC_INSTALLER_SHA`.
 /// Contract (P0-E/T0.5):
@@ -22,11 +32,14 @@ pub(in crate::commands::core::dev::cicd) const MGC_INSTALLER_SHA: &str =
 ///   present (mismatch fails the pipeline);
 /// - when set, a checksum mismatch FAILS the pipeline (fail-closed).
 ///
+/// Equal to `sha256(git show <MGC_INSTALLER_SHA>:scripts/install/install-from-gh.sh)`.
+///
 /// (P0-E/T0.5: SHA-256 nhúng của installer tại `MGC_INSTALLER_SHA`. Rỗng →
 /// pipeline in WARNING rõ ràng rồi vẫn chạy; file `.sha256` cạnh installer
-/// được verify khi có (lệch → fail); khi đặt giá trị → lệch checksum FAIL.)
+/// được verify khi có (lệch → fail); khi đặt giá trị → lệch checksum FAIL.
+/// Giá trị bằng `sha256(git show <MGC_INSTALLER_SHA>:scripts/…/install-from-gh.sh)`.)
 pub(in crate::commands::core::dev::cicd) const MGC_INSTALLER_SHA256: &str =
-    "2e722bbebdccad1f00719da21f56963d44ff519d3868538f9abdc2e03a27ef56";
+    "903f620f989e0314007ed8258523c42a39d05c3dfadba8b49bb91603b45bb9db";
 
 /// Render a CI template: release tag + immutable installer pin (P0-E).
 /// Every placeholder substitution lives in ONE helper so a half-rendered

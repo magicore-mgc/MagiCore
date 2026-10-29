@@ -40,6 +40,20 @@ pub async fn run(
     if container.docker && !config.features.iter().any(|feature| feature == "docker") {
         config.features.push("docker".to_string());
     }
+    // The framework's own scaffolder is the first source, exactly as the game,
+    // iot, clo and cicd cores already do. Without it an AI project fell through
+    // to a registry layer that does not exist yet and produced an empty
+    // directory.
+    // (Scaffolder của chính framework là nguồn đầu tiên, giống các core game/
+    // iot/clo/cicd. Thiếu bước này, project AI rơi xuống registry layer chưa có
+    // và chỉ tạo thư mục rỗng.)
+    if config.from_local.is_none()
+        && let Some(framework) = parsed_framework.as_ref().map(|spec| spec.normalized_name.as_str())
+        && super::core_initializer::try_run("ai", framework, std::path::Path::new(project_name))?
+    {
+        mgc_ui::success(&format!("Created ai project: {project_name}"));
+        return Ok(());
+    }
     if let Some(fw) = config.frameworks.first() {
         // Phase 3: Handle typed result, không bỏ qua
         let request = parsed_framework

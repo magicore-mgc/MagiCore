@@ -40,6 +40,17 @@ pub async fn run(
     if container.docker && !config.features.iter().any(|feature| feature == "docker") {
         config.features.push("docker".to_string());
     }
+    // Flutter ships the only app scaffolder that runs unattended; run it before
+    // any registry layer, mirroring the other cores.
+    // (Flutter là scaffolder app duy nhất chạy không cần tương tác; chạy trước
+    // mọi registry layer, giống các core khác.)
+    if config.from_local.is_none()
+        && let Some(framework) = parsed_framework.as_ref().map(|spec| spec.normalized_name.as_str())
+        && super::core_initializer::try_run("app", framework, std::path::Path::new(project_name))?
+    {
+        mgc_ui::success(&format!("Created app project: {project_name}"));
+        return Ok(());
+    }
     if let Some(fw) = config.frameworks.first() {
         // Phase 3: Handle typed result
         let request = parsed_framework

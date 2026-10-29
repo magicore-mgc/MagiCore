@@ -84,6 +84,122 @@ pub(crate) const RECORDS: &[CoreInitializer] = &[
         marker: "Pulumi.yaml",
         board: None,
     },
+    // Library core — every entry runs the language's own `new`/`init` command,
+    // which writes the manifest that command owns (`Cargo.toml`,
+    // `pyproject.toml`, `go.mod`, `pom.xml`, a `.csproj`).
+    // Core library — mỗi entry chạy lệnh `new`/`init` của chính ngôn ngữ, ghi ra
+    // manifest do lệnh đó sở hữu.
+    CoreInitializer {
+        ecosystem: "lib",
+        framework: "rust",
+        program: "cargo",
+        args_before: &["new", "--lib", "--vcs", "none", "--name"],
+        args_after: &[],
+        probe: &["--version"],
+        install_hint: "https://rustup.rs",
+        marker: "Cargo.toml",
+        board: None,
+    },
+    CoreInitializer {
+        ecosystem: "lib",
+        framework: "python",
+        program: "uv",
+        // `uv init --lib` writes `pyproject.toml` plus the package directory;
+        // plain `pip` has no scaffolding command at all.
+        // `uv init --lib` ghi `pyproject.toml` và thư mục package; `pip` không có
+        // lệnh scaffold nào.
+        args_before: &["init", "--lib", "--name"],
+        args_after: &[],
+        probe: &["--version"],
+        install_hint: "https://docs.astral.sh/uv/getting-started/installation/",
+        marker: "pyproject.toml",
+        board: None,
+    },
+    CoreInitializer {
+        ecosystem: "lib",
+        framework: "go",
+        program: "go",
+        // `go mod init` needs a module path, not a directory; the caller supplies
+        // the project name and Go derives the directory from the working copy.
+        // `go mod init` cần module path; caller cấp tên project.
+        args_before: &["mod", "init"],
+        args_after: &[],
+        probe: &["version"],
+        install_hint: "https://go.dev/dl/",
+        marker: "go.mod",
+        board: None,
+    },
+    CoreInitializer {
+        ecosystem: "lib",
+        framework: "java",
+        program: "mvn",
+        args_before: &[
+            "-q",
+            "archetype:generate",
+            "-DartifactId",
+        ],
+        args_after: &[
+            "-DarchetypeGroupId=org.apache.maven.archetypes",
+            "-DarchetypeArtifactId=maven-archetype-quickstart",
+            "-DgroupId=com.example",
+            "-DinteractiveMode=false",
+        ],
+        probe: &["-version"],
+        install_hint: "https://maven.apache.org/install.html",
+        marker: "pom.xml",
+        board: None,
+    },
+    CoreInitializer {
+        ecosystem: "lib",
+        framework: "dotnet",
+        program: "dotnet",
+        args_before: &["new", "classlib", "--name"],
+        args_after: &[],
+        probe: &["--version"],
+        install_hint: "https://dotnet.microsoft.com/download",
+        marker: "obj",
+        board: None,
+    },
+    // AI core — the two frameworks the registry advertises, each with its own
+    // official scaffolder.
+    // Core AI — hai framework registry khai báo, mỗi cái có scaffolder chính thức.
+    CoreInitializer {
+        ecosystem: "ai",
+        framework: "python-agent",
+        program: "uv",
+        args_before: &["init", "--name"],
+        args_after: &[],
+        probe: &["--version"],
+        install_hint: "https://docs.astral.sh/uv/getting-started/installation/",
+        marker: "pyproject.toml",
+        board: None,
+    },
+    CoreInitializer {
+        ecosystem: "ai",
+        framework: "mcp-server",
+        program: "uv",
+        args_before: &["init", "--name"],
+        args_after: &[],
+        probe: &["--version"],
+        install_hint: "https://docs.astral.sh/uv/getting-started/installation/",
+        marker: "pyproject.toml",
+        board: None,
+    },
+    // App core — Flutter is the only app framework with a real scaffolder that
+    // runs unattended. Swift/Kotlin/React Native and the rest stay fail-closed.
+    // Core app — Flutter là framework app duy nhất có scaffolder chạy không cần
+    // tương tác. Swift/Kotlin/React Native… vẫn fail-closed.
+    CoreInitializer {
+        ecosystem: "app",
+        framework: "flutter",
+        program: "flutter",
+        args_before: &["create", "--template=app", "--project-name"],
+        args_after: &[],
+        probe: &["--version"],
+        install_hint: "https://docs.flutter.dev/get-started/install",
+        marker: "pubspec.yaml",
+        board: None,
+    },
 ];
 
 #[cfg(test)]
