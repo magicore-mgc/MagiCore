@@ -54,8 +54,11 @@ pub(crate) fn verify_or_quarantine(
         return Ok(BlobState::Missing);
     }
 
-    let bytes = std::fs::read(&path)?;
-    let recomputed = IntegrityHash::from_bytes(&bytes, hash.is_executable());
+    // SEC-11: stream the digest; a swapped or huge file must not be read fully
+    // into memory before it is quarantined.
+    // (SEC-11: hash theo stream; file bị tráo/quá lớn không được nạp hết vào
+    // RAM trước khi bị cách ly.)
+    let recomputed = IntegrityHash::from_reader(std::fs::File::open(&path)?, hash.is_executable())?;
     if recomputed.as_hex() == hash.as_hex() {
         return Ok(BlobState::Intact);
     }

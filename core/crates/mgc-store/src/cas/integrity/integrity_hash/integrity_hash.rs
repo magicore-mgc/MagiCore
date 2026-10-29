@@ -36,6 +36,29 @@ impl IntegrityHash {
         }
     }
 
+    /// Hash a stream without buffering the whole blob (SEC-11).
+    /// Hash một stream mà không nạp toàn bộ blob vào RAM (SEC-11).
+    ///
+    /// Verification of a large CAS blob used `fs::read`, so a corrupted or
+    /// oversized file could exhaust memory during heal.
+    /// (Verify blob CAS lớn trước đây dùng `fs::read`, nên file hỏng/quá lớn
+    /// có thể làm cạn RAM khi heal.)
+    pub fn from_reader<R: std::io::Read>(mut reader: R, executable: bool) -> std::io::Result<Self> {
+        let mut hasher = Hasher::new();
+        let mut buffer = vec![0u8; 64 * 1024];
+        loop {
+            let read = reader.read(&mut buffer)?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..read]);
+        }
+        Ok(Self {
+            hash: hasher.finalize().to_hex().to_string(),
+            executable,
+        })
+    }
+
     /// Parse a trusted/foreign hash string into a typed digest.
     /// Accepts ONLY lowercase 64-char BLAKE3 hex — anything else (short hash,
     /// Unicode, uppercase, wrong algorithm) is rejected fail-closed instead of
