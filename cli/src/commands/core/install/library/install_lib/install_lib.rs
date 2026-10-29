@@ -112,8 +112,12 @@ fn install_from_path(
     let version = version_of(&source);
 
     let source_for_keg = source.clone();
+    // P-6: install through the keg facade so the binary is also linked onto the
+    // keg bin path; sealing without a link left the artifact unreachable.
+    // (P-6: cài qua facade keg để binary cũng được link vào bin path của keg;
+    // seal mà không link khiến artifact không truy cập được.)
     let outcome =
-        mgc_lib_adapter::install::keg::install_and_activate(store, &name, &version, |staging| {
+        mgc_lib_adapter::install::keg::install_binary(store, &name, &version, &name, |staging| {
             copy_executable(&source_for_keg, staging.join(&name).to_path_buf()).map_err(|error| {
                 mgc_lib_adapter::install::keg::KegError::Io {
                     operation: "copy binary",
@@ -180,10 +184,15 @@ async fn install_from_manifest(
         .to_string();
     let source_for_keg = source.clone();
     let keg_file = entry.name.clone();
-    let outcome = mgc_lib_adapter::install::keg::install_and_activate(
+    // P-6: the manifest lane exposes the same shim as the PATH lane, so a
+    // verified download is runnable without hunting for the keg path.
+    // (P-6: lane manifest phơi cùng shim như lane PATH, nên bản tải đã verify
+    // chạy được mà không phải đi tìm đường dẫn keg.)
+    let outcome = mgc_lib_adapter::install::keg::install_binary(
         store,
         &keg_name,
         &entry.version,
+        &keg_file,
         |dest| {
             copy_executable(&source_for_keg, dest.join(&keg_file).to_path_buf()).map_err(|error| {
                 mgc_lib_adapter::install::keg::KegError::Io {

@@ -91,6 +91,17 @@ impl KegLayout {
 
     /// Keg directory for one library version.
     /// Thư mục keg cho một version của library.
+    /// Directory holding executable shims for keg-installed binaries.
+    /// Thư mục chứa shim executable cho binary cài qua keg.
+    ///
+    /// A path, not a state: callers create it only when they actually install a
+    /// binary, so a package-only install leaves no empty directory behind.
+    /// (Đây là đường dẫn, không phải trạng thái: caller chỉ tạo khi thật sự cài
+    /// binary, nên lần cài package thuần không để lại thư mục rỗng.)
+    pub fn bin_dir(&self) -> PathBuf {
+        self.lib_root().join("bin")
+    }
+
     pub fn keg_dir(&self, name: &str, version: &Version) -> PathBuf {
         self.cellar_root().join(name).join(version.to_string())
     }

@@ -33,6 +33,7 @@ pub use layout::{
     ACTIVE_LINK, CELLAR_DIR, KegLayout, OPT_DIR, PREFIX_DIR, PREFIX_ENTRY_PREFIX,
     validate_library_name, validate_relative, validate_version,
 };
+pub use lib_keg::install_binary;
 pub use lib_keg::{
     KegListing, lib_active, lib_install, lib_rollback, lib_switch, lib_switch_spec, list_kegs,
     split_spec,
