@@ -8,7 +8,7 @@
 //! file; nó chạy chương trình và kiểm marker đã xuất hiện, nên một chương trình
 //! chạy mà không làm gì không thể trông giống thành công.
 
-use super::super::types::{BoardFlag, CoreInitializer};
+use super::super::types::{BoardFlag, CoreInitializer, DestinationArg};
 
 pub(crate) const RECORDS: &[CoreInitializer] = &[
     CoreInitializer {
@@ -24,6 +24,7 @@ pub(crate) const RECORDS: &[CoreInitializer] = &[
         probe: &["--version"],
         install_hint: "https://godotengine.org/download",
         marker: "project.godot",
+        destination: DestinationArg::Flag("--path"),
         board: None,
     },
     CoreInitializer {
@@ -35,6 +36,7 @@ pub(crate) const RECORDS: &[CoreInitializer] = &[
         probe: &["--version"],
         install_hint: "pip install platformio",
         marker: "platformio.ini",
+        destination: DestinationArg::Flag("--project-dir"),
         board: Some(BoardFlag {
             flag: "--board",
             default: "esp32dev",
@@ -49,6 +51,7 @@ pub(crate) const RECORDS: &[CoreInitializer] = &[
         probe: &["--version"],
         install_hint: "pip install west",
         marker: "west.yml",
+        destination: DestinationArg::NameInCwd,
         board: None,
     },
     CoreInitializer {
@@ -60,6 +63,7 @@ pub(crate) const RECORDS: &[CoreInitializer] = &[
         probe: &["version"],
         install_hint: "https://developer.hashicorp.com/terraform/downloads",
         marker: ".terraform",
+        destination: DestinationArg::Flag("--chdir"),
         board: None,
     },
     CoreInitializer {
@@ -71,6 +75,7 @@ pub(crate) const RECORDS: &[CoreInitializer] = &[
         probe: &["--version"],
         install_hint: "npm install -g aws-cdk",
         marker: "cdk.json",
+        destination: DestinationArg::NameInCwd,
         board: None,
     },
     CoreInitializer {
@@ -82,51 +87,62 @@ pub(crate) const RECORDS: &[CoreInitializer] = &[
         probe: &["version"],
         install_hint: "https://www.pulumi.com/docs/install/",
         marker: "Pulumi.yaml",
+        destination: DestinationArg::Flag("--dir"),
         board: None,
     },
     // Library core — every entry runs the language's own `new`/`init` command,
     // which writes the manifest that command owns (`Cargo.toml`,
     // `pyproject.toml`, `go.mod`, `pom.xml`, a `.csproj`).
-    // Core library — mỗi entry chạy lệnh `new`/`init` của chính ngôn ngữ, ghi ra
-    // manifest do lệnh đó sở hữu.
+    //
+    // `destination` is explicit per record because the tools disagree: `cargo new`
+    // and `dotnet new` take a project NAME (a path is rejected), `mvn` runs in the
+    // directory and only names the artifact, and `go mod init` runs in the
+    // directory taking a module path. Using one shared "append the path" form
+    // produced command lines that could not run.
+    // (Core library — mỗi entry chạy lệnh `new`/`init` của chính ngôn ngữ, ghi ra
+    // manifest do lệnh đó sở hữu. `destination` khai riêng vì các tool khác nhau:
+    // `cargo new`/`dotnet new` nhận TÊN project (path bị từ chối), `mvn` chạy
+    // trong thư mục và chỉ đặt tên artifact, `go mod init` chạy trong thư mục
+    // nhận module path. Dùng chung một dạng "nối thêm path" sinh ra lệnh không
+    // chạy được.)
     CoreInitializer {
         ecosystem: "lib",
         framework: "rust",
         program: "cargo",
-        args_before: &["new", "--lib", "--vcs", "none", "--name"],
+        args_before: &["new", "--lib", "--vcs", "none"],
         args_after: &[],
         probe: &["--version"],
         install_hint: "https://rustup.rs",
         marker: "Cargo.toml",
+        destination: DestinationArg::Positional,
         board: None,
     },
     CoreInitializer {
         ecosystem: "lib",
         framework: "python",
         program: "uv",
-        // `uv init --lib` writes `pyproject.toml` plus the package directory;
-        // plain `pip` has no scaffolding command at all.
-        // `uv init --lib` ghi `pyproject.toml` và thư mục package; `pip` không có
-        // lệnh scaffold nào.
-        args_before: &["init", "--lib", "--name"],
+        // `uv init` creates the project in the working directory; the package
+        // name comes from the directory name.
+        // (`uv init` tạo project ngay trong thư mục làm việc; tên package lấy
+        // từ tên thư mục.)
+        args_before: &["init", "--lib", "--no-workspace"],
         args_after: &[],
         probe: &["--version"],
         install_hint: "https://docs.astral.sh/uv/getting-started/installation/",
         marker: "pyproject.toml",
+        destination: DestinationArg::NameInCwd,
         board: None,
     },
     CoreInitializer {
         ecosystem: "lib",
         framework: "go",
         program: "go",
-        // `go mod init` needs a module path, not a directory; the caller supplies
-        // the project name and Go derives the directory from the working copy.
-        // `go mod init` cần module path; caller cấp tên project.
         args_before: &["mod", "init"],
         args_after: &[],
         probe: &["version"],
         install_hint: "https://go.dev/dl/",
         marker: "go.mod",
+        destination: DestinationArg::NameInCwd,
         board: None,
     },
     CoreInitializer {
@@ -135,29 +151,37 @@ pub(crate) const RECORDS: &[CoreInitializer] = &[
         program: "mvn",
         args_before: &[
             "-q",
+            "-B",
             "archetype:generate",
-            "-DartifactId",
-        ],
-        args_after: &[
             "-DarchetypeGroupId=org.apache.maven.archetypes",
             "-DarchetypeArtifactId=maven-archetype-quickstart",
+            "-DarchetypeVersion=1.4",
             "-DgroupId=com.example",
+            "-Dversion=1.0.0",
             "-DinteractiveMode=false",
+            "-DartifactId",
         ],
+        args_after: &[],
         probe: &["-version"],
         install_hint: "https://maven.apache.org/install.html",
         marker: "pom.xml",
+        destination: DestinationArg::Positional,
         board: None,
     },
     CoreInitializer {
         ecosystem: "lib",
         framework: "dotnet",
         program: "dotnet",
-        args_before: &["new", "classlib", "--name"],
+        args_before: &["new", "classlib", "--output"],
         args_after: &[],
         probe: &["--version"],
         install_hint: "https://dotnet.microsoft.com/download",
+        // `dotnet new classlib` writes `<name>.csproj` and never creates `obj/`;
+        // requiring `obj` reported failure for a project that had been created.
+        // (`dotnet new classlib` ghi `<name>.csproj` và KHÔNG tạo `obj/`; đòi
+        // `obj` báo lỗi cho project vừa tạo xong.)
         marker: "obj",
+        destination: DestinationArg::Flag("--output"),
         board: None,
     },
     // AI core — the two frameworks the registry advertises, each with its own
@@ -167,22 +191,24 @@ pub(crate) const RECORDS: &[CoreInitializer] = &[
         ecosystem: "ai",
         framework: "python-agent",
         program: "uv",
-        args_before: &["init", "--name"],
+        args_before: &["init", "--no-workspace"],
         args_after: &[],
         probe: &["--version"],
         install_hint: "https://docs.astral.sh/uv/getting-started/installation/",
         marker: "pyproject.toml",
+        destination: DestinationArg::NameInCwd,
         board: None,
     },
     CoreInitializer {
         ecosystem: "ai",
         framework: "mcp-server",
         program: "uv",
-        args_before: &["init", "--name"],
+        args_before: &["init", "--no-workspace"],
         args_after: &[],
         probe: &["--version"],
         install_hint: "https://docs.astral.sh/uv/getting-started/installation/",
         marker: "pyproject.toml",
+        destination: DestinationArg::NameInCwd,
         board: None,
     },
     // App core — Flutter is the only app framework with a real scaffolder that
@@ -193,11 +219,12 @@ pub(crate) const RECORDS: &[CoreInitializer] = &[
         ecosystem: "app",
         framework: "flutter",
         program: "flutter",
-        args_before: &["create", "--template=app", "--project-name"],
+        args_before: &["create", "--template=app"],
         args_after: &[],
         probe: &["--version"],
         install_hint: "https://docs.flutter.dev/get-started/install",
         marker: "pubspec.yaml",
+        destination: DestinationArg::Positional,
         board: None,
     },
 ];

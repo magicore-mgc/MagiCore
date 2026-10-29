@@ -30,7 +30,20 @@ pub fn cicd_reason(reason: &str) -> Error {
 
 pub fn ci_template_unknown(provider: &str) -> Error {
     anyhow!(
-        "'mgc ci-generate' has no template for provider '{provider}' — supported: github-actions | gitlab | circleci"
+        "'mgc ci-generate' has no template for provider '{provider}' — supported: github-actions | gitlab | circleci | jenkins | azure-pipelines | bitbucket-pipelines"
+    )
+}
+
+/// A library language MagiCore supports has no command-line scaffolder.
+///
+/// Reported instead of writing an empty project: the user needs to know the
+/// real next step, not to discover later that `mgc install` has nothing to do.
+/// (Ngôn ngữ lib MagiCore hỗ trợ nhưng không có scaffolder CLI. Báo lỗi thay vì
+/// ghi project rỗng: người dùng cần biết bước tiếp theo thật, không phải phát
+/// hiện sau rằng `mgc install` không có gì để làm.)
+pub fn lib_language_without_initializer(language: &str) -> Error {
+    anyhow!(
+        "'create-lib {language}' has no official initializer: the language ships no library scaffolder and MagiCore does not embed project templates. Create the project with your language's own tool, then run 'mgc install' inside it. No project was created."
     )
 }
 

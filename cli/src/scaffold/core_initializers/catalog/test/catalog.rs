@@ -34,7 +34,7 @@ fn ecosystem_and_framework_pairs_are_unique() {
 fn every_ecosystem_is_one_magicore_core() {
     // A record may only claim an ecosystem MagiCore actually has a core for.
     // Record chỉ được nhận ecosystem mà MagiCore thật sự có core.
-    const ECOSYSTEMS: &[&str] = &["game", "iot", "clo", "cicd"];
+    const ECOSYSTEMS: &[&str] = &["web", "game", "iot", "clo", "cicd", "lib", "ai", "app"];
     for record in RECORDS {
         assert!(
             ECOSYSTEMS.contains(&record.ecosystem),

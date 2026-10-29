@@ -53,9 +53,13 @@ pipeline {
         }
     }
 
+    // `deleteDir()` ships with Jenkins; `cleanWs()` needs the workspace-cleanup
+    // plugin and fails the build on a controller without it.
+    // (`deleteDir()` có sẵn trong Jenkins; `cleanWs()` cần plugin
+    // workspace-cleanup và làm build fail trên controller không có nó.)
     post {
         always {
-            cleanWs()
+            deleteDir()
         }
     }
 }

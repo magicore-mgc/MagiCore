@@ -60,6 +60,16 @@ pub async fn run(
         return Ok(());
     }
 
+    // TypeScript has no official library scaffolder: `tsc` only compiles and
+    // npm creates nothing without a template MagiCore refuses to embed. Say so
+    // instead of falling through to a registry layer that does not exist.
+    // (TypeScript không có scaffolder thư viện chính thức: `tsc` chỉ biên dịch,
+    // npm không tạo gì nếu không có template mà MagiCore cấm nhúng. Nói rõ thay
+    // vì rơi xuống registry layer chưa tồn tại.)
+    if matches!(lang, "ts" | "typescript") {
+        return Err(crate::error::lib_language_without_initializer(lang));
+    }
+
     // Resolve through a verified cache or the configured registry layer.
     // Resolve bằng cache đã xác thực hoặc registry layer được cấu hình.
     let request = parsed_framework
@@ -76,13 +86,17 @@ pub async fn run(
         Ok(status) if status.is_available() => {
             // Layer available - proceed — layer có sẵn - tiếp tục
         }
+        // Fail closed. Continuing after a warning wrote `mgc.toml` for a project
+        // with no sources, so the very next `mgc install`/`mgc build` failed on
+        // an empty directory and the user had to delete it. Every other core
+        // already refuses here; `lib`, `ai` and `app` were the exceptions.
+        // (Fail-closed. Tiếp tục sau cảnh báo từng ghi `mgc.toml` cho project
+        // không có source, nên `mgc install`/`mgc build` kế tiếp hỏng trên thư
+        // mục rỗng và người dùng phải xoá đi. Mọi core khác đã từ chối ở đây;
+        // `lib`, `ai`, `app` là ngoại lệ.)
         Err(error) if explicit_ref || !error.is_availability_failure() => return Err(error.into()),
         Ok(_) | Err(_) => {
-            // Fallback: generate warning, continue with minimal scaffold — fallback: cảnh báo, tiếp với scaffold tối thiểu
-            mgc_ui::warning(&format!(
-                "Optional lib layer 'lib/{}' is unavailable; the registry layer or a local project is required",
-                lang
-            ));
+            return Err(crate::scaffold::error::scaffold_source_unavailable("lib", lang));
         }
     }
 

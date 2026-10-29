@@ -11,7 +11,7 @@ use std::path::Path;
 
 use anyhow::Result;
 
-use super::super::types::CoreInitializer;
+use super::super::types::{CoreInitializer, DestinationArg};
 
 /// Run `record` into `destination`, then require `record.marker` to exist.
 /// Chạy `record` vào `destination`, rồi bắt buộc `record.marker` phải tồn tại.
@@ -35,7 +35,28 @@ pub(crate) fn run(record: &CoreInitializer, destination: &Path) -> Result<()> {
         .iter()
         .map(|a| (*a).to_string())
         .collect();
-    args.push(destination.to_string_lossy().into_owned());
+    // Where the destination lands depends on what the tool accepts: a
+    // positional path, a named flag, or a project name read from the working
+    // directory. Sending a path to a tool that wants a name silently succeeds
+    // for a directory named after the path components — see `DestinationArg`.
+    // (Vị trí destination phụ thuộc tool nhận gì: path vị trí, flag có tên, hay
+    // tên project đọc từ thư mục hiện tại. Đưa path cho tool cần tên sẽ "thành
+    // công" một cách khó hiểu — xem `DestinationArg`.)
+    let cwd = match record.destination {
+        DestinationArg::Positional => {
+            args.push(destination.to_string_lossy().into_owned());
+            Some(destination)
+        }
+        DestinationArg::Flag(flag) => {
+            args.push(flag.to_string());
+            args.push(destination.to_string_lossy().into_owned());
+            Some(destination)
+        }
+        DestinationArg::NameInCwd => {
+            args.push(project_name(destination)?);
+            Some(destination)
+        }
+    };
     args.extend(record.args_after.iter().map(|a| (*a).to_string()));
     if let Some(board) = record.board {
         // The project's own choice wins; the catalog value is only a default.
@@ -43,7 +64,7 @@ pub(crate) fn run(record: &CoreInitializer, destination: &Path) -> Result<()> {
         args.push(board.flag.to_string());
         args.push(project_board(destination).unwrap_or_else(|| board.default.to_string()));
     }
-    let output = mgc_exec::prelude::run(record.program, &args, &host_options(Some(destination)))?;
+    let output = mgc_exec::prelude::run(record.program, &args, &host_options(cwd))?;
     if output.exit_code != 0 {
         let detail = output
             .stderr_tail
@@ -83,6 +104,24 @@ fn host_options(cwd: Option<&Path>) -> mgc_exec::prelude::ExecOptions {
         execution_scope: Some(mgc_exec::allowlist::ExecutionScope::FrameworkInitializer),
         ..Default::default()
     }
+}
+
+/// The final path component, which is the project name every scaffolder accepts
+/// when it runs inside the destination directory.
+/// (Thành phần cuối của đường dẫn — tên project mọi scaffolder nhận khi chạy
+/// trong thư mục đích.)
+pub(super) fn project_name(destination: &Path) -> Result<String> {
+    destination
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "cannot derive a project name from '{}'; the initializer needs a named project directory",
+                destination.display()
+            )
+        })
 }
 
 /// Board or target the project records in `mgc.toml`, if any.

@@ -38,6 +38,9 @@ pub(crate) struct CoreInitializer {
     /// Install hint shown when the program is missing.
     /// Gợi ý cài hiện khi thiếu chương trình.
     pub(crate) install_hint: &'static str,
+    /// How the tool receives the project path.
+    /// Cách tool nhận đường dẫn project.
+    pub(crate) destination: DestinationArg,
     /// Marker file proving the tool really produced this framework's project.
     /// File marker chứng minh tool thật sự sinh đúng project của framework.
     pub(crate) marker: &'static str,
@@ -52,6 +55,33 @@ pub(crate) struct CoreInitializer {
     /// project dùng một phần cứng. Caller cung cấp giá trị thay thế, và `None`
     /// nghĩa là framework không có lựa chọn đó.
     pub(crate) board: Option<BoardFlag>,
+}
+
+/// How a scaffolder expects to be told where the project goes.
+///
+/// The distinction is not cosmetic. `cargo new --lib X` treats `X` as a project
+/// NAME and rejects a path, while `mvn archetype:generate -DartifactId X` runs in
+/// the directory and names the artifact. Feeding a path to the first form makes
+/// the tool fail; feeding a name to the second scatters output into the caller's
+/// working directory. Both mistakes looked like success in the previous catalog.
+/// (Cách scaffolder nhận đường dẫn project. Khác biệt này không phải hình thức.
+/// `cargo new --lib X` coi `X` là TÊN project và từ chối path, còn
+/// `mvn archetype:generate -DartifactId X` chạy trong thư mục và đặt tên
+/// artifact. Đưa path cho dạng đầu thì tool lỗi; đưa tên cho dạng sau thì output
+/// rơi vào thư mục hiện tại. Cả hai lỗi từng trông như thành công trong catalog
+/// cũ.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DestinationArg {
+    /// The path is a positional argument, e.g. `flutter create --template=app <path>`.
+    /// Path là tham số vị trí.
+    Positional,
+    /// The path goes to a named flag, e.g. `pulumi new ... --dir <path>`.
+    /// Path đi vào một flag có tên.
+    Flag(&'static str),
+    /// The tool runs INSIDE the destination and takes the project NAME as a
+    /// positional argument, e.g. `go mod init <name>`.
+    /// Tool chạy TRONG thư mục đích và nhận TÊN project làm tham số vị trí.
+    NameInCwd,
 }
 
 /// How a board or target flag is passed to the tool.

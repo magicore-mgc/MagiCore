@@ -81,7 +81,7 @@ fn installer_pin_resolves_to_a_commit_that_contains_the_installer() {
         String::from_utf8_lossy(&blob.stderr)
     );
 
-    let digest = blake3_to_sha256_hex(&blob.stdout);
+    let digest = sha256_hex(&blob.stdout);
     assert_eq!(
         digest, MGC_INSTALLER_SHA256,
         "MGC_INSTALLER_SHA256 does not match {installer_path} at {MGC_INSTALLER_SHA}"
@@ -109,7 +109,7 @@ fn repo_root() -> Option<std::path::PathBuf> {
 /// form the generated pipelines verify with.
 /// (SHA-256 của `bytes` dạng hex thường — đúng dạng `shasum -a 256` in ra và
 /// pipeline sinh ra dùng để verify.)
-fn blake3_to_sha256_hex(bytes: &[u8]) -> String {
+fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(bytes);

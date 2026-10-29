@@ -33,11 +33,6 @@ steps:
       fi
       bash "$installer" --version {tag}
       mgc --version
-      # The installer places `mgc` in this directory; later steps need it on PATH.
-      # (Installer đặt `mgc` trong thư mục này; các step sau cần nó trên PATH.)
-      echo "PATH=$HOME/MagiCore-SystemData/bin:$PATH" >> "$PIPELINE_ENV_FILE"
-    env:
-      PIPELINE_ENV_FILE: $(Agent.TempDirectory)/mgc-env
     displayName: Setup MagiCore {tag}
 
   - bash: mgc install

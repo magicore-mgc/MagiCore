@@ -4,4 +4,4 @@
 #[path = "types.rs"]
 mod implementation;
 
-pub(crate) use implementation::{BoardFlag, CoreInitializer};
+pub(crate) use implementation::{BoardFlag, CoreInitializer, DestinationArg};

@@ -65,17 +65,14 @@ pub async fn run(
         });
         match crate::commands::template::ensure_layer(&format!("app/{request}")).await {
             Ok(status) if status.is_available() => {}
-            Ok(_) => {
-                mgc_ui::warning(&format!(
-                    "Optional app layer 'app/{}' not found; the registry layer or a local project is required",
-                    fw
-                ));
-            }
             Err(e) if explicit_ref || !e.is_availability_failure() => return Err(e.into()),
-            Err(e) => mgc_ui::warning(&format!(
-                "Optional app layer 'app/{}' is unavailable; the registry layer or a local project is required: {}",
-                fw, e
-            )),
+            // Fail closed, as the other cores already do. A warning here used to
+            // continue into an empty project plus `mgc.toml` for it.
+            // (Fail-closed như các core khác. Cảnh báo ở đây từng chạy tiếp vào
+            // project rỗng kèm `mgc.toml`.)
+            Ok(_) | Err(_) => {
+                return Err(crate::scaffold::error::scaffold_source_unavailable("app", fw));
+            }
         }
     }
     super::scaffold_and_save_metadata(&config)?;

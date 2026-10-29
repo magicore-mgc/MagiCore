@@ -70,18 +70,14 @@ pub async fn run(
             Ok(status) if status.is_available() => {
                 // Layer OK - proceed
             }
-            Ok(_) => {
-                mgc_ui::warning(&format!(
-                    "Optional AI layer 'ai/{}' not found; the registry layer or a local project is required",
-                    fw
-                ));
-            }
             Err(e) if explicit_ref || !e.is_availability_failure() => return Err(e.into()),
-            Err(e) => {
-                mgc_ui::warning(&format!(
-                    "Optional AI layer 'ai/{}' is unavailable; the registry layer or a local project is required: {}",
-                    fw, e
-                ));
+            // Fail closed: continuing after a warning left an empty project and
+            // `mgc.toml` metadata for it, so the next command failed on a
+            // directory with no sources.
+            // (Fail-closed: tiếp tục sau cảnh báo để lại project rỗng; lệnh sau
+            // hỏng trên thư mục không có source.)
+            Ok(_) | Err(_) => {
+                return Err(crate::scaffold::error::scaffold_source_unavailable("ai", fw));
             }
         }
     }
