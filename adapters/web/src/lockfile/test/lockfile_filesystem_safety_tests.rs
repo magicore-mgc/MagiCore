@@ -2,6 +2,13 @@
 // lockfile_filesystem_safety_tests — kiểm thử filesystem safety.
 use super::*;
 
+// Symlink creation is a Unix primitive here: `std::os::unix::fs::symlink` does
+// not exist on Windows, so an ungated test would break the Windows build rather
+// than assert anything. The sibling reader test below is gated the same way.
+// (Tạo symlink là primitive Unix: `std::os::unix::fs::symlink` không tồn tại trên
+// Windows, nên test không gate sẽ làm build Windows hỏng thay vì assert. Test
+// reader bên dưới được gate giống hệt.)
+#[cfg(unix)]
 #[test]
 fn web_lock_writer_refuses_symlink_without_touching_target() {
     use std::os::unix::fs::symlink;
