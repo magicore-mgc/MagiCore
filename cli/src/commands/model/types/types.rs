@@ -63,6 +63,30 @@ pub enum ModelCmd {
         /// Model name (matches manifest: org/model/file or repo:tag)
         name: String,
     },
+    /// Measure inference latency per runtime for a pulled model (E-4).
+    /// Đo độ trễ inference theo từng runtime cho model đã pull (E-4).
+    ///
+    /// This never trains or converts a model: it runs the model's runtime and
+    /// reports measured wall-clock numbers, so a latency claim can cite real
+    /// output instead of an estimate.
+    /// (Lệnh này không train hay convert model: nó chạy runtime của model và
+    /// báo số wall-clock đo được, để claim về độ trễ có thể dẫn chứng thay vì
+    /// ước lượng.)
+    Bench {
+        /// Model name recorded in the local manifest (see `mgc model list --local`).
+        /// Tên model trong manifest local (xem `mgc model list --local`).
+        model: String,
+        /// Model artifact path on disk.
+        /// Đường dẫn file model trên đĩa.
+        #[arg(long, value_name = "PATH")]
+        path: String,
+        /// Invocations per runtime; medians need several samples.
+        /// Số lần gọi mỗi runtime; trung vị cần nhiều mẫu.
+        #[arg(long, default_value_t = 5)]
+        samples: u32,
+        #[arg(long, help = "output JSON")]
+        json: bool,
+    },
     /// Quantize GGUF (native quantizer not yet implemented).
     Quantize {
         /// Path to the source model file (GGUF/ggml)

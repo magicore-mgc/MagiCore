@@ -49,6 +49,14 @@ pub async fn run(args: ModelArgs) -> Result<()> {
             }
         }
         ModelCmd::Rm { name } => remove_local(&name),
+        ModelCmd::Bench {
+            model,
+            path,
+            samples,
+            json,
+        } => {
+            super::super::bench::run(&model, std::path::Path::new(&path), samples, json).map(|_| ())
+        }
         ModelCmd::Quantize {
             path,
             target,

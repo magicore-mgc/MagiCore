@@ -59,7 +59,11 @@ pub struct StoreStats {
 /// Collect a snapshot for the store rooted at `root`.
 /// Thu ảnh chụp cho store gốc `root`.
 pub fn collect(root: &Path) -> std::io::Result<StoreStats> {
-    let cas_root = root.join("cas");
+    // Blobs live under `files/blake3/<xx>/<hash>`; measuring `cas/` would
+    // report an empty store no matter how much is stored.
+    // (Blob nằm dưới `files/blake3/<xx>/<hash>`; đo `cas/` sẽ luôn báo store
+    // rỗng dù lưu bao nhiêu.)
+    let cas_root = root.join("files").join("blake3");
     let cache_root = root.join("cache");
     let (cas_blobs, cas_bytes) = measure(&cas_root, |_| true)?;
     let (cache_tarballs, cache_bytes) = measure(&cache_root, |path| {

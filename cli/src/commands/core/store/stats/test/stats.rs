@@ -8,7 +8,7 @@ use super::*;
 #[test]
 fn reports_counts_and_bytes_from_the_live_store() {
     let root = tempfile::tempdir().unwrap();
-    let cas = root.path().join("cas").join("aa");
+    let cas = root.path().join("files").join("blake3").join("aa");
     std::fs::create_dir_all(&cas).unwrap();
     std::fs::write(cas.join("blob-one"), vec![0u8; 1024]).unwrap();
     std::fs::write(cas.join("blob-two"), vec![1u8; 512]).unwrap();
@@ -37,7 +37,7 @@ fn reports_counts_and_bytes_from_the_live_store() {
 #[test]
 fn hardlinked_blobs_count_as_one_payload() {
     let root = tempfile::tempdir().unwrap();
-    let cas = root.path().join("cas").join("bb");
+    let cas = root.path().join("files").join("blake3").join("bb");
     std::fs::create_dir_all(&cas).unwrap();
     let first = cas.join("blob-a");
     std::fs::write(&first, vec![7u8; 256]).unwrap();

@@ -7,6 +7,7 @@
 //!
 //! This module preserves the public command path and wires operation owners.
 //! Module này giữ đường dẫn lệnh công khai và nối các owner thao tác.
+mod bench;
 mod cas_pull;
 mod dispatch;
 mod huggingface;
