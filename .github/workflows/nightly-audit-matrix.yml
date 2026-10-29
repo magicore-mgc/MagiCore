@@ -170,7 +170,7 @@ jobs:
         # trong expected_lanes phải "supported" trên MỌI OS; lane
         # thiếu khỏi matrix nào thì OS đó fail (kết quả test không tự
         # thu hẹp scope bắt buộc).
-        shell: python3
+        shell: python
         run: |
           import glob, json, os, sys
 
