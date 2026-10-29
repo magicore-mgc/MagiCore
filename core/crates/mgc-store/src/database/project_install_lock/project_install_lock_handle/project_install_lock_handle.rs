@@ -81,10 +81,18 @@ impl ProjectInstallLock {
             .unwrap_or_else(|_| std::path::PathBuf::from(project_root));
         let digest = mgc_crypto::Blake3Hasher::hash_string(&canonical.to_string_lossy()).to_hex();
         let path = root.join(format!("install-{digest}.lock"));
-        let file = std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
+        // SEC-08: the lock file must not be reachable through a planted
+        // symlink in the store, so the open refuses links where the platform
+        // can express that.
+        // (SEC-08: file khoá không được đi qua symlink bị cài trong store, nên
+        // lần mở từ chối link ở nền tảng diễn đạt được.)
+        #[cfg(unix)]
+        use std::os::unix::fs::OpenOptionsExt as _;
+        let mut options = std::fs::OpenOptions::new();
+        options.create(true).truncate(false).write(true);
+        #[cfg(unix)]
+        options.custom_flags(no_follow_flag());
+        let file = options
             .open(&path)
             .map_err(|e| CasGenerationError::Io(format!("open lock '{}': {e}", path.display())))?;
         fs2::FileExt::try_lock_exclusive(&file).map_err(|e| {
@@ -95,6 +103,25 @@ impl ProjectInstallLock {
             ))
         })?;
         Ok(Self { file, path })
+    }
+}
+
+/// `O_NOFOLLOW` where the platform has it; zero elsewhere.
+/// `O_NOFOLLOW` ở nền tảng có hỗ trợ; 0 ở nơi khác.
+fn no_follow_flag() -> i32 {
+    #[cfg(target_os = "linux")]
+    {
+        // O_NOFOLLOW
+        0o400000
+    }
+    #[cfg(all(unix, not(target_os = "linux")))]
+    {
+        // O_NOFOLLOW on BSD/macOS
+        0x0100
+    }
+    #[cfg(not(unix))]
+    {
+        0
     }
 }
 

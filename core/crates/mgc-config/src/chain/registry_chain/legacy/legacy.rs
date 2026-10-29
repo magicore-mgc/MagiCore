@@ -22,7 +22,7 @@ pub fn registry_chain(
     let npmrc = if env_override {
         None
     } else {
-        project_root.and_then(|root| crate::npmrc::NpmRc::load(root).ok())
+        project_root.and_then(|root| crate::npmrc::NpmRc::load_for_registry(root).ok())
     };
     registry_chain_with_npmrc(project_config, npmrc.as_ref(), true)
 }

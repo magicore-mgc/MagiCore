@@ -36,6 +36,23 @@ impl NpmRc {
     /// Load user and project `.npmrc`; project values override user values.
     /// Đọc .npmrc từ đường dẫn (project) + ~/.npmrc (user) — project ghi đè user.
     pub fn load(project_dir: &Path) -> Result<Self> {
+        Self::load_with_project_registry(project_dir, false)
+    }
+
+    /// Load `.npmrc` for a *registry* resolution: the project file still
+    /// selects the registry (npm-compatible monorepos depend on it), while
+    /// credential operations use [`Self::load`] and never do.
+    /// (Đọc `.npmrc` cho việc resolve *registry*: file project vẫn chọn
+    /// registry (monorepo tương thích npm cần vậy), còn thao tác credential
+    /// dùng [`Self::load`] và không bao giờ chọn.)
+    pub fn load_for_registry(project_dir: &Path) -> Result<Self> {
+        Self::load_with_project_registry(project_dir, true)
+    }
+
+    fn load_with_project_registry(
+        project_dir: &Path,
+        project_selects_registry: bool,
+    ) -> Result<Self> {
         let mut combined = Self::default();
         if let Some(user) = dirs::home_dir() {
             let user_npmrc = user.join(".npmrc");
@@ -57,7 +74,13 @@ impl NpmRc {
                     project_npmrc.display()
                 );
             }
-            combined.merge(Self::parse(&std::fs::read_to_string(&project_npmrc)?)?);
+            let mut project = Self::parse(&std::fs::read_to_string(&project_npmrc)?)?;
+            if !project_selects_registry {
+                // The registry URL itself is a trust decision, not a credential.
+                // (URL registry là quyết định tin cậy, không phải credential.)
+                project.registry = None;
+            }
+            combined.merge(project);
         }
         Ok(combined)
     }

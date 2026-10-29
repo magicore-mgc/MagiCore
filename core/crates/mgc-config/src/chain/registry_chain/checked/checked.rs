@@ -24,7 +24,9 @@ pub fn registry_chain_scoped_checked(
     project_root: Option<&std::path::Path>,
     project_config: Option<&crate::project::ProjectConfig>,
 ) -> anyhow::Result<Vec<ScopedRegistry>> {
-    let npmrc = project_root.map(crate::npmrc::NpmRc::load).transpose()?;
+    let npmrc = project_root
+        .map(crate::npmrc::NpmRc::load_for_registry)
+        .transpose()?;
     let chain = registry_chain_with_npmrc(project_config, npmrc.as_ref(), false);
     let validation = crate::npmrc::NpmRc::default();
     let mut scoped = Vec::with_capacity(chain.len());
