@@ -13,9 +13,9 @@ fn options<'a>(name: &'a str, embed: bool) -> PostBuildOptions<'a> {
     }
 }
 
-/// W-1b: a build that reports a missing output directory as success ships an
+/// W-1 b: a build that reports a missing output directory as success ships an
 /// SBOM, scan and signature that describe nothing.
-/// (W-1b: build báo thành công khi thư mục output không tồn tại sẽ phát hành
+/// (W-1 b: build báo thành công khi thư mục output không tồn tại sẽ phát hành
 /// SBOM/scan/chữ ký mô tả hư không.)
 #[test]
 fn a_missing_output_directory_fails_the_build() {

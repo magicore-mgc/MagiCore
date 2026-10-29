@@ -104,13 +104,7 @@ fn rendering_is_deterministic() {
     // so render it twice as well.
     // (Workflow GitHub là template duy nhất render với nhãn literal, nên
     // render hai lần nữa.)
-    let a = render_ci_template(
-        super::super::super::templates::WORKFLOW_TEMPLATE,
-        "CI",
-    );
-    let b = render_ci_template(
-        super::super::super::templates::WORKFLOW_TEMPLATE,
-        "CI",
-    );
+    let a = render_ci_template(super::super::super::templates::WORKFLOW_TEMPLATE, "CI");
+    let b = render_ci_template(super::super::super::templates::WORKFLOW_TEMPLATE, "CI");
     assert_eq!(a, b);
 }
