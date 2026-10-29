@@ -57,14 +57,24 @@ impl Scaffolder {
         // `--from-local` tường minh thắng registry: user đã chỉ định nguồn nên
         // MagiCore không được lặng lẽ tải nguồn khác.
         if config.from_local.is_some() {
-            let source =
-                crate::scaffold::local_projects::resolve_offline_source(config, &framework)?
-                    .ok_or_else(|| {
-                        crate::scaffold::error::scaffold_source_unavailable(
-                            &config.core,
-                            &framework,
-                        )
-                    })?;
+            // `--from-local` names a directory, so it cannot also be a
+            // discovered project; the resolve helper answers "nothing found"
+            // unless `--no-local` is set, which would silently drop the one
+            // source the user named.
+            // (`--from-local` chỉ định một thư mục nên không phải project được
+            // phát hiện; helper trả "không thấy gì" trừ khi bật `--no-local`,
+            // làm mất đúng nguồn user đã chỉ định.)
+            let source = config
+                .from_local
+                .clone()
+                .or_else(|| {
+                    crate::scaffold::local_projects::resolve_offline_source(config, &framework)
+                        .ok()
+                        .flatten()
+                })
+                .ok_or_else(|| {
+                    crate::scaffold::error::scaffold_source_unavailable(&config.core, &framework)
+                })?;
             crate::scaffold::local_projects::reuse_local_project(
                 &source,
                 target,

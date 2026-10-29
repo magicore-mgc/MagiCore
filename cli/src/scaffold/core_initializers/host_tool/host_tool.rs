@@ -29,7 +29,16 @@ pub(crate) fn run(record: &CoreInitializer, destination: &Path) -> Result<()> {
         );
     }
 
-    std::fs::create_dir_all(destination)?;
+    // A name-taking scaffolder refuses to run when its destination already
+    // exists, so only the parent is prepared here; path-taking tools create the
+    // leaf themselves.
+    // (Scaffolder nhận tên từ chối chạy khi destination đã tồn tại, nên chỉ
+    // chuẩn bị thư mục cha; tool nhận path tự tạo thư mục lá.)
+    if let Some(parent) = destination.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
+    }
     let mut args: Vec<String> = record
         .args_before
         .iter()
@@ -42,19 +51,27 @@ pub(crate) fn run(record: &CoreInitializer, destination: &Path) -> Result<()> {
     // (Vị trí destination phụ thuộc tool nhận gì: path vị trí, flag có tên, hay
     // tên project đọc từ thư mục hiện tại. Đưa path cho tool cần tên sẽ "thành
     // công" một cách khó hiểu — xem `DestinationArg`.)
-    let cwd = match record.destination {
+    let cwd: Option<std::path::PathBuf> = match record.destination {
         DestinationArg::Positional => {
             args.push(destination.to_string_lossy().into_owned());
-            Some(destination)
+            Some(destination.to_path_buf())
         }
         DestinationArg::Flag(flag) => {
             args.push(flag.to_string());
             args.push(destination.to_string_lossy().into_owned());
-            Some(destination)
+            Some(destination.to_path_buf())
         }
         DestinationArg::NameInCwd => {
+            // A scaffolder that takes a NAME creates `<cwd>/<name>`, so it must
+            // run from the destination's parent; running inside makes it create
+            // a nested `<destination>/<name>`.
+            // (Scaffolder nhận TÊN tạo `<cwd>/<name>`, nên phải chạy từ thư mục
+            // cha của destination; chạy bên trong sẽ tạo `<destination>/<name>`.)
             args.push(project_name(destination)?);
-            Some(destination)
+            destination
+                .parent()
+                .map(Path::to_path_buf)
+                .or_else(|| Some(destination.to_path_buf()))
         }
     };
     args.extend(record.args_after.iter().map(|a| (*a).to_string()));
@@ -64,7 +81,7 @@ pub(crate) fn run(record: &CoreInitializer, destination: &Path) -> Result<()> {
         args.push(board.flag.to_string());
         args.push(project_board(destination).unwrap_or_else(|| board.default.to_string()));
     }
-    let output = mgc_exec::prelude::run(record.program, &args, &host_options(cwd))?;
+    let output = mgc_exec::prelude::run(record.program, &args, &host_options(cwd.as_deref()))?;
     if output.exit_code != 0 {
         let detail = output
             .stderr_tail

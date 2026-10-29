@@ -47,6 +47,13 @@ pub async fn run(
     // (Scaffolder của chính framework là nguồn đầu tiên, giống các core game/
     // iot/clo/cicd. Thiếu bước này, project AI rơi xuống registry layer chưa có
     // và chỉ tạo thư mục rỗng.)
+    if config.from_local.is_none() {
+        let cache_framework = parsed_framework
+            .as_ref()
+            .map(|spec| spec.normalized_name.as_str())
+            .unwrap_or(framework);
+        crate::commands::template::ensure_cache_healthy(&format!("ai/{cache_framework}"))?;
+    }
     if config.from_local.is_none()
         && let Some(framework) = parsed_framework
             .as_ref()
@@ -56,7 +63,16 @@ pub async fn run(
         mgc_ui::success(&format!("Created ai project: {project_name}"));
         return Ok(());
     }
-    if let Some(fw) = config.frameworks.first() {
+    // `--from-local` names the user's own source and overrides every remote
+    // layer, exactly like the web create route. Without this guard a core whose
+    // registry layer is unpublished could never be scaffolded from a local
+    // project even though the user pointed at one.
+    // (`--from-local` chỉ định nguồn của user và thắng mọi layer từ xa, giống
+    // route create của web. Thiếu chặn này, core chưa publish layer sẽ không
+    // bao giờ scaffold được từ project local dù user đã chỉ định.)
+    if config.from_local.is_none()
+        && let Some(fw) = config.frameworks.first()
+    {
         // Phase 3: Handle typed result, không bỏ qua
         let request = parsed_framework
             .as_ref()

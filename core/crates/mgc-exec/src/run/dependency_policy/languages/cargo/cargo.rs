@@ -18,6 +18,13 @@ pub(in crate::run::implementation::dependency_policy::implementation::languages)
             Some("Cargo compile/test commands must include --locked --offline")
         }
         "build" | "test" | "check" | "run" | "clippy" | "metadata" => None,
+        // `new`/`init` create a project skeleton from the local template, they
+        // never touch a registry or lockfile; the framework initializers need
+        // them to scaffold a lib/rust project with no network.
+        // (`new`/`init` tạo khung project từ template cục bộ, không chạm registry
+        // hay lockfile; framework initializer cần chúng để scaffold lib/rust khi
+        // không có mạng.)
+        "new" | "init" => None,
         "fmt" | "clean" | "version" | "help" | "locate-project" | "read-manifest"
         | "verify-project" => None,
         "" => None,

@@ -52,6 +52,9 @@ pub async fn run(
     // (Lệnh `new`/`init` của chính ngôn ngữ là nguồn đầu tiên. Trước đây
     // `create-lib` chỉ hỏi registry layer chưa tồn tại rồi tiếp tục với
     // scaffold rỗng, nên mọi project lib đều bắt đầu trắng.)
+    if config.from_local.is_none() {
+        crate::commands::template::ensure_cache_healthy(&format!("lib/{lang}"))?;
+    }
     if config.from_local.is_none()
         && super::core_initializer::try_run("lib", lang, std::path::Path::new(project_name))?
     {
@@ -82,6 +85,13 @@ pub async fn run(
             crate::scaffold::spec::ScaffoldRef::Default
         )
     });
+    // `--from-local` overrides every remote layer (same rule as web create).
+    // (`--from-local` thắng mọi layer từ xa, cùng quy tắc route create của web.)
+    if config.from_local.is_some() {
+        super::scaffold_and_save_metadata(&config)?;
+        mgc_ui::success(&format!("Created lib project: {}", project_name));
+        return Ok(());
+    }
     match crate::commands::template::ensure_layer(&format!("lib/{request}")).await {
         Ok(status) if status.is_available() => {
             // Layer available - proceed — layer có sẵn - tiếp tục

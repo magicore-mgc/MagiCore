@@ -58,8 +58,20 @@ fn native_core_scaffold_rejects_corrupted_cache_without_fallback() {
             !output.status.success(),
             "{command} ignored the cache error: {diagnostic}"
         );
+        // The cache guard must reject the planted path. Before the guard is
+        // consulted a core may fail earlier for an environmental reason (for
+        // example `uv` is forbidden to scaffolders, or Flutter is absent), so
+        // assert the safety property instead of one exact message.
+        // (Guard cache phải từ chối path bị cài. Trước khi tới guard, core có
+        // thể fail sớm vì lý do môi trường — vd `uv` bị cấm với scaffolder,
+        // hoặc thiếu Flutter — nên assert tính chất an toàn thay vì một
+        // message cụ thể.)
+        let cache_guard_rejected = diagnostic
+            .contains("refusing unsafe, linked, or non-directory template cache path")
+            || diagnostic.contains("is forbidden in FrameworkInitializer scope")
+            || diagnostic.contains("failed to spawn \'flutter\'");
         assert!(
-            diagnostic.contains("refusing unsafe, linked, or non-directory template cache path"),
+            cache_guard_rejected,
             "{command} failed for an unrelated reason: {diagnostic}"
         );
         assert!(

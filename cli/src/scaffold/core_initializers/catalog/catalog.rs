@@ -109,12 +109,16 @@ pub(crate) const RECORDS: &[CoreInitializer] = &[
         ecosystem: "lib",
         framework: "rust",
         program: "cargo",
+        // `cargo new --lib <path>` nests the crate under the path component;
+        // run inside the destination and pass the name instead.
+        // (`cargo new --lib <path>` lồng crate trong component cuối của path;
+        // chạy trong thư mục đích và truyền tên.)
         args_before: &["new", "--lib", "--vcs", "none"],
         args_after: &[],
         probe: &["--version"],
         install_hint: "https://rustup.rs",
         marker: "Cargo.toml",
-        destination: DestinationArg::Positional,
+        destination: DestinationArg::NameInCwd,
         board: None,
     },
     CoreInitializer {

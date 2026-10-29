@@ -44,6 +44,13 @@ pub async fn run(
     // any registry layer, mirroring the other cores.
     // (Flutter là scaffolder app duy nhất chạy không cần tương tác; chạy trước
     // mọi registry layer, giống các core khác.)
+    if config.from_local.is_none() {
+        let cache_framework = parsed_framework
+            .as_ref()
+            .map(|spec| spec.normalized_name.as_str())
+            .unwrap_or(framework);
+        crate::commands::template::ensure_cache_healthy(&format!("app/{cache_framework}"))?;
+    }
     if config.from_local.is_none()
         && let Some(framework) = parsed_framework
             .as_ref()
@@ -53,7 +60,11 @@ pub async fn run(
         mgc_ui::success(&format!("Created app project: {project_name}"));
         return Ok(());
     }
-    if let Some(fw) = config.frameworks.first() {
+    // `--from-local` overrides every remote layer (same rule as web create).
+    // (`--from-local` thắng mọi layer từ xa, cùng quy tắc route create của web.)
+    if config.from_local.is_none()
+        && let Some(fw) = config.frameworks.first()
+    {
         // Phase 3: Handle typed result
         let request = parsed_framework
             .as_ref()

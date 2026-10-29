@@ -8,7 +8,7 @@ mod flow;
 mod ref_match;
 mod validation;
 
-pub use entry::ensure_layer;
+pub use entry::{ensure_cache_healthy, ensure_layer};
 #[cfg(test)]
 pub(in crate::commands::template) use error_mapping::template_resolution_error;
 #[cfg(test)]

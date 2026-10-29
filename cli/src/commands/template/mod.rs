@@ -26,13 +26,13 @@ pub(crate) use command_types::TemplateFetchArgs;
 use fetch_resolution::resolve_layer_at;
 use identity::validate_template_identity;
 use integrity::verify_template_integrity;
-pub use layer_cache::ensure_layer;
 #[cfg(test)]
 use layer_cache::ensure_layer_in;
 #[cfg(test)]
 use layer_cache::template_resolution_error;
 #[cfg(test)]
 pub(crate) use layer_cache::validate_cached_layer_path_in;
+pub use layer_cache::{ensure_cache_healthy, ensure_layer};
 use registry_config::MAX_TEMPLATE_METADATA_BYTES;
 use registry_config::MAX_TEMPLATE_REDIRECTS;
 use registry_config::MAX_TEMPLATE_TARBALL_BYTES;

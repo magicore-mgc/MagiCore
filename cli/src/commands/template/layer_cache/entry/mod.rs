@@ -3,4 +3,4 @@
 
 mod entry;
 
-pub use entry::ensure_layer;
+pub use entry::{ensure_cache_healthy, ensure_layer};

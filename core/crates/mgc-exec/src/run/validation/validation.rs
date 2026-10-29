@@ -28,6 +28,15 @@ pub(in crate::run::implementation) fn validate_args_no_traversal(
     let canonical_root = root
         .canonicalize()
         .with_context(|| format!("Failed to canonicalize project root: {root:?}"))?;
+    // A relative cwd must be resolved against the canonical root before the
+    // joiner below, otherwise every relative argument becomes empty-prefixed.
+    // (cwd tương đối phải được resolve theo root đã canonicalize trước bước nối
+    // bên dưới, nếu không mọi argument tương đối bị ghép vào "" .)
+    let canonical_root = if canonical_root.as_os_str().is_empty() {
+        std::env::current_dir()?
+    } else {
+        canonical_root
+    };
 
     for arg in args {
         let looks_like_path = arg.contains('/')

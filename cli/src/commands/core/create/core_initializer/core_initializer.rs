@@ -37,7 +37,13 @@ pub(crate) fn try_run(ecosystem: &str, framework: &str, target: &Path) -> Result
     // recreate framework files, so an unusable toolchain is reported here.
     // Core ngoài Web/Cargo không có dự phòng project local tái tạo được file
     // framework, nên toolchain không dùng được báo ngay tại đây.
-    run_host_tool(record, target)?;
+    // Make the destination absolute before the tool runs: a name-taking
+    // scaffolder runs from the parent directory and an empty/relative cwd made
+    // the traversal guard fail with an unreadable path error.
+    // (Đưa destination về tuyệt đối trước khi chạy tool: scaffolder nhận tên
+    // chạy từ thư mục cha, và cwd rỗng/tương đối khiến traversal guard lỗi.)
+    let target = std::path::absolute(target)?;
+    run_host_tool(record, &target)?;
     Ok(true)
 }
 
