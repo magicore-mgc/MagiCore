@@ -40,6 +40,22 @@ impl NpmRc {
         {
             anyhow::bail!("invalid registry URL for auth token scope");
         }
+        // SEC-13: the npm auth scope is derived from the URL authority, so an
+        // empty or dotless host would write `//:_authToken` (matching every
+        // registry) or a token scoped to a bare word.
+        // (SEC-13: scope auth npm suy từ authority của URL, nên host rỗng hoặc
+        // không có dấu chấm sẽ ghi `//:_authToken` (khớp mọi registry) hoặc
+        // token gắn với một chuỗi trống.)
+        let host = scope
+            .host_str()
+            .expect("host checked above")
+            .to_ascii_lowercase();
+        let is_loopback = matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1");
+        if host.is_empty() || (!host.contains('.') && !is_loopback) {
+            anyhow::bail!(
+                "refusing auth token scope for registry host '{host}': a registry must be a dotted or loopback host"
+            );
+        }
         if token.is_empty()
             || token
                 .bytes()
