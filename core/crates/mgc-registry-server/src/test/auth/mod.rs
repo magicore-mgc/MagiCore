@@ -3,6 +3,8 @@
 
 use super::*;
 
+#[path = "constant_time_credentials.rs"]
+mod constant_time_credentials;
 #[path = "scoped_account_policy.rs"]
 mod scoped_account_policy;
 #[path = "scoped_account_routes.rs"]

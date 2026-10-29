@@ -4,7 +4,7 @@
 use std::fmt;
 
 #[derive(Debug)]
-pub(super) enum BoundedResponseError {
+pub enum BoundedResponseError {
     ExceedsByteLimit,
     AllocationFailed(std::collections::TryReserveError),
 }

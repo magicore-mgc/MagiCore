@@ -49,7 +49,7 @@ pub(in crate::protocols::archive) fn tar_gz_file_with_raw_path(
         .expect("test operation must succeed")
 }
 
-pub(in crate::protocols::archive) fn tar_gz_entries(entries: &[(&str, &[u8])]) -> Vec<u8> {
+pub(crate) fn tar_gz_entries(entries: &[(&str, &[u8])]) -> Vec<u8> {
     let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
     let mut archive = tar::Builder::new(encoder);
     for (path, bytes) in entries {

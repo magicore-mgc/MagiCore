@@ -3,4 +3,7 @@
 
 mod http_client;
 
-pub use http_client::HttpClient;
+pub use http_client::{
+    ALLOW_CROSS_ORIGIN_REDIRECTS_ENV, BoundedResponseError, DEFAULT_MAX_REDIRECTS, HttpClient,
+    same_origin_policy,
+};

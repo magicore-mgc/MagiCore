@@ -26,6 +26,10 @@ pub(in crate::extract) enum ExtractionError {
     TargetNotFile(PathBuf),
     DestinationHasNoParent,
     TruncatedEntry(PathBuf),
+    InstallHookNotAllowed {
+        path: PathBuf,
+        reason: &'static str,
+    },
     CasImport(anyhow::Error),
     CasExport(anyhow::Error),
     Claim(anyhow::Error),
@@ -109,6 +113,12 @@ impl fmt::Display for ExtractionError {
             Self::TruncatedEntry(path) => {
                 write!(formatter, "tar entry '{}' is truncated", path.display())
             }
+            Self::InstallHookNotAllowed { path, reason } => write!(
+                formatter,
+                "refusing archive entry '{}': {reason} (set {} for an explicit package to allow it)",
+                path.display(),
+                super::super::install_hook_guard::ALLOW_INSTALL_HOOKS_ENV
+            ),
             Self::CasImport(error) => write!(formatter, "failed to import to CAS: {error}"),
             Self::CasExport(error) => write!(formatter, "failed to export from CAS: {error}"),
             Self::Claim(error) => fmt::Display::fmt(error, formatter),

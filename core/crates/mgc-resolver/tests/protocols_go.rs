@@ -486,12 +486,14 @@ fn go_dirhash_rejects_newline_names_instead_of_hashing_ambiguous_lines() {
     let entry = ZipEntry {
         name: "example.com/pkg@v1.2.3/bad\nname.go".into(),
         data: b"package pkg\n".to_vec(),
+        unix_mode: None,
     };
     let error = dirhash_zip(&[entry]).expect_err("test operation must fail");
     assert!(error.to_string().contains("newlines"));
     let ordinary = ZipEntry {
         name: "example.com/pkg@v1.2.3/ordinary.go".into(),
         data: b"package pkg\n".to_vec(),
+        unix_mode: None,
     };
     assert!(
         dirhash_zip(&[ordinary])

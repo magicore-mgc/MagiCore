@@ -139,3 +139,18 @@ fn applies_archive_readonly_mode_to_extracted_file() {
     permissions.set_readonly(false);
     std::fs::set_permissions(target, permissions).unwrap();
 }
+
+#[test]
+fn refuses_pth_entries_and_stops_before_writing() {
+    use super::super::super::test_support::gzip_tar_files;
+
+    let temp = tempfile::tempdir().unwrap();
+    let dest = temp.path().join("dest");
+    let archive = gzip_tar_files(&[
+        ("pkg/index.js", b"module.exports = 1;"),
+        ("pkg/evil.pth", b"import os\n"),
+    ]);
+    let error = super::super::extract_tarball_from_reader(archive.as_slice(), &dest)
+        .expect_err("pth must be refused");
+    assert!(error.to_string().contains("evil.pth"), "{error}");
+}

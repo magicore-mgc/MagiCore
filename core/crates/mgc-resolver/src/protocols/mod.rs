@@ -16,6 +16,7 @@
 //! vào, engine không đụng adapter.
 
 pub mod archive;
+mod cache_segment;
 pub mod crates;
 pub mod go;
 #[path = "hfhub/mod.rs"]

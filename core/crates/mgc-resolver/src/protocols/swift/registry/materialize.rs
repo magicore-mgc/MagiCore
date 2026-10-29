@@ -1,6 +1,7 @@
 //! Swift registry checkout materialization. / Materialize checkout registry Swift.
 
 use crate::protocols::ResolvedEntry;
+use crate::protocols::cache_segment::validate_cache_segment;
 use mgc_types::{MgError, MgResult};
 use std::path::{Path, PathBuf};
 
@@ -21,11 +22,15 @@ impl SwiftRegistryProtocol {
         bytes: &[u8],
         swift_root: &Path,
     ) -> MgResult<PathBuf> {
-        let dir = swift_root.join("checkouts").join(format!(
-            "{}-{}",
-            entry.name.replace('/', "."),
-            entry.version
-        ));
+        // SEC-N1: `entry.name.replace('/', ".")` still lets `..`, a backslash
+        // or a drive prefix escape the checkouts root; validate the joined
+        // segment instead of trusting the replacement.
+        // (SEC-N1: `replace('/', ".")` vẫn để `..`, dấu `\` hoặc ổ đĩa thoát
+        // khỏi root checkouts; xác minh segment sau khi ghép thay vì tin phép
+        // thay thế.)
+        let candidate = format!("{}-{}", entry.name.replace('/', "."), entry.version);
+        let segment = validate_cache_segment(&candidate, "Swift registry checkout")?;
+        let dir = swift_root.join("checkouts").join(segment);
         std::fs::create_dir_all(&dir)?;
         crate::protocols::zip_reader::extract_zip(bytes, &dir)?;
         Ok(dir)

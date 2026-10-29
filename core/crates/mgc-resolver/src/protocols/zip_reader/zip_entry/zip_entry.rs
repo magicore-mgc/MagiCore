@@ -8,6 +8,9 @@ pub struct ZipEntry {
     pub name: String,
     /// Decompressed payload — payload đã giải nén.
     pub data: Vec<u8>,
+    /// External UNIX mode bits carried by the central directory, when present.
+    /// Bit mode UNIX bên ngoài do central directory mang, khi có.
+    pub unix_mode: Option<u32>,
 }
 
 #[cfg(test)]

@@ -2,7 +2,7 @@
 //! Verify credential bằng cache digest và KDF async có giới hạn.
 
 use crate::auth::{AuthService, User, UserRole};
-use crate::credential_security::{TokenDigest, run_kdf, verify_password_hash};
+use crate::credential_security::{TokenDigest, constant_time_eq, run_kdf, verify_password_hash};
 use axum::http::HeaderMap;
 use base64::Engine;
 use std::time::Instant;
@@ -22,7 +22,11 @@ impl AuthService {
     fn verified_password_user(&self, key: &str, hash: &str) -> Option<User> {
         let users = self.users_guard();
         let current = users.get(key)?;
-        (current.password.as_deref() == Some(hash)).then(|| current.clone())
+        let unchanged = current
+            .password
+            .as_deref()
+            .is_some_and(|stored| constant_time_eq(stored, hash));
+        unchanged.then(|| current.clone())
     }
 
     /// Synchronous library compatibility API; HTTP uses the async variant.
@@ -57,7 +61,10 @@ impl AuthService {
     }
 
     fn is_admin_secret(&self, secret: &str) -> bool {
-        self.admin_token.as_deref() == Some(TokenDigest::from_secret(secret).as_str())
+        let candidate = TokenDigest::from_secret(secret);
+        self.admin_token
+            .as_deref()
+            .is_some_and(|stored| constant_time_eq(stored, candidate.as_str()))
     }
 
     /// Client tokens remain opaque plaintext on the wire, never stored as cache keys.
@@ -67,7 +74,11 @@ impl AuthService {
             return None;
         }
         let key = TokenDigest::from_secret(token);
-        if self.admin_token.as_deref() == Some(key.as_str()) {
+        if self
+            .admin_token
+            .as_deref()
+            .is_some_and(|stored| constant_time_eq(stored, key.as_str()))
+        {
             return Some(User {
                 name: "admin".to_string(),
                 is_admin: true,

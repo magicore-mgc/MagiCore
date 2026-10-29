@@ -2,4 +2,4 @@
 
 mod extract_zip;
 
-pub use extract_zip::extract_zip;
+pub use extract_zip::{extract_zip, extract_zip_with_policy};

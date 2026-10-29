@@ -54,6 +54,12 @@ pub(in crate::protocols::zip_reader) fn read_central_entry(
     let name_len = u16::from_le_bytes([bytes[pos + 28], bytes[pos + 29]]) as usize;
     let extra_len = u16::from_le_bytes([bytes[pos + 30], bytes[pos + 31]]) as usize;
     let comment_len = u16::from_le_bytes([bytes[pos + 32], bytes[pos + 33]]) as usize;
+    let external_attributes = u32::from_le_bytes([
+        bytes[pos + 38],
+        bytes[pos + 39],
+        bytes[pos + 40],
+        bytes[pos + 41],
+    ]);
     let local_offset = u32::from_le_bytes([
         bytes[pos + 42],
         bytes[pos + 43],
@@ -112,7 +118,17 @@ pub(in crate::protocols::zip_reader) fn read_central_entry(
             "zip entry '{name}' CRC-32 mismatch: expected {expected_crc:#010x}, got {actual_crc:#010x}"
         )));
     }
-    Ok((Some(ZipEntry { name, data }), next))
+    // The high 16 bits of external attributes carry the UNIX st_mode value.
+    // (16 bit cao của external attributes chứa giá trị st_mode của UNIX.)
+    let unix_mode = (external_attributes >> 16) & 0xffff;
+    Ok((
+        Some(ZipEntry {
+            name,
+            data,
+            unix_mode: (unix_mode != 0).then_some(unix_mode),
+        }),
+        next,
+    ))
 }
 
 #[cfg(test)]

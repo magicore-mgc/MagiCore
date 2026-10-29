@@ -64,6 +64,12 @@ pub(in crate::extract) fn spool_archive<R: Read>(
         if matches!(entry_type.as_byte(), b'g' | b'x') {
             continue;
         }
+        // SEC-3: refuse interpreter install hooks before staging any byte.
+        // (SEC-3: từ chối hook cài đặt interpreter trước khi staging byte nào.)
+        super::super::install_hook_guard::InstallHookGuard::deny().check(
+            &relative,
+            entry.header().mode().ok(),
+        )?;
         let mapped = if verify_existing_package_root {
             let mut components = relative.components();
             if !matches!(components.next(), Some(Component::Normal(part)) if part == "package") {

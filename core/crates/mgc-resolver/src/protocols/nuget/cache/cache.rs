@@ -3,6 +3,7 @@
 
 use crate::protocols::ResolvedEntry;
 use crate::protocols::nuget::NuGetProtocol;
+use crate::protocols::cache_segment::validate_cache_segment;
 use base64::Engine as _;
 use mgc_types::MgResult;
 use sha2::{Digest, Sha512};
@@ -23,11 +24,26 @@ impl NuGetProtocol {
         nupkg_bytes: &[u8],
         nuget_root: &Path,
     ) -> MgResult<PathBuf> {
-        let dir = nuget_root
-            .join(entry.name.to_lowercase())
-            .join(entry.version.to_lowercase());
+        // SEC-N1: the id comes from a manifest/registration and the version
+        // from remote JSON; either one containing `..` or a separator would
+        // place the global-packages directory outside `nuget_root` and every
+        // later write (nupkg, nuspec rename, sha512) would follow it.
+        // (SEC-N1: id từ manifest/registration và version từ JSON từ xa; nếu
+        // hoặc chứa `..` hoặc dấu phân cách thì thư mục global-packages nằm
+        // ngoài `nuget_root` và mọi lần ghi sau đó sẽ đi theo.)
+        let lowered_id = entry.name.to_lowercase();
+        let lowered_version = entry.version.to_lowercase();
+        let id_segment = validate_cache_segment(&lowered_id, "NuGet package id")?;
+        let version_segment =
+            validate_cache_segment(&lowered_version, "NuGet package version")?;
+        let dir = nuget_root.join(&id_segment).join(&version_segment);
         std::fs::create_dir_all(&dir)?;
-        let nupkg_name = format!("{}.{}.nupkg", entry.name, entry.version);
+        // The sidecar file name is also built from registry fields; a segment
+        // containing `/` was already refused above, but the joined name must
+        // still be exactly one component inside `dir`.
+        // (Tên file sidecar cũng dựng từ trường registry; segment chứa `/` đã bị
+        // từ chối, nhưng tên ghép vẫn phải là đúng một thành phần trong `dir`.)
+        let nupkg_name = format!("{id_segment}.{version_segment}.nupkg");
         std::fs::write(dir.join(&nupkg_name), nupkg_bytes)?;
         crate::protocols::zip_reader::extract_zip(nupkg_bytes, &dir)?;
         // NuGet on-disk convention lowercases the id: the nuspec inside a

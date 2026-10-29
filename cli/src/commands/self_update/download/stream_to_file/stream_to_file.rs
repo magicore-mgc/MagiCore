@@ -37,21 +37,46 @@ pub(in crate::commands::self_update) async fn download_stream(
     let mut out = tokio::io::BufWriter::new(file);
     let mut written: u64 = 0;
     let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| SelfUpdateError::download_failed(url, &e.to_string()))?;
-        written += chunk.len() as u64;
-        if written > quota {
-            return Err(SelfUpdateError::download_failed(
-                url,
-                &format!("body over quota {quota}"),
-            ));
+    // SEC-9 sibling: a quota abort used to leave the truncated archive on disk,
+    // where a later step could unzip it. Any failure now removes the partial
+    // file before the error propagates.
+    // (Anh em với SEC-9: hủy vì quota từng để lại archive bị cắt trên đĩa và
+    // bước sau có thể giải nén nó. Mọi lỗi giờ xóa file dở trước khi trả lỗi.)
+    let failure = {
+        let mut failure = None;
+        while let Some(chunk) = stream.next().await {
+            match chunk {
+                Ok(chunk) => {
+                    written = written.saturating_add(chunk.len() as u64);
+                    if written > quota {
+                        failure = Some(SelfUpdateError::download_failed(
+                            url,
+                            &format!("body over quota {quota}"),
+                        ));
+                        break;
+                    }
+                    if let Err(error) = out.write_all(&chunk).await {
+                        failure = Some(SelfUpdateError::download_failed(url, &error.to_string()));
+                        break;
+                    }
+                }
+                Err(error) => {
+                    failure = Some(SelfUpdateError::download_failed(url, &error.to_string()));
+                    break;
+                }
+            }
         }
-        out.write_all(&chunk)
-            .await
-            .map_err(|e| SelfUpdateError::download_failed(url, &e.to_string()))?;
+        if failure.is_none()
+            && let Err(error) = out.flush().await
+        {
+            failure = Some(SelfUpdateError::download_failed(url, &error.to_string()));
+        }
+        failure
+    };
+    if let Some(failure) = failure {
+        drop(out);
+        let _ = tokio::fs::remove_file(dest).await;
+        return Err(failure);
     }
-    out.flush()
-        .await
-        .map_err(|e| SelfUpdateError::download_failed(url, &e.to_string()))?;
     Ok(())
 }

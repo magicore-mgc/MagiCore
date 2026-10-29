@@ -10,10 +10,12 @@ fn archive_index_rejects_duplicate_members() {
         ZipEntry {
             name: "pkg/file.py".to_string(),
             data: b"one".to_vec(),
+            unix_mode: None,
         },
         ZipEntry {
             name: "pkg/file.py".to_string(),
             data: b"two".to_vec(),
+            unix_mode: None,
         },
     ];
 
@@ -27,14 +29,17 @@ fn archive_index_selects_only_root_dist_info() {
         ZipEntry {
             name: "demo-1.0.dist-info/RECORD".to_string(),
             data: b"root record".to_vec(),
+            unix_mode: None,
         },
         ZipEntry {
             name: "demo-1.0.dist-info/METADATA".to_string(),
             data: b"Name: demo\nVersion: 1.0\n".to_vec(),
+            unix_mode: None,
         },
         ZipEntry {
             name: "demo/vendor/other.dist-info/RECORD".to_string(),
             data: b"vendor data".to_vec(),
+            unix_mode: None,
         },
     ];
 

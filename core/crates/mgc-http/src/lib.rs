@@ -10,7 +10,10 @@ pub mod tls;
 pub mod upload;
 
 pub use cache::HttpCache;
-pub use methods::HttpClient;
+pub use methods::{
+    ALLOW_CROSS_ORIGIN_REDIRECTS_ENV, BoundedResponseError, DEFAULT_MAX_REDIRECTS, HttpClient,
+    same_origin_policy,
+};
 pub use ratelimit::RateLimiter;
 pub use tls::TlsConfig;
 

@@ -41,6 +41,12 @@ fn extract_reader<R: Read>(reader: R, dest: &Path) -> ExtractionResult<()> {
         }
         let relative = super::super::archive_path::sanitize_archive_path(entry.path()?.as_ref())?;
         let entry_type = entry.header().entry_type();
+        // SEC-3: refuse interpreter install hooks before the first write.
+        // (SEC-3: từ chối hook cài đặt interpreter trước lần ghi đầu.)
+        super::super::install_hook_guard::InstallHookGuard::deny().check(
+            &relative,
+            entry.header().mode().ok(),
+        )?;
         if entry_type.is_symlink() || entry_type.is_hard_link() {
             return Err(ExtractionError::LinksNotAllowed(dest_root.join(&relative)));
         }

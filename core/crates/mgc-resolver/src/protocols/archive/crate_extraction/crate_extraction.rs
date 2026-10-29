@@ -1,7 +1,10 @@
 //! Cargo archive root validation and extraction.
 //! Xác minh thư mục gốc Cargo và giải nén archive.
 
-use super::super::archive::{MAX_TAR_ENTRY_UNCOMPRESSED, MAX_TAR_TOTAL_UNCOMPRESSED};
+use super::super::archive::{
+    MAX_TAR_ENTRIES, MAX_TAR_ENTRY_UNCOMPRESSED, MAX_TAR_TOTAL_UNCOMPRESSED,
+};
+use super::super::install_hook::InstallHookPolicy;
 use super::super::{ArchiveError, ArchiveResult};
 use std::path::Path;
 
@@ -34,9 +37,18 @@ pub(in crate::protocols::archive) fn extract_crate_tar_gz(
     let mut archive = tar::Archive::new(decoder);
     let mut saw_manifest = false;
     let mut total_uncompressed = 0_u64;
+    let mut entry_count = 0_usize;
 
     for entry in archive.entries()? {
         let entry = entry?;
+        entry_count = entry_count
+            .checked_add(1)
+            .ok_or_else(|| ArchiveError::Integrity("Cargo crate entry count overflow".to_string()))?;
+        if entry_count > MAX_TAR_ENTRIES {
+            return Err(ArchiveError::Integrity(format!(
+                "Cargo crate archive exceeds the {MAX_TAR_ENTRIES} entry limit"
+            )));
+        }
         let archive_path =
             super::super::archive_path::sanitize_archive_path(entry.path()?.as_ref())?;
         let relative = archive_path.strip_prefix(expected).map_err(|_| {
@@ -76,6 +88,11 @@ pub(in crate::protocols::archive) fn extract_crate_tar_gz(
                 archive_path.display()
             )));
         }
+        // SEC-3: Cargo archives are source, but a repacked .crate must not
+        // deliver a `.pth`/site hook or a setuid member either.
+        // (SEC-3: archive Cargo là source, nhưng `.crate` đóng lại không được
+        // chuyển `.pth`/hook site hay thành viên setuid.)
+        InstallHookPolicy::deny().check(&archive_path.to_string_lossy(), entry.header().mode().ok())?;
         let size = entry.size();
         if size > MAX_TAR_ENTRY_UNCOMPRESSED {
             return Err(ArchiveError::Integrity(format!(
@@ -102,5 +119,5 @@ pub(in crate::protocols::archive) fn extract_crate_tar_gz(
         )));
     }
 
-    super::super::tar_extraction::extract_tar_gz(bytes, dest)
+    super::super::tar_extraction::extract_tar_gz(bytes, dest, &InstallHookPolicy::deny())
 }

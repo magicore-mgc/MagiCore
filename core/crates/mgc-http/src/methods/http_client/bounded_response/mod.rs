@@ -3,3 +3,5 @@
 
 mod bounded_response;
 mod error;
+
+pub use error::BoundedResponseError;

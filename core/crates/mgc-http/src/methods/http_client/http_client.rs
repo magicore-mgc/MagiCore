@@ -38,14 +38,28 @@ impl HttpClient {
     /// Build a client that refuses redirects for identity and credential requests.
     /// Tạo client từ chối redirect cho request định danh và credential.
     pub fn with_security_no_redirects(timeout: &TimeoutConfig, tls: &TlsConfig) -> Result<Self> {
-        Self::with_builder(
-            Client::builder().redirect(reqwest::redirect::Policy::none()),
-            timeout,
-            tls,
-        )
+        let builder = Client::builder().redirect(super::redirect_policy::no_redirect_policy());
+        Self::with_builder_keeping_redirect(builder, timeout, tls)
     }
 
+    /// SEC-8/G5: the default redirect policy is same-origin with a hop cap so a
+    /// static `Authorization` header is never forwarded to another host.
+    /// (SEC-8/G5: policy redirect mặc định là cùng origin có giới hạn hop để
+    /// header `Authorization` tĩnh không bao giờ bị chuyển sang host khác.)
     fn with_builder(
+        builder: ClientBuilder,
+        timeout: &TimeoutConfig,
+        tls: &TlsConfig,
+    ) -> Result<Self> {
+        let builder = builder.redirect(super::redirect_policy::same_origin_policy(
+            super::redirect_policy::DEFAULT_MAX_REDIRECTS,
+        ));
+        Self::with_builder_keeping_redirect(builder, timeout, tls)
+    }
+
+    /// Apply timeout/TLS to a builder that already carries its redirect policy.
+    /// Áp timeout/TLS cho builder đã có policy redirect riêng.
+    fn with_builder_keeping_redirect(
         builder: ClientBuilder,
         timeout: &TimeoutConfig,
         tls: &TlsConfig,
