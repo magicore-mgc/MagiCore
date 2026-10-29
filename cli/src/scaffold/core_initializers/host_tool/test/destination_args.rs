@@ -20,14 +20,25 @@ use crate::scaffold::core_initializers::types::DestinationArg;
 /// (Catalog phải mô tả mỗi framework bằng dạng mà tool của nó chấp nhận.)
 #[test]
 fn catalog_uses_the_destination_shape_each_tool_accepts() {
-    // `cargo new --lib <path>` and `flutter create <path>` take a positional path.
-    for framework in ["rust", "java", "flutter"] {
-        let record = lookup(&["lib", "app"], framework)
-            .unwrap_or_else(|| panic!("{framework} must be registered"));
+    // `flutter create <path>` takes a positional path.
+    let flutter = lookup(&["lib", "app"], "flutter").expect("flutter must be registered");
+    assert_eq!(
+        flutter.destination,
+        DestinationArg::Positional,
+        "flutter takes a positional destination"
+    );
+
+    // `cargo new --lib <path>` and `mvn` name the artifact, they do not place
+    // the project at the path argument.
+    // (`cargo new --lib <path>` và `mvn` đặt tên artifact, không đặt project tại
+    // argument path.)
+    for framework in ["rust", "python"] {
+        let record = lookup(&["lib"], framework)
+            .unwrap_or_else(|| panic!("lib/{framework} must be registered"));
         assert_eq!(
             record.destination,
-            DestinationArg::Positional,
-            "{framework} takes a positional destination"
+            DestinationArg::NameInCwd,
+            "lib/{framework} runs inside the destination and names the project"
         );
     }
 

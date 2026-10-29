@@ -15,12 +15,14 @@ pub(crate) const RECORDS: &[CoreInitializer] = &[
         ecosystem: "game",
         framework: "godot",
         program: "godot",
-        // `--path` points at the project; `--quit` exits after importing, which
-        // is what materialises `project.godot`.
-        // `--path` trỏ tới project; `--quit` thoát sau khi import, chính bước
-        // đó tạo ra `project.godot`.
+        // `--path` points at the project; import is triggered by `--headless
+        // --quit`, which materialises `project.godot` and then exits. `--editor`
+        // is deliberately absent: it launches the GUI editor on every scaffold.
+        // (`--path` trỏ tới project; import chạy bằng `--headless --quit`, tạo ra
+        // `project.godot` rồi thoát. Cố ý không có `--editor`: nó mở GUI editor
+        // mỗi lần scaffold.)
         args_before: &["--headless", "--path"],
-        args_after: &["--quit", "--editor"],
+        args_after: &["--quit"],
         probe: &["--version"],
         install_hint: "https://godotengine.org/download",
         marker: "project.godot",
