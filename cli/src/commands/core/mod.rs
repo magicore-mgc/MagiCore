@@ -18,6 +18,7 @@ pub mod scaffold_flags;
 /// Core command implementations (sub-ecosystems)
 #[path = "shared.rs"]
 pub mod shared;
+pub mod store;
 pub mod update;
 #[cfg(feature = "web")]
 pub mod web;

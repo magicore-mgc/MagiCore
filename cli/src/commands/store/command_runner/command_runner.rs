@@ -4,6 +4,20 @@
 use super::super::command_types::StoreCmd;
 
 pub async fn run(cmd: StoreCmd) -> anyhow::Result<()> {
+    // Measurement is read-only and applies to any core: it must not require a
+    // web project, a project root, or the web store owner gate.
+    // (Đo đạc chỉ đọc và áp dụng cho mọi core: không cần project web, không cần
+    // project root, không qua gate web store owner.)
+    if let StoreCmd::Stats { json, root } = &cmd {
+        let store_root = match root {
+            Some(path) => std::path::PathBuf::from(path),
+            None => super::super::store_paths::store_cache_root_for(&std::env::current_dir()?),
+        };
+        let stats = crate::commands::core::store::collect(&store_root)?;
+        crate::commands::core::store::print(&stats, *json);
+        return Ok(());
+    }
+
     let cwd = std::env::current_dir()?;
     let project_root = mgc_config::project::ProjectConfig::find_project_root(&cwd)
         .ok_or_else(crate::error::project_root_missing)?;
@@ -40,6 +54,9 @@ pub async fn run(cmd: StoreCmd) -> anyhow::Result<()> {
     )?;
 
     match cmd {
+        // Handled before the project lookup above; measurement never mutates.
+        // (Đã xử lý trước bước tìm project; đo đạc không bao giờ thay đổi.)
+        StoreCmd::Stats { .. } => Ok(()),
         StoreCmd::Prune { dry_run, json } => {
             super::super::prune::run_prune(&project_root, dry_run, json)
         }

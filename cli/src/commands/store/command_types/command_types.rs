@@ -30,6 +30,23 @@ pub enum StoreCmd {
     },
     /// Show package store summary
     Status,
+    /// Report cache/store measurements (blobs, bytes, memo hit/miss, dedupe).
+    /// Báo số đo cache/store (blob, byte, memo hit/miss, dedupe).
+    ///
+    /// Every number is read from the live store; nothing is estimated, so the
+    /// output is the only allowed source for a cache claim.
+    /// (Mọi con số đọc từ store thật; không ước lượng, nên output là nguồn duy
+    /// nhất được dùng cho claim về cache.)
+    Stats {
+        /// Emit a stable machine-readable object.
+        /// Xuất object máy đọc ổn định.
+        #[arg(long, help = "output JSON")]
+        json: bool,
+        /// Store root to inspect (default: this project's store).
+        /// Root store cần đo (mặc định: store của project này).
+        #[arg(long, value_name = "PATH")]
+        root: Option<String>,
+    },
     /// Back up the store to a target directory
     Backup {
         /// Target directory (default: ~/.magicore/store_backup_<timestamp>)
