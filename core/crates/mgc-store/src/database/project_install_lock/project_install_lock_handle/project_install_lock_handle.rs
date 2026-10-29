@@ -53,6 +53,12 @@ impl ProjectInstallLock {
         Self::acquire_impl(root, project_root)
     }
 
+    /// Lock file this handle holds open (used by tests and diagnostics).
+    /// File lock mà handle này đang giữ (test và chẩn đoán dùng).
+    pub fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+
     fn acquire_impl(
         root: &std::path::Path,
         project_root: &str,
@@ -64,7 +70,16 @@ impl ProjectInstallLock {
         // blake3 directly (dependency discipline, no duplicate hashers).
         // (Digest qua crate crypto dùng chung — mgc-store không phụ thuộc
         // blake3 trực tiếp (kỷ luật dependency, không nhân đôi hasher).)
-        let digest = mgc_crypto::Blake3Hasher::hash_string(project_root).to_hex();
+        // SEC-07: the key must be the canonical project path. Hashing the raw
+        // string let `P`, `P/`, `P/../P` and a symlinked alias of the same
+        // project take different locks, so two installs could write one tree
+        // at the same time.
+        // (SEC-07: key phải là path canonical. Hash chuỗi thô khiến `P`, `P/`,
+        // `P/../P` và alias symlink của cùng project nhận lock khác nhau, nên
+        // hai lần cài có thể ghi cùng một cây cùng lúc.)
+        let canonical = std::fs::canonicalize(project_root)
+            .unwrap_or_else(|_| std::path::PathBuf::from(project_root));
+        let digest = mgc_crypto::Blake3Hasher::hash_string(&canonical.to_string_lossy()).to_hex();
         let path = root.join(format!("install-{digest}.lock"));
         let file = std::fs::OpenOptions::new()
             .create(true)
@@ -101,3 +116,7 @@ impl Drop for ProjectInstallLock {
         // trên inode); xóa nó lúc drop mở lại race rename trên POSIX.)
     }
 }
+
+#[cfg(test)]
+#[path = "test/mod.rs"]
+mod test;
