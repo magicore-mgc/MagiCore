@@ -8,14 +8,19 @@ pub(in crate::install::run_install) fn finish(state: &mut InstallState<'_>) -> M
     let project_root_str = state.project_root.to_string_lossy().to_string();
     if let Some(database) = state.database.as_ref() {
         mgc_store::failpoint::hit("before-commit");
+        // P-2.4: the reference set is replaced atomically, so a concurrent
+        // prune never observes this project referencing nothing.
+        // (P-2.4: tập tham chiếu được thay nguyên tử, nên prune đồng thời không
+        // bao giờ thấy project này không tham chiếu gì.)
+        let ids: Vec<&mgc_types::PackageId> = state
+            .graph
+            .packages
+            .iter()
+            .map(|package| &package.id)
+            .collect();
         database
-            .clear_all_refs(&project_root_str)
+            .replace_refs(&project_root_str, ids)
             .map_err(|error| MgError::Store(error.to_string()))?;
-        for package in &state.graph.packages {
-            database
-                .set_ref(&project_root_str, &package.id)
-                .map_err(|error| MgError::Store(error.to_string()))?;
-        }
 
         // begin/claim/promote/abort all use the same per-store project key.
         // begin/claim/promote/abort dùng chung khóa project theo store.

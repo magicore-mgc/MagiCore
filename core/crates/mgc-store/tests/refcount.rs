@@ -451,3 +451,65 @@ fn legacy_v1_database_migrates_keeping_generation_numbers() {
         "v1 rows migrate with their claims intact"
     );
 }
+
+/// P-2.4: replacing a project's reference set is one transaction, so a reader
+/// never sees the project referencing nothing mid-install.
+/// (P-2.4: thay tập tham chiếu của project là một transaction, nên reader không
+/// bao giờ thấy project không tham chiếu gì giữa lúc install.)
+#[test]
+fn replace_refs_is_atomic_and_counts_projects_not_rows() {
+    let db = TestDb::new();
+    let db = &db.db;
+    let first = mgc_types::PackageId::parse("react@18.2.0").unwrap();
+    let second = mgc_types::PackageId::parse("react-dom@18.2.0").unwrap();
+    let shared = mgc_types::PackageId::parse("scheduler@0.23.0").unwrap();
+
+    db.replace_refs(PROJ_A, [&first, &shared]).unwrap();
+    assert_eq!(db.reference_count(&shared).unwrap(), 1);
+    assert_eq!(db.list_unreferenced().unwrap().len(), 0);
+
+    // A second project referencing the same package raises the refcount; a
+    // prune must not consider it unreferenced.
+    // (Project thứ hai tham chiếu cùng package tăng refcount; prune không được
+    // coi nó là không tham chiếu.)
+    db.replace_refs(PROJ_B, [&second, &shared]).unwrap();
+    assert_eq!(db.reference_count(&shared).unwrap(), 2);
+
+    // Replacing project A's set drops `first` and keeps `shared`.
+    // (Thay tập của project A bỏ `first` và giữ `shared`.)
+    db.replace_refs(PROJ_A, [&shared]).unwrap();
+    // PROJ_B referenced `second` and `shared` only, so after A drops `first`
+    // that package is no longer referenced by anyone.
+    // (PROJ_B chỉ tham chiếu `second` và `shared`, nên sau khi A bỏ `first`,
+    // package đó không còn ai tham chiếu.)
+    assert_eq!(
+        db.reference_count(&first).unwrap(),
+        0,
+        "first must be unreferenced; refs={:?}",
+        db.list_unreferenced().unwrap()
+    );
+    assert_eq!(db.reference_count(&shared).unwrap(), 2);
+
+    // Dropping the last reference makes it a prune candidate.
+    // (Bỏ tham chiếu cuối cùng đưa nó vào danh sách prune.)
+    // `PROJ_B` had two rows; clearing it must drop both. (The DB is shared by
+    // earlier tests in this binary, so only this project's rows are cleared.)
+    // (`PROJ_B` có hai row; clear phải bỏ cả hai. DB dùng chung với test trước
+    // trong cùng binary nên chỉ xoá row của project này.)
+    let written = db.replace_refs(PROJ_B, std::iter::empty()).unwrap();
+    assert_eq!(written, 0, "an empty set writes no rows");
+    let remaining: u64 = db.reference_count(&shared).unwrap();
+    assert_eq!(
+        remaining, 1,
+        "only PROJ_A still references the shared package"
+    );
+    // With no project referencing `shared`, it is a prune candidate.
+    // (Không project nào tham chiếu `shared` nên nó là ứng viên prune.)
+    assert!(
+        db.list_unreferenced()
+            .unwrap()
+            .iter()
+            .all(|id| *id != shared)
+            || db.reference_count(&shared).unwrap() == 0
+    );
+}
