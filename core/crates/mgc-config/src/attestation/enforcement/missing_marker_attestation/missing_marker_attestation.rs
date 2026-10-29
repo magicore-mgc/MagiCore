@@ -44,14 +44,16 @@ pub fn enforce_missing_marker_attestation(project_root: &Path) -> anyhow::Result
             .into_anyhow())
         }
         Ok(AttestationStatus::Absent | AttestationStatus::Valid) => Ok(()),
-        Ok(AttestationStatus::Mismatch(reason)) if mode == AnchorMode::Require => {
+        Ok(AttestationStatus::DomainMismatch(reason) | AttestationStatus::Mismatch(reason))
+            if mode == AnchorMode::Require =>
+        {
             Err(MissingMarkerAttestationError::Mismatch {
                 project: project_root.display().to_string(),
                 reason,
             }
             .into_anyhow())
         }
-        Ok(AttestationStatus::Mismatch(reason)) => {
+        Ok(AttestationStatus::DomainMismatch(reason) | AttestationStatus::Mismatch(reason)) => {
             warn_once(&format!(
                 "WARNING: core identity attestation mismatch at '{}': {reason}",
                 project_root.display(),

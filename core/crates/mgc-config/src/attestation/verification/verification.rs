@@ -4,7 +4,7 @@ use std::path::Path;
 
 use crate::attestation::{
     ATTESTATION_FILE, Attestation, AttestationStatus, attestation_dir, blake3_hex,
-    canonical_message, read_config_bytes,
+    canonical_message, read_config_bytes, signed_message,
 };
 
 /// Verify the live project against its attestation.
@@ -62,7 +62,27 @@ pub fn verify(project_root: &Path, identities_dir: &Path) -> anyhow::Result<Atte
             "mgc.toml changed since attestation (re-attest after intentional edits)".to_string(),
         ));
     }
-    let message = canonical_message(&attestation.core, &attestation.config_digest);
+    // Verify the identity-bound message when the attestation carries one, and
+    // report a domain mismatch separately so a signature copied from another
+    // core is distinguishable from a corrupt signature (P-8.3).
+    // (Verify message có ràng buộc identity khi attestation có; báo domain
+    // mismatch riêng để chữ ký copy từ core khác phân biệt được với chữ ký
+    // hỏng — P-8.3.)
+    let identity_mismatch = attestation.core_identity.as_ref().is_some_and(|identity| {
+        identity
+            .ecosystems
+            .iter()
+            .any(|ecosystem| ecosystem != &attestation.core)
+    });
+    if identity_mismatch {
+        return Ok(AttestationStatus::DomainMismatch(
+            "signature was issued for a different core identity".to_string(),
+        ));
+    }
+    let message = match attestation.core_identity.as_ref() {
+        Some(identity) => signed_message(&attestation.core, &attestation.config_digest, identity),
+        None => canonical_message(&attestation.core, &attestation.config_digest),
+    };
     let mut candidates = vec![attestation.public_key.clone()];
     for previous in &attestation.prev_keys {
         candidates.push(previous.public_key.clone());

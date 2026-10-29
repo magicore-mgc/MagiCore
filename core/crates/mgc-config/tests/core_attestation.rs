@@ -46,7 +46,12 @@ impl Drop for Hermetic {
 }
 
 fn hermetic() -> Hermetic {
-    let lock = HOME_GUARD.lock().unwrap();
+    // A test that fails while holding the lock must not poison every later
+    // test in this binary.
+    // (Test fail khi giữ lock không được làm nhiễm độc mọi test sau.)
+    let lock = HOME_GUARD
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let home = tempfile::tempdir().unwrap();
     // Canonicalize BEFORE installing HOME: Keyring::save compares the
     // canonical candidate path against $HOME, and tempdirs may sit under
@@ -481,4 +486,86 @@ fn warn_mode_keeps_unanchored_legacy_project_discoverable_without_marker() {
         Some("web"),
         "legacy identity remains available from mgc.toml in compatibility mode"
     );
+}
+
+/// P-8.3: an attestation issued for one core cannot be replayed onto another.
+///
+/// The file is copied verbatim onto a `lib` project whose `mgc.toml` bytes are
+/// identical, so only the identity binding can tell the two apart.
+/// (P-8.3: attestation của một core không replay được sang core khác. File được
+/// copy nguyên văn sang project `lib` có cùng bytes `mgc.toml`, nên chỉ ràng
+/// buộc identity phân biệt được hai bên.)
+#[test]
+fn cross_core_signature_replay_is_a_domain_mismatch() {
+    let env = hermetic();
+    attest(
+        &env.root,
+        "web",
+        &env.keyring,
+        &env.identities,
+        None,
+        false,
+        false,
+    )
+    .unwrap();
+
+    let other = env._work.path().join("libproj");
+    std::fs::create_dir_all(&other).unwrap();
+    std::fs::write(other.join(".mgc.core"), "lib\n").unwrap();
+    // The manifest must declare the same core, otherwise the marker/manifest
+    // guard answers first and the signature path is never reached.
+    // (Manifest phải khai cùng core, nếu không guard marker/manifest trả lời
+    // trước và không bao giờ tới bước verify chữ ký.)
+    std::fs::write(
+        other.join("mgc.toml"),
+        "name = \"demo\"\necosystem = \"lib\"\n",
+    )
+    .unwrap();
+
+    // Same key, same config digest, different core: the signature must be
+    // rejected and reported as a domain mismatch, not as corruption.
+    // (Cùng key, cùng digest config, khác core: chữ ký phải bị từ chối và báo
+    // domain mismatch, không phải lỗi hỏng dữ liệu.)
+    let web_slot = mgc_config::attestation::attestation_dir(&env.identities, &env.root);
+    let lib_slot = mgc_config::attestation::attestation_dir(&env.identities, &other);
+    std::fs::create_dir_all(&lib_slot).unwrap();
+    std::fs::copy(
+        web_slot.join(mgc_config::attestation::ATTESTATION_FILE),
+        lib_slot.join(mgc_config::attestation::ATTESTATION_FILE),
+    )
+    .unwrap();
+
+    match verify(&other, &env.identities).unwrap() {
+        AttestationStatus::Mismatch(reason) => {
+            assert!(
+                reason.contains("live core marker is 'lib'"),
+                "the live marker must be the reason: {reason}"
+            );
+        }
+        AttestationStatus::DomainMismatch(reason) => {
+            assert!(reason.contains("different core identity"), "{reason}");
+        }
+        other_status => panic!("cross-core replay must not verify: {other_status:?}"),
+    }
+}
+
+/// P-8.8: the marker file stays one plain-text line.
+/// (P-8.8: file marker vẫn là một dòng text thuần.)
+#[test]
+fn signature_never_rewrites_the_core_marker() {
+    let env = hermetic();
+    let before = std::fs::read(env.root.join(".mgc.core")).unwrap();
+    attest(
+        &env.root,
+        "web",
+        &env.keyring,
+        &env.identities,
+        None,
+        false,
+        false,
+    )
+    .unwrap();
+    let after = std::fs::read(env.root.join(".mgc.core")).unwrap();
+    assert_eq!(before, after);
+    assert_eq!(String::from_utf8(after).unwrap(), "web\n");
 }

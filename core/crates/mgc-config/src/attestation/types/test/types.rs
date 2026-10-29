@@ -9,6 +9,7 @@ fn sample() -> Attestation {
         project_path: "/project".to_owned(),
         key_id: "key".to_owned(),
         public_key: "public".to_owned(),
+        core_identity: None,
         prev_keys: Vec::new(),
         attested_at: "2026-10-17T00:00:00Z".to_owned(),
         mgc_version: "1.1.0".to_owned(),

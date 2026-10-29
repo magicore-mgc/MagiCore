@@ -33,6 +33,12 @@ pub struct Attestation {
     /// Base64 Ed25519 public key (verify without the keyring).
     /// Public key Ed25519 dạng Base64 (verify không cần keyring).
     pub public_key: String,
+    /// Identity block bound into the signature (P-8.3/P-8.4).
+    /// Absent only for attestations written before the block existed.
+    /// Block identity ràng buộc trong chữ ký (P-8.3/P-8.4). Chỉ vắng ở
+    /// attestation tạo trước khi có block này.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub core_identity: Option<crate::attestation::CoreIdentity>,
     /// Rotated-out keys, newest first (at most one generation kept).
     /// Các key đã rotation, mới nhất trước (giữ tối đa một thế hệ).
     #[serde(default)]
@@ -51,6 +57,9 @@ pub struct Attestation {
 /// Attestation check outcome — Kết quả kiểm tra chứng thực.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AttestationStatus {
+    /// Signature belongs to another core identity (P-8.3).
+    /// Chữ ký thuộc identity core khác (P-8.3).
+    DomainMismatch(String),
     /// No attestation slot for this project.
     /// Project chưa có slot chứng thực.
     Absent,

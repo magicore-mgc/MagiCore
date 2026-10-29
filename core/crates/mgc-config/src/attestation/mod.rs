@@ -14,7 +14,9 @@ pub use anchor_mode::{ANCHOR_MODE_ENV, AnchorMode};
 pub use attestation::attest;
 pub use enforcement::{enforce_live_attestation, enforce_missing_marker_attestation};
 pub use keyring::load_or_create_keyring;
-pub use message_digest::{ATTESTATION_MESSAGE_DOMAIN, blake3_hex, canonical_message};
+pub use message_digest::{
+    ATTESTATION_MESSAGE_DOMAIN, CoreIdentity, blake3_hex, canonical_message, signed_message,
+};
 pub use project_slot::{ATTESTATION_FILE, attestation_dir, read_config_bytes};
 pub use signing::attester_version;
 pub use types::{Attestation, AttestationStatus, PreviousKey};

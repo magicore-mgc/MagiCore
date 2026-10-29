@@ -57,7 +57,11 @@ pub fn enforce_live_attestation(project_root: &Path, core: &str) -> anyhow::Resu
             ));
             Ok(())
         }
-        Ok(AttestationStatus::Mismatch(reason)) => {
+        // A signature from another core is a mismatch, never a warning-only
+        // event: the distinction exists so the message names the real cause.
+        // (Chữ ký từ core khác là mismatch, không bao giờ chỉ cảnh báo: phân biệt
+        // để message nêu đúng nguyên nhân.)
+        Ok(AttestationStatus::DomainMismatch(reason)) | Ok(AttestationStatus::Mismatch(reason)) => {
             if mode == AnchorMode::Require {
                 return Err(LiveAttestationError::Mismatch {
                     project: project_root.display().to_string(),

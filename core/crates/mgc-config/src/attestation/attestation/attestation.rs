@@ -43,7 +43,7 @@ pub fn attest(
                     .map_err(|error| anyhow::anyhow!("cannot parse attestation: {error}"))?;
                 return Ok(existing);
             }
-            AttestationStatus::Mismatch(reason) => {
+            AttestationStatus::DomainMismatch(reason) | AttestationStatus::Mismatch(reason) => {
                 anyhow::bail!(
                     "existing core attestation does not match ({reason}); pass --re-attest after intentional changes"
                 );
