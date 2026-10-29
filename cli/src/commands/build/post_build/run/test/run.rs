@@ -9,13 +9,35 @@ fn options<'a>(name: &'a str, embed: bool) -> PostBuildOptions<'a> {
         version: "1.0.0",
         fail_on_findings: true,
         embed_identity: embed,
+        allow_missing_output: false,
     }
 }
 
+/// W-1b: a build that reports a missing output directory as success ships an
+/// SBOM, scan and signature that describe nothing.
+/// (W-1b: build báo thành công khi thư mục output không tồn tại sẽ phát hành
+/// SBOM/scan/chữ ký mô tả hư không.)
 #[test]
-fn a_missing_output_directory_is_not_an_error() {
+fn a_missing_output_directory_fails_the_build() {
     let dir = tempfile::tempdir().unwrap();
-    run(&dir.path().join("absent"), options("app", false)).expect("absent output is fine");
+    let absent = dir.path().join("absent");
+    let error = run(&absent, options("app", false)).expect_err("absent output must fail");
+    let message = error.to_string();
+    assert!(message.contains("post-build failed"), "{message}");
+    assert!(
+        message.contains("absent"),
+        "the message must name the path: {message}"
+    );
+}
+
+/// The escape hatch still succeeds, and only when the caller asks for it.
+/// (Escape hatch vẫn thành công, và chỉ khi caller yêu cầu.)
+#[test]
+fn missing_output_is_allowed_only_on_explicit_request() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut opts = options("app", false);
+    opts.allow_missing_output = true;
+    run(&dir.path().join("absent"), opts).expect("an explicit opt-out succeeds");
 }
 
 #[test]

@@ -205,6 +205,11 @@ fn run_post_build(root: &Path, name: String, allow_warnings: bool) -> Result<()>
             version: "1.0.0",
             fail_on_findings: !allow_warnings,
             embed_identity: true,
+            // A web build whose `dist/` is missing is a broken build, not a
+            // build with nothing to describe (W-1b).
+            // (Build web thiếu `dist/` là build hỏng, không phải build không có
+            // gì để mô tả — W-1b.)
+            allow_missing_output: false,
         },
     )
 }
