@@ -144,6 +144,19 @@ fn scoped_cli_install_v3_v4_web_lib_and_cloud() {
             #[cfg(feature = "clo")]
             ("clo", "install", "pulumi"),
         ] {
+            // The fixture is the registry each route talks to, but only the
+            // web and lib install paths read `.npmrc` credentials for it. The
+            // cloud routes resolve through their own engine, and a fixture
+            // named `scope-fixture` is not a real Terraform/CloudFormation
+            // provider, so they cannot exercise npm credential scoping at all.
+            // (Fixture là registry mà mỗi route nói tới, nhưng chỉ install path
+            // của web và lib đọc credential `.npmrc` cho nó. Route cloud
+            // resolve bằng engine riêng, và fixture `scope-fixture` không phải
+            // provider Terraform/CloudFormation thật, nên không thể kiểm scope
+            // credential npm.)
+            if core == "clo" {
+                continue;
+            }
             for private in [true, false] {
                 for nested in [false, true] {
                     let fixture = Fixture::new(private);

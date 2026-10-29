@@ -81,3 +81,40 @@ fn project_metadata_file_is_refused() {
         .expect("a .magicore file must be refused");
     assert!(error.to_string().contains("is not a directory"), "{error}");
 }
+
+/// SEC-07: a caller that already owns the guard must be able to ask whether it
+/// holds it, so an inner layer can refuse to lock again instead of deadlocking.
+/// (SEC-07: caller đã giữ guard phải hỏi được mình có giữ không, để lớp trong
+/// từ chối lock lại thay vì deadlock.)
+#[test]
+fn the_guard_reports_that_the_current_thread_holds_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("project");
+    std::fs::create_dir_all(&project).unwrap();
+
+    let previous = std::env::var_os("MGC_DATA_DIR");
+    // SAFETY: test-only env mutation under the process test lock; restored on
+    // drop below so no other test observes a torn environment.
+    // AN TOÀN: chỉ test đổi env dưới lock test của process; được khôi phục bên
+    // dưới để test khác không thấy môi trường ghi dở.
+    unsafe { std::env::set_var("MGC_DATA_DIR", dir.path().join("data")) };
+    struct Restore(Option<std::ffi::OsString>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            match self.0.take() {
+                Some(value) => unsafe { std::env::set_var("MGC_DATA_DIR", value) },
+                None => unsafe { std::env::remove_var("MGC_DATA_DIR") },
+            }
+        }
+    }
+    let _restore = Restore(previous);
+
+    assert!(!super::super::held_by_current_thread(&project));
+    let guard = acquire(&project, "web").expect("first acquisition");
+    assert!(
+        super::super::held_by_current_thread(&project),
+        "the holder must be reported to inner layers"
+    );
+    drop(guard);
+    assert!(!super::super::held_by_current_thread(&project));
+}

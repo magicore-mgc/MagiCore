@@ -32,7 +32,11 @@ pub(in crate::install::run_install) struct InstallState<'a> {
     pub(in crate::install::run_install) default_store: ContentStore,
     pub(in crate::install::run_install) node_modules: PathBuf,
     pub(in crate::install::run_install) summary: InstallSummary,
-    pub(in crate::install::run_install) _install_lock: mgc_store::ProjectInstallLock,
+    /// Install lock held for the duration of the run; `None` when the calling
+    /// CLI already owns it (SEC-07).
+    /// (Lock install giữ suốt lần chạy; `None` khi CLI gọi vào đã giữ —
+    /// SEC-07.)
+    pub(in crate::install::run_install) _install_lock: Option<mgc_store::ProjectInstallLock>,
     pub(in crate::install::run_install) cas_generation: i64,
     pub(in crate::install::run_install) cas_generation_guard:
         Option<mgc_store::database::CasGenerationGuard>,

@@ -24,6 +24,23 @@ use anyhow::Result;
 /// Giữ trong suốt một lần mutation; nhả khi drop.
 pub(crate) struct ProjectInstallGuard {
     _lock: mgc_store::ProjectInstallLock,
+    project: std::path::PathBuf,
+}
+
+impl Drop for ProjectInstallGuard {
+    fn drop(&mut self) {
+        if let Ok(mut held) = held_projects().lock() {
+            held.remove(&self.project);
+            if held.is_empty() {
+                // SAFETY: as above, and only when no lock is held any more.
+                // AN TOÀN: như trên, và chỉ khi không còn giữ lock nào.
+                #[allow(unsafe_code)]
+                unsafe {
+                    std::env::remove_var("MGC_PROJECT_LOCK_HELD")
+                };
+            }
+        }
+    }
 }
 
 /// Take the project lock for `core`, or explain who holds it.
@@ -33,6 +50,33 @@ pub(crate) struct ProjectInstallGuard {
 /// Lấy khoá project cho `core`, hoặc giải thích ai đang giữ. Khoá root lấy từ
 /// layout store để mọi core tranh cùng một file cho cùng một project — đó chính
 /// là mục đích của khoá.
+/// Projects whose lock the current thread already holds.
+/// Các project mà thread hiện tại đã giữ lock.
+///
+/// The guard is process-wide advice, but a nested layer (a web adapter inside
+/// `mgc install`, a monorepo target inside `install-web`) runs on the same
+/// thread; asking first turns a deadlock into a decision.
+/// (Guard là khoá cấp process, nhưng lớp lồng nhau (adapter web bên trong
+/// `mgc install`, target monorepo bên trong `install-web`) chạy cùng thread;
+/// hỏi trước biến deadlock thành quyết định.)
+fn held_projects() -> &'static std::sync::Mutex<std::collections::HashSet<std::path::PathBuf>> {
+    static HELD: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashSet<std::path::PathBuf>>,
+    > = std::sync::OnceLock::new();
+    HELD.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
+}
+
+/// Whether this process already holds the install lock for `project_root`.
+/// Process này đã giữ lock install cho `project_root` chưa.
+#[cfg(test)]
+pub(crate) fn held_by_current_thread(project_root: &Path) -> bool {
+    let key = std::fs::canonicalize(project_root).unwrap_or_else(|_| project_root.to_path_buf());
+    held_projects()
+        .lock()
+        .map(|held| held.contains(&key))
+        .unwrap_or(false)
+}
+
 pub(crate) fn acquire(project_root: &Path, core: &str) -> Result<ProjectInstallGuard> {
     // SEC-07: one lock namespace for every core. The Web adapter locks under
     // its store layout, so locking under `<project>/.magicore/locks` here let
@@ -67,13 +111,35 @@ pub(crate) fn acquire(project_root: &Path, core: &str) -> Result<ProjectInstallG
             );
         }
     }
+    let canonical_key =
+        std::fs::canonicalize(project_root).unwrap_or_else(|_| project_root.to_path_buf());
     let lock = mgc_store::ProjectInstallLock::acquire_at(&locks_root, &key).map_err(|error| {
         anyhow::anyhow!(
             "another MagiCore install holds this project ({core}): {error}. \
                  Wait for it to finish, or remove a stale lock if the process is gone"
         )
     })?;
-    Ok(ProjectInstallGuard { _lock: lock })
+    if let Ok(mut held) = held_projects().lock() {
+        held.insert(canonical_key.clone());
+    }
+    // The marker is process state for in-process adapter layers. Recording the
+    // holder in `held_projects` above is the authoritative answer; the variable
+    // only lets the web adapter (another crate) ask without a new dependency.
+    // (Marker là state của process cho lớp adapter cùng process. Bản ghi trong
+    // `held_projects` ở trên mới là câu trả lời chuẩn; biến chỉ cho adapter web
+    // (crate khác) hỏi mà không cần dependency mới.)
+    // SAFETY: the CLI entry point is single-threaded before dispatch, and this
+    // variable only marks lock ownership for in-process adapter layers.
+    // AN TOÀN: entry point CLI đơn luồng trước dispatch, và biến này chỉ đánh
+    // dấu quyền giữ lock cho lớp adapter cùng process.
+    #[allow(unsafe_code)]
+    unsafe {
+        std::env::set_var("MGC_PROJECT_LOCK_HELD", "1")
+    };
+    Ok(ProjectInstallGuard {
+        _lock: lock,
+        project: canonical_key,
+    })
 }
 
 #[cfg(test)]

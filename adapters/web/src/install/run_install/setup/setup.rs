@@ -6,7 +6,20 @@ use crate::install::TreeBackup;
 use crate::install::recover_interrupted_install;
 use crate::install::run_install::state::InstallState;
 use crate::native::npm_registry::NpmRegistry;
-use mgc_store::{ContentStore, Database, Layout, PackageCache, ProjectInstallLock};
+use mgc_store::{ContentStore, Database, Layout, PackageCache};
+
+/// Whether the calling CLI already holds this project's install lock.
+/// CLI gọi vào đã giữ lock install của project này chưa.
+///
+/// Set by the CLI guard, which is the single serialization point every core
+/// uses. It is a marker, not a bypass: the guard is an OS file lock that is
+/// already held, and taking it twice in one process deadlocks.
+/// (Do guard của CLI đặt, là điểm tuần tự hoá duy nhất mọi core dùng. Đây là
+/// dấu hiệu chứ không phải bypass: guard là OS file lock đã giữ sẵn, lấy hai
+/// lần trong cùng process sẽ deadlock.)
+fn caller_holds_project_lock() -> bool {
+    std::env::var("MGC_PROJECT_LOCK_HELD").is_ok_and(|value| value == "1")
+}
 use mgc_types::adapter::{InstallOptions, InstallSummary, ResolvedGraph};
 use mgc_types::{MgError, MgResult};
 use rayon::prelude::*;
@@ -90,10 +103,18 @@ pub(in crate::install::run_install) fn initialize<'a>(
     // store lock root, so every core contends on one file per project.
     // (SEC-07: khoá theo project root (cùng key với CLI guard) trong root khoá
     // store dùng chung, để mọi core tranh một file cho mỗi project.)
-    let project_key_lock = project_root.to_string_lossy().to_string();
-    let lock_root = mgc_store::default_store_root().join("locks");
-    let install_lock = ProjectInstallLock::acquire_at(&lock_root, &project_key_lock)
-        .map_err(|error| MgError::Store(error.to_string()))?;
+    // SEC-07: one lock key and one lock root for every core — the same values
+    // the CLI guard uses (`mgc_store::default_store_root()/locks`, keyed on the
+    // canonical project path). An install that is already wrapped by the guard
+    // (that caller lives in another crate) would deadlock, so the CLI passes a
+    // pre-acquired lock through `MGC_PROJECT_LOCK_HELD`; without it the adapter
+    // takes the lock itself and two concurrent `mgc install-web` runs still
+    // serialize.
+    // (SEC-07: một key và một root khoá cho mọi core — đúng giá trị guard CLI
+    // dùng (`mgc_store::default_store_root()/locks`, khoá theo path canonical).
+    // Lần install đã được guard bao sẵn (caller ở crate khác) sẽ deadlock, nên
+    // CLI truyền qua `MGC_PROJECT_LOCK_HELD`; không có biến đó adapter tự lấy
+    // lock và hai `mgc install-web` song song vẫn tuần tự hoá.)
     let recovered = recover_interrupted_install(project_root, &node_modules, &layout.temp_dir())?;
     if recovered.restored_backup || recovered.removed_staging > 0 {
         eprintln!(
@@ -169,7 +190,18 @@ pub(in crate::install::run_install) fn initialize<'a>(
         default_store,
         node_modules,
         summary,
-        _install_lock: install_lock,
+        _install_lock: if caller_holds_project_lock() {
+            None
+        } else {
+            let lock_root = mgc_store::default_store_root().join("locks");
+            Some(
+                mgc_store::ProjectInstallLock::acquire_at(
+                    &lock_root,
+                    &project_root.to_string_lossy(),
+                )
+                .map_err(|error| MgError::Store(error.to_string()))?,
+            )
+        },
         cas_generation,
         cas_generation_guard,
         staging_root,
