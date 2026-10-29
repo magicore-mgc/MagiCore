@@ -569,3 +569,105 @@ fn signature_never_rewrites_the_core_marker() {
     assert_eq!(before, after);
     assert_eq!(String::from_utf8(after).unwrap(), "web\n");
 }
+
+/// P-8.5: a previous key whose grace period passed is refused, so a leaked
+/// rotated-out key stops working.
+/// (P-8.5: key cũ đã hết ân hạn bị từ chối, nên key bị lộ ngừng hoạt động.)
+#[test]
+fn expired_previous_key_is_refused() {
+    let env = hermetic();
+    attest(
+        &env.root,
+        "web",
+        &env.keyring,
+        &env.identities,
+        None,
+        false,
+        false,
+    )
+    .unwrap();
+
+    // Rewrite the attestation with a previous key whose deadline is in the
+    // past while keeping the live signing key, so only the expiry changes.
+    // (Ghi lại attestation với key cũ có hạn đã qua trong khi giữ key ký hiện
+    // tại, nên chỉ hạn thay đổi.)
+    let slot = mgc_config::attestation::attestation_dir(&env.identities, &env.root);
+    let path = slot.join(mgc_config::attestation::ATTESTATION_FILE);
+    let mut document: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    document["prev_keys"] = serde_json::json!([{
+        "key_id": "rotated-out",
+        "public_key": "AAAA",
+        "expires_at": "2000-01-01T00:00:00Z",
+    }]);
+    std::fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
+
+    match verify(&env.root, &env.identities).unwrap() {
+        AttestationStatus::Mismatch(reason) => {
+            assert!(reason.contains("grace deadline"), "{reason}");
+        }
+        other => panic!("an expired previous key must be refused: {other:?}"),
+    }
+}
+
+/// P-8.1/P-8.2: editing a field that the in-document signature does not cover
+/// is still caught, because the sidecar signs the exact bytes on disk.
+/// (P-8.1/P-8.2: sửa một field mà chữ ký bên trong tài liệu không phủ vẫn bị
+/// bắt, vì file cạnh đó ký đúng bytes trên đĩa.)
+#[test]
+fn tampered_attestation_file_is_detected_by_the_sidecar() {
+    let env = hermetic();
+    attest(
+        &env.root,
+        "web",
+        &env.keyring,
+        &env.identities,
+        None,
+        false,
+        false,
+    )
+    .unwrap();
+
+    // Pin the key that signed so the sidecar check has a trust root. The
+    // public key is taken from the attestation the signer just wrote, which is
+    // the same key the keyring holds.
+    // (Pin key đã ký để bước kiểm sidecar có gốc tin cậy. Public key lấy từ
+    // attestation signer vừa ghi, đúng key keyring đang giữ.)
+    let slot_path = mgc_config::attestation::attestation_dir(&env.identities, &env.root)
+        .join(mgc_config::attestation::ATTESTATION_FILE);
+    let signed_document: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&slot_path).unwrap()).unwrap();
+    let public_key = signed_document["public_key"]
+        .as_str()
+        .expect("attestation records the signing public key")
+        .to_string();
+    std::fs::write(
+        env.root.join("mgc.toml"),
+        format!("name = \"demo\"\necosystem = \"web\"\n\n[trust]\nkeys = [\"{public_key}\"]\n"),
+    )
+    .unwrap();
+
+    let slot = mgc_config::attestation::attestation_dir(&env.identities, &env.root);
+    let path = slot.join(mgc_config::attestation::ATTESTATION_FILE);
+    let mut sidecar = path.as_os_str().to_os_string();
+    sidecar.push(".sig");
+    assert!(
+        std::path::Path::new(&sidecar).is_file(),
+        "signing must leave a sidecar signature"
+    );
+
+    let mut document: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    // `project_path` is not part of the in-document signed message.
+    // (`project_path` không nằm trong message được ký bên trong tài liệu.)
+    document["project_path"] = serde_json::json!("/somewhere/else");
+    std::fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
+
+    let status = verify(&env.root, &env.identities).unwrap();
+    match status {
+        AttestationStatus::Mismatch(reason) => {
+            assert!(reason.contains("sidecar"), "{reason}");
+        }
+        other => panic!("a tampered attestation must not verify: {other:?}"),
+    }
+}

@@ -12,6 +12,15 @@ pub struct PreviousKey {
     /// Base64 Ed25519 public key.
     /// Public key Ed25519 ở dạng Base64.
     pub public_key: String,
+    /// Optional RFC 3339 instant after which the key is refused (P-8.5).
+    /// Mốc RFC 3339 (tùy chọn) sau đó key bị từ chối (P-8.5).
+    ///
+    /// A rotation grace period that never ends is a rotation that never
+    /// happened, so an expired previous key is a hard failure.
+    /// (Thời gian ân hạn rotation không bao giờ kết thúc là rotation không xảy
+    /// ra, nên key cũ hết hạn là lỗi cứng.)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
 }
 
 /// Core-identity attestation — Chứng thực identity core.

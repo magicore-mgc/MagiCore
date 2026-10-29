@@ -29,6 +29,40 @@ pub fn verify(project_root: &Path, identities_dir: &Path) -> anyhow::Result<Atte
     };
     let attestation: Attestation = serde_json::from_str(&text)
         .map_err(|error| anyhow::anyhow!("attestation is not valid JSON: {error}"))?;
+    // P-8.1/P-8.2: when a sibling signature exists, it must cover the exact
+    // bytes on disk before the document's own fields are trusted.
+    // (P-8.1/P-8.2: khi có chữ ký cạnh file, nó phải phủ đúng bytes trên đĩa
+    // trước khi tin các field của tài liệu.)
+    let mut sidecar = path.as_os_str().to_os_string();
+    sidecar.push(".sig");
+    let sidecar = std::path::PathBuf::from(sidecar);
+    if let Ok(raw) = std::fs::read(&path)
+        && sidecar.is_file()
+    {
+        let trusted = trusted_keys(project_root);
+        if !trusted.is_empty() {
+            let signature_text = std::fs::read_to_string(&sidecar)
+                .map_err(|error| anyhow::anyhow!("cannot read the attestation sidecar: {error}"))?;
+            let signature = mgc_crypto::Ed25519Signature::from_base64(signature_text.trim())
+                .map_err(|error| anyhow::anyhow!("sidecar signature is not base64: {error}"))?;
+            let mut verified = false;
+            for key in &trusted {
+                if let Ok(public_key) = mgc_crypto::Ed25519PublicKey::from_base64(key)
+                    && mgc_crypto::ed25519_signer::verify_signature(&public_key, &raw, &signature)
+                        .is_ok()
+                {
+                    verified = true;
+                    break;
+                }
+            }
+            if !verified {
+                return Ok(AttestationStatus::Mismatch(
+                    "attestation file was modified after it was signed (sidecar mismatch)"
+                        .to_string(),
+                ));
+            }
+        }
+    }
     let live_core = match crate::project::ProjectConfig::read_core_marker_identity(project_root) {
         Ok(Some(core)) => core,
         Ok(None) => {
@@ -84,7 +118,19 @@ pub fn verify(project_root: &Path, identities_dir: &Path) -> anyhow::Result<Atte
         None => canonical_message(&attestation.core, &attestation.config_digest),
     };
     let mut candidates = vec![attestation.public_key.clone()];
+    // P-8.5: a rotated-out key is only accepted inside its grace window.
+    // (P-8.5: key bị rotation chỉ được chấp nhận trong thời gian ân hạn.)
+    let now = crate::attestation::rotation::now_rfc3339();
     for previous in &attestation.prev_keys {
+        let expired = previous.expires_at.as_deref().is_some_and(|deadline| {
+            crate::attestation::rotation::rotation_key_expired(deadline, &now)
+        });
+        if expired {
+            return Ok(AttestationStatus::Mismatch(format!(
+                "previous key '{}' passed its rotation grace deadline and is no longer accepted",
+                previous.key_id
+            )));
+        }
         candidates.push(previous.public_key.clone());
     }
     let trusted = trusted_keys(project_root);

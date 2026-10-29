@@ -17,6 +17,8 @@
 
 pub mod archive;
 mod cache_segment;
+#[path = "composer/mod.rs"]
+pub mod composer;
 pub mod crates;
 pub mod go;
 #[path = "hfhub/mod.rs"]
@@ -41,6 +43,7 @@ mod registry_protocol;
 mod registry_root;
 mod resolved_entry;
 
+pub use composer::ComposerProtocol;
 pub use crates::CratesProtocol;
 pub use digest::{sha256_hex, store_ref_for_blake3};
 pub use go::GoModProtocol;

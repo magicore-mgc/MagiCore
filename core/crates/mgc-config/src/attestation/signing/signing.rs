@@ -66,6 +66,25 @@ pub(in crate::attestation) fn sign_and_store(
         .map_err(|error| anyhow::anyhow!("cannot serialize attestation: {error}"))?;
     std::fs::write(path, text)
         .map_err(|error| anyhow::anyhow!("cannot write attestation: {error}"))?;
+    // P-8.1/P-8.2: the sibling `<attestation>.sig` binds the document itself.
+    // The attestation carries its own signature field, but a rewritten file
+    // whose `config_digest` still matches the manifest would pass the message
+    // check; the sibling covers the exact bytes on disk and is compared before
+    // the document is trusted.
+    // (P-8.1/P-8.2: file `<attestation>.sig` cạnh đó ràng buộc chính tài liệu.
+    // Attestation có field signature riêng, nhưng file bị ghi lại với
+    // `config_digest` vẫn khớp manifest sẽ qua được kiểm message; file cạnh
+    // đó phủ đúng bytes trên đĩa và được so trước khi tin tài liệu.)
+    let document = std::fs::read(path)
+        .map_err(|error| anyhow::anyhow!("cannot read back attestation: {error}"))?;
+    let document_signature = signer.sign(&document);
+    let mut sidecar = path.as_os_str().to_os_string();
+    sidecar.push(".sig");
+    std::fs::write(
+        std::path::PathBuf::from(sidecar),
+        document_signature.to_base64(),
+    )
+    .map_err(|error| anyhow::anyhow!("cannot write attestation sidecar signature: {error}"))?;
     Ok(attestation)
 }
 
