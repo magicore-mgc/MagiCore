@@ -63,6 +63,14 @@ pub async fn run(
         return Ok(());
     }
 
+    // `--from-local` overrides every remote layer (same rule as web create).
+    // (`--from-local` thắng mọi layer từ xa, cùng quy tắc route create của web.)
+    if config.from_local.is_some() {
+        super::scaffold_and_save_metadata(&config)?;
+        mgc_ui::success(&format!("Created lib project: {}", project_name));
+        return Ok(());
+    }
+
     // TypeScript has no official library scaffolder: `tsc` only compiles and
     // npm creates nothing without a template MagiCore refuses to embed. Say so
     // instead of falling through to a registry layer that does not exist.
@@ -85,13 +93,6 @@ pub async fn run(
             crate::scaffold::spec::ScaffoldRef::Default
         )
     });
-    // `--from-local` overrides every remote layer (same rule as web create).
-    // (`--from-local` thắng mọi layer từ xa, cùng quy tắc route create của web.)
-    if config.from_local.is_some() {
-        super::scaffold_and_save_metadata(&config)?;
-        mgc_ui::success(&format!("Created lib project: {}", project_name));
-        return Ok(());
-    }
     match crate::commands::template::ensure_layer(&format!("lib/{request}")).await {
         Ok(status) if status.is_available() => {
             // Layer available - proceed — layer có sẵn - tiếp tục
