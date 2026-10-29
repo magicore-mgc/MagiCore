@@ -172,3 +172,7 @@ fn project_display_name(root: &std::path::Path) -> String {
 #[cfg(test)]
 #[path = "test/generation.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "test/golden_files.rs"]
+mod golden_files;

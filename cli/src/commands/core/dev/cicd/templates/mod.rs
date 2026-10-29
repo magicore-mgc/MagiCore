@@ -12,6 +12,7 @@ pub(super) use azure_pipelines::AZURE_TEMPLATE;
 pub(super) use bitbucket_pipelines::BITBUCKET_TEMPLATE;
 pub(super) use circleci::CIRCLE_TEMPLATE;
 pub(super) use github_actions::WORKFLOW_TEMPLATE;
+pub(super) use github_actions::WORKFLOW_TEMPLATE as GITHUB_WORKFLOW_TEMPLATE;
 pub(super) use gitlab::GITLAB_TEMPLATE;
 pub(super) use jenkins::JENKINS_TEMPLATE;
 #[cfg(test)]

@@ -93,17 +93,30 @@ fn the_guard_reports_that_the_current_thread_holds_it() {
     std::fs::create_dir_all(&project).unwrap();
 
     let previous = std::env::var_os("MGC_DATA_DIR");
-    // SAFETY: test-only env mutation under the process test lock; restored on
-    // drop below so no other test observes a torn environment.
-    // AN TOÀN: chỉ test đổi env dưới lock test của process; được khôi phục bên
-    // dưới để test khác không thấy môi trường ghi dở.
-    unsafe { std::env::set_var("MGC_DATA_DIR", dir.path().join("data")) };
+    // SAFETY: test-only env mutation; restored on drop below so no other test
+    // observes a torn environment.
+    // AN TOÀN: chỉ test đổi env; được khôi phục bên dưới để test khác không thấy
+    // môi trường ghi dở.
+    #[allow(unsafe_code)]
+    unsafe {
+        std::env::set_var("MGC_DATA_DIR", dir.path().join("data"))
+    };
     struct Restore(Option<std::ffi::OsString>);
     impl Drop for Restore {
         fn drop(&mut self) {
             match self.0.take() {
-                Some(value) => unsafe { std::env::set_var("MGC_DATA_DIR", value) },
-                None => unsafe { std::env::remove_var("MGC_DATA_DIR") },
+                Some(value) => {
+                    #[allow(unsafe_code)]
+                    unsafe {
+                        std::env::set_var("MGC_DATA_DIR", value)
+                    }
+                }
+                None => {
+                    #[allow(unsafe_code)]
+                    unsafe {
+                        std::env::remove_var("MGC_DATA_DIR")
+                    }
+                }
             }
         }
     }
