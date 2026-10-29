@@ -14,19 +14,38 @@ pub(in crate::commands::model) async fn pull_oci(
     let (registry, rest) = oci
         .split_once('/')
         .ok_or_else(|| OciPullError::InvalidSource(oci.to_string()))?;
-    let (repo, tag) = match rest.rsplit_once(':') {
-        Some((r, t)) if !r.is_empty() && !t.is_empty() => (r, t),
-        _ => (rest, "latest"),
+    // PAR-12: an unpinned tag (`latest`) is a moving target and the manifest
+    // digest is self-declared, so a model pulled by tag cannot be reproduced.
+    // A digest reference is accepted as-is; a tag is only accepted when it is
+    // explicit, and the resolved digest is returned so the caller can record it.
+    // (PAR-12: tag không pin (`latest`) là đích di động và digest trong
+    // manifest do chính nó khai, nên model pull theo tag không tái lập được.
+    // Tham chiếu digest được nhận nguyên; tag chỉ được nhận khi nêu tường minh,
+    // và digest đã resolve được trả về để caller ghi lại.)
+    let (repo, reference) = match rest.rsplit_once('@') {
+        Some((r, d)) if !r.is_empty() && !d.is_empty() => (r, d),
+        _ => match rest.rsplit_once(':') {
+            Some((r, t)) if !r.is_empty() && !t.is_empty() => (r, t),
+            _ => {
+                return Err(OciPullError::UnpinnedReference(rest.to_string()).into());
+            }
+        },
     };
+    // PAR-12: plaintext HTTP is only acceptable for a loopback registry; any
+    // other registry must be addressed over TLS.
+    // (PAR-12: HTTP trần chỉ chấp nhận cho registry loopback; registry khác phải
+    // dùng TLS.)
     let base = if registry.contains("://") {
         registry.to_string()
-    } else {
+    } else if is_loopback_registry(registry) {
         format!("http://{registry}")
+    } else {
+        format!("https://{registry}")
     };
 
     let c = client(&base, None)?;
     let manifest = c
-        .pull_manifest(repo, tag)
+        .pull_manifest(repo, reference)
         .await
         .with_context(|| OciPullError::ManifestPullFailed)?;
 
@@ -50,6 +69,33 @@ pub(in crate::commands::model) async fn pull_oci(
         );
     }
 
-    let name = format!("{repo}:{tag}");
+    let name = format!("{repo}:{reference}");
     Ok((name, blobs, total))
 }
+
+/// Whether a registry host is a loopback address (plaintext is acceptable).
+/// Host registry có phải loopback (chấp nhận plaintext) hay không.
+pub(super) fn is_loopback_registry(registry: &str) -> bool {
+    // A bracketed IPv6 literal keeps its colons, so it must be matched before
+    // the port split; otherwise `[::1]:5000` reads as host `[`.
+    // (IPv6 trong ngoặc giữ dấu hai chấm nên phải so trước khi tách port; nếu
+    // không `[::1]:5000` bị đọc thành host `[`.)
+    let host = if let Some(rest) = registry.strip_prefix('[') {
+        rest.split(']').next().map(|inner| format!("[{inner}]"))
+    } else {
+        None
+    }
+    .unwrap_or_else(|| {
+        registry
+            .rsplit_once(':')
+            .filter(|(_, port)| port.chars().all(|c| c.is_ascii_digit()))
+            .map(|(host, _)| host)
+            .unwrap_or(registry)
+            .to_string()
+    });
+    matches!(host.as_str(), "127.0.0.1" | "localhost" | "::1" | "[::1]")
+}
+
+#[cfg(test)]
+#[path = "test/oci_pull.rs"]
+mod test;
