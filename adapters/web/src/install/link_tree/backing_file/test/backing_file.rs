@@ -52,3 +52,45 @@ fn test_backing_link_rematerializes_stale_target() {
 
     assert_eq!(std::fs::read(&target).unwrap(), b"fresh-content");
 }
+
+/// P-2.5: when copy-on-write is unavailable (the Windows case) every
+/// materialized file must be a real copy — its own inode, `nlink == 1` — so an
+/// edit in one project can never reach another project or the package cache.
+/// (P-2.5: khi không có copy-on-write (trường hợp Windows) mọi file được
+/// materialize phải là bản copy thật — inode riêng, `nlink == 1` — để sửa ở
+/// một project không bao giờ chạm project khác hay cache package.)
+#[cfg(unix)]
+#[test]
+fn reflink_disabled_materialization_uses_a_private_copy() {
+    use std::os::unix::fs::MetadataExt;
+
+    let dir = tempdir_real().unwrap();
+    let source = dir.path().join("cache-blob");
+    std::fs::write(&source, b"shared payload").unwrap();
+    let target = dir.path().join("project/node_modules/pkg/blob");
+
+    // `reflink_enabled = false` is exactly the path Windows takes when the
+    // filesystem reports NotSupported.
+    // (`reflink_enabled = false` đúng là đường Windows đi khi filesystem báo
+    // NotSupported.)
+    backing_link_file(&source, &target, None, false).unwrap();
+
+    assert_eq!(std::fs::read(&target).unwrap(), b"shared payload");
+    let source_meta = std::fs::metadata(&source).unwrap();
+    let target_meta = std::fs::metadata(&target).unwrap();
+    assert_eq!(
+        target_meta.nlink(),
+        1,
+        "a copy fallback must not create a second link to the shared blob"
+    );
+    assert_ne!(
+        (source_meta.dev(), source_meta.ino()),
+        (target_meta.dev(), target_meta.ino()),
+        "the project copy must be its own inode"
+    );
+
+    // Editing the project copy leaves the cached blob untouched.
+    // (Sửa bản trong project không đụng blob trong cache.)
+    std::fs::write(&target, b"edited in project").unwrap();
+    assert_eq!(std::fs::read(&source).unwrap(), b"shared payload");
+}

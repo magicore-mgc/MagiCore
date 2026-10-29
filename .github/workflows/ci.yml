@@ -27,6 +27,16 @@ jobs:
           fetch-depth: 0
       - name: Validate CI, release, and action-pin contracts
         run: bash scripts/test/test_ci_workflow_contract.sh
+      - name: Lint every generated pipeline shape with actionlint
+        # P-7.2: the generator is pinned by golden files, but a golden can
+        # itself encode an invalid workflow. actionlint reads the same
+        # repository workflows and the generator goldens as YAML.
+        # (P-7.2: generator đã được ghim bằng golden file, nhưng golden cũng
+        # có thể chứa workflow sai. actionlint đọc chính workflow của repo và
+        # golden của generator dưới dạng YAML.)
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color
       - name: Validate Phase 0 coverage schema, fixture, and anti-laundering rules
         run: |
           python3 -m json.tool ci/evidence/coverage-manifest.schema.json >/dev/null
