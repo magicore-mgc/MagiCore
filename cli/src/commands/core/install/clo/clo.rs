@@ -27,15 +27,44 @@ pub async fn install(
     )?;
     let adapter = crate::commands::core::cloud::adapter(&root)?;
     if dry_run {
-        if !packages.is_empty() {
+        // PAR-08: a dry run must report what would actually happen. Reporting
+        // success before resolving hid the most common failure — a package name
+        // the registry cannot resolve — so the request is validated here and
+        // nothing is written.
+        // (PAR-08: dry-run phải báo đúng việc sẽ xảy ra. Báo thành công trước
+        // khi resolve che mất lỗi phổ biến nhất — tên package registry không
+        // resolve được — nên request được kiểm ở đây và không ghi gì.)
+        mgc_ui::info(&format!("[dry-run] cloud project kind: {cloud_kind}"));
+        if packages.is_empty() {
+            mgc_ui::info("[dry-run] would re-resolve and install the current cloud dependency set");
+            return Ok(());
+        }
+        for package in &packages {
+            let name = mgc_types::PackageName::new(package).map_err(|error| {
+                anyhow::anyhow!("[dry-run] '{package}' is not a valid package name: {error}")
+            })?;
+            let prepared = adapter
+                .prepare_add(
+                    &root,
+                    &name,
+                    None,
+                    mgc_types::adapter::AddOptions::default(),
+                )
+                .await
+                .map_err(|error| {
+                    anyhow::anyhow!(
+                        "[dry-run] '{package}' cannot be resolved, so install would fail: {error}"
+                    )
+                })?;
             mgc_ui::info(&format!(
-                "[dry-run] would add cloud packages: {:?}",
-                packages
+                "[dry-run] would add {}@{}",
+                name.as_str(),
+                prepared.id.version()
             ));
         }
-        mgc_ui::info(&format!(
-            "[dry-run] would run MagiCore-managed dependency install for {cloud_kind}"
-        ));
+        mgc_ui::info(
+            "[dry-run] would run MagiCore-managed dependency install; nothing was written",
+        );
         return Ok(());
     }
     if !packages.is_empty() {
@@ -56,3 +85,7 @@ pub async fn install(
     )
     .await
 }
+
+#[cfg(test)]
+#[path = "test/mod.rs"]
+mod test;
