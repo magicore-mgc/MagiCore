@@ -82,7 +82,6 @@ pub(in crate::npm) async fn adduser(
 /// mọi id khác, nên prefix giúp giá trị tự nhận diện trong log, proxy và
 /// scanner.)
 pub(super) fn registration_token() -> String {
-    use base64::Engine as _;
     // Two independent v4 UUIDs give 244 random bits behind a prefix that makes
     // the value recognisable in logs; `mgc-crypto` does not expose a raw
     // entropy source and a new dependency for one token is not justified.
