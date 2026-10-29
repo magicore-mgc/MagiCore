@@ -9,7 +9,6 @@ fn options<'a>(name: &'a str, embed: bool) -> PostBuildOptions<'a> {
         version: "1.0.0",
         fail_on_findings: true,
         embed_identity: embed,
-        allow_missing_output: false,
     }
 }
 
@@ -28,16 +27,6 @@ fn a_missing_output_directory_fails_the_build() {
         message.contains("absent"),
         "the message must name the path: {message}"
     );
-}
-
-/// The escape hatch still succeeds, and only when the caller asks for it.
-/// (Escape hatch vẫn thành công, và chỉ khi caller yêu cầu.)
-#[test]
-fn missing_output_is_allowed_only_on_explicit_request() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut opts = options("app", false);
-    opts.allow_missing_output = true;
-    run(&dir.path().join("absent"), opts).expect("an explicit opt-out succeeds");
 }
 
 #[test]

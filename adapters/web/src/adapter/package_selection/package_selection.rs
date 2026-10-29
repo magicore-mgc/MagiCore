@@ -1,4 +1,6 @@
 //! `package_selection.rs` — Package version and range selection / chọn version và range package.
+use std::path::Path;
+
 use super::super::WebAdapter;
 use crate::exact_version_from_range;
 use crate::native;
@@ -82,8 +84,17 @@ impl WebAdapter {
         Ok(out)
     }
 
+    /// Infer the range to record, preferring a range the project already
+    /// declares.
+    /// Suy ra range cần ghi, ưu tiên range project đã khai.
+    ///
+    /// `project_root` is the caller's project because the adapter itself is
+    /// stateless about which directory an operation targets.
+    /// (`project_root` do caller truyền vì adapter không giữ trạng thái thư mục
+    /// cho từng thao tác.)
     pub(in crate::adapter) async fn infer_add_range(
         &self,
+        project_root: &Path,
         name: &PackageName,
         explicit_range: Option<&VersionRange>,
         exact: bool,
@@ -100,7 +111,25 @@ impl WebAdapter {
             let registry = native::npm_registry::NpmRegistry::new(&self.registry_url);
             let latest = self.latest_version_string(name, &registry).await?;
             let selected = Version::parse(&latest).ok();
-            let saved = if exact { latest } else { format!("^{latest}") };
+            // `update` calls `prepare_add` with no range. An installed pin such
+            // as `^1.0.0` must stay authoritative: saving `^{latest}` widened it
+            // (recorded `^1.1.0` while `mgc.lock` still held 1.0.0) and made the
+            // package silently follow `latest` on every later install.
+            // (`update` gọi `prepare_add` không kèm range. Pin đã cài như
+            // `^1.0.0` phải giữ quyền quyết định: lưu `^{latest}` nới rộng pin
+            // (manifest ghi `^1.1.0` trong khi `mgc.lock` vẫn 1.0.0) và khiến
+            // package âm thầm đi theo `latest` ở mọi lần cài sau.)
+            let existing = self.existing_declared_range(project_root, name).await?;
+            let saved = match existing.as_deref() {
+                Some(raw) if !raw.trim().is_empty() => raw.trim().to_string(),
+                _ => {
+                    if exact {
+                        latest
+                    } else {
+                        format!("^{latest}")
+                    }
+                }
+            };
             return Ok((VersionRange::parse(&saved)?, selected));
         }
 
@@ -121,6 +150,21 @@ impl WebAdapter {
         }
 
         unreachable!()
+    }
+
+    /// Range the project already declares for this package, if any.
+    /// Range project đã khai cho package này, nếu có.
+    async fn existing_declared_range(
+        &self,
+        project_root: &Path,
+        name: &PackageName,
+    ) -> MgResult<Option<String>> {
+        let manifest = crate::manifest::parse_manifest(project_root)
+            .map_err(|error| mgc_types::MgError::Other(error.to_string()))?;
+        let declared = manifest
+            .find_dep(name.as_str())
+            .map(|dependency| dependency.range.as_str().to_string());
+        Ok(declared)
     }
 
     async fn latest_version_string(

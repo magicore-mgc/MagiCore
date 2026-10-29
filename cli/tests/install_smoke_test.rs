@@ -98,7 +98,7 @@ fn test_archive_download_and_extract() {
 
     let version_str = String::from_utf8_lossy(&version_output.stdout);
     assert!(
-        version_str.contains("mgc") && version_str.contains("1.1.0"),
+        version_str.contains("mgc") && version_str.contains(env!("CARGO_PKG_VERSION")),
         "Version string incorrect from distribution: {}",
         version_str
     );
@@ -145,7 +145,7 @@ fn test_binary_version_and_help() {
 
     let version_str = String::from_utf8_lossy(&version_output.stdout);
     assert!(
-        version_str.contains("mgc") && version_str.contains("1.1.0"),
+        version_str.contains("mgc") && version_str.contains(env!("CARGO_PKG_VERSION")),
         "Version string incorrect: {}",
         version_str
     );

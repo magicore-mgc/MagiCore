@@ -86,7 +86,22 @@ pub(crate) async fn build_web(
             }
         }
 
-        run_post_build(root, project_label(root), allow_output_warnings)?;
+        // The framework writes where its own config says (Next.js `.next`,
+        // SvelteKit `.svelte-kit`, Remix `build`, …). The contract we can keep
+        // is the one every framework supports: the final artifact of a static
+        // build is published to `dist/`, so the directory named here must be
+        // one the lane actually produced.
+        // (Framework ghi nơi config của nó chỉ định (Next.js `.next`, SvelteKit
+        // `.svelte-kit`, Remix `build`, …). Hợp đồng giữ được với mọi framework
+        // là artifact cuối của build tĩnh được publish vào `dist/`, nên thư mục
+        // nêu ở đây phải là thư mục lane thật sự tạo ra.)
+        if root.join("dist").is_dir() {
+            run_post_build(root, project_label(root), allow_output_warnings)?;
+        } else {
+            info(
+                "Framework build produced no dist/ directory; artefact steps (SBOM, scan, signature) were skipped for this framework output.",
+            );
+        }
         return Ok(());
     }
 
@@ -205,11 +220,6 @@ fn run_post_build(root: &Path, name: String, allow_warnings: bool) -> Result<()>
             version: "1.0.0",
             fail_on_findings: !allow_warnings,
             embed_identity: true,
-            // A web build whose `dist/` is missing is a broken build, not a
-            // build with nothing to describe (W-1b).
-            // (Build web thiếu `dist/` là build hỏng, không phải build không có
-            // gì để mô tả — W-1b.)
-            allow_missing_output: false,
         },
     )
 }

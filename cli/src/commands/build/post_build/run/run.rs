@@ -39,11 +39,6 @@ pub(crate) struct PostBuildOptions<'a> {
     /// Có nhúng danh tính build vào file script không. Chỉ có nghĩa với output
     /// dạng JavaScript; binary đã biên dịch không có script để chèn.
     pub embed_identity: bool,
-    /// Skip the artefact steps when the output directory is absent, instead of
-    /// failing the build (W-1b escape hatch, always warned).
-    /// Bỏ bước artefact khi thư mục output không tồn tại thay vì làm build thất
-    /// bại (escape hatch W-1b, luôn cảnh báo).
-    pub allow_missing_output: bool,
 }
 
 /// Describe, examine, mark and sign `output_dir`.
@@ -54,22 +49,17 @@ pub(crate) struct PostBuildOptions<'a> {
 /// chặn và caller yêu cầu fail.
 pub(crate) fn run(output_dir: &Path, options: PostBuildOptions<'_>) -> Result<()> {
     if !output_dir.is_dir() {
-        // W-1b: reporting success for an output directory that does not exist
-        // means the SBOM, the scan and the signature all describe nothing, and
-        // the build told the user it was fine. Load-bearing artefact steps are
-        // skipped only when the caller explicitly asks for it.
-        // (W-1b: báo thành công cho thư mục output không tồn tại nghĩa là SBOM,
-        // scan và chữ ký đều mô tả hư không, còn build lại báo mọi thứ ổn. Bước
-        // tạo artefact chỉ được bỏ khi caller yêu cầu tường minh.)
-        if options.allow_missing_output {
-            eprintln!(
-                "WARNING: post-build steps skipped: output directory '{}' does not exist",
-                output_dir.display()
-            );
-            return Ok(());
-        }
+        // W-1b: reporting success for a directory that does not exist means the
+        // SBOM, the scan and the signature all describe nothing while the build
+        // says it succeeded. A core that chooses another output directory (the
+        // framework build lanes write wherever the framework puts its result)
+        // must name its real directory instead of silencing the check.
+        // (W-1b: báo thành công cho thư mục không tồn tại nghĩa là SBOM, scan và
+        // chữ ký đều mô tả hư không còn build báo thành công. Core dùng thư mục
+        // output khác (lane framework build ghi nơi framework đặt kết quả) phải
+        // nêu đúng thư mục của nó thay vì tắt bước kiểm.)
         anyhow::bail!(
-            "post-build failed: build output '{}' does not exist, so the SBOM, scan and signature would describe nothing (pass --allow-missing-output to skip these steps deliberately)",
+            "post-build failed: build output '{}' does not exist, so the SBOM, scan and signature would describe nothing",
             output_dir.display()
         );
     }
@@ -161,10 +151,6 @@ pub(crate) fn run_for_core(
             // Only a JavaScript-shaped output has scripts to prepend to.
             // Chỉ output dạng JavaScript mới có script để chèn.
             embed_identity: matches!(core, "web"),
-            // A core that reports a successful build must have produced the
-            // directory it names (W-1b).
-            // (Core báo build thành công phải tạo ra thư mục nó nêu — W-1b.)
-            allow_missing_output: false,
         },
     )
 }

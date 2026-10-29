@@ -73,7 +73,9 @@ impl WebAdapter {
         core: &str,
     ) -> mgc_types::MgResult<mgc_types::adapter::PreparedAdd> {
         self.arm_age_gate_for_core(project_root, core)?;
-        let (inferred, selected_version) = self.infer_add_range(name, range, opts.exact).await?;
+        let (inferred, selected_version) = self
+            .infer_add_range(project_root, name, range, opts.exact)
+            .await?;
         let version = selected_version.unwrap_or_else(|| Version::new(0, 0, 0));
         Ok(mgc_types::adapter::PreparedAdd {
             id: PackageId::new(name.clone(), version),

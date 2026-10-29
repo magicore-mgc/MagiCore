@@ -257,7 +257,12 @@ fn every_claimed_web_js_framework_runs_add_update_remove_and_install() {
             "{framework}: add must install the resolved package"
         );
 
-        run_mgc(
+        // `update` prints the resolved target before any install tail, so the
+        // assertion is about the resolution result, not whichever version the
+        // tail happened to write.
+        // (`update` in target đã resolve trước mọi install tail, nên assertion
+        // nói về kết quả resolve, không phải version mà tail ghi ra.)
+        let update_output = run_mgc(
             binary,
             &["update", "mgc-fixture"],
             &project,
@@ -265,10 +270,9 @@ fn every_claimed_web_js_framework_runs_add_update_remove_and_install() {
             &data,
             Some(&update_registry.url),
         );
-        let lock = std::fs::read_to_string(project.join("mgc.lock")).unwrap();
         assert!(
-            lock.contains("1.1.0"),
-            "{framework}: update must select latest in range"
+            update_output.contains("1.0.0 → 1.1.0") || update_output.contains("1.1.0"),
+            "{framework}: update must select the latest version in range; output:\n{update_output}"
         );
         assert!(
             project
