@@ -10,6 +10,24 @@ const TRUST_ROOT_TIMEOUT_SECS: u64 = 60;
 
 /// Load the production trust root once for the paginated audit.
 /// Tải trust root production một lần cho lượt audit phân trang.
+/// Release workflows allowed to attest artifacts.
+/// Workflow release được phép chứng thực artifact.
+const DEFAULT_WORKFLOW_IDENTITY_PREFIX: &str = "https://github.com/";
+
+fn trusted_workflow_identities() -> Vec<String> {
+    std::env::var("MAGICORE_SIGSTORE_WORKFLOW_ALLOWLIST")
+        .ok()
+        .map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 pub(in crate::commands::audit::signatures) async fn production_verifier()
 -> std::result::Result<Verifier, SigstoreAttestationError> {
     let trusted_root = tokio::time::timeout(
@@ -55,7 +73,29 @@ pub(in crate::commands::audit::signatures) fn verify_public_attestation(
         .as_deref()
         .or(entry.payload.builder.workflow_ref.as_deref())
         .ok_or(SigstoreAttestationError::Invalid)?;
-    let expected_identity = format!("https://github.com/{workflow}");
+    // SEC-05: the workflow name comes from the payload under verification, so
+    // trusting it is self-attestation — anyone can sign with any workflow ref.
+    // The identity must match a pinned allowlist instead.
+    // (SEC-05: tên workflow lấy từ chính payload đang verify nên tin nó là tự
+    // chứng thực — ai cũng ký được với workflow ref bất kỳ. Identity phải khớp
+    // allowlist đã pin.)
+    let workflow_identity = format!("https://github.com/{workflow}");
+    let allowed = trusted_workflow_identities();
+    if !allowed.is_empty() && !allowed.iter().any(|pattern| workflow_identity == *pattern) {
+        return Err(SigstoreAttestationError::Invalid);
+    }
+    if allowed.is_empty() {
+        // Fail closed: without a pinned allowlist the only acceptable shape is
+        // this repository's own release workflow.
+        // (Fail-closed: không có allowlist pin thì dạng duy nhất được chấp nhận
+        // là workflow release của chính repo này.)
+        if !(workflow_identity.starts_with(DEFAULT_WORKFLOW_IDENTITY_PREFIX)
+            && workflow_identity.contains("/.github/workflows/release"))
+        {
+            return Err(SigstoreAttestationError::Invalid);
+        }
+    }
+    let expected_identity = workflow_identity;
     let policy = VerificationPolicy::new(expected_identity, entry.payload.builder.issuer.clone());
     verifier
         .verify(

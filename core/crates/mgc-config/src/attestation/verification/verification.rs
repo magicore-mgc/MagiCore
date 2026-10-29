@@ -7,11 +7,17 @@ use crate::attestation::{
     canonical_message, read_config_bytes,
 };
 
-/// Verify the live project against its attestation. Verification needs
-/// no secrets: the attestation embeds every public key it trusts, so a
-/// machine holding no private key can still check integrity.
-/// (Verify project hiện tại với chứng thực của nó. Verify không cần
-/// secret: chứng thực nhúng mọi public key nó tin.)
+/// Verify the live project against its attestation.
+///
+/// The attestation itself cannot be the trust root (SIG-F7/SEC-12): it carries
+/// the public key it is verified with, so anyone able to rewrite the file can
+/// re-sign it. A key from the file is accepted only when the project also
+/// pins it in `mgc.toml` under `[trust].keys`, or when the operator names it
+/// in `MAGICORE_TRUST_KEYS`. Otherwise the status is `Mismatch`.
+/// (Chứng thực không thể là gốc tin cậy: file mang chính public key dùng để
+/// verify, nên ai ghi lại file là ký lại được. Key trong file chỉ được chấp
+/// nhận khi project pin nó trong `mgc.toml` mục `[trust].keys`, hoặc khi
+/// operator chỉ định qua `MAGICORE_TRUST_KEYS`. Ngược lại trả `Mismatch`.)
 pub fn verify(project_root: &Path, identities_dir: &Path) -> anyhow::Result<AttestationStatus> {
     let path = attestation_dir(identities_dir, project_root).join(ATTESTATION_FILE);
     let text = match std::fs::read_to_string(&path) {
@@ -61,6 +67,16 @@ pub fn verify(project_root: &Path, identities_dir: &Path) -> anyhow::Result<Atte
     for previous in &attestation.prev_keys {
         candidates.push(previous.public_key.clone());
     }
+    let trusted = trusted_keys(project_root);
+    if !trusted.is_empty() {
+        candidates.retain(|key| trusted.iter().any(|pinned| pinned == key));
+        if candidates.is_empty() {
+            return Ok(AttestationStatus::Mismatch(
+                "attestation key is not one of the trusted keys pinned for this project"
+                    .to_string(),
+            ));
+        }
+    }
     for public_key_b64 in candidates {
         let Ok(public_key) =
             mgc_crypto::ed25519_signer::Ed25519PublicKey::from_base64(&public_key_b64)
@@ -81,6 +97,26 @@ pub fn verify(project_root: &Path, identities_dir: &Path) -> anyhow::Result<Atte
     Ok(AttestationStatus::Mismatch(
         "signature does not verify against the attested keys".to_string(),
     ))
+}
+
+/// Keys the project or the operator explicitly trusts (SIG-F7).
+/// Key được project hoặc operator tin cậy tường minh (SIG-F7).
+fn trusted_keys(project_root: &Path) -> Vec<String> {
+    let mut keys = Vec::new();
+    if let Ok(Some(config)) = crate::project::ProjectConfig::load(project_root)
+        && let Some(trust) = config.trust
+    {
+        keys.extend(trust.keys);
+    }
+    if let Ok(list) = std::env::var("MAGICORE_TRUST_KEYS") {
+        keys.extend(
+            list.split(',')
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+                .map(str::to_string),
+        );
+    }
+    keys
 }
 
 #[cfg(test)]
