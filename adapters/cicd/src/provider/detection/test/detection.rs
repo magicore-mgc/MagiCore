@@ -23,7 +23,7 @@ fn unsupported_explicit_name_stops_marker_detection() {
     let project = tempfile::tempdir().expect("temporary directory");
     fs::write(
         project.path().join("mgc.toml"),
-        "[cicd]\nprovider = \"jenkins\"\n",
+        "[cicd]\nprovider = \"travis\"\n",
     )
     .expect("write project config");
     fs::write(project.path().join("wrangler.toml"), "name = \"worker\"\n").expect("write marker");

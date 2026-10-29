@@ -24,5 +24,5 @@ fn maps_all_existing_provider_names() {
 #[test]
 fn unknown_provider_name_is_not_normalized_or_accepted() {
     assert_eq!(provider_from_str("GitHub-Actions"), None);
-    assert_eq!(provider_from_str("jenkins"), None);
+    assert_eq!(provider_from_str("travis"), None);
 }

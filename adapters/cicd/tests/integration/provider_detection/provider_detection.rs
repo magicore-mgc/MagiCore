@@ -85,8 +85,8 @@ pub fn detect_returns_none_for_empty_dir() {
 
 pub fn detect_returns_none_for_unknown_mgc_toml_provider() {
     let dir = tmp("unknown");
-    std::fs::write(dir.join("mgc.toml"), "[cicd]\nprovider = \"jenkins\"\n").unwrap();
-    // Jenkins is unsupported, so provider detection returns None.
-    // "jenkins" chưa được hỗ trợ → None
+    std::fs::write(dir.join("mgc.toml"), "[cicd]\nprovider = \"travis\"\n").unwrap();
+    // Travis is unsupported, so provider detection returns None.
+    // "travis" chưa được hỗ trợ → None
     assert!(detect_provider(&dir).is_none());
 }

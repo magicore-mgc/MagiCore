@@ -8,6 +8,15 @@ pub enum CicdProvider {
     GithubActions,
     Gitlab,
     CircleCi,
+    /// Jenkins pipeline (`Jenkinsfile`) — pipeline sinh `Jenkinsfile` khai báo.
+    /// (Jenkins dùng `Jenkinsfile`; pipeline sinh file này.)
+    Jenkins,
+    /// Azure Pipelines (`azure-pipelines.yml`).
+    /// (Azure Pipelines dùng `azure-pipelines.yml`.)
+    AzurePipelines,
+    /// Bitbucket Pipelines (`bitbucket-pipelines.yml`).
+    /// (Bitbucket Pipelines dùng `bitbucket-pipelines.yml`.)
+    BitbucketPipelines,
     Cloudflare,
     Aws,
     Gcp,
@@ -22,6 +31,9 @@ impl CicdProvider {
             CicdProvider::GithubActions => "github-actions",
             CicdProvider::Gitlab => "gitlab",
             CicdProvider::CircleCi => "circleci",
+            CicdProvider::Jenkins => "jenkins",
+            CicdProvider::AzurePipelines => "azure-pipelines",
+            CicdProvider::BitbucketPipelines => "bitbucket-pipelines",
             CicdProvider::Cloudflare => "cloudflare",
             CicdProvider::Aws => "aws",
             CicdProvider::Gcp => "gcp",

@@ -12,7 +12,10 @@ pub(in crate::commands::core::dev::cicd::deploy) fn provider_deploy_unavailable(
         mgc_cicd_adapter::CicdProvider::Gcp => crate::error::deploy_not_implemented("gcp"),
         mgc_cicd_adapter::CicdProvider::GithubActions
         | mgc_cicd_adapter::CicdProvider::Gitlab
-        | mgc_cicd_adapter::CicdProvider::CircleCi => {
+        | mgc_cicd_adapter::CicdProvider::CircleCi
+        | mgc_cicd_adapter::CicdProvider::Jenkins
+        | mgc_cicd_adapter::CicdProvider::AzurePipelines
+        | mgc_cicd_adapter::CicdProvider::BitbucketPipelines => {
             not_available("is CI-only — push to trigger; no local deploy command.")
         }
         mgc_cicd_adapter::CicdProvider::Aws => crate::error::deploy_not_implemented("aws"),

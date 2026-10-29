@@ -25,7 +25,7 @@ fn unsupported_string_has_a_distinct_outcome() {
     let project = tempfile::tempdir().expect("temporary directory");
     fs::write(
         project.path().join("mgc.toml"),
-        "[cicd]\nprovider = \"jenkins\"\n",
+        "[cicd]\nprovider = \"travis\"\n",
     )
     .expect("write project config");
 

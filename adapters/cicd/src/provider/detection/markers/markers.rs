@@ -23,6 +23,19 @@ pub(in crate::provider::detection) fn provider_from_markers(root: &Path) -> Opti
     if root.join(".circleci").join("config.yml").exists() {
         return Some(CicdProvider::CircleCi);
     }
+    // `Jenkinsfile` may be capitalised on case-sensitive filesystems, so check
+    // both spellings rather than assume one.
+    // (`Jenkinsfile` có thể viết hoa trên filesystem phân biệt hoa/thường, nên
+    // kiểm cả hai cách viết thay vì giả định một.)
+    if root.join("Jenkinsfile").exists() || root.join("jenkinsfile").exists() {
+        return Some(CicdProvider::Jenkins);
+    }
+    if root.join("azure-pipelines.yml").exists() {
+        return Some(CicdProvider::AzurePipelines);
+    }
+    if root.join("bitbucket-pipelines.yml").exists() {
+        return Some(CicdProvider::BitbucketPipelines);
+    }
     if root.join("main.tf").exists() {
         return Some(CicdProvider::Aws);
     }
