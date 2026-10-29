@@ -27,6 +27,7 @@ pub(in crate::dispatch) fn reject_unsupported_audit_strict(command: &Commands) -
             | Commands::Install(InstallCommands::InstallCicd { .. })
             | Commands::Install(InstallCommands::InstallIot { .. })
             | Commands::Install(InstallCommands::InstallApp { .. })
+            | Commands::Install(InstallCommands::InstallLibBinary { .. })
             | Commands::Install(InstallCommands::InstallLib { .. })
             | Commands::Install(InstallCommands::InstallHardware { .. })
             | Commands::Add(AddCommands::AddWeb { .. })

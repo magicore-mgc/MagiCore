@@ -18,6 +18,7 @@ pub fn matches(command: &CoreCommand) -> bool {
             | CoreCommand::InstallIot { .. }
             | CoreCommand::InstallApp { .. }
             | CoreCommand::InstallLib { .. }
+            | CoreCommand::InstallLibBinary { .. }
             | CoreCommand::InstallHardware { .. }
     )
 }
@@ -117,6 +118,15 @@ pub async fn dispatch(command: CoreCommand) -> Result<()> {
         #[cfg(not(feature = "app"))]
         CoreCommand::InstallApp { .. } => Err(crate::error::core_not_in_build("app")),
         #[cfg(feature = "lib")]
+        CoreCommand::InstallLibBinary {
+            target,
+            manifest,
+            sign_key,
+            trust_key,
+        } => run_install_lib_binary(target, manifest, sign_key, trust_key).await,
+        #[cfg(not(feature = "lib"))]
+        CoreCommand::InstallLibBinary { .. } => Err(crate::error::core_not_in_build("lib")),
+        #[cfg(feature = "lib")]
         CoreCommand::InstallLib {
             packages,
             compat_runtime,
@@ -137,4 +147,34 @@ pub async fn dispatch(command: CoreCommand) -> Result<()> {
         CoreCommand::InstallHardware { .. } => Err(crate::error::core_not_in_build("hardware")),
         _ => unreachable!("non-install command routed to install dispatcher"),
     }
+}
+
+/// Install a signed binary into the lib keg store and report the result.
+/// Cài binary có chữ ký vào keg store của lib và báo kết quả.
+#[cfg(feature = "lib")]
+async fn run_install_lib_binary(
+    target: String,
+    manifest: Option<String>,
+    sign_key: Option<String>,
+    trust_key: Vec<String>,
+) -> Result<()> {
+    let request = commands::core::install::library::InstallLibRequest {
+        target: &target,
+        manifest: manifest.as_deref().map(std::path::Path::new),
+        key_id: sign_key.as_deref(),
+        trust_keys: trust_key,
+    };
+    let outcome = commands::core::install::library::install_lib(request).await?;
+    let verb = if outcome.reused {
+        "Re-activated"
+    } else {
+        "Installed"
+    };
+    println!(
+        "✓ {verb} {}@{} from {}",
+        outcome.name,
+        outcome.version,
+        outcome.keg_dir.display()
+    );
+    Ok(())
 }

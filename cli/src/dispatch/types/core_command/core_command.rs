@@ -97,6 +97,12 @@ pub enum CoreCommand {
         frozen: bool,
         offline: bool,
     },
+    InstallLibBinary {
+        target: String,
+        manifest: Option<String>,
+        sign_key: Option<String>,
+        trust_key: Vec<String>,
+    },
     InstallLib {
         packages: Vec<String>,
         compat_runtime: Option<String>,

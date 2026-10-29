@@ -112,6 +112,23 @@ pub(in crate::dispatch) fn map(command: InstallCommands) -> Option<CoreCommand> 
                 ..InstallRequest::default()
             },
         ),
+        InstallCommands::InstallLibBinary {
+            target,
+            manifest,
+            sign_key,
+            trust_key,
+        } => {
+            // The binary transfer lane is not a dependency operation: it never
+            // resolves a manifest, so it maps to its own core command.
+            // (Làn chuyển binary không phải thao tác dependency: không resolve
+            // manifest, nên map sang core command riêng.)
+            return Some(CoreCommand::InstallLibBinary {
+                target,
+                manifest,
+                sign_key,
+                trust_key,
+            });
+        }
         InstallCommands::InstallLib {
             packages,
             compat_runtime,

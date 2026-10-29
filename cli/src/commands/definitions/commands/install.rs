@@ -5,6 +5,35 @@ use clap::Subcommand;
 #[allow(clippy::large_enum_variant)]
 #[allow(clippy::enum_variant_names)] // Variant prefixes preserve the established install-<core> CLI naming.
 pub enum InstallCommands {
+    /// Install a signed binary into the lib keg store (E-3).
+    /// Cài binary có chữ ký vào keg store của core lib (E-3).
+    #[cfg_attr(not(feature = "lib"), command(hide = true))]
+    // `install-lib` is the dependency command; this binary transfer lane needs
+    // its own name and derives the `i-lib` alias (the spec's spelling).
+    // (`install-lib` là lệnh dependency; làn chuyển binary cần tên riêng và
+    // sinh alias `i-lib`, đúng cách viết trong spec.)
+    #[command(
+        name = "install-lib-binary",
+        alias = "i-lib",
+        about = "Install a signed binary into the lib keg store"
+    )]
+    InstallLibBinary {
+        /// Binary name, existing path, or `name@version` for a manifest entry.
+        /// Tên binary, đường dẫn có sẵn, hoặc `name@version` cho entry manifest.
+        target: String,
+        /// Signed manifest describing the artifact.
+        /// Manifest có chữ ký mô tả artifact.
+        #[arg(long, value_name = "PATH")]
+        manifest: Option<String>,
+        /// Keyring key id used to sign the manifest.
+        /// Key id trong keyring dùng để ký manifest.
+        #[arg(long, value_name = "KEY_ID")]
+        sign_key: Option<String>,
+        /// Pinned Ed25519 public key (base64) allowed to sign manifests.
+        /// Public key Ed25519 đã pin (base64) được phép ký manifest.
+        #[arg(long = "trust-key", value_name = "BASE64")]
+        trust_key: Vec<String>,
+    },
     // ── Per-core: install-<core> ───────────────────────────────────
     #[cfg_attr(not(feature = "web"), command(hide = true))]
     #[command(
@@ -154,11 +183,7 @@ pub enum InstallCommands {
         #[arg(long)]
         offline: bool,
     },
-    #[command(
-        name = "install-lib",
-        alias = "i-lib",
-        about = "Install library dependencies"
-    )]
+    #[command(name = "install-lib", about = "Install library dependencies")]
     InstallLib {
         packages: Vec<String>,
         /// Explicit toolchain-compat lane for delegated dependency

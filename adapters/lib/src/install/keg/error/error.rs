@@ -24,6 +24,16 @@ pub enum KegError {
     #[error("invalid keg version '{0}': expected a plain semantic version")]
     InvalidVersion(String),
 
+    /// A binary manifest is missing, untrusted or does not verify (E-3).
+    /// Manifest binary thiếu, không tin cậy hoặc không verify (E-3).
+    #[error("binary manifest rejected: {detail}")]
+    ManifestUntrusted { detail: String },
+
+    /// Downloaded bytes do not match the digest in the signed manifest.
+    /// Bytes tải về không khớp digest trong manifest đã ký.
+    #[error("downloaded artifact '{name}' does not match the signed digest")]
+    ArtifactDigestMismatch { name: String },
+
     /// The requested keg does not exist.
     /// Keg yêu cầu không tồn tại.
     #[error("library keg '{name}@{version}' not found at '{path}'")]

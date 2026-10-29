@@ -9,6 +9,7 @@
 //! luôn được.
 
 mod active;
+mod binary_manifest;
 mod error;
 mod guard;
 mod immutability;
@@ -20,6 +21,9 @@ mod prefix;
 mod switch;
 
 pub use active::{ACTIVE_POINTER_FILE, ActiveState, pointer_path, read_active, write_active};
+pub use binary_manifest::{
+    BinaryEntry, BinaryManifest, MANIFEST_DOMAIN, load_manifest, manifest_message, verify_manifest,
+};
 pub use error::{KegError, KegResult};
 pub use guard::{EntryState, KegGuard, Undo, capture_entry, restore_entry};
 pub use immutability::{KegFingerprint, remove_keg, seal_keg, thaw_keg, verify_keg};

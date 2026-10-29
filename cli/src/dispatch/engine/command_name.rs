@@ -75,6 +75,7 @@ pub(super) fn command_name(command: &Commands) -> &'static str {
         Commands::Install(InstallCommands::InstallCicd { .. }) => "install-cicd",
         Commands::Install(InstallCommands::InstallIot { .. }) => "install-iot",
         Commands::Install(InstallCommands::InstallApp { .. }) => "install-app",
+        Commands::Install(InstallCommands::InstallLibBinary { .. }) => "install-lib",
         Commands::Install(InstallCommands::InstallLib { .. }) => "install-lib",
         Commands::Install(InstallCommands::InstallHardware { .. }) => "install-hardware",
         Commands::Add(AddCommands::AddWeb { .. }) => "add-web",
