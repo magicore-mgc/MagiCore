@@ -12,8 +12,26 @@ pub(in crate::commands::core::dev::iot::dev_command) fn iot_dev_command(
         .ok_or_else(|| crate::error::no_framework_detected("IoT", root))?;
     match adapter.framework() {
         "esp32-rust" => Ok(("espflash".to_string(), vec!["monitor".to_string()])),
-        "platformio" => Ok(("pio".to_string(), vec!["run".to_string()])),
-        "zephyr" => Ok(("west".to_string(), vec!["build".to_string()])),
+        // PAR-06: `mgc build` refuses `pio run`/`west build` because they may
+        // resolve or install dependencies, yet `mgc dev` spawned exactly those
+        // commands. One policy now covers both routes: only the read-only
+        // monitors are allowed, and the build-shaped invocations stay refused
+        // with the same guidance the build lane gives.
+        // (PAR-06: `mgc build` từ chối `pio run`/`west build` vì chúng có thể
+        // resolve/cài dependency, nhưng `mgc dev` lại spawn đúng hai lệnh đó.
+        // Một chính sách giờ áp cho cả hai đường: chỉ cho monitor chỉ đọc, còn
+        // lệnh dạng build vẫn bị từ chối với cùng hướng dẫn như lane build.)
+        "platformio" => Err(IotDevError::UnsupportedFramework {
+            framework:
+                "platformio (build commands resolve dependencies; only monitoring is supported)"
+                    .to_string(),
+        }
+        .into()),
+        "zephyr" => Err(IotDevError::UnsupportedFramework {
+            framework: "zephyr (build commands resolve dependencies; only monitoring is supported)"
+                .to_string(),
+        }
+        .into()),
         other => Err(IotDevError::UnsupportedFramework {
             framework: other.to_string(),
         }
