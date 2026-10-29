@@ -1,7 +1,7 @@
 //! HMR event JSON payload tests.
 //! Test JSON payload event HMR.
 
-use super::event_payload;
+use super::{event_payload, origin_is_loopback};
 use crate::bundler::hmr::HmrEvent;
 
 #[test]
@@ -18,4 +18,43 @@ fn encodes_update_path_as_json_data() {
 
     assert_eq!(value["type"], "update");
     assert_eq!(value["path"], "src/main.ts");
+}
+
+/// PAR-09: only a loopback dev page may open the HMR socket.
+/// (PAR-09: chỉ trang dev loopback được mở socket HMR.)
+#[test]
+fn only_loopback_origins_may_open_the_hmr_socket() {
+    use axum::http::{HeaderMap, HeaderValue, header::ORIGIN};
+
+    let with_origin = |value: &str| {
+        let mut headers = HeaderMap::new();
+        headers.insert(ORIGIN, HeaderValue::from_str(value).unwrap());
+        headers
+    };
+
+    for allowed in [
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "https://localhost",
+        "http://[::1]:8080",
+    ] {
+        assert!(
+            origin_is_loopback(&with_origin(allowed)),
+            "{allowed} is a loopback dev page"
+        );
+    }
+    for denied in [
+        "https://evil.example",
+        "http://192.168.1.5:3000",
+        "http://localhost.evil.example",
+        "null",
+    ] {
+        assert!(
+            !origin_is_loopback(&with_origin(denied)),
+            "{denied} must be refused"
+        );
+    }
+    // A handshake with no Origin header at all is refused as well.
+    // (Handshake không có header Origin cũng bị từ chối.)
+    assert!(!origin_is_loopback(&HeaderMap::new()));
 }

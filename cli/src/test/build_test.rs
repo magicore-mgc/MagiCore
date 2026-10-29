@@ -577,7 +577,7 @@ fn game_build_fails_when_engine_is_not_implemented() {
     std::fs::write(tmp.join("mgc.toml"), "ecosystem = \"game\"\n").unwrap();
     std::fs::write(tmp.join("project.godot"), "[application]\n").unwrap();
     let rt = tokio::runtime::Runtime::new().unwrap();
-    assert!(rt.block_on(super::build_game(&tmp)).is_err());
+    assert!(rt.block_on(super::build_game(&tmp, false)).is_err());
     let _ = std::fs::remove_dir_all(&tmp);
 }
 

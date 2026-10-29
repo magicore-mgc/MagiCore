@@ -101,7 +101,7 @@ pub async fn run(
         #[cfg(not(feature = "clo"))]
         "cloud" => Err(crate::error::core_not_in_build("clo")),
         #[cfg(feature = "game")]
-        "game" => build_game(&root).await,
+        "game" => build_game(&root, allow_output_warnings).await,
         #[cfg(not(feature = "game"))]
         "game" => Err(crate::error::core_not_in_build("game")),
         #[cfg(feature = "iot")]
