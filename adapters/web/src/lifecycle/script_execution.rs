@@ -31,7 +31,7 @@ pub(super) fn run_script(
         timeout: Some(lifecycle_timeout()),
         env,
         clean_env: true,
-        execution_scope: Some(mgc_exec::allowlist::ExecutionScope::Install),
+        execution_scope: Some(hook_execution_scope()),
         ..Default::default()
     };
 
@@ -42,6 +42,16 @@ pub(super) fn run_script(
         }
     })?;
     Ok(())
+}
+
+/// Scope for hook execution: project code runs here, so language runtimes are
+/// allowed; package managers stay forbidden in every scope (SEC-02 only moved
+/// bare runtimes out of the install scope).
+/// (Scope chạy hook: đây là code project nên runtime ngôn ngữ được phép;
+/// package manager vẫn bị cấm ở mọi scope — SEC-02 chỉ đưa runtime trần ra
+/// khỏi scope install.)
+fn hook_execution_scope() -> mgc_exec::allowlist::ExecutionScope {
+    mgc_exec::allowlist::ExecutionScope::ScriptRunner
 }
 
 fn reject_external_package_manager_script(

@@ -90,7 +90,10 @@ mod platform {
             "version": version,
             "bin": { binary: "./bin/cli" },
             "dependencies": {},
-            "dist": { "tarball": format!("{registry}/{package}/-/{package}-{version}.tgz"), "integrity": sri_of(&package_tarball(package, "cli", version)) }
+            "dist": {
+                "tarball": format!("{registry}/{package}/-/{package}-{version}.tgz"),
+                "integrity": sri_of(&package_tarball(package, binary, version)),
+            }
         })
     }
 
@@ -583,6 +586,7 @@ mod platform {
             false,
         );
 
+        eprintln!("COLLISION-OUTPUT-START\n{failure}\nCOLLISION-OUTPUT-END");
         assert!(failure.contains("refusing to overwrite"));
         assert_eq!(
             std::fs::read_to_string(command).unwrap(),

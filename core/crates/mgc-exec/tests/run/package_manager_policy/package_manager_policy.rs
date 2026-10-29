@@ -213,6 +213,12 @@ fn runtime_monitor_blocks_dependency_mutation_from_a_script_child() {
         env: vec![("PATH".to_string(), dir.display().to_string())],
         timeout: Some(Duration::from_secs(4)),
         log_path: Some(audit_log.clone()),
+        // The scenario runs a project script through a runtime: that is the
+        // ScriptRunner scope, and the descendant monitor must still block the
+        // package manager from inside it.
+        // (Kịch bản chạy script project qua runtime: đó là scope ScriptRunner,
+        // và monitor descendant vẫn phải chặn package manager bên trong.)
+        execution_scope: Some(mgc_exec::allowlist::ExecutionScope::ScriptRunner),
         ..Default::default()
     };
     let error = run(fake_node.to_str().unwrap(), &[], &opts)

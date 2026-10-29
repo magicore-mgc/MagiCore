@@ -19,13 +19,22 @@ static SHUTDOWN_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 // yêu cầu và đang chờ không được đua nhau.)
 #[test]
 fn shutdown_semantics() {
+    // A failing phase must not poison the lock for the sibling test.
+    // (Pha lỗi không được làm nhiễm độc lock cho test anh em.)
     let _shutdown_guard = SHUTDOWN_TEST_LOCK
         .lock()
-        .expect("acquire process-global shutdown test lock");
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     // Phase 1: without a request, a quick command runs normally.
     // (Pha 1: không có yêu cầu, lệnh nhanh chạy bình thường.)
     clear_shutdown();
-    let opts = ExecOptions::default();
+    // A quick project command runs in the ScriptRunner scope; language
+    // runtimes are scoped (SEC-02) so the default install scope is wrong here.
+    // (Lệnh project nhanh chạy ở scope ScriptRunner; runtime ngôn ngữ bị scope
+    // (SEC-02) nên scope install mặc định không đúng ở đây.)
+    let opts = ExecOptions {
+        execution_scope: Some(mgc_exec::allowlist::ExecutionScope::ScriptRunner),
+        ..ExecOptions::default()
+    };
     let report = run(
         "python3",
         &["-c".to_string(), "print('alive')".to_string()],
@@ -41,6 +50,7 @@ fn shutdown_semantics() {
     request_shutdown();
     let opts = ExecOptions {
         timeout: Some(std::time::Duration::from_secs(60)),
+        execution_scope: Some(mgc_exec::allowlist::ExecutionScope::ScriptRunner),
         ..Default::default()
     };
     let started = std::time::Instant::now();
@@ -64,14 +74,21 @@ fn shutdown_semantics() {
 #[cfg(unix)]
 #[test]
 fn supervisor_cancel_terminates_the_owned_process_tree() {
+    // A failing phase must not poison the lock for the sibling test.
+    // (Pha lỗi không được làm nhiễm độc lock cho test anh em.)
     let _shutdown_guard = SHUTDOWN_TEST_LOCK
         .lock()
-        .expect("acquire process-global shutdown test lock");
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let worker_flag = std::sync::Arc::clone(&cancel_flag);
     let worker = std::thread::spawn(move || {
         let opts = ExecOptions {
             timeout: Some(std::time::Duration::from_secs(60)),
+            // Project code runs in the ScriptRunner scope (SEC-02 scopes
+            // bare language runtimes away from install).
+            // (Code project chạy ở scope ScriptRunner; SEC-02 đưa runtime trần
+            // ra khỏi scope install.)
+            execution_scope: Some(mgc_exec::allowlist::ExecutionScope::ScriptRunner),
             ..Default::default()
         };
         mgc_exec::prelude::run_inherited_cancellable(
@@ -102,9 +119,11 @@ fn supervisor_cancel_terminates_the_owned_process_tree() {
 #[cfg(windows)]
 #[test]
 fn supervisor_cancel_terminates_windows_descendants() {
+    // A failing phase must not poison the lock for the sibling test.
+    // (Pha lỗi không được làm nhiễm độc lock cho test anh em.)
     let _shutdown_guard = SHUTDOWN_TEST_LOCK
         .lock()
-        .expect("acquire process-global shutdown test lock");
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::{Duration, Instant};
