@@ -121,28 +121,41 @@ fn mgc_data_dir_override_child() {
     );
 }
 
-#[cfg(not(windows))]
+// Windows takes the shell-agnostic USER PATH branch, so the portable part is
+// the managed-bin validation, not the Unix profile text: keep that assertion
+// running on every OS and gate only the profile-specific half.
+// (Windows đi nhánh USER PATH không phụ thuộc shell, nên phần di động được là
+// kiểm tra thư mục bin, không phải nội dung profile Unix: giữ phần đó chạy trên
+// mọi OS, chỉ gate nửa profile.)
 #[test]
 fn managed_shell_path_block_is_idempotent_and_tracks_data_root_changes() {
     let home = tempfile::tempdir().unwrap();
     let spaced = home.path().join("data root/bin");
     std::fs::create_dir_all(&spaced).unwrap();
     let first = mgc_platform::paths::ensure_bin_on_path(home.path(), "/bin/zsh", &spaced).unwrap();
-    let profile = home.path().join(".zprofile");
-    let initial = std::fs::read_to_string(&profile).unwrap();
-    assert!(initial.contains(&first.to_string_lossy().to_string()));
-    assert!(initial.contains("case \":$PATH:\""));
+    assert!(
+        first.is_absolute(),
+        "managed bin must come back canonical: {}",
+        first.display()
+    );
+    #[cfg(not(windows))]
+    {
+        let profile = home.path().join(".zprofile");
+        let initial = std::fs::read_to_string(&profile).unwrap();
+        assert!(initial.contains(&first.to_string_lossy().to_string()));
+        assert!(initial.contains("case \":$PATH:\""));
 
-    mgc_platform::paths::ensure_bin_on_path(home.path(), "/bin/zsh", &spaced).unwrap();
-    assert_eq!(std::fs::read_to_string(&profile).unwrap(), initial);
+        mgc_platform::paths::ensure_bin_on_path(home.path(), "/bin/zsh", &spaced).unwrap();
+        assert_eq!(std::fs::read_to_string(&profile).unwrap(), initial);
 
-    let second = home.path().join("alternate/bin");
-    std::fs::create_dir_all(&second).unwrap();
-    mgc_platform::paths::ensure_bin_on_path(home.path(), "/bin/zsh", &second).unwrap();
-    let updated = std::fs::read_to_string(profile).unwrap();
-    assert!(updated.contains(&second.canonicalize().unwrap().to_string_lossy().to_string()));
-    assert!(!updated.contains(&first.to_string_lossy().to_string()));
-    assert_eq!(updated.matches("magicore-managed-tool-bin >>>").count(), 1);
+        let second = home.path().join("alternate/bin");
+        std::fs::create_dir_all(&second).unwrap();
+        mgc_platform::paths::ensure_bin_on_path(home.path(), "/bin/zsh", &second).unwrap();
+        let updated = std::fs::read_to_string(profile).unwrap();
+        assert!(updated.contains(&second.canonicalize().unwrap().to_string_lossy().to_string()));
+        assert!(!updated.contains(&first.to_string_lossy().to_string()));
+        assert_eq!(updated.matches("magicore-managed-tool-bin >>>").count(), 1);
+    }
 }
 
 #[cfg(not(windows))]

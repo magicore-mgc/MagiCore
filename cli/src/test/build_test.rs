@@ -6,6 +6,17 @@ use super::*;
 use mgc_config::project::ProjectExecutionConfig;
 use std::{fs, path::Path};
 
+/// Serialises the one test that rewrites the process-wide `PATH`.
+///
+/// `PATH` lives in one process-wide map and the harness runs cases on parallel
+/// threads. Without this lock the probe directory can be swapped into `PATH`
+/// while a `mgc` subprocess is being spawned, which on Windows surfaces as a
+/// process-spawn failure rather than a clean assertion.
+/// (`PATH` nằm trong một map toàn process và harness chạy song song; thiếu lock
+/// thì thư mục probe có thể nằm trong `PATH` đúng lúc spawn `mgc`, trên Windows
+/// gây lỗi spawn thay vì assert rõ ràng.)
+static PROCESS_PATH_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn execution(lane: &str) -> ProjectExecutionConfig {
     ProjectExecutionConfig {
         architecture: "rust-first".to_string(),
@@ -274,6 +285,9 @@ fn tool_unavailable_honors_pathext_wrappers() {
     // (the helper reads it whenever present). The probe name is unique
     // per process so concurrent tests sharing env are unaffected.
     let probe = format!("mgc-pathext-probe-{}", std::process::id());
+    let _path_guard = PROCESS_PATH_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let dir = std::env::temp_dir().join(format!("mgc-pathext-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();

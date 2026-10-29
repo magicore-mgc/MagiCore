@@ -21,6 +21,27 @@ fn lock() -> std::sync::MutexGuard<'static, ()> {
 }
 
 #[test]
+#[allow(unsafe_code)]
+fn the_platform_default_is_bounded_without_an_override() {
+    let _guard = lock();
+    // Without `MAGICORE_MAX_OPEN_FILES` the budget must still be a usable,
+    // bounded number on every OS: Unix derives it from RLIMIT_NOFILE, Windows
+    // has no per-process descriptor rlimit and falls back to the default.
+    // (Không có override, ngân sách vẫn phải dùng được và bị chặn hai phía trên
+    // mọi OS: Unix lấy từ RLIMIT_NOFILE, Windows không có rlimit nên dùng mặc định.)
+    // SAFETY: the guard above makes this test the only reader/writer of the
+    // variable; removing it restores the platform default.
+    // AN TOÀN: guard ở trên bảo đảm test này là chủ biến; xoá biến trả về mặc
+    // định nền tảng.
+    unsafe { std::env::remove_var("MAGICORE_MAX_OPEN_FILES") };
+    let budget = descriptor_budget();
+    assert!(
+        (32..=512).contains(&budget),
+        "platform default budget must stay bounded on every OS: {budget}"
+    );
+}
+
+#[test]
 fn the_budget_is_a_fraction_of_the_process_limit_within_bounds() {
     let _guard = lock();
     let budget = descriptor_budget();
