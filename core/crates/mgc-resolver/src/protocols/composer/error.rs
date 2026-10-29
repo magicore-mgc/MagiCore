@@ -39,9 +39,9 @@ impl ComposerError {
             Self::MissingPackage { name } => {
                 MgError::Other(format!("Packagist metadata for '{name}' lists no package"))
             }
-            Self::MissingDistUrl { name, version } => {
-                MgError::Other(format!("Packagist package {name} {version} has no dist.url"))
-            }
+            Self::MissingDistUrl { name, version } => MgError::Other(format!(
+                "Packagist package {name} {version} has no dist.url"
+            )),
             Self::MissingDistIntegrity { name, version } => MgError::Integrity(format!(
                 "Packagist package {name} {version} publishes no dist shasum or dist reference; refusing to resolve an unverifiable artifact"
             )),

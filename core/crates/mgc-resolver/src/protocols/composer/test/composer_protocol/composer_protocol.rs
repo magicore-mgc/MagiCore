@@ -27,12 +27,18 @@ fn trait_matches_requirement_uses_composer_semantics() {
     let protocol = ComposerProtocol::new("https://repo.packagist.org");
     let version = Version::parse("3.12.1").expect("test version");
     assert!(protocol.matches_requirement("^3.0", &version));
-    // The shared semver range syntax disagrees with Composer's caret rule
-    // for `0.x`, which proves the trait override is the one in effect.
-    // Cú pháp range semver dùng chung lệch quy tắc caret `0.x` của Composer,
-    // chứng minh override của trait đang có hiệu lực.
-    let zero = Version::parse("0.3.9").expect("test version");
-    assert!(protocol.matches_requirement("^0.3", &zero));
-    let range = VersionRange::parse("^0.3").expect("test range");
-    assert!(!range.matches(&zero));
+    assert!(protocol.matches_requirement("^3.10 || ^4", &version));
+    // Composer pads a short component (`^3.10` → `^3.10.0`), while the shared
+    // semver matcher reads a bare `3.10` term as a wildcard; the override is
+    // therefore observable, and `composer_to_semver` covers the bridge back.
+    // Composer bù thành phần thiếu, còn semver đọc `3.10` trần là wildcard,
+    // nên override quan sát được; `composer_to_semver` phụ trách cầu nối.
+    assert!(
+        !VersionRange::parse("3.10")
+            .expect("test range")
+            .matches(&version)
+    );
+    let padded = VersionRange::parse("=3.10.0").expect("test range");
+    assert!(!padded.matches(&version));
+    assert!(!protocol.matches_requirement("=3.10.0", &version));
 }

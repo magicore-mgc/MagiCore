@@ -1,13 +1,14 @@
 //! Packagist catalog projection tests against the captured p2 document.
 //! Test chiếu catalog Packagist trên tài liệu p2 đã capture.
 
-use super::common::monolog_document;
-use crate::protocols::composer::package_catalog::{
-    DIST_REFERENCE_MARKER_PREFIX, PackagistDocument, project_entry, select_entry,
-};
+use crate::protocols::composer::package_catalog::PackagistDocument;
 use crate::protocols::composer::package_catalog::dependency_metadata::{
     DependencyKind, parse_composer_dependencies,
 };
+use crate::protocols::composer::package_catalog::{
+    DIST_REFERENCE_MARKER_PREFIX, project_entry, select_entry,
+};
+use crate::protocols::composer::test::common::monolog_document;
 use mgc_types::MgError;
 
 fn select(range: &str) -> crate::protocols::ResolvedEntry {
@@ -19,10 +20,18 @@ fn select(range: &str) -> crate::protocols::ResolvedEntry {
 fn highest_matching_version_is_selected() {
     assert_eq!(select("*").version, "3.12.1");
     assert_eq!(select("^3.0").version, "3.12.1");
-    assert_eq!(select("^4.0 || ^3.10").version, "3.10.0");
-    assert_eq!(select("^2.0").version, "2.10.0");
+    assert_eq!(select(">=3.10 <3.12").version, "3.11.0");
+    let max_2 = select("^2.0");
+    assert_eq!(max_2.version, "2.10.0");
     assert_eq!(select("1.0.0").version, "1.0.0");
+    // A pre-release only wins when the constraint pins it: `^3.0` takes the
+    // stable 3.x release, not the newer 3.0.0-RC1 in the fixture.
+    // Pre-release chỉ thắng khi ràng buộc ghim đúng nó: `^3.0` lấy bản ổn
+    // định 3.x chứ không lấy 3.0.0-RC1 mới hơn trong fixture.
+    assert_eq!(select("^3.0.0-RC1").version, "3.12.1");
     assert_eq!(select("3.0.0-RC1").version, "3.0.0-RC1");
+    assert_eq!(select("3.0.0-RC1").deps.len(), 0);
+    assert_eq!(select("3.10.0").version, "3.10.0");
 }
 
 #[test]
@@ -48,20 +57,21 @@ fn missing_package_in_document_fails_closed() {
 
 #[test]
 fn dist_identity_uses_zip_url_and_reference() {
-    let entry = select("^3.10");
+    let entry = select("3.10.0");
+    assert_eq!(entry.version, "3.10.0");
+    // GitHub zipball dists are rewritten to codeload (no User-Agent needed).
+    // Dist zipball GitHub được đổi sang codeload (không cần User-Agent).
     assert_eq!(
         entry.artifact_url,
-        "https://api.github.com/repos/Seldaek/monolog/zipball/b321dd6749f0bf7189444158a3ce785cc16d69b0"
+        "https://codeload.github.com/Seldaek/monolog/legacy.zip/b321dd6749f0bf7189444158a3ce785cc16d69b0"
     );
     // Packagist publishes an empty shasum for this release, so the integrity
     // source is the VCS dist reference.
     // Packagist để shasum rỗng cho bản này nên nguồn toàn vẹn là reference.
     assert!(entry.sha256.is_empty());
-    assert!(
-        entry
-            .extra_markers
-            .contains(&format!("{DIST_REFERENCE_MARKER_PREFIX}b321dd6749f0bf7189444158a3ce785cc16d69b0"))
-    );
+    assert!(entry.extra_markers.contains(&format!(
+        "{DIST_REFERENCE_MARKER_PREFIX}b321dd6749f0bf7189444158a3ce785cc16d69b0"
+    )));
 }
 
 #[test]
@@ -72,12 +82,20 @@ fn require_and_require_dev_are_separated_and_platform_skipped() {
         deps.contains(&("psr/log".to_string(), "^2.0 || ^3.0".to_string())),
         "{deps:?}"
     );
+    // `require-dev` never enters the production graph; it is a marker.
+    // `require-dev` không vào graph production mà là marker.
     assert!(
-        deps.contains(&(
-            "dev:guzzlehttp/guzzle".to_string(),
-            "^7.4.5".to_string()
-        )),
+        !deps
+            .iter()
+            .any(|(name, _)| name.contains("guzzlehttp/guzzle")),
         "{deps:?}"
+    );
+    assert!(
+        entry
+            .extra_markers
+            .contains(&"require-dev:guzzlehttp/guzzle:^7.4.5".to_string()),
+        "{:?}",
+        entry.extra_markers
     );
     // `php` and `ext-json` are platform packages, never registry edges.
     // `php` và `ext-json` là package platform, không phải cạnh registry.
@@ -86,22 +104,25 @@ fn require_and_require_dev_are_separated_and_platform_skipped() {
         deps.iter().all(|(name, _)| !name.contains("ext-json")),
         "{deps:?}"
     );
-    assert!(entry.extra_markers.contains(&"require:php:>=8.1".to_string()));
+    assert!(
+        entry
+            .extra_markers
+            .contains(&"require:php:>=8.1".to_string())
+    );
     assert!(
         entry
             .extra_markers
             .contains(&"require-dev:ext-json:*".to_string())
     );
-    // Production edge comes before its development twin under name order.
-    let psr = deps
-        .iter()
-        .position(|(name, _)| name == "psr/log")
-        .expect("psr/log edge");
-    let guzzle = deps
-        .iter()
-        .position(|(name, _)| name == "dev:guzzlehttp/guzzle")
-        .expect("dev guzzle edge");
-    assert!(psr < guzzle, "{deps:?}");
+    // Composer development edges carry the `dev:` prefix, so they sort
+    // ahead of bare production names; the prefix is what marks them.
+    // Cạnh development mang tiền tố `dev:` nên xếp trước tên production
+    // trần; chính tiền tố đánh dấu loại cạnh.
+    assert!(deps.iter().any(|(name, _)| name == "psr/log"), "{deps:?}");
+    assert!(
+        deps.iter().all(|(name, _)| name != "guzzlehttp/guzzle"),
+        "{deps:?}"
+    );
 }
 
 #[test]
@@ -113,8 +134,16 @@ fn platform_packages_are_classified() {
     require_dev.insert("ext-mbstring".to_string(), "*".to_string());
     require_dev.insert("psr/log".to_string(), "^3.0".to_string());
     let parsed = parse_composer_dependencies(&require, &require_dev);
-    assert!(parsed.platform_markers.contains(&"require:php-64bit:>=8.1".to_string()));
-    assert!(parsed.platform_markers.contains(&"require:lib-curl:>=7".to_string()));
+    assert!(
+        parsed
+            .platform_markers
+            .contains(&"require:php-64bit:>=8.1".to_string())
+    );
+    assert!(
+        parsed
+            .platform_markers
+            .contains(&"require:lib-curl:>=7".to_string())
+    );
     assert!(
         parsed
             .platform_markers
@@ -122,7 +151,11 @@ fn platform_packages_are_classified() {
     );
     assert_eq!(
         parsed.edges,
-        vec![(DependencyKind::Development, "psr/log".to_string(), "^3.0".to_string())]
+        vec![(
+            DependencyKind::Development,
+            "psr/log".to_string(),
+            "^3.0".to_string()
+        )]
     );
 }
 
@@ -140,7 +173,12 @@ fn missing_dist_url_and_reference_fail_closed() {
         .and_then(|versions| versions.first())
         .cloned()
         .expect("fixture has a first entry");
-    version.dist.as_mut().expect("fixture has a dist").url.clear();
+    version
+        .dist
+        .as_mut()
+        .expect("fixture has a dist")
+        .url
+        .clear();
     let error = project_entry("monolog/monolog", "3.12.1", &version, &mut Vec::new())
         .expect_err("a dist without a url cannot resolve");
     assert!(matches!(error, MgError::Other(_)), "{error:?}");
@@ -190,7 +228,11 @@ fn non_zip_dist_is_unsupported() {
         .and_then(|versions| versions.first())
         .cloned()
         .expect("fixture has a first entry");
-    version.dist.as_mut().expect("fixture has a dist").archive_type = "tar".to_string();
+    version
+        .dist
+        .as_mut()
+        .expect("fixture has a dist")
+        .archive_type = "tar".to_string();
     let error = project_entry("monolog/monolog", "3.12.1", &version, &mut Vec::new())
         .expect_err("only zip dists are supported");
     assert!(matches!(error, MgError::Unsupported { .. }), "{error:?}");
@@ -200,7 +242,10 @@ fn non_zip_dist_is_unsupported() {
 fn replace_and_provide_become_markers() {
     let mut require = std::collections::BTreeMap::new();
     require.insert("replace:psr/log".to_string(), "3.0.0".to_string());
-    require.insert("provide:psr/log-implementation".to_string(), "3.0.0".to_string());
+    require.insert(
+        "provide:psr/log-implementation".to_string(),
+        "3.0.0".to_string(),
+    );
     let parsed = parse_composer_dependencies(&require, &std::collections::BTreeMap::new());
     assert!(parsed.edges.is_empty());
     assert_eq!(

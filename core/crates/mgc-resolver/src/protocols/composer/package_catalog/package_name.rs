@@ -11,7 +11,9 @@ const MAX_NAME_LEN: usize = 214;
 /// `[a-z0-9_.-]` and must start with a letter or digit.
 /// Kiểm tra và hạ chữ thường tên package Composer. Hai segment là chữ
 /// thường `[a-z0-9_.-]` và bắt đầu bằng chữ cái/số.
-pub(in crate::protocols::composer) fn validate_composer_package_name(name: &str) -> MgResult<String> {
+pub(in crate::protocols::composer) fn validate_composer_package_name(
+    name: &str,
+) -> MgResult<String> {
     let invalid = || ComposerError::InvalidPackageName(name.to_string()).into_mg_error();
     let lower = name.trim().to_ascii_lowercase();
     if lower.is_empty() || lower.len() > MAX_NAME_LEN {
@@ -34,8 +36,7 @@ fn segment_is_valid(segment: &str) -> bool {
     let starts_well = chars
         .next()
         .is_some_and(|first| first.is_ascii_alphanumeric());
-    starts_well
-        && chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.' | '-'))
+    starts_well && chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.' | '-'))
 }
 
 #[cfg(test)]

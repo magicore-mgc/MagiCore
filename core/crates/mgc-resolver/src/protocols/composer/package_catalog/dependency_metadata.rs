@@ -14,15 +14,6 @@ pub(in crate::protocols::composer) enum DependencyKind {
 }
 
 impl DependencyKind {
-    /// Stable edge prefix used in `ResolvedEntry::deps`.
-    /// Tiền tố cạnh cố định trong `ResolvedEntry::deps`.
-    pub(in crate::protocols::composer) fn edge_prefix(self) -> &'static str {
-        match self {
-            Self::Runtime => "",
-            Self::Development => "dev:",
-        }
-    }
-
     /// Stable marker prefix recorded per surviving edge.
     /// Tiền tố marker ổn định ghi cho mỗi cạnh còn lại.
     pub(in crate::protocols::composer) fn marker_prefix(self) -> &'static str {
@@ -91,9 +82,7 @@ pub(in crate::protocols::composer) fn parse_composer_dependencies(
                 parsed.substituted.push(target.to_string());
                 continue;
             }
-            parsed
-                .edges
-                .push((kind, name, constraint.to_string()));
+            parsed.edges.push((kind, name, constraint.to_string()));
         }
     }
     parsed.edges.sort_by(|left, right| {

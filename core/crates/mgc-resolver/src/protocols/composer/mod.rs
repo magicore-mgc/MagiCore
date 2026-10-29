@@ -17,10 +17,10 @@ pub use composer_implementation::ComposerProtocol;
 
 impl ComposerProtocol {
     /// Resolve the exact version of a development dependency.
-    /// Composer `require-dev` edges are recorded as `dev:<vendor>/<package>`
-    /// in [`ResolvedEntry::deps`]; the workspace decides whether to install
-    /// them, so this helper resolves one of those edges explicitly without
-    /// joining the production graph.
+    /// Composer `require-dev` edges are recorded as `require-dev:<vendor>/<package>:<constraint>`
+    /// markers and never enter [`ResolvedEntry::deps`] (the production graph);
+    /// the workspace decides whether to install them, so this helper resolves
+    /// one of those edges explicitly.
     /// Resolve version chính xác của một dev dependency. Cạnh `require-dev`
     /// của Composer được ghi dạng `dev:<vendor>/<package>` trong
     /// [`ResolvedEntry::deps`]; workspace quyết định có cài hay không nên
@@ -35,4 +35,4 @@ impl ComposerProtocol {
 }
 
 #[cfg(test)]
-mod test;
+pub(crate) mod test;

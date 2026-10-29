@@ -45,5 +45,5 @@ impl Default for ComposerProtocol {
 }
 
 #[cfg(test)]
-#[path = "test/composer_protocol.rs"]
+#[path = "test/composer_protocol/composer_protocol.rs"]
 mod tests;

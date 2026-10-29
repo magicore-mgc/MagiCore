@@ -107,7 +107,10 @@ async fn composer_resolves_monolog_from_the_live_packagist_registry() {
         entry.artifact_url
     );
     assert!(
-        entry.artifact_url.contains("/monolog/monolog/"),
+        entry
+            .artifact_url
+            .to_ascii_lowercase()
+            .contains("/monolog/"),
         "dist url should point at the monolog repository: {}",
         entry.artifact_url
     );
@@ -138,9 +141,17 @@ async fn composer_resolves_monolog_from_the_live_packagist_registry() {
         entry.deps
     );
     assert!(
-        entry.deps.iter().all(|(name, _)| !name.starts_with("dev:")),
+        entry.deps.iter().all(|(name, _)| !name.contains(':')),
         "runtime graph must not include require-dev edges: {:?}",
         entry.deps
+    );
+    assert!(
+        entry
+            .extra_markers
+            .iter()
+            .any(|marker| marker.starts_with("require-dev:")),
+        "require-dev edges must be recorded as markers: {:?}",
+        entry.extra_markers
     );
 
     // Download the published dist and verify it through the engine.
@@ -153,4 +164,13 @@ async fn composer_resolves_monolog_from_the_live_packagist_registry() {
     protocol
         .verify(&entry, &bytes)
         .expect("dist must verify against the recorded integrity source");
+
+    // Report the exact release the live registry served.
+    // Ghi lại đúng bản phát hành mà registry thật trả về.
+    eprintln!(
+        "COMPOSER_LIVE_RESOLVED {PACKAGE} {CONSTRAINT} -> {} ({} bytes, markers={:?})",
+        entry.version,
+        bytes.len(),
+        entry.extra_markers
+    );
 }

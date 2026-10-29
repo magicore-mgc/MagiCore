@@ -1,9 +1,9 @@
 //! Stable RegistryProtocol behavior for the Packagist (Composer) engine.
 //! Hành vi RegistryProtocol ổn định của engine Packagist (Composer).
 
+use super::ComposerProtocol;
 use super::package_catalog::{DIST_REFERENCE_MARKER_PREFIX, select_entry};
 use super::version_constraints::composer_matches;
-use super::ComposerProtocol;
 use crate::protocols::{RegistryProtocol, ResolvedEntry};
 use async_trait::async_trait;
 use mgc_types::{MgError, MgResult, Version};
@@ -43,7 +43,7 @@ impl RegistryProtocol for ComposerProtocol {
         hasher.update(bytes);
         let actual = hex::encode(hasher.finalize());
         if let Some(expected) = sha1_marker(&entry.extra_markers) {
-            if !actual.eq_ignore_ascii_case(&expected) {
+            if !actual.eq_ignore_ascii_case(expected) {
                 return Err(MgError::Integrity(format!(
                     "dist shasum mismatch for {}@{}: expected {expected}, got {actual}",
                     entry.name, entry.version

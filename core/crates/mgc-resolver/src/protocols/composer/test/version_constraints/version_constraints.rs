@@ -1,7 +1,7 @@
 //! Composer constraint semantics tests.
 //! Test ngữ nghĩa ràng buộc Composer.
 
-use crate::protocols::composer::version_constraints::composer_matches;
+use crate::protocols::composer::version_constraints::{composer_matches, strip_stability_flags};
 use mgc_types::Version;
 
 fn matches(range: &str, version: &str) -> bool {
@@ -48,6 +48,8 @@ fn wildcard_and_star_and_stability_flags() {
     assert!(!matches("3.12.*", "3.13.0"));
     assert!(matches("~1.0@dev", "1.4.0"));
     assert!(matches("^3.0@stable", "3.12.1"));
+    assert_eq!(strip_stability_flags("^2.0 || ^3.0"), "^2.0||^3.0");
+    assert_eq!(strip_stability_flags("1.0@dev || 2.0@beta"), "1.0||2.0");
 }
 
 #[test]
@@ -63,6 +65,13 @@ fn exact_and_inequality_use_zero_padding() {
 
 #[test]
 fn prerelease_versions_satisfy_their_own_range() {
-    assert!(matches("^3.0.0-RC1", "3.0.0-RC1"));
+    // `3.0.0-RC1` is parsed by the shared type as pre `RC1`; the Composer
+    // matcher reads it as the same triple with a `rc1` tag.
+    // `3.0.0-RC1` được kiểu dùng chung đọc là pre `RC1`; matcher Composer
+    // đọc cùng bộ ba với tag `rc1`.
     assert!(!matches(">=3.0", "3.0.0-RC1"));
+    assert!(matches("^3.0.0-RC1", "3.0.0-RC1"));
+    assert!(matches("3.0.0-RC1", "3.0.0-RC1"));
+    assert!(matches("~3.0.0-RC1", "3.0.0-RC1"));
+    assert!(!matches("^3.0.0", "3.0.0-RC1"));
 }
