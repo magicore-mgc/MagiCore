@@ -76,18 +76,47 @@ fn http_client_applies_tls_config_errors() {
 }
 
 #[tokio::test]
-async fn default_client_refuses_cross_host_redirect_before_contacting_target() {
-    // SEC-8/G5: the redirect target is a DIFFERENT host than the origin. The
-    // default policy must fail the chain, so the target listener never accepts
-    // a connection and never sees the Authorization header.
-    // (SEC-8/G5: đích redirect khác host gốc. Policy mặc định phải làm chuỗi
-    // thất bại, nên listener đích không nhận kết nối và không thấy header.)
+async fn cross_host_redirect_never_forwards_the_credential() {
+    // SEC-8/G5: the redirect target is a DIFFERENT host than the origin.
+    //
+    // The property that matters is that the credential does not travel, not
+    // that the hop is refused: real registries (crates.io -> static CDN) answer
+    // with a cross-host redirect, and refusing it made an install impossible.
+    // So the target MAY be contacted, and this test proves it never sees the
+    // Authorization header.
+    // (SEC-8/G5: đích redirect khác host gốc. Thuộc tính cần bảo vệ là
+    // credential không đi theo, không phải hop bị từ chối: registry thật
+    // (crates.io -> CDN tĩnh) trả redirect khác host, chặn nó làm install không
+    // xong. Vì vậy đích CÓ THỂ được gọi tới, và test chứng minh nó không bao
+    // giờ thấy header Authorization.)
     let target = TcpListener::bind("127.0.0.1:0").unwrap();
     let target_address = target.local_addr().unwrap();
-    target.set_nonblocking(true).unwrap();
+    target.set_nonblocking(false).unwrap();
+    // Whatever the target receives is captured here so the assertion can look
+    // for the token instead of assuming no connection.
+    // (Mọi thứ đích nhận được ghi lại để assert tìm token, thay vì giả định
+    // không có kết nối.)
+    let (seen_tx, seen_rx) = std::sync::mpsc::channel::<String>();
+    let target_server = std::thread::spawn(move || {
+        if let Ok((mut stream, _)) = target.accept() {
+            let mut buffer = [0_u8; 4096];
+            let read = stream.read(&mut buffer).unwrap_or(0);
+            let seen = String::from_utf8_lossy(&buffer[..read]).to_string();
+            let _ = seen_tx.send(seen);
+            let _ = stream.write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
+            );
+        } else {
+            let _ = seen_tx.send(String::new());
+        }
+    });
 
     let origin = TcpListener::bind("127.0.0.1:0").unwrap();
     let origin_address = origin.local_addr().unwrap();
+    // `localhost` and `127.0.0.1` are different origins to reqwest, which is
+    // what makes this a cross-origin hop.
+    // (`localhost` và `127.0.0.1` khác origin với reqwest, nên đây là hop khác
+    // origin.)
     let body = format!(
         "HTTP/1.1 302 Found\r\nLocation: http://localhost:{}/steal\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
         target_address.port()
@@ -108,27 +137,29 @@ async fn default_client_refuses_cross_host_redirect_before_contacting_target() {
         .unwrap()
         .with_auth("authorization", "Bearer super-secret-token");
 
-    let error = client
+    // The result may be Ok (hop followed) or Err (hop refused); both are
+    // acceptable. Leaking the token is not.
+    // (Kết quả có thể Ok (đi tiếp) hoặc Err (từ chối); cả hai đều được. Rò rỉ
+    // token thì không.)
+    let outcome = client
         .get(&format!("http://{origin_address}/package.tgz"))
-        .await
-        .expect_err("cross-origin redirect must not be followed");
+        .await;
     origin_server.join().unwrap();
+    let seen = seen_rx
+        .recv_timeout(Duration::from_secs(3))
+        .unwrap_or_default();
+    target_server.join().unwrap();
 
-    let message = format!("{error:#}");
     assert!(
-        message.contains("refusing cross-origin redirect"),
-        "unexpected error: {message}"
+        !seen.to_ascii_lowercase().contains("super-secret-token"),
+        "credential was forwarded across origins: {seen}"
     );
-    assert!(
-        !message.contains("super-secret-token"),
-        "credential leaked into the error: {message}"
-    );
-    // The target host must not have received any connection.
-    // (Host đích không được nhận bất kỳ kết nối nào.)
-    match target.accept() {
-        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
-        Ok(_) => panic!("redirect target was contacted despite the policy"),
-        Err(error) => panic!("unexpected accept error on target: {error}"),
+    if let Err(error) = outcome {
+        let message = format!("{error:#}");
+        assert!(
+            !message.contains("super-secret-token"),
+            "credential leaked into the error: {message}"
+        );
     }
 }
 

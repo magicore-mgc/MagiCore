@@ -31,11 +31,18 @@ impl NuGetProtocol {
         // (SEC-N1: id từ manifest/registration và version từ JSON từ xa; nếu
         // hoặc chứa `..` hoặc dấu phân cách thì thư mục global-packages nằm
         // ngoài `nuget_root` và mọi lần ghi sau đó sẽ đi theo.)
-        let lowered_id = entry.name.to_lowercase();
-        let lowered_version = entry.version.to_lowercase();
-        let id_segment = validate_cache_segment(&lowered_id, "NuGet package id")?;
+        // NuGet's on-disk convention lowercases the DIRECTORY segment, while the
+        // archive keeps the id's original casing. Validate the raw registry
+        // value first (that is what may contain `..` or a separator), then
+        // lowercase for the path — the two must not be conflated.
+        // (Quy ước trên đĩa của NuGet hạ chữ thường cho THƯ MỤC, còn file nén
+        // giữ đúng chữ hoa/thường của id. Validate giá trị gốc từ registry
+        // trước — đó là thứ có thể chứa `..` hay dấu phân cách — rồi hạ chữ
+        // thường cho đường dẫn; không được gộp hai việc này.)
+        let id_segment =
+            validate_cache_segment(&entry.name.to_lowercase(), "NuGet package id")?;
         let version_segment =
-            validate_cache_segment(&lowered_version, "NuGet package version")?;
+            validate_cache_segment(&entry.version.to_lowercase(), "NuGet package version")?;
         let dir = nuget_root.join(&id_segment).join(&version_segment);
         std::fs::create_dir_all(&dir)?;
         // The sidecar file name is also built from registry fields; a segment
@@ -43,7 +50,15 @@ impl NuGetProtocol {
         // still be exactly one component inside `dir`.
         // (Tên file sidecar cũng dựng từ trường registry; segment chứa `/` đã bị
         // từ chối, nhưng tên ghép vẫn phải là đúng một thành phần trong `dir`.)
-        let nupkg_name = format!("{id_segment}.{version_segment}.nupkg");
+        // The archive keeps the id's ORIGINAL casing (`Demo.Lib.13.0.3.nupkg`)
+        // while the containing directory uses the lowercased segment, matching
+        // NuGet's global-packages layout.
+        // (File nén giữ NGUYÊN chữ hoa/thường của id
+        // (`Demo.Lib.13.0.3.nupkg`) còn thư mục chứa dùng segment chữ thường,
+        // đúng layout global-packages của NuGet.)
+        let archive_id =
+            validate_cache_segment(&entry.name, "NuGet package id")?;
+        let nupkg_name = format!("{archive_id}.{version_segment}.nupkg");
         std::fs::write(dir.join(&nupkg_name), nupkg_bytes)?;
         crate::protocols::zip_reader::extract_zip(nupkg_bytes, &dir)?;
         // NuGet on-disk convention lowercases the id: the nuspec inside a

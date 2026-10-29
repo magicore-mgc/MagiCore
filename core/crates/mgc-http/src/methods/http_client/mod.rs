@@ -14,4 +14,3 @@ pub use http_client::HttpClient;
 pub use redirect_policy::{
     ALLOW_CROSS_ORIGIN_REDIRECTS_ENV, DEFAULT_MAX_REDIRECTS, same_origin_policy,
 };
-pub(crate) use redirect_policy::no_redirect_policy;

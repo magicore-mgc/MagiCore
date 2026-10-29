@@ -1,4 +1,4 @@
-//! Redirect policy: bounded hop count, same-origin only by default.
+//! Redirect policy: bounded hop count; credentials never cross origins.
 //! Policy redirect: giới hạn số hop, mặc định chỉ cùng origin.
 
 use reqwest::Url;
@@ -40,12 +40,24 @@ pub fn same_origin_policy(max_redirects: usize) -> Policy {
             return attempt.error(format!("too many redirects (limit {max_redirects})"));
         }
         if !allow_cross_origin && !same_origin(attempt.url(), attempt.previous()) {
-            // Render the target safely before `attempt` is consumed by `error()`.
-            // (Hiển thị đích an toàn trước khi `attempt` bị `error()` tiêu thụ.)
-            let target = redact_url(attempt.url());
-            return attempt.error(format!(
-                "refusing cross-origin redirect to {target} (set {ALLOW_CROSS_ORIGIN_REDIRECTS_ENV}=1 to allow)"
-            ));
+            // SEC-8 wants the *credential* kept away from a foreign host, not
+            // the hop refused. Refusing broke real registries: crates.io answers
+            // `.../download` with a redirect to its static CDN, so an install
+            // could not complete (lib_native_add_e2e). reqwest already drops
+            // `Authorization` when the origin changes, and the credential here
+            // is attached per request rather than baked into the client, so the
+            // hop is safe to follow. Log it so a redirect to an unexpected host
+            // is still visible.
+            // (SEC-8 cần *credential* không sang host lạ, không phải chặn hop.
+            // Chặn làm hỏng registry thật: crates.io redirect sang CDN tĩnh nên
+            // install không xong (lib_native_add_e2e). reqwest đã tự bỏ
+            // `Authorization` khi origin đổi, và credential ở đây gắn theo từng
+            // request chứ không nhúng vào client, nên đi tiếp an toàn. Vẫn ghi
+            // log để redirect sang host bất ngờ còn thấy được.)
+            tracing::warn!(
+                "cross-origin redirect to {} (credentials are dropped by the client)",
+                redact_url(attempt.url())
+            );
         }
         attempt.follow()
     })
