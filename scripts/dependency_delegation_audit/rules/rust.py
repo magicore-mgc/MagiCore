@@ -70,6 +70,9 @@ AUDITED_EXECUTOR_ROUTES = {
 ('core/crates/mgc-exec/src/run/process_policy/invocation_shape/invocation_shape.rs', 'safe_pm_argument_shape', 'swift'): 'constant allow-list of safe Swift/PM subcommands; '
                                                                                                                     'no process is spawned here, the list only '
                                                                                                                     'shapes arguments for the guarded executor',
+('cli/src/commands/core/install/library/install_lib/install_lib.rs', 'version_of', '<dynamic:binary>'): 'explicit `mgc install-lib-binary <target>` probe: the executable is the '
+                                                                                                    'user-supplied target of that command, run through mgc-exec (execution '
+                                                                                                    'scope + allowlist + timeout), and only `--version` is requested',
 ('cli/src/commands/exec/exec.rs', 'run', '<dynamic:command>'): 'mgc exec runs the user command through the mgc-exec allowlist with '
                                                                                  'ExecutionScope::ScriptRunner; the allowlist and exec audit '
                                                                                  'gate every spawn before it happens',

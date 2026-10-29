@@ -16,7 +16,21 @@ fn verify_chain_parses_custom_or_default() {
         "[cicd]\nprovider = \"github-actions\"\n",
     )
     .unwrap();
+    // No core marker: the generic default still ends with a build step.
+    // (Không có core marker: mặc định chung vẫn có bước build.)
     assert_eq!(verify_chain(&tmp).unwrap(), vec!["audit", "test", "build"]);
+
+    // A declared CI/CD project can never satisfy a build step, so its default
+    // chain stops before it instead of failing every run.
+    // (Project khai báo CI/CD không thể thỏa bước build, nên chain mặc định
+    // dừng trước bước đó thay vì fail mọi lần chạy.)
+    std::fs::write(tmp.join(".mgc.core"), "cicd\n").unwrap();
+    std::fs::write(
+        tmp.join("mgc.toml"),
+        "name = \"pipe\"\necosystem = \"cicd\"\n\n[cicd]\nprovider = \"github-actions\"\n",
+    )
+    .unwrap();
+    assert_eq!(verify_chain(&tmp).unwrap(), vec!["audit", "test"]);
     let _ = std::fs::remove_dir_all(&tmp);
 }
 

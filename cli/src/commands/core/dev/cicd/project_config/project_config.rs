@@ -1,7 +1,17 @@
 use super::super::DeployTarget;
 use anyhow::Result;
 
-/// Chain từ mgc.toml `[cicd] verify` — default ["audit", "test", "build"].
+/// Chain từ mgc.toml `[cicd] verify` — default theo core của project.
+/// Chain từ mgc.toml `[cicd] verify` — mặc định theo core của project.
+///
+/// A CI/CD project produces pipeline configuration, so a default chain that
+/// ends in `build` could never succeed: the build step rejects that core by
+/// design. The default therefore mirrors what the core can actually do, and an
+/// explicit `[cicd].verify` still wins.
+/// (Project CI/CD sinh cấu hình pipeline nên chain mặc định kết thúc bằng
+/// `build` không bao giờ thành công: bước build từ chối core đó theo thiết kế.
+/// Mặc định vì thế phản ánh đúng khả năng của core, còn `[cicd].verify` tường
+/// minh vẫn thắng.)
 pub(in crate::commands::core::dev::cicd) fn verify_chain(
     root: &std::path::Path,
 ) -> Result<Vec<String>> {
@@ -18,8 +28,23 @@ pub(in crate::commands::core::dev::cicd) fn verify_chain(
                 .filter_map(|s| s.as_str().map(|s| s.to_string()))
                 .collect::<Vec<_>>()
         })
-        .unwrap_or_else(|| vec!["audit".into(), "test".into(), "build".into()]);
+        .unwrap_or_else(|| default_chain(root));
     Ok(chain)
+}
+
+/// Default verify chain for the project's core.
+/// Chain verify mặc định theo core của project.
+fn default_chain(root: &std::path::Path) -> Vec<String> {
+    let core = mgc_config::project::ProjectConfig::load(root)
+        .ok()
+        .flatten()
+        .map(|config| config.ecosystem)
+        .unwrap_or_default();
+    if core == "cicd" {
+        vec!["audit".into(), "test".into()]
+    } else {
+        vec!["audit".into(), "test".into(), "build".into()]
+    }
 }
 
 /// Đọc `[deploy] targets` từ mgc.toml — None = không có target, dùng provider detect.

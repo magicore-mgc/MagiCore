@@ -43,9 +43,10 @@ fn provider_generation_plan_keeps_existing_paths_and_template_kinds() {
     ];
 
     for (provider, expected_path, creates_parent, marker) in cases {
-        let (path, content, actual_parent_policy, _) = generation_plan(provider).unwrap();
-        assert_eq!(path, expected_path);
-        assert_eq!(actual_parent_policy, creates_parent);
+        let plan = generation_plan(provider, "demo").unwrap();
+        let (path, content, actual_parent_policy, _) = plan.first().expect("one pipeline file");
+        assert_eq!(path, &expected_path);
+        assert_eq!(*actual_parent_policy, creates_parent);
         assert!(content.contains(marker));
     }
 }
@@ -67,7 +68,8 @@ fn every_generated_template_pins_the_installer_commit() {
         mgc_cicd_adapter::CicdProvider::BitbucketPipelines,
     ];
     for provider in providers {
-        let (_, content, _, _) = generation_plan(provider).unwrap();
+        let plan = generation_plan(provider, "demo").unwrap();
+        let (_, content, _, _) = plan.first().expect("one pipeline file");
         assert!(
             content.contains(super::super::super::templates::MGC_INSTALLER_SHA),
             "{provider:?} does not pin the installer commit"
@@ -141,7 +143,30 @@ fn new_providers_are_detected_from_marker_files() {
     }
 }
 
+/// F-7: an ArgoCD project must produce a standard AppProject/Application pair.
+/// (F-7: project ArgoCD phải sinh cặp AppProject/Application chuẩn.)
+#[test]
+fn argocd_provider_generates_project_and_application() {
+    let plan = generation_plan(mgc_cicd_adapter::CicdProvider::Argocd, "demo").unwrap();
+    assert_eq!(plan.len(), 2, "ArgoCD needs both manifests");
+    let project = &plan[0];
+    assert_eq!(project.0, PathBuf::from(".argocd").join("app-project.yaml"));
+    assert!(project.1.contains("kind: AppProject"));
+    assert!(project.1.contains("name: demo"));
+    let application = &plan[1];
+    assert_eq!(
+        application.0,
+        PathBuf::from(".argocd").join("application.yaml")
+    );
+    assert!(application.1.contains("kind: Application"));
+    assert!(application.1.contains("project: demo"));
+    assert!(
+        !application.1.contains("{repo_url}"),
+        "repo URL placeholder must be rendered"
+    );
+}
+
 #[test]
 fn unsupported_provider_has_no_generation_plan() {
-    assert!(generation_plan(mgc_cicd_adapter::CicdProvider::Aws).is_err());
+    assert!(generation_plan(mgc_cicd_adapter::CicdProvider::Aws, "demo").is_err());
 }

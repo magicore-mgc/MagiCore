@@ -51,9 +51,42 @@ pub(in crate::commands::core::dev::cicd) fn render_ci_template(
     template: &str,
     name: &str,
 ) -> String {
+    render_ci_template_with_repo(template, name, "{repo_url}")
+}
+
+/// Render a template that also needs the project's repository URL.
+/// Render template cần thêm URL repository của project.
+pub(in crate::commands::core::dev::cicd) fn render_ci_template_with_repo(
+    template: &str,
+    name: &str,
+    repo_url: &str,
+) -> String {
+    // SEC-10: an unpinned installer digest is not a warning, it is a missing
+    // release: a template must never be written with an empty pin, because the
+    // pipeline would then install whatever the tag points at today.
+    // (SEC-10: digest installer không pin không phải cảnh báo mà là release
+    // thiếu: template không bao giờ được ghi với pin rỗng, vì pipeline sẽ cài
+    // bất cứ thứ gì tag trỏ tới hôm đó.)
+    debug_assert!(
+        !MGC_INSTALLER_SHA256.is_empty(),
+        "MGC_INSTALLER_SHA256 must be pinned in the release build"
+    );
     template
+        .replace("{repo_url}", repo_url)
         .replace("{name}", name)
         .replace("{tag}", MGC_RELEASE_TAG)
         .replace("{installer_sha}", MGC_INSTALLER_SHA)
         .replace("{installer_sha256}", MGC_INSTALLER_SHA256)
+}
+
+/// Refuse to generate when the release pin is missing (SEC-10).
+/// Từ chối sinh khi thiếu pin release (SEC-10).
+pub(in crate::commands::core::dev::cicd) fn ensure_release_pin() -> anyhow::Result<()> {
+    if MGC_INSTALLER_SHA256.trim().is_empty() || MGC_INSTALLER_SHA.trim().is_empty() {
+        anyhow::bail!(
+            "refusing to generate CI: the installer pin is empty in this build \
+             (MGC_INSTALLER_SHA/MGC_INSTALLER_SHA256); rebuild from a released source tree"
+        );
+    }
+    Ok(())
 }

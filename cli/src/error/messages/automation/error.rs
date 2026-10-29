@@ -30,7 +30,7 @@ pub fn cicd_reason(reason: &str) -> Error {
 
 pub fn ci_template_unknown(provider: &str) -> Error {
     anyhow!(
-        "'mgc ci-generate' has no template for provider '{provider}' — supported: github-actions | gitlab | circleci | jenkins | azure-pipelines | bitbucket-pipelines"
+        "'mgc ci-generate' has no template for provider '{provider}' — supported: github-actions | gitlab | circleci | jenkins | azure-pipelines | bitbucket-pipelines | argocd"
     )
 }
 
