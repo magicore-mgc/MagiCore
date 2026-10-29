@@ -1,3 +1,6 @@
+//! Interactive wizards, one owner folder per core.
+//! Wizard tương tác, mỗi core một owner folder.
+
 pub mod ai;
 pub mod app;
 pub mod cicd;

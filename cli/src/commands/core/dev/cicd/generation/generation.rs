@@ -31,7 +31,7 @@ fn generation_plan(
     }
 }
 
-/// `mgc ci generate` — sinh file CI theo provider (07 §4).
+/// `mgc ci-generate` — sinh file CI theo provider (07 §4).
 /// Workflow: checkout → setup-magicore → mgc install → mgc verify.
 pub fn ci_generate() -> Result<()> {
     let root = std::env::current_dir().map_err(|e| crate::error::cwd_deleted(&e))?;

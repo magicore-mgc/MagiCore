@@ -34,6 +34,15 @@ pub(in crate::commands::optimizer::env_loader) fn get_env_files_for_runtime(
         DetectedRuntime::GoLib => vec![("go_lib_runtime.env", "Go Lib")],
         DetectedRuntime::PythonLib => vec![("python_lib_runtime.env", "Python Lib")],
         DetectedRuntime::TypeScriptLib => vec![("typescript_lib_env.env", "TypeScript Lib")],
+        DetectedRuntime::JvmLib => vec![("java_lib_runtime.env", "Java Lib")],
+        DetectedRuntime::DotNetLib => vec![("dotnet_lib_runtime.env", ".NET Lib")],
+        DetectedRuntime::SwiftLib => vec![("swift_lib_runtime.env", "Swift Lib")],
+        // No language-specific file: `profile.json` and `gpu.env` are the
+        // machine-level outputs every adapter writes, and they are what this lane
+        // is for.
+        // (Không file riêng theo ngôn ngữ: `profile.json` và `gpu.env` là output
+        // mức máy mọi adapter đều ghi, và đó chính là mục đích của lane này.)
+        DetectedRuntime::GenericToolchain => vec![],
 
         // App runtimes — runtime ứng dụng.
         DetectedRuntime::Flutter => vec![("flutter_env.env", "Flutter")],

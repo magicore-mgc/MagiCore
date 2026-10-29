@@ -348,6 +348,7 @@ fn capability_map_matches_audited_contract() {
                 Capability::Materializer,
                 Capability::LifecycleRunner,
                 Capability::AuditProvider,
+                Capability::OptimizerProvider,
             ],
         ),
         (
@@ -357,8 +358,19 @@ fn capability_map_matches_audited_contract() {
                 Capability::ScaffoldProvider,
                 Capability::DependencyResolver,
                 Capability::LockfileProvider,
+                // ArtifactFetcher is part of the audited contract because every
+                // lib language now owns a standalone fetch: TypeScript through
+                // the embedded Web engine, native languages through
+                // `artifact_fetcher/native/<language>` (download → verify → CAS
+                // import). The claim is backed by `probe_artifact_fetcher`
+                // succeeding, which `artifact_fetch_parity` asserts per language.
+                // (ArtifactFetcher thuộc contract vì mọi ngôn ngữ lib nay có
+                // fetch riêng: TS qua Web engine, native qua
+                // `artifact_fetcher/native/<language>`.)
+                Capability::ArtifactFetcher,
                 Capability::ContentStoreProvider,
                 Capability::AuditProvider,
+                Capability::OptimizerProvider,
             ],
         ),
         (
@@ -386,6 +398,7 @@ fn capability_map_matches_audited_contract() {
                 // (PubProtocol) — DependencyResolver giờ là thật cho
                 // project flutter.)
                 Capability::DependencyResolver,
+                Capability::OptimizerProvider,
             ],
         ),
         (
@@ -394,6 +407,7 @@ fn capability_map_matches_audited_contract() {
                 Capability::ProjectDetector,
                 Capability::ScaffoldProvider,
                 Capability::AuditProvider,
+                Capability::OptimizerProvider,
             ],
         ),
         (
@@ -402,6 +416,7 @@ fn capability_map_matches_audited_contract() {
                 Capability::ProjectDetector,
                 Capability::ScaffoldProvider,
                 Capability::AuditProvider,
+                Capability::OptimizerProvider,
             ],
         ),
         (
@@ -410,6 +425,7 @@ fn capability_map_matches_audited_contract() {
                 Capability::ProjectDetector,
                 Capability::ScaffoldProvider,
                 Capability::AuditProvider,
+                Capability::OptimizerProvider,
             ],
         ),
         (
@@ -418,12 +434,21 @@ fn capability_map_matches_audited_contract() {
                 Capability::ProjectDetector,
                 Capability::ScaffoldProvider,
                 Capability::AuditProvider,
+                Capability::OptimizerProvider,
             ],
         ),
         (
             "hardware",
             &[
                 Capability::ProjectDetector,
+                // Scaffolding is real: `mgc create-hardware <framework>` writes the
+                // project through the CLI lane, which the trait documents as valid
+                // evidence. The contract previously said "no scaffold", so the
+                // matrix advertised less than the product does.
+                // (Scaffold là thật: `mgc create-hardware` ghi project qua lane CLI
+                // — trait chấp nhận đó là dẫn chứng. Contract cũ nói "không
+                // scaffold", tức quảng cáo ít hơn thực tế.)
+                Capability::ScaffoldProvider,
                 Capability::OptimizerProvider,
                 Capability::AuditProvider,
             ],
@@ -477,6 +502,55 @@ fn core_ids_are_cli_canonical() {
             },
             "{}: ecosystem",
             case.core
+        );
+    }
+}
+
+// ── Claim granularity: per core, not per framework ──────────────────────
+// A capability is declared once for a core while an adapter may implement it
+// per framework. When only SOME frameworks can perform an operation, the claim
+// must be withheld — otherwise a user of an unsupported framework reads
+// "supported" in `mgc capabilities` and hits a failure later.
+// (Capability khai một lần cho core trong khi adapter có thể impl theo framework.
+// Khi chỉ MỘT SỐ framework làm được, phải giữ claim lại.)
+//
+// This test reads the SAME audited contract table the exhaustive check uses, so
+// the two cannot drift.
+// (Test này đọc chính bảng contract mà check đầy đủ dùng, nên hai bên không thể lệch.)
+
+fn contract_capabilities(core: &str) -> &'static [Capability] {
+    // Mirrors the table in `capability_map_matches_audited_contract`; reading the
+    // adapter constant directly would let this test pass while the contract test
+    // was edited independently.
+    // (Phản chiếu bảng trong test contract; đọc trực tiếp hằng adapter sẽ khiến
+    // test này pass trong khi test contract bị sửa riêng.)
+    match core {
+        "game" => mgc_game_adapter::GameAdapter::CAPABILITIES,
+        "iot" => mgc_iot_adapter::IotAdapter::CAPABILITIES,
+        "web" => mgc_web_adapter::WebAdapter::CAPABILITIES,
+        "lib" => mgc_lib_adapter::LibAdapter::CAPABILITIES_ALL,
+        "ai" => mgc_ai_adapter::AiAdapter::CAPABILITIES_ALL,
+        other => panic!("no adapter mapped for '{other}'"),
+    }
+}
+
+#[test]
+fn a_partial_framework_implementation_is_not_advertised() {
+    for core in ["game", "iot"] {
+        assert!(
+            !contract_capabilities(core).contains(&Capability::LockfileProvider),
+            "{core} implements write_manifest for ONE framework; advertising the \
+             capability would promise it for every framework of that core"
+        );
+    }
+}
+
+#[test]
+fn a_core_that_owns_its_manifest_for_all_frameworks_does_advertise_it() {
+    for core in ["web", "lib", "ai"] {
+        assert!(
+            contract_capabilities(core).contains(&Capability::LockfileProvider),
+            "{core} owns its manifest across its whole framework set"
         );
     }
 }

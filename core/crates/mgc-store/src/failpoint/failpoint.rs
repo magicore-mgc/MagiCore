@@ -9,8 +9,11 @@
 //! khi env đó trỏ đúng phase, process ghi marker `READY:<phase>` (fsync)
 //! và đỗ vĩnh viễn tới khi harness ngoài SIGKILL nó.)
 
+#[cfg(feature = "fault-injection")]
 use std::io::Write;
+#[cfg(feature = "fault-injection")]
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "fault-injection")]
 use std::time::Duration;
 
 /// Every failpoint phase the install orchestrator exposes. Kept in ONE
@@ -19,6 +22,7 @@ use std::time::Duration;
 /// (Mọi phase failpoint mà orchestrator install phơi bày. Gộp MỘT danh
 /// sách để giá trị `MGC_FAILPOINT` gõ sai bị phát hiện và cảnh báo, thay
 /// vì âm thầm chạy trọn install tới xong.)
+#[cfg(feature = "fault-injection")]
 const KNOWN_PHASES: &[&str] = &[
     "after-generation-begin",
     "after-first-claim",
@@ -37,12 +41,14 @@ const KNOWN_PHASES: &[&str] = &[
 /// until killed; a long single sleep keeps the hot loop cost negligible.
 /// (Khoảng ngủ khi đỗ — process cố ý kẹt ở đây tới khi bị kill; ngủ dài
 /// đơn giữ chi phí vòng lặp nóng không đáng kể.)
+#[cfg(feature = "fault-injection")]
 const PARK_SLEEP_SECS: u64 = 3_600;
 
 /// Guards the once-only "unknown phase" warning across the many `hit()`
 /// call sites (only the FIRST mismatch prints).
 /// (Chặn cảnh báo "phase không biết" chỉ in MỘT lần qua nhiều chỗ gọi
 /// `hit()` — chỉ lần khớp ĐẦU TIÊN in.)
+#[cfg(feature = "fault-injection")]
 static WARNED_UNKNOWN_PHASE: AtomicBool = AtomicBool::new(false);
 
 /// Fire the failpoint named `phase`.
@@ -71,6 +77,7 @@ static WARNED_UNKNOWN_PHASE: AtomicBool = AtomicBool::new(false);
 /// caller did not already have.
 /// (Đây là hook CHỈ-CHO-TEST: ai kiểm soát env của process đã kiểm soát
 /// process, nên đỗ ở đây không trao thêm khả năng nào caller chưa có.)
+#[cfg(feature = "fault-injection")]
 pub fn hit(phase: &str) {
     // No failpoint configured → the common production path, cost ~1 env read.
     // (Chưa cấu hình failpoint → đường production thường gặp, chi phí ~1 lần đọc env.)
@@ -110,3 +117,13 @@ pub fn hit(phase: &str) {
         );
     }
 }
+
+/// No-op in a default build.
+///
+/// The parking hook exists for the crash-recovery harness; a default build must
+/// not be able to hang `mgc install` on an inherited environment variable
+/// (a stray `.env` or a CI template exporting `MGC_FAILPOINT`).
+/// (No-op trong build mặc định: hook đỗ chỉ dành cho harness crash-recovery; build
+/// mặc định không được phép treo `mgc install` vì env thừa kế.)
+#[cfg(not(feature = "fault-injection"))]
+pub fn hit(_phase: &str) {}

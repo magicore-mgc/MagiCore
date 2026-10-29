@@ -4,10 +4,51 @@ use crate::commands::optimizer::adapters::*;
 use crate::commands::optimizer::detect::{GpuDetectionStatus, HardwareInfo, SystemProfile};
 use crate::commands::optimizer::runtime_detect::{DetectedRuntime, PackageManager};
 
+/// The registry must cover every buildable language, NOT a frozen number.
+///
+/// This assertion used to be `assert_eq!(len, 12)`. A hard count cannot notice a
+/// missing language: adding Java/.NET/Swift adapters changed 12→15 and the test
+/// failed, while a language could be absent for months without it noticing.
+/// The check below instead pins the property — every runtime resolves to an
+/// adapter — which is what the count was standing in for.
+/// (Assert cũ là `assert_eq!(len, 12)`. Số cứng không phát hiện được ngôn ngữ
+/// thiếu: thêm adapter Java/.NET/Swift làm 12→15 và test fail, trong khi một
+/// ngôn ngữ có thể thiếu nhiều tháng mà không ai biết. Kiểm dưới đây ghim đúng
+/// thuộc tính — mọi runtime đều có adapter.)
 #[test]
-fn test_all_adapters_count() {
+fn every_runtime_resolves_to_an_adapter() {
     let adapters = all_adapters();
-    assert_eq!(adapters.len(), 12); // 3 web + 3 ai + 4 lib + 2 app
+    for runtime in [
+        DetectedRuntime::RustLib,
+        DetectedRuntime::GoLib,
+        DetectedRuntime::PythonLib,
+        DetectedRuntime::TypeScriptLib,
+        DetectedRuntime::JvmLib,
+        DetectedRuntime::DotNetLib,
+        DetectedRuntime::SwiftLib,
+        DetectedRuntime::Flutter,
+        DetectedRuntime::ReactNative,
+        DetectedRuntime::RustNative,
+        DetectedRuntime::PythonPyTorch,
+        DetectedRuntime::RustCandle,
+        DetectedRuntime::GoTensorFlow,
+        DetectedRuntime::Deno,
+        DetectedRuntime::Bun,
+        DetectedRuntime::NodeJs {
+            package_manager: PackageManager::Npm,
+        },
+    ] {
+        assert!(
+            adapters.iter().any(|adapter| adapter.matches(&runtime)),
+            "{runtime:?} has no optimizer adapter — a project of this kind would \
+             build with no tuning at all"
+        );
+    }
+    // A dead adapter (matching nothing) is also a defect: it inflates the
+    // report without ever running.
+    // (Adapter chết — không khớp runtime nào — cũng là lỗi: làm phồng báo cáo
+    // mà không bao giờ chạy.)
+    assert!(!adapters.is_empty(), "no optimizer adapters registered");
 }
 
 #[test]

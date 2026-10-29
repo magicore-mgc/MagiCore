@@ -18,7 +18,20 @@ pub(in crate::commands::core::web::implementation) fn validate_runtime_args(
         "bun" => Runtime::Bun,
         "deno" => Runtime::Deno,
         "node" => Runtime::Node,
-        _ => return Ok(()), // Unknown runtime, skip validation
+        "tsx" => Runtime::Tsx,
+        // Fail closed on an unknown runtime.
+        //
+        // This used to `return Ok(())` with a comment promising the arm was
+        // unreachable. A promise in a comment is not a guarantee: the next call
+        // site that passes a runtime name from configuration would silently skip
+        // every flag check. Refusing is the only shape that keeps the property
+        // true without a reviewer noticing.
+        // (Fail-closed với runtime lạ. Trước đây `return Ok(())` kèm comment hứa
+        // nhánh không tới được — lời hứa trong comment không phải bảo đảm; call site
+        // sau truyền tên runtime từ cấu hình sẽ bỏ qua mọi kiểm tra flag.)
+        other => {
+            return Err(crate::error::dev_runtime_unknown_for_policy(other));
+        }
     };
 
     let policy = LauncherPolicy::dev_server(rt);
@@ -39,7 +52,13 @@ pub(in crate::commands::core::web::implementation) fn detect_runtime_from_tokens
     match tokens[0] {
         "bun" => DetectedRuntime::Bun,
         "deno" => DetectedRuntime::Deno,
-        "node" | "npm" | "pnpm" | "yarn" | "vite" | "next" | "webpack" | "react-scripts" => {
+        // `tsx` runs TypeScript on Node, so it selects the same optimizer
+        // settings; leaving it to `Unknown` meant a `tsx`-driven dev script got
+        // no optimizer environment at all.
+        // (`tsx` chạy TypeScript trên Node nên chọn cùng cấu hình optimizer;
+        // để `Unknown` khiến script dev dùng `tsx` không nhận env optimizer.)
+        "node" | "tsx" | "npm" | "pnpm" | "yarn" | "vite" | "next" | "webpack"
+        | "react-scripts" => {
             DetectedRuntime::NodeJs {
                 package_manager: PackageManager::Npm, // Default, actual PM doesn't matter for env loading
             }
@@ -47,3 +66,7 @@ pub(in crate::commands::core::web::implementation) fn detect_runtime_from_tokens
         _ => DetectedRuntime::Unknown,
     }
 }
+
+#[cfg(test)]
+#[path = "test/mod.rs"]
+mod tests;

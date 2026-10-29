@@ -24,6 +24,16 @@ impl Scaffolder {
             std::fs::create_dir_all(&staging_path)?;
             Self::write_common_files(&staging_path, config)?;
             Self::write_core_files(&staging_path, config)?;
+            // The framework's `.gitignore` only exists after `write_core_files`,
+            // so the merge has to run after it. Running it inside
+            // `write_common_files` (which is called first) saw no file and wrote
+            // MagiCore's list from scratch, then the framework overwrote it — the
+            // project ended with zero MagiCore entries.
+            // (`.gitignore` của framework chỉ tồn tại SAU `write_core_files`, nên
+            // hợp nhất phải chạy sau. Chạy trong `write_common_files` (gọi trước)
+            // không thấy file, ghi đè xong framework lại ghi đè tiếp — project
+            // không có entry MagiCore nào.)
+            Self::merge_gitignore_after_framework(&staging_path, config)?;
             crate::scaffold::container::generate_assets(&staging_path, config)?;
             Ok(())
         })();

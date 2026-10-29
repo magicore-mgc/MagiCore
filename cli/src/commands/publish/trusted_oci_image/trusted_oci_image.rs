@@ -141,7 +141,7 @@ pub(in crate::commands::publish) async fn docker_command(
 
 pub(in crate::commands::publish) fn valid_oci_tag(tag: &str) -> bool {
     !tag.is_empty()
-        && tag.len() <= 128
+        && tag.len() <= mgc_types::limits::OCI_TAG_MAX
         && tag
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'-'))

@@ -15,6 +15,7 @@ mod dependency_resolver;
 mod factory;
 mod identity;
 mod lockfile_provider;
+mod optimizer_provider;
 mod package_adapter;
 mod project_detection;
 mod scaffold_provider;

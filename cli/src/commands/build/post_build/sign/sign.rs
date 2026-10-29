@@ -45,7 +45,16 @@ pub(crate) fn sign_artifact(artifact: &Path, keyring_path: &Path) -> Result<Sign
         Ok(signer) => signer,
         Err(error) => {
             return Ok(Signed::Skipped(format!(
-                "no signing key at '{}': {error}; run `mgc key generate` to create one",
+                // The message used to say "run `mgc key generate`" — there is no
+                // such command. What the loader actually needs is a keyring JSON
+                // file with a `signing_key` field holding a 32-byte hex seed, so
+                // the message names that shape instead of a command that cannot
+                // be typed.
+                // (Message từng nói "run `mgc key generate`" — lệnh không tồn tại.
+                // Loader cần file keyring JSON có field `signing_key` chứa seed hex
+                // 32 byte, nên message nêu đúng hình dạng đó.)
+                "no signing key at '{}': {error}; create that file with a JSON object \
+                 like {{\"signing_key\": \"<64 hex chars = 32-byte Ed25519 seed>\"}}",
                 keyring_path.display()
             )));
         }

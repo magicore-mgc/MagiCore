@@ -23,6 +23,17 @@ pub async fn auth_middleware(
     {
         return next.run(request).await;
     }
+    // Liveness probe, npm convention. Every "is the registry running?" error
+    // message depends on this answering a caller without credentials; the body is
+    // `{}`, so nothing is disclosed. Without the exemption the probe returned 401
+    // whenever `--admin-token` was configured — the case where an operator most
+    // needs it.
+    // (Probe sống theo chuẩn npm. Mọi thông điệp "registry có chạy không?" cần nó
+    // trả lời được mà không cần credential; body là `{}` nên không lộ gì. Thiếu
+    // miễn trừ thì probe trả 401 khi có `--admin-token`.)
+    if request.method() == axum::http::Method::GET && request.uri().path() == "/-/ping" {
+        return next.run(request).await;
+    }
 
     if request
         .headers()

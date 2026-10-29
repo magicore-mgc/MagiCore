@@ -87,7 +87,19 @@ fn clean_lib_project(dir: &std::path::Path) {
     .unwrap();
     std::fs::create_dir_all(dir.join("src")).unwrap();
     std::fs::write(dir.join("src/lib.rs"), "pub fn f() {}\n").unwrap();
-    std::fs::write(dir.join("Cargo.lock"), "version = 4\n").unwrap();
+    // One real package. An EMPTY lock inspects nothing, so a run against it
+    // cannot demonstrate a clean audit — it can only demonstrate that nothing was
+    // inspected, which now reports UNVERIFIED by design.
+    // (Một package thật. Lock RỖNG không kiểm gì nên không thể chứng minh audit
+    // sạch — chỉ chứng minh không có gì được kiểm, nay báo UNVERIFIED theo thiết
+    // kế.)
+    std::fs::write(
+        dir.join("Cargo.lock"),
+        "version = 4\n\n[[package]]\nname = \"itoa\"\nversion = \"1.0.18\"\n\
+         source = \"registry+https://github.com/rust-lang/crates.io-index\"\n\
+         checksum = \"0000000000000000000000000000000000000000000000000000000000000000\"\n",
+    )
+    .unwrap();
 }
 
 /// Run `mgc audit` (optionally with env) and return (exit_code, output).
@@ -347,11 +359,27 @@ fn audit_lib_python_via_cli_audits_native_uv_lock_without_python_tools() {
         "[project]\nname = \"py-fixture\"\nversion = \"0.1.0\"\n",
     )
     .unwrap();
-    // Empty resolved lock is a complete, project-owned empty graph.
-    // Lock resolve rỗng là graph rỗng hoàn chỉnh do project sở hữu.
+    // A resolved lock with one real package. The previous fixture was an EMPTY
+    // lock while the test name claimed "complete resolved uv.lock" — and the
+    // empty graph made `clean(0)` report Available, which was the fail-open this
+    // suite now guards against. A lock with nothing in it cannot demonstrate
+    // "audited directly by MGC".
+    // (Lock resolved có một package thật. Fixture cũ RỖNG trong khi tên test nói
+    // "complete resolved uv.lock" — graph rỗng khiến `clean(0)` báo Available,
+    // đúng lỗi fail-open mà suite này canh. Lock không có gì không thể chứng minh
+    // "MGC audit trực tiếp".)
     std::fs::write(
         sandbox.path().join("uv.lock"),
-        "version = 1\nrevision = 3\nrequires-python = \">=3.8\"\n",
+        concat!(
+            "version = 1\n",
+            "revision = 3\n",
+            "requires-python = \">=3.8\"\n",
+            "\n",
+            "[[package]]\n",
+            "name = \"attrs\"\n",
+            "version = \"24.2.0\"\n",
+            "source = { registry = \"https://pypi.org/simple\" }\n",
+        ),
     )
     .unwrap();
 
@@ -713,13 +741,19 @@ fn audit_lib_rust_runs_without_cargo_or_cargo_audit_on_path() {
     .unwrap();
     std::fs::create_dir_all(sandbox.path().join("src")).unwrap();
     std::fs::write(sandbox.path().join("src/lib.rs"), "pub fn f() {}\n").unwrap();
-    std::fs::write(sandbox.path().join("Cargo.lock"), "version = 4\n").unwrap();
+    std::fs::write(
+        sandbox.path().join("Cargo.lock"),
+        "version = 4\n\n[[package]]\nname = \"itoa\"\nversion = \"1.0.18\"\n\
+         source = \"registry+https://github.com/rust-lang/crates.io-index\"\n\
+         checksum = \"0000000000000000000000000000000000000000000000000000000000000000\"\n",
+    )
+    .unwrap();
 
     let (code, output) = run_mgc_audit_no_gradle(&mgc, sandbox.path(), Some(true));
     assert_eq!(
         code,
         Some(0),
-        "an empty lock should audit cleanly without package-manager executables, got {code:?}:\n{output}"
+        "a lock with one package should audit cleanly without package-manager executables, got {code:?}:\n{output}"
     );
     assert!(
         output.contains("No vulnerabilities"),
@@ -810,7 +844,7 @@ fn clean_java_project(dir: &std::path::Path) {
         dir.join("gradle").join("verification-metadata.xml"),
         concat!(
             "<components>\n",
-            "  <dependency group=\"com.google.guava\" name=\"guava\" version=\"32.0.0-jre\">\n",
+            "  <dependency group=\"com.google.guava\" name=\"guava\" version=\"33.7.2-jre\">\n",
             "  </dependency>\n",
             "</components>\n",
         ),
@@ -1705,5 +1739,35 @@ fn audit_ai_cli_scans_checkpoint_weights_after_models_directory() {
     assert!(
         !output.contains(sandbox.path().to_string_lossy().as_ref()),
         "CLI audit must not expose the host's absolute project path:\n{output}"
+    );
+}
+
+/// A supplementary listing failure must not abort the audit.
+///
+/// `mgc audit` on a Hardware project called the adapter's `list` purely to print
+/// human context, and a `list` failure returned
+/// `hardware core does not support 'list' yet` — an error about a capability the
+/// user never invoked, while the audit report itself was ready.
+/// (Lỗi của listing phụ không được hủy audit: `mgc audit` trên Hardware từng
+/// trả lỗi về `list`, capability người dùng không gọi, trong khi report đã sẵn.)
+#[test]
+fn audit_hardware_reports_unverified_instead_of_a_list_error() {
+    let mgc = find_mgc_binary();
+    let sandbox = TempDir::new().unwrap();
+    std::fs::write(
+        sandbox.path().join("mgc.toml"),
+        "name = \"hw-fixture\"\necosystem = \"hardware\"\n",
+    )
+    .unwrap();
+
+    let (_code, output) = run_mgc_audit(&mgc, sandbox.path(), None);
+
+    assert!(
+        !output.contains("does not support 'list'"),
+        "audit must not surface a `list` error the user never asked for:\n{output}"
+    );
+    assert!(
+        output.contains("hardware audit") || output.contains("UNVERIFIED"),
+        "the audit must still produce its own verdict:\n{output}"
     );
 }

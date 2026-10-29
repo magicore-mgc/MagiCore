@@ -21,6 +21,23 @@ use super::super::types::{ArgSlot, InitializerRecord, Layout, Runtime, VersionPo
 
 use ArgSlot::{Literal as L, Project as P};
 
+/// Last `create-vite` release whose tarball still ships the `template-*` folders.
+///
+/// `create-vite@9.3.0` narrowed its published `files` field to
+/// `["index.js", "template-*", "dist"]` but the published tarball no longer
+/// contains any `template-*` directory (verified against registry.npmjs.org:
+/// 9.2.1 ships 237 template files, 9.3.2 ships 0). The CLI then fails with
+/// `ENOENT ... scandir .../template-react-ts`, so `create-web react-vite`
+/// produced no project at all.
+///
+/// Following `latest` here means silently inheriting that regression; a pin
+/// with this note means the next `create-vite` bump is a reviewed decision.
+/// — `create-vite@9.3.0` thu hẹp `files` nhưng tarball phát hành không còn
+/// thư mục `template-*` (9.2.1: 237 file, 9.3.2: 0). CLI hỏng với ENOENT nên
+/// `create-web react-vite` không tạo được project. Ghim để lần nâng cấp sau là
+/// quyết định có review.
+pub(crate) const CREATE_VITE_WITH_TEMPLATES: &str = "9.2.1";
+
 /// Frontend and fullstack records, keyed by normalized framework id.
 /// Record frontend và fullstack, khóa theo id framework đã chuẩn hoá.
 pub(crate) const FRONTEND: &[(&str, InitializerRecord)] = &[
@@ -32,7 +49,7 @@ pub(crate) const FRONTEND: &[(&str, InitializerRecord)] = &[
             identity: "vite:vanilla-ts",
             args: &[P, L("--template"), L("vanilla-ts")],
             layout: Layout::NestedProject,
-            version: VersionPolicy::Latest,
+            version: VersionPolicy::Pinned(CREATE_VITE_WITH_TEMPLATES),
             runtime: Runtime::RegistryPackage,
         },
     ),
@@ -44,7 +61,7 @@ pub(crate) const FRONTEND: &[(&str, InitializerRecord)] = &[
             identity: "vite:react-ts",
             args: &[P, L("--template"), L("react-ts")],
             layout: Layout::NestedProject,
-            version: VersionPolicy::Latest,
+            version: VersionPolicy::Pinned(CREATE_VITE_WITH_TEMPLATES),
             runtime: Runtime::RegistryPackage,
         },
     ),
@@ -56,7 +73,7 @@ pub(crate) const FRONTEND: &[(&str, InitializerRecord)] = &[
             identity: "vite:react-ts",
             args: &[P, L("--template"), L("react-ts")],
             layout: Layout::NestedProject,
-            version: VersionPolicy::Latest,
+            version: VersionPolicy::Pinned(CREATE_VITE_WITH_TEMPLATES),
             runtime: Runtime::RegistryPackage,
         },
     ),
@@ -68,7 +85,7 @@ pub(crate) const FRONTEND: &[(&str, InitializerRecord)] = &[
             identity: "vite:vue-ts",
             args: &[P, L("--template"), L("vue-ts")],
             layout: Layout::NestedProject,
-            version: VersionPolicy::Latest,
+            version: VersionPolicy::Pinned(CREATE_VITE_WITH_TEMPLATES),
             runtime: Runtime::RegistryPackage,
         },
     ),
@@ -80,7 +97,7 @@ pub(crate) const FRONTEND: &[(&str, InitializerRecord)] = &[
             identity: "vite:vue-ts",
             args: &[P, L("--template"), L("vue-ts")],
             layout: Layout::NestedProject,
-            version: VersionPolicy::Latest,
+            version: VersionPolicy::Pinned(CREATE_VITE_WITH_TEMPLATES),
             runtime: Runtime::RegistryPackage,
         },
     ),
@@ -92,7 +109,7 @@ pub(crate) const FRONTEND: &[(&str, InitializerRecord)] = &[
             identity: "vite:solid-ts",
             args: &[P, L("--template"), L("solid-ts")],
             layout: Layout::NestedProject,
-            version: VersionPolicy::Latest,
+            version: VersionPolicy::Pinned(CREATE_VITE_WITH_TEMPLATES),
             runtime: Runtime::RegistryPackage,
         },
     ),
@@ -104,7 +121,7 @@ pub(crate) const FRONTEND: &[(&str, InitializerRecord)] = &[
             identity: "vite:solid-ts",
             args: &[P, L("--template"), L("solid-ts")],
             layout: Layout::NestedProject,
-            version: VersionPolicy::Latest,
+            version: VersionPolicy::Pinned(CREATE_VITE_WITH_TEMPLATES),
             runtime: Runtime::RegistryPackage,
         },
     ),
@@ -116,7 +133,7 @@ pub(crate) const FRONTEND: &[(&str, InitializerRecord)] = &[
             identity: "vite:qwik-ts",
             args: &[P, L("--template"), L("qwik-ts")],
             layout: Layout::NestedProject,
-            version: VersionPolicy::Latest,
+            version: VersionPolicy::Pinned(CREATE_VITE_WITH_TEMPLATES),
             runtime: Runtime::RegistryPackage,
         },
     ),
@@ -269,7 +286,7 @@ pub(crate) const FRONTEND: &[(&str, InitializerRecord)] = &[
             identity: "vite:vanilla-ts",
             args: &[P, L("--template"), L("vanilla-ts")],
             layout: Layout::NestedProject,
-            version: VersionPolicy::Latest,
+            version: VersionPolicy::Pinned(CREATE_VITE_WITH_TEMPLATES),
             runtime: Runtime::RegistryPackage,
         },
     ),
@@ -281,7 +298,7 @@ pub(crate) const FRONTEND: &[(&str, InitializerRecord)] = &[
             identity: "vite:preact-ts",
             args: &[P, L("--template"), L("preact-ts")],
             layout: Layout::NestedProject,
-            version: VersionPolicy::Latest,
+            version: VersionPolicy::Pinned(CREATE_VITE_WITH_TEMPLATES),
             runtime: Runtime::RegistryPackage,
         },
     ),
@@ -293,7 +310,7 @@ pub(crate) const FRONTEND: &[(&str, InitializerRecord)] = &[
             identity: "vite:lit-ts",
             args: &[P, L("--template"), L("lit-ts")],
             layout: Layout::NestedProject,
-            version: VersionPolicy::Latest,
+            version: VersionPolicy::Pinned(CREATE_VITE_WITH_TEMPLATES),
             runtime: Runtime::RegistryPackage,
         },
     ),

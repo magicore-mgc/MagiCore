@@ -3,8 +3,7 @@
 
 /// Preserve the dependency name, current pin and native-manager flags.
 /// Giữ tên dependency, pin hiện tại và các cờ native manager.
-pub(in crate::commands::core::shared::implementation::implementation::package_update) struct UpdateTarget
-{
+pub(in crate::commands::core::shared) struct UpdateTarget {
     pub(in crate::commands::core::shared::implementation::implementation::package_update) name:
         String,
     pub(in crate::commands::core::shared::implementation::implementation::package_update) current_version:

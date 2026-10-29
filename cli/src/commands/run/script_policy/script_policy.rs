@@ -42,5 +42,43 @@ pub(in crate::commands::run) fn gate_script_program(
     if mgc_exec::prelude::compat_runner_allows(&invocation.program, compat_runner) {
         return Ok(());
     }
-    crate::commands::compat::gate_runtime_spawn(compat, &invocation.program)
+    crate::commands::compat::gate_runtime_spawn(compat, &invocation.program)?;
+    validate_runtime_flags(&invocation.program, &invocation.args)
 }
+
+/// Refuse inline-code flags for a JavaScript runtime.
+///
+/// `mgc dev` has always consulted `LauncherPolicy`; `mgc run` did not, so the
+/// same `mgc.toml [scripts]` entry that `mgc dev` refused ran unchanged through
+/// `mgc run <script>` — `node -e "…"` executed arbitrary code. Both commands
+/// start a user-authored script, so they must share one flag policy.
+/// (`mgc dev` luôn hỏi `LauncherPolicy`; `mgc run` thì không, nên cùng một entry
+/// `mgc.toml [scripts]` bị `mgc dev` từ chối lại chạy được qua `mgc run
+/// <script>`. Cả hai đều khởi chạy script do người dùng viết nên phải dùng
+/// chung một policy flag.)
+pub(in crate::commands::run) fn validate_runtime_flags(
+    program: &str,
+    args: &[String],
+) -> Result<()> {
+    use crate::commands::launcher_policy::{LauncherPolicy, Runtime};
+    let runtime = match program {
+        "node" => Runtime::Node,
+        "tsx" => Runtime::Tsx,
+        "bun" => Runtime::Bun,
+        "deno" => Runtime::Deno,
+        // Not a JavaScript runtime: its flag surface belongs to the toolchain,
+        // not to this policy. `mgc-exec` still enforces the program allowlist and
+        // path-traversal rules for it.
+        // (Không phải runtime JS: bề mặt flag thuộc toolchain, không thuộc policy
+        // này. `mgc-exec` vẫn áp allowlist chương trình và chống traversal.)
+        _ => return Ok(()),
+    };
+    let owned: Vec<&str> = args.iter().map(String::as_str).collect();
+    LauncherPolicy::dev_server(runtime)
+        .validate_args(&owned)
+        .map_err(|error| crate::error::unsupported_script("run", &error))
+}
+
+#[cfg(test)]
+#[path = "test/mod.rs"]
+mod tests;

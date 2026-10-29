@@ -4,7 +4,10 @@
 use anyhow::Result;
 
 const MAX_REGISTRY_PACKAGE_REQUEST_BYTES: usize = 4096;
-const MAX_NPM_PACKAGE_NAME_BYTES: usize = 214;
+/// Local alias of the shared npm limit; the value lives in `mgc_types::limits`
+/// so this validator and the registry server cannot disagree.
+/// (Alias cục bộ của giới hạn npm dùng chung.)
+const MAX_NPM_PACKAGE_NAME_BYTES: usize = mgc_types::limits::NPM_PACKAGE_NAME_MAX;
 
 pub(crate) fn parse_request(request: &str) -> Result<(&str, &str)> {
     if request.is_empty() || request.len() > MAX_REGISTRY_PACKAGE_REQUEST_BYTES {

@@ -4,7 +4,6 @@ use crate::WebAdapter;
 // Unsupported probes/defaults from mgc_types::capabilities.
 // Capability chưa claim — impl rỗng kế thừa probe/default fail-closed
 // từ mgc_types::capabilities.
-impl mgc_types::capabilities::OptimizerProvider for WebAdapter {}
 impl mgc_types::capabilities::SimulatorProvider for WebAdapter {}
 impl mgc_types::capabilities::DeviceProvider for WebAdapter {}
 impl mgc_types::capabilities::DeployProvider for WebAdapter {}

@@ -6,6 +6,7 @@ mod adapter_factory;
 mod audit_provider;
 mod capability_manifest;
 mod core_identity;
+mod optimizer_provider;
 mod package_adapter;
 mod project_detection;
 mod provider_name;

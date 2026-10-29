@@ -29,7 +29,7 @@ impl PackageAdapter for HardwareAdapter {
             capability: "list",
             guidance: concat!(
                 "optimizer/bench folders are MagiCore templates, not installed packages; ",
-                "use `mgc optimize` or inspect the project templates directly"
+                "use `mgc optimizer` or inspect the project templates directly"
             )
             .to_string(),
         })

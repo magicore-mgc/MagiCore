@@ -42,6 +42,21 @@ mod web_engine;
 pub(crate) use web_engine::EnginePreference;
 
 pub use dispatch::run;
+
+/// Build a Lib project through the same path `mgc build --core lib` uses.
+///
+/// `mgc dev --core lib` is a build-watch loop, so its rebuild must be the
+/// product's build — not a second implementation that could drift from the one
+/// a release uses. This wrapper exists only to widen visibility to the dev
+/// owner; every check (freshness, managed source, post-build) stays inside
+/// `build_lib`.
+/// (`mgc dev --core lib` là build-watch nên rebuild của nó phải chính là build
+/// của sản phẩm — không phải bản thứ hai có thể lệch. Wrapper này chỉ nới
+/// visibility cho owner dev; mọi kiểm tra vẫn nằm trong `build_lib`.)
+#[cfg(feature = "lib")]
+pub(in crate::commands) async fn build_lib_for_dev(root: &std::path::Path) -> anyhow::Result<()> {
+    build_lib(root).await
+}
 pub(crate) use shared::{python_cmd, tool_unavailable};
 
 #[cfg(feature = "ai")]

@@ -38,6 +38,22 @@ pub(in crate::commands::core::web::implementation) fn build_dev_launch(
         crate::commands::compat::gate_runtime_spawn(compat, program)?;
     }
 
+    // Every token after the program is inspected by the launcher flag policy,
+    // not only the ones that reach `resolve_runtime_command`.
+    //
+    // Framework launchers (`next dev …`, `vite …`) forward their tokens to a Node
+    // binary, so `next dev --require evil` became
+    // `node .../next dev --require evil`. The runtime-specific resolution below
+    // validated nothing on that path because it only ran for bare `node`/`tsx`/
+    // etc., and the framework arm never asked the policy.
+    // (Mọi token sau program đều qua policy, không chỉ token tới
+    // `resolve_runtime_command`. Framework launcher chuyển token cho binary Node,
+    // nên `next dev --require evil` thành `node .../next dev --require evil`;
+    // nhánh framework không hỏi policy.)
+    if let Some(program) = tokens.first() {
+        crate::commands::dev::validate_forwarded_runtime_flags(program, &tokens[1..])?;
+    }
+
     let runtime = detect_runtime_from_tokens(&tokens);
     let optimizer_envs =
         crate::commands::optimizer::env_loader::load_optimizer_env(project_root, &runtime)?;

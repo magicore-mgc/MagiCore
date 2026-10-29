@@ -42,6 +42,11 @@ impl AppAdapter {
         Capability::ProjectDetector,
         Capability::ScaffoldProvider,
         Capability::AuditProvider,
+        // `mgc optimizer` dispatches every core through the shared generators,
+        // including this one — the same evidence `ai` declared it with.
+        // (`mgc optimizer` dispatch mọi core qua generator dùng chung, kể cả core
+        // này — cùng dẫn chứng `ai` dùng.)
+        Capability::OptimizerProvider,
     ];
     pub(in crate::adapter) const CAPABILITIES_RESOLVER: &'static [Capability] = &[
         Capability::ProjectDetector,
@@ -50,5 +55,7 @@ impl AppAdapter {
         Capability::LockfileProvider,
         Capability::AuditProvider,
         Capability::DependencyResolver,
+        // Same shared optimizer dispatch as the base set.
+        Capability::OptimizerProvider,
     ];
 }

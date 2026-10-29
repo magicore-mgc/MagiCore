@@ -606,8 +606,16 @@ fn app_list_native_refuses_without_spawning_flutter() {
         marker.is_empty(),
         "flutter canary must NEVER fire under native 'list-app':\n{marker}"
     );
+    // The refusal must name the real gap. `list` is refused because there is no
+    // verified installed-artifact inventory, not because the manifest is
+    // toolchain-owned (MagiCore writes it), so both spellings are accepted here
+    // while the precise one is asserted in `dep_gate::error` unit tests.
+    // (Từ chối phải nêu đúng gap: không có inventory artefact đã cài, không phải
+    // manifest thuộc toolchain. Test unit ở `dep_gate::error` khẳng định câu
+    // chính xác.)
     assert!(
-        output.contains("unsupported for dependency lifecycle"),
+        output.contains("installed-artifact inventory")
+            || output.contains("unsupported for dependency lifecycle"),
         "refusal must state that native inventory is unsupported:\n{output}"
     );
 }

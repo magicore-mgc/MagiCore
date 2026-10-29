@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use super::super::super::types::DevLaunch;
 use super::super::environment::env_host_port_pairs;
 use super::super::types::NativeDevContext;
+use crate::commands::core::dev_port::PORT_WEB_BE;
 
 pub(in crate::commands::core::web::implementation::dev::native_launch) fn infer_python_dev_launch(
     context: &NativeDevContext<'_>,
@@ -15,7 +16,7 @@ pub(in crate::commands::core::web::implementation::dev::native_launch) fn infer_
     let root = context.project_root;
     let host = context.host.unwrap_or("localhost");
     if root.join("manage.py").exists() {
-        let bind = format!("{host}:{}", context.port.unwrap_or(3415));
+        let bind = format!("{host}:{}", context.port.unwrap_or(PORT_WEB_BE));
         return Ok(Some(DevLaunch {
             program: native_python_program(root),
             args: vec![
@@ -36,7 +37,7 @@ pub(in crate::commands::core::web::implementation::dev::native_launch) fn infer_
                 OsString::from("--host"),
                 OsString::from(host),
                 OsString::from("--port"),
-                OsString::from(context.port.unwrap_or(3415).to_string()),
+                OsString::from(context.port.unwrap_or(PORT_WEB_BE).to_string()),
             ]
         } else {
             vec![OsString::from("main.py")]
@@ -57,7 +58,7 @@ pub(in crate::commands::core::web::implementation::dev::native_launch) fn infer_
                 OsString::from("--host"),
                 OsString::from(host),
                 OsString::from("--port"),
-                OsString::from(context.port.unwrap_or(3415).to_string()),
+                OsString::from(context.port.unwrap_or(PORT_WEB_BE).to_string()),
             ]
         } else {
             vec![OsString::from("-m"), OsString::from("src.main")]

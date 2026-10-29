@@ -69,6 +69,18 @@ pub(crate) fn generate_with_report(
         }
         components.push(component);
 
+        // Only packages that HAVE dependencies get a `dependencies` node.
+        //
+        // CycloneDX 1.5 makes `dependencies` optional and treats a component
+        // without an entry as "no known dependencies", so a leaf entry would carry
+        // no information. Emitting one per leaf would also bloat the document:
+        // a 186-component graph has 108 leaves here, and the AS-IS shape keeps the
+        // graph exactly as large as the edges. `sbom_basic_test` pins this by
+        // asserting the node count equals the non-leaf count.
+        // (Chỉ package CÓ dependency mới có node `dependencies`. CycloneDX 1.5 để
+        // `dependencies` tuỳ chọn và hiểu component không có entry là "không có
+        // dependency đã biết", nên node cho leaf không mang thông tin — lại làm
+        // phình tài liệu: graph 186 component có 108 leaf.)
         if !package.edges.is_empty() {
             let mut depends_on = Vec::with_capacity(package.edges.len());
             for edge in &package.edges {

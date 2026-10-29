@@ -132,8 +132,30 @@ impl Resolver {
                     selected.push((name, name_str, v));
                 }
                 None => {
+                    // Name the registry's newest version. Without it the message
+                    // says only "no match", so a user cannot tell a typo from a
+                    // template pinned ahead of its release — the exact failure that
+                    // breaks `create-astro`: upstream's `main` branch ships
+                    // `astro: ^7.4.3` while npm's newest is 7.4.2.
+                    // (Nêu version mới nhất của registry. Thiếu nó thì thông điệp
+                    // chỉ nói "không khớp", người dùng không phân biệt được gõ sai
+                    // với template đi trước bản phát hành — đúng lỗi của
+                    // `create-astro`.)
+                    // `max`, not `last`: the registry does not guarantee order, and
+                    // a hint naming the wrong "newest" would mislead.
+                    // (`max` không phải `last`: registry không đảm bảo thứ tự.)
+                    let newest = versions.iter().max().map(ToString::to_string);
+                    let newest_hint = match newest {
+                        Some(newest) => format!(
+                            " (newest published is {newest}; the required range may come from a \
+                             template pinned ahead of its release)"
+                        ),
+                        None => " (the registry returned no versions for this package)".to_string(),
+                    };
                     return Err(SolveError {
-                        message: format!("no version of '{}' matches '{}'", name_str, spec),
+                        message: format!(
+                            "no version of '{name_str}' matches '{spec}'{newest_hint}"
+                        ),
                     });
                 }
             }
@@ -160,3 +182,7 @@ fn record_root_resolution(
         PackageId::new(name.clone(), version.clone()),
     ));
 }
+
+#[cfg(test)]
+#[path = "test/mod.rs"]
+mod tests;

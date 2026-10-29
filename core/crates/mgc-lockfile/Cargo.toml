@@ -105,6 +105,11 @@ tempfile = { workspace = true }
 
 [features]
 default = []
+# Deterministic crash points for the lock-publication crash-recovery harness.
+# A default build must not be able to park on an environment variable.
+# (Điểm crash xác định cho harness crash-recovery. Build mặc định không được
+# phép dừng process theo biến môi trường.)
+fault-injection = []
 
 # PID liveness probes for stale-temp cleanup (unix-only)
 [target.'cfg(unix)'.dependencies]

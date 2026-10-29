@@ -64,6 +64,12 @@ impl HttpClient {
     }
 
     fn should_retry(&self, status: StatusCode) -> bool {
+        // Retry statuses: "too many requests" and the whole 5xx range.
+        // Written inline because `mgc-http` (an L1 crate) does not depend on
+        // `mgc-types`; adding a crate edge for two literals would invert the
+        // layering to save nothing.
+        // (Mã cần retry: 429 và toàn bộ 5xx. Viết inline vì `mgc-http` không phụ
+        // thuộc `mgc-types`; thêm cạnh crate chỉ vì hai con số sẽ đảo tầng.)
         matches!(status.as_u16(), 429 | 500..=599)
     }
 

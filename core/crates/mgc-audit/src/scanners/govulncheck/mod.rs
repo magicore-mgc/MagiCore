@@ -7,6 +7,7 @@ mod finding;
 mod go_mod;
 #[path = "govulncheck.rs"]
 mod govulncheck;
+mod lock;
 mod model;
 mod parser;
 mod severity;

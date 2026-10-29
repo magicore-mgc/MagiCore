@@ -23,10 +23,20 @@ pub(in crate::commands::capabilities) fn capabilities_for_core(
     let caps: &'static [Capability] = match core {
         #[cfg(feature = "web")]
         "web" => mgc_web_adapter::WebAdapter::CAPABILITIES,
+        // Lib narrows its claims per language (`CAPABILITIES` for native,
+        // `CAPABILITIES_TS`/`_JAVA_DELEGATED`/`_PYTHON_UNOWNED` for the rest).
+        // Printing only the base set reported LESS than a real project performs:
+        // `mgc outdated` on a Python project works through the resolver, yet the
+        // matrix said `lib` had no `dependency-resolver`. The union is the
+        // truthful "what this core can do for SOME project".
+        // (Lib thu hẹp claim theo ngôn ngữ; in mỗi bản gốc báo THẤP hơn thực tế.)
         #[cfg(feature = "lib")]
-        "lib" => mgc_lib_adapter::LibAdapter::CAPABILITIES,
+        "lib" => mgc_lib_adapter::LibAdapter::CAPABILITIES_ALL,
+        // AI is the same shape: the base set plus the PYPI lane, which is what an
+        // AI project (`pyproject.toml`) actually gets.
+        // (AI cũng vậy: bản gốc cộng lane PYPI mà project AI thật sự nhận.)
         #[cfg(feature = "ai")]
-        "ai" => mgc_ai_adapter::AiAdapter::CAPABILITIES,
+        "ai" => mgc_ai_adapter::AiAdapter::CAPABILITIES_ALL,
         #[cfg(feature = "app")]
         "app" => mgc_app_adapter::AppAdapter::CAPABILITIES,
         #[cfg(feature = "game")]

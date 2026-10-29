@@ -19,6 +19,9 @@ pub(crate) mod game;
 #[cfg(feature = "iot")]
 #[path = "iot/mod.rs"]
 pub mod iot;
+#[cfg(feature = "lib")]
+#[path = "lib/mod.rs"]
+pub mod lib;
 #[path = "web/mod.rs"]
 #[cfg(feature = "web")]
 pub mod web;

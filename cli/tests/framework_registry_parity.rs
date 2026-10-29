@@ -24,6 +24,14 @@ fn every_advertised_framework_pair_is_supported() {
         ("hardware", mgc::scaffold::framework_registry::HARDWARE),
         ("web", mgc::scaffold::framework_registry::WEB_BACKEND),
         ("web", mgc::scaffold::framework_registry::WEB_FRONTEND),
+        // Fullstack ids and CLI aliases are accepted by the gate, so they are part
+        // of the advertised surface. Leaving them out let 36 fullstack ids and 12
+        // aliases pass unasserted — `is_supported` could reject one and the
+        // "every advertised framework" claim would still be green.
+        // (Id fullstack và alias CLI đều được gate nhận nên thuộc bề mặt công bố.
+        // Thiếu chúng khiến 36 id + 12 alias không được kiểm.)
+        ("web", mgc::scaffold::framework_registry::WEB_FULLSTACK),
+        ("web", mgc::scaffold::framework_registry::WEB_ALIAS),
     ];
     for (core, frameworks) in pairs {
         for framework in frameworks {

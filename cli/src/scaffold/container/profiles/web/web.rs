@@ -6,7 +6,7 @@ use anyhow::Result;
 use std::path::Path;
 
 use crate::scaffold::container::container_common::{
-    web_container_resource_name, write_container_entrypoint,
+    container_dockerignore, web_container_resource_name, write_container_entrypoint,
 };
 use crate::scaffold::container::{
     DEFAULT_CONTAINER_DATA_DIR, DEFAULT_CONTAINER_DATA_VOLUME, DEFAULT_CONTAINER_ENTRYPOINT_FILE,
@@ -96,7 +96,16 @@ pub(in crate::scaffold::container) fn write_web_docker_assets(
          \x20 mgc-data:\n\
          \x20\x20 name: ${{MGC_DATA_VOLUME:-{DEFAULT_CONTAINER_DATA_VOLUME}}}\n"
     );
-    let dockerignore = ".git\n.env\n.env.*\n.magicore/cache\n.magicore/store\n.magicore/exec.log\nnode_modules\ntarget\ndist\n";
+    // Use the shared list. This inline copy reproduced the first two lines of
+    // `container_dockerignore()` by hand and drifted: it omitted `.dart_tool`,
+    // `.flutter-plugins*`, `.gradle`, `Pods` and `build`, so a Web image built
+    // from a polyglot repo sent stale `build/` output and Gradle caches into the
+    // Docker context.
+    // (Bản chép tay tái tạo hai dòng đầu của `container_dockerignore()` rồi lệch:
+    // thiếu `.dart_tool`, `.flutter-plugins*`, `.gradle`, `Pods`, `build` — image
+    // Web build từ repo đa ngôn ngữ đưa output `build/` cũ và cache Gradle vào
+    // context Docker.)
+    let dockerignore = container_dockerignore();
 
     Scaffolder::write_file(&target.join("Dockerfile"), &dockerfile)?;
     Scaffolder::write_file(&target.join(".dockerignore"), dockerignore)?;
@@ -196,3 +205,7 @@ spec:
     Scaffolder::write_file(&target.join("k8s").join("README.md"), &readme)?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "test/mod.rs"]
+mod tests;

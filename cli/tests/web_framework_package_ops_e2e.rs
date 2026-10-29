@@ -139,6 +139,12 @@ fn run_mgc(
 
 #[test]
 fn every_claimed_web_js_framework_runs_add_update_remove_and_install() {
+    // The loop is generated from `WEB_FRONTEND`, so adding a framework to the
+    // registry without a working package-ops path makes THIS test fail. Before,
+    // the list was hand-written and 13 of 24 ids were never exercised while the
+    // name still said "every".
+    // (Vòng lặp sinh từ `WEB_FRONTEND`: thêm framework vào registry mà package-ops
+    // hỏng thì test này fail. Trước đây list viết tay và 13/24 id chưa từng chạy.) {
     let binary = env!("CARGO_BIN_EXE_mgc");
     let project_root = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
@@ -147,21 +153,29 @@ fn every_claimed_web_js_framework_runs_add_update_remove_and_install() {
     let update_registry = RegistryFixture::new("1.1.0", &["1.0.0", "1.1.0"]);
 
     for framework in [
-        "vanilla",
-        "ts",
-        "node",
         "angular",
         "astro",
-        "express",
-        "nestjs",
+        "docusaurus",
+        "lit",
+        "next",
         "nextjs",
         "nuxt",
+        "preact",
         "qwik",
-        "trpc",
-        "solidjs",
-        "sveltekit",
-        "remix",
+        "react",
         "react-vite",
+        "remix",
+        "solid",
+        "solidjs",
+        "svelte",
+        "sveltekit",
+        "tauri",
+        "turbo",
+        "vanilla",
+        "vite",
+        "vitepress",
+        "vue",
+        "vue-cli",
         "vue-vite",
     ] {
         let name = format!("package-ops-{framework}");

@@ -7,7 +7,7 @@ use anyhow::anyhow;
 /// verb not applicable to cicd core (07 §4)
 pub fn cicd_verb_not_applicable(verb: &str) -> Error {
     anyhow!(
-        "'{verb}' does not apply to the cicd core (07 §4) — use `mgc ci generate`, `mgc verify`, or `mgc deploy`."
+        "'{verb}' does not apply to the cicd core (07 §4) — use `mgc ci-generate`, `mgc verify`, or `mgc deploy`."
     )
 }
 
@@ -30,7 +30,7 @@ pub fn cicd_reason(reason: &str) -> Error {
 
 pub fn ci_template_unknown(provider: &str) -> Error {
     anyhow!(
-        "'mgc ci generate' has no template for provider '{provider}' — supported: github-actions | gitlab | circleci"
+        "'mgc ci-generate' has no template for provider '{provider}' — supported: github-actions | gitlab | circleci"
     )
 }
 

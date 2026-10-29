@@ -22,6 +22,28 @@ pub(in crate::commands::optimizer) fn detect_app_runtime(
         return runtimes;
     }
 
+    // SwiftPM app: `mgc build`/`mgc dev` support Swift, so the optimizer must
+    // recognise it too — otherwise a buildable app project reported
+    // "No runtime detected … nothing was optimized".
+    // (SwiftPM: `mgc build`/`mgc dev` hỗ trợ Swift nên optimizer cũng phải nhận
+    // ra, nếu không project build được lại báo "không phát hiện runtime".)
+    if project_root.join("Package.swift").is_file() {
+        runtimes.push(DetectedRuntime::SwiftLib);
+        return runtimes;
+    }
+
+    // Kotlin/Android app (Gradle Android plugin).
+    // (App Kotlin/Android qua Gradle Android plugin.)
+    for gradle in ["build.gradle", "build.gradle.kts"] {
+        if let Some(content) = project_text(project_root, gradle)
+            && (content.contains("com.android.application")
+                || content.contains("org.jetbrains.kotlin.android"))
+        {
+            runtimes.push(DetectedRuntime::JvmLib);
+            return runtimes;
+        }
+    }
+
     // Check for Rust native (Cargo.toml with bin or no crate-type=lib) — kiểm tra ứng dụng Rust native
     if project_root.join("Cargo.toml").exists() {
         runtimes.push(DetectedRuntime::RustNative);

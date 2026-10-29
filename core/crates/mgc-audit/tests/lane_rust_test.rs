@@ -6,7 +6,7 @@ use mgc_audit::scanners::audit_rust;
 use mgc_types::adapter::ScannerStatus;
 
 #[tokio::test]
-async fn native_audit_reports_empty_lock_clean_without_external_tools() {
+async fn native_audit_reports_empty_lock_unverified_without_external_tools() {
     let project = tempfile::tempdir().unwrap();
     std::fs::write(project.path().join("Cargo.lock"), "version = 4\n").unwrap();
 
@@ -14,5 +14,13 @@ async fn native_audit_reports_empty_lock_clean_without_external_tools() {
 
     assert_eq!(report.packages_audited, 0);
     assert_eq!(report.vulnerability_count, 0);
-    assert!(matches!(report.scanner_status, ScannerStatus::Available));
+    // The test name promised "clean" for an EMPTY lock, i.e. verified safety for
+    // a graph with nothing in it. It now asserts the honest state.
+    // (Tên test hứa "clean" cho lock RỖNG — tức an toàn đã xác minh cho graph
+    // không có gì. Nay khẳng định trạng thái trung thực.)
+    assert!(matches!(
+        report.scanner_status,
+        ScannerStatus::Partial { .. }
+    ));
+    assert!(!report.is_clean());
 }

@@ -21,7 +21,7 @@ pub(in crate::oci::oci) fn validate_oci_reference(reference: &str) -> Result<(),
         return validate_sha256_digest(reference);
     }
     let valid_tag = !reference.is_empty()
-        && reference.len() <= 128
+        && reference.len() <= mgc_types::limits::OCI_TAG_MAX
         && reference
             .as_bytes()
             .first()

@@ -18,7 +18,16 @@ pub(crate) fn enforce_audit_exit(
             report.packages_audited,
         ));
     }
-    if !report.scanner_available() {
+    // A report may be `Available` and still verify nothing: six scanners build
+    // `AuditReport { scanner_status: Available, .. }` directly, and with zero
+    // packages inspected the tag only says "the scanner had nothing to look at".
+    // `is_clean()` is the predicate that encodes all three conditions
+    // (completed + no findings + at least one inspected package), so the exit
+    // decision uses it rather than the status tag alone.
+    // (Report có thể `Available` mà không xác minh gì: 6 scanner dựng trực tiếp,
+    // và với 0 package nhãn chỉ nói "scanner không có gì để xem". `is_clean()`
+    // mã hoá cả ba điều kiện nên quyết định exit dùng nó.)
+    if !report.is_clean() {
         if strict.enabled() {
             return Err(crate::error::audit_scanner_unavailable_strict(&format!(
                 "{core} audit did not complete"

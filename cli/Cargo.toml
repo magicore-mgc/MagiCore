@@ -122,6 +122,14 @@ windows-sys = { version = "0.61.2", features = [
 
 # Feature flags per core — used for per-core binary builds
 [features]
+# Passthrough: the fault-matrix targets need the store/lockfile parking hooks,
+# and a dev-dependency must NOT enable them (cargo resolver v1 unions features
+# across the whole graph, so `mgc` was published with `mgc-store/fault-injection`
+# on by default — a real `mgc install` could then hang on `MGC_FAILPOINT`).
+# (Passthrough: dev-dependency KHÔNG được bật hook. Trên resolver v1 feature là
+# union toàn graph nên `mgc` từng được publish với `mgc-store/fault-injection`
+# bật mặc định — `mgc install` thật có thể treo vì `MGC_FAILPOINT`.)
+fault-injection = ["mgc-store/fault-injection", "mgc-lockfile/fault-injection"]
 default = ["all"]
 all      = ["web", "game", "ai", "clo", "cicd", "iot", "app", "lib", "hardware"]
 web      = ["mgc-web-adapter", "web-backend-runtime"]
@@ -171,9 +179,17 @@ workspace = true
 # fault-matrix trong CI tham chiếu target thật đã review — file bị xoá/
 # đổi tên sẽ làm `cargo test --test <name>` fail ầm ĩ thay vì lặng lẽ
 # biến mất khỏi auto-discovery.)
+# The fault-matrix targets drive `MGC_FAILPOINT` (mgc-store) and
+# `MGC_LOCK_FAILPOINT` (mgc-lockfile). Those hooks are compiled only with the
+# `fault-injection` feature, so each target below requires it — a target that
+# silently lost the feature would pass without ever injecting the fault.
+# (Target fault-matrix dùng `MGC_FAILPOINT`/`MGC_LOCK_FAILPOINT`; hook chỉ tồn
+# tại khi bật `fault-injection`, nên mỗi target dưới đây yêu cầu feature — target
+# mất feature sẽ pass mà không hề inject lỗi.)
 [[test]]
 name = "kill_injection_matrix"
 path = "tests/kill_injection_matrix.rs"
+required-features = ["fault-injection"]
 
 [[test]]
 name = "stress_shared_store_matrix"
@@ -204,3 +220,38 @@ path = "tests/factory/test/explicit_plugin.rs"
 [[test]]
 name = "factory_available_cores"
 path = "tests/factory/test/available_cores.rs"
+
+# These suites also drive `MGC_FAILPOINT`; without the feature their fault
+# assertions would run against a no-op hook and pass vacuously.
+# (Các suite này cũng dùng `MGC_FAILPOINT`; thiếu feature thì assert lỗi chạy
+# trên hook no-op và pass rỗng.)
+[[test]]
+name = "install_hardening_e2e"
+path = "tests/install_hardening_e2e.rs"
+required-features = ["fault-injection"]
+
+[[test]]
+name = "stress_suite"
+path = "tests/stress_suite.rs"
+required-features = ["fault-injection"]
+
+# Guards user-facing messages against naming a command that does not exist.
+# (Chặn message hướng dẫn nêu lệnh không tồn tại.)
+[[test]]
+name = "command_names_in_messages"
+path = "tests/command_names_in_messages.rs"
+
+# These suites inject a mutation fault to prove rollback. The hook is compiled
+# only with `fault-injection`, so the target must require it — otherwise the test
+# runs against a no-op and its "fault must be observable" assertion fails.
+# (Các suite này inject lỗi mutation để chứng minh rollback; hook chỉ có khi bật
+# `fault-injection`, nên target phải yêu cầu feature.)
+[[test]]
+name = "remove_journal_race"
+path = "tests/remove_journal_race.rs"
+required-features = ["fault-injection"]
+
+[[test]]
+name = "native_ownership_matrix_e2e"
+path = "tests/native_ownership_matrix_e2e.rs"
+required-features = ["fault-injection"]

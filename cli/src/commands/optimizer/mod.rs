@@ -20,3 +20,7 @@ mod tests;
 #[cfg(test)]
 #[path = "test/adapters_test.rs"]
 mod adapters_tests;
+
+#[cfg(test)]
+#[path = "test/core_coverage/mod.rs"]
+mod core_coverage_tests;

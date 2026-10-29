@@ -11,9 +11,57 @@ use sha2::{Digest, Sha512};
 
 const TARBALL_HASH_BUFFER_BYTES: usize = 64 * 1024;
 
+/// Values that switch a boolean flag off when they are the whole value.
+///
+/// A flag is never read by presence alone: `X=false` and `X=0` are how a shell,
+/// a `.env` file or a CI template disables a feature, and reading them as "set"
+/// silently enables what the operator just turned off.
+/// (Giá trị tắt cờ khi là toàn bộ nội dung. Không bao giờ đọc cờ chỉ theo sự
+/// tồn tại: `X=false`/`X=0` là cách shell, `.env` hay template CI tắt tính
+/// năng; đọc chúng là "đã đặt" sẽ bật lại thứ người vận hành vừa tắt.)
+const DISABLED_FLAG_VALUES: &[&str] = &["0", "false", "no", "off"];
+
+/// Whether a boolean environment flag is enabled.
+///
+/// Unset or empty is off; `0`/`false`/`no`/`off` (any case) is off; anything
+/// else is on, which matches how these variables are conventionally written
+/// (`X=1`, `X=true`, or a bare `X=` for "yes").
+/// (Cờ boolean: chưa đặt hoặc rỗng là tắt; `0/false/no/off` là tắt; còn lại là
+/// bật — đúng quy ước `X=1`/`X=true`.)
+fn flag_enabled(name: &str) -> bool {
+    match std::env::var(name) {
+        Ok(value) => {
+            let value = value.trim();
+            if value.is_empty() {
+                return false;
+            }
+            !DISABLED_FLAG_VALUES.contains(&value.to_ascii_lowercase().as_str())
+        }
+        Err(_) => false,
+    }
+}
+
+/// Strict integrity is requested by either spelling.
+///
+/// `MAGICORE_STRICT_INTEGRITY=false` used to still enforce strict mode, so a
+/// developer who explicitly disabled it saw failures they could not explain;
+/// the flag now reads its value.
+/// (`MAGICORE_STRICT_INTEGRITY=false` trước đây vẫn ép strict; nay cờ đọc theo
+/// giá trị.)
 pub fn strict_integrity_enforced() -> bool {
-    std::env::var("MAGICORE_STRICT_INTEGRITY").is_ok()
-        || std::env::var("MGC_STRICT_INTEGRITY").is_ok()
+    flag_enabled("MAGICORE_STRICT_INTEGRITY") || flag_enabled("MGC_STRICT_INTEGRITY")
+}
+
+/// Whether the lockfile-checksum warning is suppressed.
+///
+/// Suppression is the dangerous direction, so it must be an explicit opt-in:
+/// `MAGICORE_WEB_SKIP_LOCKFILE_CHECKSUM=false` previously suppressed the warning
+/// anyway, hiding exactly the condition the operator asked to be told about.
+/// (Tắt cảnh báo là hướng nguy hiểm nên phải là opt-in rõ ràng:
+/// `...=false` trước đây vẫn tắt cảnh báo, che đúng điều người vận hành muốn
+/// được báo.)
+pub(super) fn skip_lockfile_checksum_warning() -> bool {
+    flag_enabled("MAGICORE_WEB_SKIP_LOCKFILE_CHECKSUM")
 }
 pub fn compute_sha512_b64(bytes: &[u8]) -> String {
     let mut hasher = Sha512::new();
@@ -41,8 +89,7 @@ pub fn compute_tarball_integrity_reader<R: Read>(mut reader: R) -> io::Result<St
     ))
 }
 pub fn maybe_warn_missing_lockfile_checksum(project_root: &Path, lockfile: &Lockfile) {
-    if !strict_integrity_enforced() || std::env::var("MAGICORE_WEB_SKIP_LOCKFILE_CHECKSUM").is_ok()
-    {
+    if !strict_integrity_enforced() || skip_lockfile_checksum_warning() {
         return;
     }
 

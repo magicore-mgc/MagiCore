@@ -47,7 +47,7 @@ pub fn no_web_layer_found(dir: &std::path::Path) -> Error {
 /// template publish required before fetch
 pub fn template_not_published(url: &str, http: u16) -> Error {
     anyhow!(
-        "Template '{}' not found at {} (HTTP {}) — run `mgc template publish` first",
+        "Template '{}' not found at {} (HTTP {}) — publish it first (`mgc publish --help`)",
         url,
         url,
         http

@@ -1,6 +1,18 @@
-//! All-core parity test (Phase 2 — user 2026-08-31) — test đồng nhất 4 cores
-//! All-core parity test: web/ai/app/lib must create projects equally.
-//! Hermetic: temp HOME, no workspace templates/ — hermetic: HOME tạm, không dùng workspace templates/.
+//! Cross-core parity tests — test đồng nhất giữa các core.
+//!
+//! Two different properties, deliberately kept apart:
+//!
+//! - CLI surface (all NINE cores): identical positional pair — asserted here.
+//! - Scaffold-from-local-source (FOUR cores: web/ai/app/lib): those are the cores
+//!   whose adapters materialise from a local directory. `game`/`iot`/`clo`/
+//!   `cicd`/`hardware` scaffold through their own host tool or the registry
+//!   layer, so a local-source fixture cannot represent them and asserting it
+//!   here would test a path the product does not have.
+//!
+//! (Hai thuộc tính khác nhau: CLI surface cho CẢ CHÍN core; scaffold từ local
+//! source chỉ cho BỐN core vì năm core kia dùng host tool / registry layer.)
+//!
+//! Hermetic: temp HOME, no workspace templates — HOME tạm, không dùng workspace templates.
 
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::needless_borrows_for_generic_args)]
@@ -38,7 +50,7 @@ fn hermetic_command(home: &std::path::Path) -> Command {
 }
 
 #[test]
-fn test_all_core_parity_online_web_and_native_core_processors() {
+fn test_local_source_parity_web_ai_app_lib() {
     let _temp_home = setup_hermetic_home();
     let temp_workspace = TempDir::new().unwrap();
     let workspace_path = temp_workspace.path();
@@ -60,9 +72,13 @@ fn test_all_core_parity_online_web_and_native_core_processors() {
         String::from_utf8_lossy(&web_output.stdout),
         String::from_utf8_lossy(&web_output.stderr)
     );
+    // The record pins a version (see `CREATE_VITE_WITH_TEMPLATES`): `@latest`
+    // stopped shipping `template-*` in its tarball, so asserting the literal
+    // `@latest` would force the regression back in. Assert the flow instead.
+    // (Record ghim version vì `@latest` không còn ship `template-*`; khẳng định
+    // literal `@latest` sẽ ép lỗi quay lại, nên kiểm luồng thay vì chuỗi.)
     assert!(
-        web_output_text
-            .contains("create: installing initializer create-vite@latest through MagiCore"),
+        web_output_text.contains("create: installing initializer create-vite@"),
         "web/vanilla did not run the creator through the MagiCore create flow: {web_output_text}"
     );
     let provenance = fs::read_to_string(workspace_path.join("test-web/.mgc-provenance.json"))
@@ -175,52 +191,75 @@ fn test_all_core_parity_online_web_and_native_core_processors() {
 
 #[test]
 fn test_all_core_cli_surface_uniform() {
-    // Verify all cores have uniform CLI signature: <framework[@version]> <project>
-    // (not testing execution, only clap definition)
-
+    // Every `create-<core>` command must take the same positional pair, so a user
+    // who learns one core has learned all nine. The test used to check four
+    // cores while its name said "all"; the other five drifted unnoticed because
+    // nothing asserted them.
+    // (Mọi lệnh `create-<core>` phải nhận cùng cặp positional để học một core là
+    // dùng được cả chín. Test cũ kiểm bốn core trong khi tên nói "all"; năm core
+    // còn lại không ai khẳng định.)
     let mgc = mgc_binary();
+    let cores = [
+        "web", "ai", "app", "lib", "game", "iot", "clo", "cicd", "hardware",
+    ];
+    for core in cores {
+        let command = format!("create-{core}");
+        let output = Command::new(&mgc)
+            .args([command.as_str(), "--help"])
+            .output()
+            .unwrap_or_else(|error| panic!("{command}: cannot run --help: {error}"));
+        assert!(
+            output.status.success(),
+            "{command} --help failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let help = String::from_utf8_lossy(&output.stdout);
+        for expected in ["FRAMEWORK[@VERSION]", "PROJECT"] {
+            assert!(
+                help.contains(expected),
+                "{command}: CLI signature must contain '{expected}' so all cores share one shape\n{help}"
+            );
+        }
+    }
+}
 
-    // Web: mgc create-web <FRAMEWORK[@VERSION]> <PROJECT>
-    let web_help = Command::new(&mgc)
-        .args(&["create-web", "--help"])
-        .output()
-        .expect("Failed to get create-web help");
-    let web_help_str = String::from_utf8_lossy(&web_help.stdout);
-    assert!(
-        web_help_str.contains("FRAMEWORK[@VERSION]") && web_help_str.contains("PROJECT"),
-        "create-web: CLI signature mismatch"
-    );
+/// The five host-tool cores are reachable through the registry layer, not local
+/// source, so the local-source parity test must not claim them.
+///
+/// This asserts the *gate* rather than the scaffold: a `--from-local` request for
+/// a host-tool core must fail closed with guidance instead of silently producing
+/// an empty project.
+/// (Năm core host-tool đi qua registry layer chứ không phải local source, nên test
+/// local-source không được nhận chúng. Test này khẳng định cổng: `--from-local`
+/// cho core host-tool phải fail-closed kèm hướng dẫn.)
+#[test]
+fn a_host_tool_core_refuses_a_local_source_instead_of_scaffolding_nothing() {
+    let temp_home = setup_hermetic_home();
+    let workspace = TempDir::new().unwrap();
+    let source = common::local_source(workspace.path(), "lib", "rust");
 
-    // AI: mgc create-ai <FRAMEWORK[@VERSION]> <PROJECT>
-    let ai_help = Command::new(&mgc)
-        .args(&["create-ai", "--help"])
-        .output()
-        .expect("Failed to get create-ai help");
-    let ai_help_str = String::from_utf8_lossy(&ai_help.stdout);
-    assert!(
-        ai_help_str.contains("FRAMEWORK[@VERSION]") && ai_help_str.contains("PROJECT"),
-        "create-ai: CLI signature mismatch"
-    );
+    for core in ["game", "iot", "clo", "cicd", "hardware"] {
+        let project = workspace.path().join(format!("probe-{core}"));
+        let output = hermetic_command(temp_home.path())
+            .args([
+                format!("create-{core}").as_str(),
+                "unknown-framework",
+                project.to_str().expect("utf-8 path"),
+            ])
+            .arg(source.flag())
+            .current_dir(workspace.path())
+            .output()
+            .expect("run create");
 
-    // App: mgc create-app <FRAMEWORK[@VERSION]> <PROJECT>
-    let app_help = Command::new(&mgc)
-        .args(&["create-app", "--help"])
-        .output()
-        .expect("Failed to get create-app help");
-    let app_help_str = String::from_utf8_lossy(&app_help.stdout);
-    assert!(
-        app_help_str.contains("FRAMEWORK[@VERSION]") && app_help_str.contains("PROJECT"),
-        "create-app: CLI signature mismatch"
-    );
-
-    // Lib: mgc create-lib <FRAMEWORK[@VERSION]> <PROJECT> (Phase 2 fix — was just <PROJECT>)
-    let lib_help = Command::new(&mgc)
-        .args(&["create-lib", "--help"])
-        .output()
-        .expect("Failed to get create-lib help");
-    let lib_help_str = String::from_utf8_lossy(&lib_help.stdout);
-    assert!(
-        lib_help_str.contains("FRAMEWORK[@VERSION]") && lib_help_str.contains("PROJECT"),
-        "create-lib: CLI signature mismatch (should be <FRAMEWORK[@VERSION]> <PROJECT>)"
-    );
+        assert!(
+            !output.status.success(),
+            "create-{core} must not accept a local lib source; stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            !project.exists(),
+            "create-{core} must not leave a half-created project behind"
+        );
+    }
 }

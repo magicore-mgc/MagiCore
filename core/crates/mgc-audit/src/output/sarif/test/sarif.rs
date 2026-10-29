@@ -55,11 +55,30 @@ fn non_available_report_preserves_supplied_findings_and_serializes_schema() {
     assert_eq!(serialized["runs"][0]["results"][0]["level"], "error");
 }
 
+/// An EMPTY report must NOT use the trusted driver name.
+///
+/// `AuditReport::clean(0)` means nothing was inspected, so the SARIF consumer has
+/// to see the unverified driver — otherwise a CI dashboard ingesting this file
+/// records a passing scan for an unexamined project.
+/// (`clean(0)` nghĩa là không có gì được kiểm, nên SARIF phải mang driver
+/// UNVERIFIED — nếu không dashboard CI ghi nhận một lần scan đạt cho project chưa
+/// được xem.)
 #[test]
-fn available_empty_report_keeps_trusted_empty_run() {
+fn an_empty_report_uses_the_unverified_driver_name() {
     let log = to_sarif(&AuditReport::clean(0));
 
     assert_eq!(log.runs.len(), 1);
-    assert_eq!(log.runs[0].tool.driver.name, "mgc-audit");
+    assert_eq!(
+        log.runs[0].tool.driver.name,
+        "mgc-audit (UNVERIFIED — scanner did not complete)"
+    );
     assert!(log.runs[0].results.is_empty());
+}
+
+/// A report with at least one inspected package keeps the trusted name.
+/// (Report có ít nhất một package đã kiểm giữ tên tin cậy.)
+#[test]
+fn a_non_empty_report_keeps_the_trusted_driver_name() {
+    let log = to_sarif(&AuditReport::clean(1));
+    assert_eq!(log.runs[0].tool.driver.name, "mgc-audit");
 }

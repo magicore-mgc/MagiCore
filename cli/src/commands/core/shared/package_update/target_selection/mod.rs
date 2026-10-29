@@ -4,4 +4,6 @@
 #[path = "target_selection.rs"]
 mod implementation;
 
-pub(crate) use implementation::select_update_targets;
+pub(in crate::commands::core::shared) use implementation::{
+    InstalledVersions, select_update_targets,
+};

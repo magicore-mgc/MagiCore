@@ -12,7 +12,6 @@ impl mgc_types::capabilities::ArtifactFetcher for CicdAdapter {}
 impl mgc_types::capabilities::ContentStoreProvider for CicdAdapter {}
 impl mgc_types::capabilities::LockfileProvider for CicdAdapter {}
 impl mgc_types::capabilities::LifecycleRunner for CicdAdapter {}
-impl mgc_types::capabilities::OptimizerProvider for CicdAdapter {}
 impl mgc_types::capabilities::Materializer for CicdAdapter {}
 impl mgc_types::capabilities::SimulatorProvider for CicdAdapter {}
 impl mgc_types::capabilities::DeviceProvider for CicdAdapter {}

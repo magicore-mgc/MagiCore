@@ -13,7 +13,13 @@ fn no_pins_and_no_skips_return_clean_zero_report_without_network() {
         .block_on(query_maven_pins(&(Vec::new(), Vec::new())))
         .expect("empty projection");
     assert_eq!(report.packages_audited, 0);
-    assert!(report.is_clean());
+    // A projection with no pins inspected nothing, so it cannot be clean.
+    // (Projection không có pin nào thì không kiểm gì nên không thể sạch.)
+    assert!(!report.is_clean());
+    assert!(matches!(
+        report.scanner_status,
+        ScannerStatus::Partial { .. }
+    ));
 }
 
 #[test]

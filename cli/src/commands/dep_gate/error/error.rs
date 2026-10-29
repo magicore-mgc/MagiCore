@@ -79,7 +79,40 @@ impl fmt::Display for DepGateError {
                         f,
                         "{lane} has no package lifecycle — this is a scaffold-only lane (templates/pipelines/generators), never a native package install"
                     )
+                } else if operation == "list" {
+                    // `list` is refused for a reason the old text got wrong. The
+                    // manifest is NOT toolchain-owned — `mgc add` writes it. What
+                    // is missing is a verified installed-artifact inventory: a
+                    // declared dependency that `MagiCore` resolved but never
+                    // materialised is not installed, and reporting it as installed
+                    // would be worse than refusing.
+                    // (`list` bị từ chối vì lý do text cũ nói SAI: manifest KHÔNG
+                    // thuộc toolchain — `mgc add` ghi nó. Cái thiếu là inventory
+                    // artefact đã cài: dependency khai báo nhưng chưa materialize
+                    // không phải đã cài, báo là đã cài còn tệ hơn từ chối.)
+                    write!(
+                        f,
+                        "{lane} has no verified installed-artifact inventory yet — MagiCore owns the manifest and lock, but a declared or locked package is not proof it was materialised; use `mgc install --dry-run` to inspect what would be installed"
+                    )
+                } else if !matches!(core.as_str(), "iot" | "game" | "clo" | "cloud") {
+                    // Only iot/game/clo have a manifest their toolchain owns
+                    // (platformio.ini, west.yml, CDK config). Every other core
+                    // here — web, lib, ai, app — has a MagiCore-owned manifest, so
+                    // "toolchain-owned" would be false and would push the user
+                    // toward calling the package manager directly.
+                    // (Chỉ iot/game/clo có manifest toolchain sở hữu. Mọi core
+                    // khác ở đây có manifest do MagiCore sở hữu, nên
+                    // "toolchain-owned" là sai và đẩy người dùng gọi PM trực tiếp.)
+                    write!(
+                        f,
+                        "{lane} is unsupported for dependency lifecycle — MagiCore owns the manifest, but no approved runner implements this operation yet"
+                    )
                 } else {
+                    // Game/iot/clo manifests ARE toolchain-owned (platformio.ini,
+                    // west.yml, CDK config): the owning toolchain must perform the
+                    // operation, and MagiCore refuses rather than delegate blindly.
+                    // (Manifest game/iot/clo THUỘC toolchain: chính toolchain đó
+                    // phải thực hiện, MagiCore từ chối thay vì delegate mù.)
                     write!(
                         f,
                         "{lane} is unsupported for dependency lifecycle — the manifest is toolchain-owned, but no approved compatibility runner is configured for this operation"

@@ -17,12 +17,24 @@ impl IotAdapter {
     /// - AuditProvider: shared polyglot dispatch — real.
     ///
     /// DependencyResolver/LockfileProvider NOT claimed: resolve is
-    /// fail-closed and write_manifest is real only for esp32-rust.
+    /// fail-closed, and `write_manifest` is real only for esp32-rust while the
+    /// claim is per CORE. PlatformIO (`platformio.ini`) and Zephyr (`west.yml`)
+    /// manifests belong to their toolchains, so claiming the capability would
+    /// promise a write that fails for those two frameworks.
+    /// (Không claim vì resolve fail-closed và write_manifest chỉ đúng cho
+    /// esp32-rust trong khi claim là theo CORE; manifest PlatformIO/Zephyr thuộc
+    /// toolchain.)
     /// Bảng capability (Global Gate 1) — ghi chú theo code thật.
     pub const CAPABILITIES: &'static [Capability] = &[
         Capability::ProjectDetector,
         Capability::ScaffoldProvider,
         Capability::AuditProvider,
+        // `mgc optimizer` dispatches this core through the shared generators
+        // (profile + gpu), the same evidence `ai` uses. Withholding it advertised
+        // less than the product does.
+        // (`mgc optimizer` dispatch core này qua generator dùng chung — cùng dẫn
+        // chứng `ai` dùng.)
+        Capability::OptimizerProvider,
     ];
 }
 impl IotAdapter {

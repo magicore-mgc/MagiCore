@@ -5,6 +5,7 @@ pub mod capabilities;
 pub mod ecosystem;
 pub mod error;
 pub mod jsonc;
+pub mod limits;
 pub mod manifest;
 pub mod package;
 pub mod patch;

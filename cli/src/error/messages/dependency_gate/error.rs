@@ -25,19 +25,14 @@ pub fn dep_gate_requires_compat(
 /// cicd/hardware lanes are scaffold-only by design — the message says so
 /// instead of letting anyone read them as package installs.
 pub fn dep_gate_unsupported(core: &str, op: &str, ecosystem: Option<&str>) -> Error {
-    let lane = match ecosystem {
-        Some(eco) => format!("`{core}` {op} (ecosystem '{eco}')"),
-        None => format!("`{core}` {op}"),
-    };
-    if matches!(core, "cicd" | "hardware") {
-        anyhow!(
-            "{lane} has no package lifecycle — this is a scaffold-only lane (templates/pipelines/generators), never a native package install"
-        )
-    } else {
-        anyhow!(
-            "{lane} is unsupported for dependency lifecycle — the manifest is toolchain-owned, but no approved compatibility runner is configured for this operation"
-        )
-    }
+    // One definition, not two. This used to repeat the wording, so a change to
+    // the gate's reason left this copy stale and the two paths disagreed about
+    // why an operation was refused — including whether the manifest is
+    // toolchain-owned.
+    // (Một định nghĩa duy nhất. Trước đây chỗ này lặp lại câu chữ nên khi gate đổi
+    // lý do, bản sao cũ vẫn nói khác — kể cả việc manifest có thuộc toolchain hay
+    // không.)
+    crate::commands::dep_gate::DepGateError::unsupported(core, op, ecosystem).into()
 }
 
 /// Refuse dependency operations until MagiCore owns their complete native

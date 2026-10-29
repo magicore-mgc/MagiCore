@@ -73,6 +73,11 @@ lru = { workspace = true }
 # test target của crate này; crate downstream không thấy API hay
 # feature trừ khi chủ động bật.)
 test-util = []
+# Deterministic parking points for the crash-recovery harness. A default build
+# links a no-op so an inherited `MGC_FAILPOINT` cannot hang a real install.
+# (Điểm đỗ xác định cho harness crash-recovery. Build mặc định link bản no-op để
+# `MGC_FAILPOINT` thừa kế không treo install thật.)
+fault-injection = []
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }

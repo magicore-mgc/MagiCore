@@ -29,6 +29,21 @@ pub(in crate::commands::run) fn detect_run_runtime(
         DetectedRuntime::GoLib
     } else if cwd.join("pyproject.toml").exists() || cwd.join("setup.py").exists() {
         DetectedRuntime::PythonLib
+    } else if cwd.join("pom.xml").exists()
+        || cwd.join("build.gradle").exists()
+        || cwd.join("build.gradle.kts").exists()
+    {
+        // Java had no runtime, so `mgc run` loaded no optimizer settings for a
+        // Java project while `mgc build` did — the same script tuned or un-tuned
+        // depending on which command ran it.
+        // (Java không có runtime nên `mgc run` không nạp optimizer cho project
+        // Java trong khi `mgc build` có — cùng script được tuning hay không tuỳ
+        // lệnh chạy.)
+        DetectedRuntime::JvmLib
+    } else if crate::commands::core::shared::project_manifest::declares_dotnet_project(cwd) {
+        DetectedRuntime::DotNetLib
+    } else if cwd.join("Package.swift").is_file() {
+        DetectedRuntime::SwiftLib
     } else if cwd.join("pubspec.yaml").exists() {
         DetectedRuntime::Flutter
     } else if cwd.join("package.json").exists() {

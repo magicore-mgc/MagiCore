@@ -61,6 +61,28 @@ pub(in crate::scaffold::processor) fn common_gitignore(core: &str, framework: &s
         ".DS_Store",
         ".magicore/cache",
         ".magicore/tmp",
+        // Runtime state and build output, all machine-local:
+        // - `store`   the MagiCore content store mirror
+        // - `build`   intermediate build products (e.g. the Go backend binary)
+        // - `journal` in-flight dependency-mutation records, meaningless after
+        //             the operation commits or rolls back
+        // - `exec.log` the execution trace
+        // The container `.dockerignore` already listed three of them, so the two
+        // files disagreed about what is machine-local.
+        // (State runtime và output build đều riêng máy. `.dockerignore` của
+        // container đã liệt kê ba trong số đó — hai file từng không khớp nhau.)
+        ".magicore/store",
+        ".magicore/build",
+        ".magicore/journal",
+        ".magicore/exec.log",
+        // `mgc optimizer` writes a machine-specific profile (core count, RAM,
+        // GPU inventory) here. Committing it would pin one developer's hardware
+        // into the repository and make every clone report a different profile.
+        // It was missing from this template, so a fresh scaffold tracked the file.
+        // (`mgc optimizer` ghi profile riêng của máy ở đây — commit nó sẽ ghim cấu
+        // hình một máy vào repo. Template thiếu dòng này nên project mới track nó.)
+        ".mgc-optimizer/",
+        ".magicore/tmp-optimizer/",
         ".env",
         ".env.local",
     ];
@@ -76,12 +98,46 @@ pub(in crate::scaffold::processor) fn common_gitignore(core: &str, framework: &s
                 lines.push("target");
             }
         }
-        "ai" => lines.extend([".venv", "__pycache__", ".pytest_cache"]),
+        // Both spellings: MagiCore's own walkers skip `.venv` AND `venv`
+        // (`core/dev/lib/lib.rs`, `scaffold/local_projects/reuse.rs`), and Python
+        // tooling creates either. Ignoring only `.venv` let a `venv/` directory
+        // with thousands of files into the repository.
+        // (Cả hai cách đặt tên: walker của MagiCore bỏ qua `.venv` VÀ `venv`, và
+        // Python tooling tạo cả hai. Chỉ ignore `.venv` để `venv/` lọt vào repo.)
+        "ai" => lines.extend([".venv", "venv", "__pycache__", ".pytest_cache"]),
         "clo" => lines.extend([".pulumi", ".terraform", ".terraform.lock.hcl"]),
         "cicd" => lines.extend([".artifacts", ".secrets"]),
         "iot" => lines.extend([".pio", "target", "build"]),
-        "app" => lines.extend([".dart_tool", "build", ".gradle", ".build"]),
-        "lib" => lines.extend(["target", "dist", "__pycache__"]),
+        // Flutter and ObjC artifacts. The container `.dockerignore` already lists
+        // `.flutter-plugins*` and `Pods`, so the two ignore files disagreed: an
+        // `app` project excluded them from a Docker image but not from git.
+        // (Artefact Flutter/ObjC. `.dockerignore` đã liệt kê chúng, nên hai file
+        // ignore không khớp: project `app` loại chúng khỏi image nhưng không khỏi git.)
+        "app" => lines.extend([
+            ".dart_tool",
+            "build",
+            ".gradle",
+            ".build",
+            ".flutter-plugins",
+            ".flutter-plugins-dependencies",
+            "Pods",
+        ]),
+        // A `lib` project can be Python: the dev walker skips `.venv` and `venv`
+        // (`core/dev/lib/lib.rs`), and `mgc add` installs Python packages, so the
+        // ignore list must cover the same toolchain directories the Python core
+        // does — otherwise `.venv/`, `venv/` and the pytest cache reach git for
+        // exactly the language this core supports.
+        // (Project `lib` có thể là Python: walker dev bỏ qua `.venv`/`venv`, và
+        // `mgc add` cài package Python, nên ignore list phải phủ cùng thư mục
+        // toolchain như core Python.)
+        "lib" => lines.extend([
+            "target",
+            "dist",
+            "__pycache__",
+            ".venv",
+            "venv",
+            ".pytest_cache",
+        ]),
         _ => {}
     }
 
@@ -104,3 +160,7 @@ pub(in crate::scaffold) fn slugify(name: &str) -> String {
         trimmed.to_string()
     }
 }
+
+#[cfg(test)]
+#[path = "test/mod.rs"]
+mod tests;

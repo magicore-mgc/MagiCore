@@ -50,9 +50,9 @@ impl LifecycleRunner for AiAdapter {
 }
 
 impl OptimizerProvider for AiAdapter {
-    /// Evidence: `mgc optimize` dispatches the ai core
+    /// Evidence: `mgc optimizer` dispatches the ai core
     /// (cli/src/commands/optimizer — Ecosystem::Ai branch).
-    /// Dẫn chứng: `mgc optimize` điều phối core ai (optimizer CLI).
+    /// Dẫn chứng: `mgc optimizer` điều phối core ai (optimizer CLI).
     fn probe_optimizer(&self) -> MgResult<()> {
         Ok(())
     }

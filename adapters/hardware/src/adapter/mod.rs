@@ -9,6 +9,7 @@ mod core_identity;
 mod optimizer_provider;
 mod package_adapter;
 mod project_detection;
+mod scaffold_provider;
 mod unclaimed_capabilities;
 
 pub use adapter::HardwareAdapter;

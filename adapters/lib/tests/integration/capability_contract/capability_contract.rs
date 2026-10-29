@@ -37,15 +37,19 @@ pub(crate) fn toolchain_languages_do_not_claim_materializer_or_lifecycle() {
     let caps = a.capabilities();
     assert!(!caps.contains(&mgc_types::capabilities::Capability::Materializer));
     assert!(!caps.contains(&mgc_types::capabilities::Capability::LifecycleRunner));
-    assert!(!caps.contains(&mgc_types::capabilities::Capability::ArtifactFetcher));
+    // ArtifactFetcher IS claimed: every native language owns a standalone
+    // `fetch(graph)` in `artifact_fetcher/native/<language>` (download →
+    // verify → CAS import). It used to be withheld on the false premise that
+    // "the toolchain fetches during its own install" — MagiCore is the one
+    // downloading `.crate`/wheel/go-mod bytes into its store.
+    // (ArtifactFetcher ĐƯỢC claim: mọi ngôn ngữ native có `fetch(graph)` riêng.
+    // Trước đây bị giữ lại dựa trên tiền đề sai "toolchain tự tải".)
+    assert!(caps.contains(&mgc_types::capabilities::Capability::ArtifactFetcher));
+    assert!(a.probe_artifact_fetcher().is_ok());
     // Unclaimed ⇒ fail-closed Unsupported (trung thực).
     // (Không claim ⇒ fail-closed Unsupported.)
     let err = a.probe_materializer().unwrap_err();
     assert!(matches!(err, mgc_types::MgError::Unsupported { .. }));
-    assert!(matches!(
-        a.probe_artifact_fetcher(),
-        Err(mgc_types::MgError::Unsupported { .. })
-    ));
 }
 
 pub(crate) fn java_gradle_does_not_claim_native_dependency_operations() {

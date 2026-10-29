@@ -3,7 +3,7 @@
 
 mod add_preparation;
 mod age_gate;
-mod capability_profile;
+pub(in crate::adapter) mod capability_profile;
 mod installed_inventory;
 mod manifest_identity;
 mod manifest_parse;

@@ -56,9 +56,16 @@ pub(crate) fn finish_mutation_journal(root: &Path, lock: &ProjectWriteLock) -> R
 /// a same-state delete retry next run, never a rollback.
 /// (Chỉ xóa sau khi completed — sót cũng không rollback.)
 pub(crate) fn clear_mutation_journal(root: &Path, _lock: &ProjectWriteLock) {
-    // Fault-injection point: simulate a cleanup failure (completed
-    // journal lingers; the next run deletes it — never a rollback).
-    // (Điểm lỗi cleanup — journal completed sót, lần sau xóa.)
+    // Fault-injection point: simulate a cleanup failure (completed journal
+    // lingers; the next run deletes it — never a rollback).
+    //
+    // The whole branch is feature-gated, message included: a literal naming the
+    // env var in a default build is what made `strings mgc` show the hook even
+    // after the function itself was gated.
+    // (Điểm lỗi cleanup — journal completed sót, lần sau xóa. Cả nhánh gate kể cả
+    // message: literal nêu tên env var trong build mặc định là thứ khiến `strings
+    // mgc` vẫn thấy hook dù hàm đã gate.)
+    #[cfg(feature = "fault-injection")]
     if mutation_failpoint("before-cleanup").is_err() {
         mgc_ui::warning(
             "injected fault at mutation phase 'before-cleanup' (MGC_MUTATION_FAILPOINT)",

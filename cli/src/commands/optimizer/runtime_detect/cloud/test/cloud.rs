@@ -78,10 +78,20 @@ fn test_detect_cloud_does_not_infer_node_from_cdk_manifest_alone() {
     )
     .unwrap();
 
-    assert_eq!(
-        detect_runtimes(dir.path(), "cloud"),
-        vec![DetectedRuntime::Unknown]
+    // The property is "not Node": a React package.json is not a Pulumi/CDK app.
+    // It still gets the generic lane, because machine-level tuning applies to
+    // every project — the old `Unknown` answer made `mgc optimizer` refuse.
+    // (Thuộc tính là "không phải Node": package.json React không phải Pulumi/CDK.
+    // Nó vẫn nhận lane chung vì tuning mức máy áp cho mọi project — `Unknown` cũ
+    // khiến optimizer từ chối.)
+    let runtimes = detect_runtimes(dir.path(), "cloud");
+    assert!(
+        !runtimes
+            .iter()
+            .any(|r| matches!(r, DetectedRuntime::NodeJs { .. })),
+        "a React manifest is not an IaC Node project: {runtimes:?}"
     );
+    assert!(runtimes.contains(&DetectedRuntime::GenericToolchain));
 }
 
 #[test]
@@ -93,8 +103,12 @@ fn test_detect_cloud_does_not_treat_arbitrary_node_manifest_as_iac() {
     )
     .unwrap();
 
-    assert_eq!(
-        detect_runtimes(dir.path(), "cloud"),
-        vec![DetectedRuntime::Unknown]
+    let runtimes = detect_runtimes(dir.path(), "cloud");
+    assert!(
+        !runtimes
+            .iter()
+            .any(|r| matches!(r, DetectedRuntime::NodeJs { .. })),
+        "an arbitrary manifest is not an IaC project: {runtimes:?}"
     );
+    assert!(runtimes.contains(&DetectedRuntime::GenericToolchain));
 }

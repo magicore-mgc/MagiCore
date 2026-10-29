@@ -21,6 +21,9 @@ impl CicdAdapter {
         Capability::ProjectDetector,
         Capability::ScaffoldProvider,
         Capability::AuditProvider,
+        // `mgc optimizer` dispatches this core (shared generators), same evidence
+        // as `ai`. Withholding it advertised less than the product does.
+        Capability::OptimizerProvider,
     ];
 }
 

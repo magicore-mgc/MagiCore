@@ -12,5 +12,12 @@ async fn empty_lock_uses_native_audit_route_and_reports_clean() {
 
     assert_eq!(report.packages_audited, 0);
     assert_eq!(report.vulnerability_count, 0);
-    assert!(matches!(report.scanner_status, ScannerStatus::Available));
+    // An empty Cargo.lock has nothing to inspect: reporting `Available` made an
+    // unresolved Rust project look verified.
+    // (Cargo.lock rỗng không có gì để kiểm: báo `Available` khiến project Rust
+    // chưa resolve trông như đã xác minh.)
+    assert!(matches!(
+        report.scanner_status,
+        ScannerStatus::Partial { .. }
+    ));
 }

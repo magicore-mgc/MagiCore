@@ -37,7 +37,57 @@ pub(crate) async fn native_update_locked(
     // (Snapshot pre-image cho journal update.)
     let update_snapshot =
         MutationSnapshot::capture(&manifest, root, write_lock, MutationOperation::Update)?;
-    let targets = super::target_selection::select_update_targets(&packages, &manifest)?;
+    // Read the lock so "current version" is the INSTALLED one, not the range
+    // minimum. A missing lock falls back to the range; any OTHER error is
+    // surfaced, because `.ok()` also swallowed permission errors and a v4 lock
+    // (`load_lockfile` rejects v4) — in which case `current_version` silently
+    // returned to the range minimum and `resolve_update_targets` reported
+    // "already latest" for a package the lock held at a different version. That
+    // is the exact defect this change exists to fix.
+    // (Đọc lock để "current version" là version ĐÃ CÀI. Thiếu lock thì dùng range;
+    // lỗi KHÁC phải nổi lên, vì `.ok()` từng nuốt lỗi quyền và lock v4 — khi đó
+    // `current_version` âm thầm về min range và update báo "already latest" sai.)
+    let lock_path = root.join("mgc.lock");
+    // Read whichever schema is on disk. `update` must work on a v4 project — the
+    // v4 suite exercises add → frozen replay → update → remove — so refusing v4
+    // here would regress a supported flow, while silently treating it as absent
+    // would report the wrong "current version". Both schemas are projected onto
+    // the same `(name, version)` view the caller needs.
+    // (Đọc schema có trên đĩa. `update` phải chạy trên project v4 — bộ test v4
+    // chạy add → frozen → update → remove — nên từ chối v4 là regress, còn coi nó
+    // như vắng mặt sẽ báo sai "current version".)
+    let installed_lock = match mgc_lockfile::parser::load_lock_document(&lock_path) {
+        Ok(mgc_lockfile::parser::LockDocument::Legacy(lockfile)) => Some(
+            lockfile
+                .packages
+                .iter()
+                .map(|package| (package.name.clone(), package.version.clone()))
+                .collect::<super::target_selection::InstalledVersions>(),
+        ),
+        Ok(mgc_lockfile::parser::LockDocument::V4(document)) => Some(
+            document
+                .packages
+                .iter()
+                .map(|package| (package.key.name.clone(), package.key.version.clone()))
+                .collect::<super::target_selection::InstalledVersions>(),
+        ),
+        Err(mgc_lockfile::LockfileError::IoError(error))
+            if error.kind() == std::io::ErrorKind::NotFound =>
+        {
+            None
+        }
+        Err(error) => {
+            return Err(anyhow::anyhow!(
+                "cannot read {} for version comparison: {error}",
+                lock_path.display()
+            ));
+        }
+    };
+    let targets = super::target_selection::select_update_targets(
+        &packages,
+        &manifest,
+        installed_lock.as_ref(),
+    )?;
     if targets.is_empty() {
         info("No dependencies to update.");
         return Ok(());

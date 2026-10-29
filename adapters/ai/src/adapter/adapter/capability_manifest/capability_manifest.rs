@@ -11,7 +11,7 @@ impl AiAdapter {
     /// - ScaffoldProvider: the `mgc create-ai` CLI scaffolder lane — real.
     /// - LifecycleRunner: the install lifecycle runs through the CLI
     ///   per-core lane (cli/src/commands/core/install/ai.rs) — real.
-    /// - OptimizerProvider: `mgc optimize` supports the ai core
+    /// - OptimizerProvider: `mgc optimizer` supports the ai core
     ///   (cli/src/commands/optimizer) — real.
     /// - AuditProvider: dependency scanners (pip-audit/cargo-audit/
     ///   govulncheck) + the model-artifact scanner — real.
@@ -35,6 +35,25 @@ impl AiAdapter {
     /// because the embedded lib/python engine owns them natively.
     /// (Lane PyPI (chỉ pyproject.toml): claim registry vì engine
     /// lib/python nhúng sở hữu chúng native.)
+    /// Union of the base and PYPI lanes — what `mgc capabilities` prints.
+    ///
+    /// The matrix describes the core, not one project shape; printing only the
+    /// base omitted `dependency-resolver` while an AI project resolves through the
+    /// embedded PYPI engine.
+    /// (Hợp của base và PYPI — bản `mgc capabilities` in. Matrix mô tả core, không
+    /// phải một dạng project.)
+    pub const CAPABILITIES_ALL: &'static [Capability] = &[
+        Capability::ProjectDetector,
+        Capability::ScaffoldProvider,
+        Capability::DependencyResolver,
+        Capability::LockfileProvider,
+        Capability::ArtifactFetcher,
+        Capability::ContentStoreProvider,
+        Capability::LifecycleRunner,
+        Capability::OptimizerProvider,
+        Capability::AuditProvider,
+    ];
+
     pub const CAPABILITIES_PYPI: &'static [Capability] = &[
         Capability::ProjectDetector,
         Capability::ScaffoldProvider,

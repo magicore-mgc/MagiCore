@@ -14,7 +14,39 @@ pub struct AuditReport {
 }
 
 impl AuditReport {
+    /// A completed scan with no findings.
+    ///
+    /// `packages_audited == 0` is NOT a completed scan: nothing was inspected, so
+    /// reporting `Available` advertised "verified clean" for a project that was
+    /// never looked at. `mgc audit` on a manifest-less project printed
+    /// "✔ No vulnerabilities" with `scanner_status: "available"` and zero
+    /// packages — the exact false assurance this type exists to prevent.
+    ///
+    /// The zero case keeps `packages_audited = 0` but reports `Partial` with the
+    /// reason, so `is_clean()` is false and every consumer (SARIF driver name,
+    /// exit code, CI gate) sees an unverified result.
+    /// (`packages_audited == 0` KHÔNG phải scan hoàn tất: không có gì được kiểm
+    /// nên báo `Available` là quảng cáo "đã xác minh sạch" cho project chưa từng
+    /// được xem. `mgc audit` trên project không manifest từng in "✔ No
+    /// vulnerabilities" với `available` và 0 package — đúng sự trấn an giả mà
+    /// kiểu này sinh ra để chặn.)
     pub fn clean(packages_audited: usize) -> Self {
+        if packages_audited == 0 {
+            return Self {
+                packages_audited: 0,
+                vulnerability_count: 0,
+                vulnerabilities: vec![],
+                scanner_status: ScannerStatus::Partial {
+                    scanned: 0,
+                    skipped: 0,
+                    reasons: vec![
+                        "no packages were available to audit — run `mgc install` so the \
+                         dependency graph exists, then audit again"
+                            .to_string(),
+                    ],
+                },
+            };
+        }
         Self {
             packages_audited,
             vulnerability_count: 0,
@@ -82,10 +114,28 @@ impl AuditReport {
     /// Chỉ sạch khi scanner THẬT SỰ chạy (Available) và không tìm thấy gì.
     /// Mọi trạng thái khác KHÔNG sạch — caller ngoài không được đọc
     /// "sạch" từ report chưa xác thực.
+    /// Whether this report may be printed as a verified clean result.
+    ///
+    /// Three conditions, and the third is the one that was missing: a scanner
+    /// that completed (`Available`), no findings, AND at least one package
+    /// actually inspected. `Available` with `packages_audited == 0` means the
+    /// scanner had nothing to look at, so it verifies nothing.
+    ///
+    /// Guarding here rather than in `clean()` matters: six call sites build
+    /// `AuditReport { scanner_status: Available, .. }` directly (terraform
+    /// providers, OSV pins, OWASP parser, wasm provenance, …) and never pass
+    /// through `clean()`. A per-constructor fix left those open; this predicate is
+    /// the single place every consumer (`finish_and_print`, SARIF driver name,
+    /// exit code, CI gate) already trusts.
+    /// (Ba điều kiện, điều thứ ba từng thiếu: scanner hoàn tất (`Available`),
+    /// không finding, VÀ ít nhất một package đã kiểm. Chặn ở đây thay vì trong
+    /// `clean()` vì 6 nơi dựng `AuditReport { Available, .. }` trực tiếp, không
+    /// qua `clean()`.)
     pub fn is_clean(&self) -> bool {
         matches!(self.scanner_status, ScannerStatus::Available)
             && self.vulnerabilities.is_empty()
             && self.vulnerability_count == 0
+            && self.packages_audited > 0
     }
 
     /// P0.6 FIX: Check if scanner actually ran

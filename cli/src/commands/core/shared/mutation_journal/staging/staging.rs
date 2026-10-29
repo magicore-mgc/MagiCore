@@ -14,14 +14,20 @@ use super::super::{
     read_project_string, refuse_project_link,
 };
 
-/// Test-only fault injection (precedent: MGC_LOCK_FAILPOINT): when
-/// `MGC_MUTATION_FAILPOINT` names a phase, that phase fails with an
-/// injected error so E2E can prove every post-stage path rolls back.
-/// Production cost is one env read when unset; never set it outside
-/// tests. Phases: before-manifest-write, after-manifest-write,
-/// before-post-image, after-post-image, before-complete, after-complete,
-/// before-cleanup.
-/// (Hook lỗi chỉ-cho-test — tên đúng thứ tự before/work/after.)
+/// Test-only fault injection (precedent: `MGC_LOCK_FAILPOINT`): when
+/// `MGC_MUTATION_FAILPOINT` names a phase, that phase fails with an injected
+/// error so E2E can prove every post-stage path rolls back.
+///
+/// Compiled only with the `fault-injection` feature. It previously shipped in
+/// every build, so an inherited `MGC_MUTATION_FAILPOINT` (a stray `.env`, a CI
+/// template, a shell profile) turned `mgc add`/`install`/`remove`/`update` into a
+/// rollback for any user. `cargo test` builds with the feature on, so the
+/// recovery harness keeps working.
+/// (Chỉ biên dịch với feature `fault-injection`. Trước đây nó có trong mọi build
+/// nên env thừa kế biến `mgc add/install/remove/update` thành rollback.)
+/// Phases: before-manifest-write, after-manifest-write, before-post-image,
+/// after-post-image, before-complete, after-complete, before-cleanup.
+#[cfg(feature = "fault-injection")]
 pub(crate) fn mutation_failpoint(phase: &str) -> Result<()> {
     let target = std::env::var("MGC_MUTATION_FAILPOINT")
         .ok()
@@ -31,6 +37,13 @@ pub(crate) fn mutation_failpoint(phase: &str) -> Result<()> {
             "injected fault at mutation phase '{phase}' (MGC_MUTATION_FAILPOINT)"
         ));
     }
+    Ok(())
+}
+
+/// No-op in a default build: nothing can inject a fault into a real mutation.
+/// (No-op trong build mặc định: không gì inject được lỗi vào mutation thật.)
+#[cfg(not(feature = "fault-injection"))]
+pub(crate) fn mutation_failpoint(_phase: &str) -> Result<()> {
     Ok(())
 }
 

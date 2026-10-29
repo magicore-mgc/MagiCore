@@ -85,9 +85,16 @@ Release archives exist only for versions listed on the [GitHub Releases page](ht
 
 ## Quick start
 
-After making <code>mgc</code> available on PATH:
+Install first — see [INSTALL.md](INSTALL.md) for the released binary, build from
+source, and per-platform steps. There is no `cargo install mgc` and no
+`curl … | sh` one-liner.
+
+Check [REQUIREMENTS.md](REQUIREMENTS.md) before your first `create-*`:
+`create-web` for JavaScript/TypeScript frameworks needs Node.js on `PATH`.
 
 ~~~bash
+mgc --version
+mgc capabilities                 # what this binary really supports per core
 mgc create-web react my-app --yes
 cd my-app
 mgc install
@@ -96,7 +103,7 @@ mgc build
 mgc audit
 ~~~
 
-Other scaffold command families include <code>create-ai</code>, <code>create-app</code>, <code>create-lib</code>, <code>create-clo</code>, <code>create-cicd</code>, <code>create-game</code>, <code>create-iot</code>, and <code>create-hardware</code>. Check capabilities before assuming a framework supports each operation.
+Other scaffold command families include <code>create-ai</code>, <code>create-app</code>, <code>create-lib</code>, <code>create-clo</code>, <code>create-cicd</code>, <code>create-game</code>, <code>create-iot</code>, and <code>create-hardware</code>. A framework name outside the target core is rejected with the list of names that core accepts, so a typo never leaves a half-created project behind. Check capabilities before assuming a framework supports each operation.
 
 ## Storage and caches
 

@@ -71,10 +71,15 @@ pub async fn why(adapter: &dyn PackageAdapter, root: &Path, package: &str) -> Re
                     )
                 })
                 .collect();
+            // Same prefix problem as the legacy branch below: a v4 root pin is
+            // `mgc-root-v1:<ecosystem>:<name>@<version>`, so `edge_name` alone
+            // yields `mgc-root-v1:web:nanoid`.
+            // (Cùng vấn đề prefix như nhánh legacy: root pin v4 là
+            // `mgc-root-v1:<eco>:<name>@<version>`.)
             let roots = payload
                 .root_dependencies
                 .iter()
-                .map(|edge| edge_name(edge))
+                .map(|edge| edge_name(mgc_lockfile::root_pin::parse_root_pin(edge).package_id))
                 .collect();
             (nodes, roots)
         }
@@ -96,10 +101,32 @@ pub async fn why(adapter: &dyn PackageAdapter, root: &Path, package: &str) -> Re
                     )
                 })
                 .collect();
-            let roots = lock
+            // Root pins carry the `mgc-root-v1:<ecosystem>:` prefix, so running
+            // `edge_name` on them produced `mgc-root-v1:web:nanoid` instead of
+            // `nanoid`. Every direct dependency then looked like an orphan and
+            // `mgc why` told the user to prune it. `parse_root_pin` already exists
+            // for exactly this encoding.
+            // (Root pin có prefix `mgc-root-v1:<ecosystem>:` nên `edge_name` trả
+            // `mgc-root-v1:web:nanoid` thay vì `nanoid`. Mọi dependency trực tiếp
+            // trông như mồ côi và `mgc why` khuyên prune nó. `parse_root_pin` đã có
+            // sẵn cho đúng encoding này.)
+            // Read BOTH root fields. v3 locks write
+            // `[root_dependencies_by_owner]` and leave the flat
+            // `root_dependencies` vector empty, so reading only the flat field made
+            // every direct dependency look like an orphan — `mgc why nanoid` told
+            // the user to prune a dependency declared in `package.json`.
+            // (Đọc CẢ HAI field: lock v3 ghi `root_dependencies_by_owner` và để
+            // vector phẳng rỗng, nên đọc mỗi vector khiến mọi dependency trực tiếp
+            // trông như mồ côi.)
+            let roots: Vec<String> = lock
                 .root_dependencies
                 .iter()
-                .map(|edge| edge_name(edge))
+                .chain(
+                    lock.root_dependencies_by_owner
+                        .values()
+                        .flat_map(|owned| owned.iter()),
+                )
+                .map(|edge| edge_name(mgc_lockfile::root_pin::parse_root_pin(edge).package_id))
                 .collect();
             (nodes, roots)
         }

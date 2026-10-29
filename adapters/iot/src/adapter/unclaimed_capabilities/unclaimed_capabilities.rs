@@ -7,7 +7,6 @@ use super::super::IotAdapter;
 // từ mgc_types::capabilities.
 impl mgc_types::capabilities::ArtifactFetcher for IotAdapter {}
 impl mgc_types::capabilities::LifecycleRunner for IotAdapter {}
-impl mgc_types::capabilities::OptimizerProvider for IotAdapter {}
 impl mgc_types::capabilities::Materializer for IotAdapter {}
 impl mgc_types::capabilities::SimulatorProvider for IotAdapter {}
 impl mgc_types::capabilities::DeviceProvider for IotAdapter {}

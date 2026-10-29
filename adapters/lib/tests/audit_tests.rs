@@ -31,13 +31,21 @@ async fn audit_rust_requires_a_lockfile_instead_of_reporting_clean() {
 }
 
 #[tokio::test]
-async fn audit_rust_empty_lock_is_a_native_clean_result_without_external_tools() {
+async fn audit_rust_empty_lock_is_unverified_without_external_tools() {
     let dir = tmp("rust-empty-lock");
     std::fs::write(dir.join("Cargo.lock"), "version = 4\n").unwrap();
     let report = audit_rust(&dir).await.unwrap();
     assert_eq!(report.packages_audited, 0);
     assert_eq!(report.vulnerability_count, 0);
-    assert!(matches!(report.scanner_status, ScannerStatus::Available));
+    // The name used to promise "clean" for an EMPTY lock — verified safety for a
+    // graph with nothing in it. An empty lock inspects nothing.
+    // (Tên cũ hứa "clean" cho lock RỖNG — an toàn đã xác minh cho graph không có
+    // gì. Lock rỗng không kiểm gì.)
+    assert!(matches!(
+        report.scanner_status,
+        ScannerStatus::Partial { .. }
+    ));
+    assert!(!report.is_clean());
 }
 
 #[tokio::test]

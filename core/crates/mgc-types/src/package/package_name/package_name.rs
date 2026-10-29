@@ -4,7 +4,7 @@
 use crate::error::{MgError, MgResult};
 use std::fmt;
 
-const MAX_PACKAGE_NAME_LEN: usize = 214;
+const MAX_PACKAGE_NAME_LEN: usize = crate::limits::NPM_PACKAGE_NAME_MAX;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct PackageName(String);

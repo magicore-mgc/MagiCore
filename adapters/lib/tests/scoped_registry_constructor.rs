@@ -185,9 +185,16 @@ async fn assert_non_ts_isolation(file: &str, manifest: &str, language: &str) {
     .unwrap()
     .unwrap();
     assert_eq!(adapter.language(), language);
+    // The property under test is isolation from the npm chain, not refusal:
+    // a non-TS lane now owns a standalone fetch through its own protocol, and
+    // that fetch must be reachable even when an unrelated npm registry is
+    // configured (a planted npm endpoint must not poison a Rust/Python/Go lane).
+    // (Thuộc tính cần kiểm là cách ly khỏi npm chain, không phải từ chối: lane
+    // non-TS nay có fetch riêng qua protocol của nó, và fetch đó phải dùng được
+    // kể cả khi có npm registry không liên quan được cấu hình.)
     assert!(
-        adapter.probe_artifact_fetcher().is_err(),
-        "non-TS must retain standalone fetch refusal"
+        adapter.probe_artifact_fetcher().is_ok(),
+        "non-TS fetch must be reachable and must not depend on the npm chain"
     );
 }
 

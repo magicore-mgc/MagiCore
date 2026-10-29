@@ -44,7 +44,18 @@ fn a_missing_keyring_skips_and_explains() {
 
     match sign_artifact(&artifact, &dir.path().join("absent.json")).unwrap() {
         Signed::Skipped(reason) => {
-            assert!(reason.contains("mgc key generate"), "{reason}");
+            // The message used to name `mgc key generate`, a command that does not
+            // exist. It must now describe the file shape the loader actually wants.
+            // (Message từng nêu `mgc key generate` — lệnh không tồn tại. Nay phải mô
+            // tả đúng hình dạng file loader cần.)
+            assert!(
+                reason.contains("signing_key") && reason.contains("64 hex"),
+                "the skip reason must say how to create the keyring: {reason}"
+            );
+            assert!(
+                !reason.contains("mgc key generate"),
+                "must not name a command that does not exist: {reason}"
+            );
         }
         Signed::Signature(_) => panic!("no keyring must not produce a signature"),
     }

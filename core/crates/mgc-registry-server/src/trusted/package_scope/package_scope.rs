@@ -36,7 +36,7 @@ pub fn core_scoped_oci_repository(core: &str, package: &str) -> Result<String, S
 /// Trả về khóa project theo PEP 503 dùng thống nhất ở route, binding và storage.
 pub fn canonical_pypi_name(package: &str) -> Result<String, StatusCode> {
     if package.is_empty()
-        || package.len() > 214
+        || package.len() > mgc_types::limits::NPM_PACKAGE_NAME_MAX
         || !package
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || b"-_.".contains(&byte))
@@ -60,7 +60,7 @@ pub fn canonical_pypi_name(package: &str) -> Result<String, StatusCode> {
 }
 
 fn validate_oci_repository(repository: &str) -> Result<(), StatusCode> {
-    if repository.is_empty() || repository.len() > 255 {
+    if repository.is_empty() || repository.len() > mgc_types::limits::PATH_SEGMENT_MAX {
         return Err(StatusCode::BAD_REQUEST);
     }
     for component in repository.split('/') {
@@ -83,7 +83,7 @@ fn validate_oci_repository(repository: &str) -> Result<(), StatusCode> {
 }
 
 fn validate_package(package: &str) -> Result<(), StatusCode> {
-    if package.len() > 214 || package.is_empty() {
+    if package.len() > mgc_types::limits::NPM_PACKAGE_NAME_MAX || package.is_empty() {
         return Err(StatusCode::BAD_REQUEST);
     }
     let valid_part = |part: &str| {

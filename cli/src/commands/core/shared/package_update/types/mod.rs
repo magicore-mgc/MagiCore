@@ -4,4 +4,4 @@
 #[path = "types.rs"]
 mod implementation;
 
-pub(super) use implementation::UpdateTarget;
+pub(in crate::commands::core::shared) use implementation::UpdateTarget;

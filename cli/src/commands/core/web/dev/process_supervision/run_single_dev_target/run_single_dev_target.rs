@@ -54,7 +54,9 @@ pub(in crate::commands::core::web::implementation) async fn run_single_dev_targe
                 .host
                 .clone()
                 .unwrap_or_else(|| "localhost".to_string()),
-            port: target.port.unwrap_or(4315),
+            port: target
+                .port
+                .unwrap_or(crate::commands::core::dev_port::PORT_WEB_FE),
         };
         // Show the compiler settings the dev server will actually use. A dev
         // server that ran on defaults while `mgc build` used the optimizer

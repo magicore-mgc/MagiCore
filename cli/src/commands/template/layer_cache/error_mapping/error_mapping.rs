@@ -27,7 +27,9 @@ pub(in crate::commands::template) fn template_resolution_error(
                 attempted_sources: error.to_string(),
             };
         }
-        if status.0 == 429 || status.0 >= 500 {
+        if status.0 == mgc_types::limits::HTTP_TOO_MANY_REQUESTS
+            || status.0 >= mgc_types::limits::HTTP_SERVER_ERROR_MIN
+        {
             return ScaffoldResolveError::RegistryUnavailable {
                 registry: format!("configured template registry (HTTP {})", status.0),
                 offline: false,

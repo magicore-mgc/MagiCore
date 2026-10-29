@@ -37,7 +37,7 @@ pub(in crate::commands) fn trusted_oci_artifact_manifest(
                     .bytes()
                     .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
                 || filename.is_empty()
-                || filename.len() > 255
+                || filename.len() > mgc_types::limits::PATH_SEGMENT_MAX
                 || filename
                     .bytes()
                     .any(|byte| byte.is_ascii_control() || matches!(byte, b'/' | b'\\'))

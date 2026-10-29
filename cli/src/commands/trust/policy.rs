@@ -136,16 +136,67 @@ fn resolve_effective_mode(
     }
 }
 
-/// Check if CI environment — Kiểm tra môi trường CI
+/// Provider variables that are meaningful by their mere presence.
+///
+/// These are set once by their provider and carry no "off" value; a non-empty
+/// value of any of them means the job is running inside that provider.
+/// (Biến provider mà sự tồn tại đã đủ nghĩa — provider đặt một lần, không có giá
+/// trị "off"; giá trị khác rỗng của bất kỳ biến nào nghĩa là đang chạy trong
+/// provider đó.)
+const CI_PROVIDER_MARKERS: &[&str] = &[
+    "GITHUB_ACTIONS",
+    "GITLAB_CI",
+    "CIRCLECI",
+    "JENKINS_URL",
+    "TRAVIS",
+];
+
+/// Check whether the process runs inside a CI job.
+///
+/// `CI` is read by VALUE, not by presence: a developer shell or a tool that
+/// exports `CI=false` / `CI=0` / `CI=` is not CI, and treating it as CI would
+/// silently force strict signature policy in a local build. Conversely the
+/// provider markers are presence-based because none of them has an "off" form.
+/// (`CI` đọc theo GIÁ TRỊ, không theo sự tồn tại: shell dev hay tool export
+/// `CI=false`/`CI=0`/`CI=` không phải CI — coi là CI sẽ ép policy strict trong
+/// build local. Marker provider thì theo sự tồn tại vì chúng không có dạng
+/// "off".)
 pub fn is_ci_environment() -> bool {
-    std::env::var("CI").is_ok()
-        || std::env::var("GITHUB_ACTIONS").is_ok()
-        || std::env::var("GITLAB_CI").is_ok()
-        || std::env::var("CIRCLECI").is_ok()
-        || std::env::var("JENKINS_URL").is_ok()
-        || std::env::var("TRAVIS").is_ok()
+    env_flag_enabled("CI")
+        || CI_PROVIDER_MARKERS
+            .iter()
+            .any(|name| env_present_and_non_empty(name))
+}
+
+/// A boolean-ish environment flag is enabled unless it says otherwise.
+///
+/// `1`/`true`/`yes`/`on` (any case) are on; `0`/`false`/`no`/`off` and an empty
+/// value are off; any other non-empty value is treated as on, matching how CI
+/// providers set `CI=1`.
+/// (Flag boolean: `1/true/yes/on` là bật; `0/false/no/off` và rỗng là tắt; giá
+/// trị khác rỗng coi là bật — đúng cách CI provider đặt `CI=1`.)
+fn env_flag_enabled(name: &str) -> bool {
+    match std::env::var(name) {
+        Ok(value) => {
+            let value = value.trim();
+            if value.is_empty() {
+                return false;
+            }
+            !matches!(
+                value.to_ascii_lowercase().as_str(),
+                "0" | "false" | "no" | "off"
+            )
+        }
+        Err(_) => false,
+    }
+}
+
+/// Whether the variable exists and carries a non-empty value.
+/// Biến tồn tại và có giá trị khác rỗng.
+fn env_present_and_non_empty(name: &str) -> bool {
+    std::env::var(name).is_ok_and(|value| !value.trim().is_empty())
 }
 
 #[cfg(test)]
-#[path = "../test/trust_policy.rs"]
-mod tests;
+#[path = "test/trust_policy.rs"]
+mod trust_policy_tests;

@@ -17,6 +17,7 @@ const NPM_TESTED_VERSIONS: &[i64] = &[2, 3];
 pub(in crate::import) fn parse_npm(
     content: &str,
     warnings: &mut Vec<String>,
+    root_deps: &mut Vec<String>,
 ) -> Result<Vec<Package>> {
     let json: serde_json::Value = serde_json::from_str(content)
         .map_err(|e| anyhow::anyhow!("package-lock.json is not valid JSON: {e}"))?;
@@ -55,6 +56,27 @@ pub(in crate::import) fn parse_npm(
             (!name.is_empty()).then_some((key.clone(), (name.to_string(), ver.to_string())))
         })
         .collect();
+
+    // The root entry (`""`) lists the project's direct dependencies. Recording
+    // them is what makes the imported lock answer "which packages did the user
+    // actually declare?" — without it every dependency looks transitive, and the
+    // freshness gate cannot tell a declared dependency from a hoisted one.
+    // (Entry gốc `""` liệt kê dependency trực tiếp. Ghi lại để lock import trả lời
+    // được "người dùng khai package nào" — thiếu nó mọi dependency trông như bắc
+    // cầu và freshness không phân biệt được.)
+    if let Some(root_entry) = entries.get("") {
+        for section in ["dependencies", "devDependencies", "optionalDependencies"] {
+            let Some(deps) = root_entry.get(section).and_then(|value| value.as_object()) else {
+                continue;
+            };
+            for name in deps.keys() {
+                let key = format!("node_modules/{name}");
+                if let Some((resolved_name, version)) = lookup.get(&key) {
+                    root_deps.push(format!("{resolved_name}@{version}"));
+                }
+            }
+        }
+    }
 
     let mut out = Vec::new();
     for (key, entry) in entries {

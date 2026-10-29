@@ -6,7 +6,6 @@ use super::super::GameAdapter;
 // từ mgc_types::capabilities.
 impl mgc_types::capabilities::ArtifactFetcher for GameAdapter {}
 impl mgc_types::capabilities::LifecycleRunner for GameAdapter {}
-impl mgc_types::capabilities::OptimizerProvider for GameAdapter {}
 impl mgc_types::capabilities::Materializer for GameAdapter {}
 impl mgc_types::capabilities::SimulatorProvider for GameAdapter {}
 impl mgc_types::capabilities::DeviceProvider for GameAdapter {}

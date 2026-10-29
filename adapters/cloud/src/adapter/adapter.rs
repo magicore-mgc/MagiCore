@@ -26,6 +26,12 @@ impl CloudAdapter {
         Capability::ProjectDetector,
         Capability::ScaffoldProvider,
         Capability::AuditProvider,
+        // `mgc optimizer` dispatches this core through the shared generators
+        // (profile + gpu), the same evidence `ai` uses. Withholding it advertised
+        // less than the product does.
+        // (`mgc optimizer` dispatch core này qua generator dùng chung — cùng dẫn
+        // chứng `ai` dùng.)
+        Capability::OptimizerProvider,
     ];
 
     pub const CAPABILITIES_WEB: &'static [Capability] = &[

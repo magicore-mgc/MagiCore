@@ -18,6 +18,11 @@ impl HardwareAdapter {
     /// Bảng capability (Global Gate 1) — ghi chú theo code thật.
     pub const CAPABILITIES: &'static [Capability] = &[
         Capability::ProjectDetector,
+        // Scaffolding lives in the CLI lane, not in an adapter module; the trait
+        // accepts either. See `unclaimed_capabilities` for why this is claimed.
+        // (Scaffold nằm ở lane CLI, không phải module adapter; trait chấp nhận cả
+        // hai. Xem `unclaimed_capabilities` để biết vì sao claim.)
+        Capability::ScaffoldProvider,
         Capability::OptimizerProvider,
         Capability::AuditProvider,
     ];

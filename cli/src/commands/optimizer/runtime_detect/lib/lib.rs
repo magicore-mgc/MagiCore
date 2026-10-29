@@ -28,11 +28,19 @@ pub(in crate::commands::optimizer) fn detect_lib_runtime(
         runtimes.push(DetectedRuntime::PythonLib);
     }
 
-    // Check for TypeScript lib (package.json + tsconfig.json, no framework) — kiểm tra thư viện TypeScript
-    if project_text(project_root, "package.json").is_some()
-        && project_root.join("tsconfig.json").exists()
-        && let Some(content) = project_text(project_root, "package.json")
-    {
+    // TypeScript/JavaScript library: a `package.json` that declares no web
+    // framework.
+    //
+    // Requiring `tsconfig.json` as well excluded real TypeScript packages: a
+    // library published with a `types` field and built by a bundler config
+    // (`esbuild.config.mjs`, `bun build`) needs no `tsconfig.json`, and a plain
+    // JavaScript library never has one — yet both are `lib` projects whose dev
+    // loop runs Node. The framework check below is what separates "library" from
+    // "web app"; a second build-config file adds no signal.
+    // (`package.json` không framework là đủ. Yêu cầu thêm `tsconfig.json` loại
+    // trừ package TS thật dùng `types` + bundler config; thư viện JS thuần cũng
+    // không có file đó.)
+    if let Some(content) = project_text(project_root, "package.json") {
         // Not a web framework if no "react", "vue", "svelte", "next" etc. — không phải web framework
         if !content.contains("react")
             && !content.contains("vue")
@@ -44,5 +52,31 @@ pub(in crate::commands::optimizer) fn detect_lib_runtime(
         }
     }
 
+    // Java: either build program selects the JVM lane; the adapter writes both
+    // MAVEN_OPTS and GRADLE_OPTS so whichever one runs is tuned.
+    // (Java: một trong hai chương trình build chọn lane JVM; adapter ghi cả
+    // MAVEN_OPTS lẫn GRADLE_OPTS nên bên nào chạy cũng được tuning.)
+    if project_root.join("pom.xml").exists()
+        || project_root.join("build.gradle").exists()
+        || project_root.join("build.gradle.kts").exists()
+    {
+        runtimes.push(DetectedRuntime::JvmLib);
+    }
+
+    // .NET: a project file is named after the project, so match the extension.
+    // (.NET: file project đặt tên theo project nên khớp theo extension.)
+    if crate::commands::core::shared::project_manifest::declares_dotnet_project(project_root) {
+        runtimes.push(DetectedRuntime::DotNetLib);
+    }
+
+    // SwiftPM.
+    if project_root.join("Package.swift").is_file() {
+        runtimes.push(DetectedRuntime::SwiftLib);
+    }
+
     runtimes
 }
+
+#[cfg(test)]
+#[path = "test/mod.rs"]
+mod tests;

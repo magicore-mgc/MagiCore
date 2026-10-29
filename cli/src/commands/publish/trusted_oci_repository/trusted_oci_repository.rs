@@ -47,7 +47,7 @@ pub(in crate::commands) fn oci_artifact_filename(path: &Path) -> Result<&str> {
         .and_then(|name| name.to_str())
         .filter(|name| !name.is_empty())
         .ok_or_else(|| anyhow!("OCI artifact must have a UTF-8 filename"))?;
-    if filename.len() > 255
+    if filename.len() > mgc_types::limits::PATH_SEGMENT_MAX
         || filename
             .bytes()
             .any(|byte| byte.is_ascii_control() || matches!(byte, b'/' | b'\\'))

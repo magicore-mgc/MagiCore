@@ -17,6 +17,7 @@ const PNPM_TESTED_VERSIONS: &[&str] = &["9.0"];
 pub(in crate::import) fn parse_pnpm(
     content: &str,
     warnings: &mut Vec<String>,
+    root_deps: &mut Vec<String>,
 ) -> Result<Vec<Package>> {
     // Multi-document files (pnpm ≥10 env document + project document):
     // a single-doc parse silently returns the FIRST (env) document — the
@@ -77,6 +78,33 @@ pub(in crate::import) fn parse_pnpm(
         .map(|raw| strip_paren_suffix(raw.trim_start_matches('/')).to_string())
         .filter_map(|cleaned| split_name_version(&cleaned))
         .collect();
+
+    // pnpm lists direct dependencies under `importers."."` (and per workspace
+    // package). Recording them gives the imported lock a root graph; without it
+    // every dependency looks transitive.
+    // (pnpm liệt kê dependency trực tiếp ở `importers."."` — ghi lại để lock
+    // import có graph root.)
+    if let Some(root_importer) = yaml
+        .get("importers")
+        .and_then(|importers| importers.get("."))
+    {
+        for section in ["dependencies", "devDependencies", "optionalDependencies"] {
+            let Some(deps) = root_importer.get(section).and_then(|v| v.as_mapping()) else {
+                continue;
+            };
+            for (name_value, spec) in deps {
+                let Some(name) = name_value.as_str() else {
+                    continue;
+                };
+                // `version` holds the resolved version; `specifier` holds the range.
+                // (`version` là version đã resolve; `specifier` là range.)
+                if let Some(version) = spec.get("version").and_then(|v| v.as_str()) {
+                    let version = strip_paren_suffix(version);
+                    root_deps.push(format!("{name}@{version}"));
+                }
+            }
+        }
+    }
 
     let mut out = Vec::new();
     for (key, entry) in entries {

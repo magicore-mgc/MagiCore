@@ -3,4 +3,4 @@
 
 mod capability_profile;
 
-pub(super) use capability_profile::select_capabilities;
+pub(in crate::adapter) use capability_profile::select_capabilities;

@@ -25,7 +25,10 @@ pub fn dep_name_is_valid(pkg: &str) -> bool {
     };
     let scoped = first.starts_with('@');
     if scoped {
-        if first.len() < 2 || first.len() > 214 || first.contains('%') {
+        if first.len() < 2
+            || first.len() > mgc_types::limits::NPM_PACKAGE_NAME_MAX
+            || first.contains('%')
+        {
             return false;
         }
         let Some(package_segment) = segments.next() else {
@@ -52,7 +55,7 @@ fn is_valid_package_segment(segment: &str) -> bool {
             .chars()
             .any(|character| matches!(character, '"' | '<' | '>' | '|' | '?' | '*'))
         && !is_windows_device_name(segment)
-        && segment.len() <= 214
+        && segment.len() <= mgc_types::limits::NPM_PACKAGE_NAME_MAX
 }
 
 fn is_windows_device_name(segment: &str) -> bool {

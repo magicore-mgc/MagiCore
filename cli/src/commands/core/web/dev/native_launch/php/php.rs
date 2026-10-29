@@ -8,6 +8,15 @@ use std::path::PathBuf;
 use super::super::super::types::DevLaunch;
 use super::super::environment::env_host_port_pairs;
 use super::super::types::NativeDevContext;
+use crate::commands::core::dev_port::PORT_WEB_BE;
+
+/// Resolve the back-end dev port once so Artisan and the PHP built-in server
+/// cannot drift apart.
+/// (Giải port dev back-end MỘT lần để Artisan và PHP built-in server không lệch
+/// nhau — port phải qua bảng §13, không hard-code.)
+fn php_dev_port(context: &NativeDevContext<'_>) -> u16 {
+    context.port.unwrap_or(PORT_WEB_BE)
+}
 
 pub(in crate::commands::core::web::implementation::dev::native_launch) fn infer_php_dev_launch(
     context: &NativeDevContext<'_>,
@@ -21,7 +30,7 @@ pub(in crate::commands::core::web::implementation::dev::native_launch) fn infer_
                 OsString::from("artisan"),
                 OsString::from("serve"),
                 OsString::from(format!("--host={host}")),
-                OsString::from(format!("--port={}", context.port.unwrap_or(8000))),
+                OsString::from(format!("--port={}", php_dev_port(context))),
             ],
             envs: env_host_port_pairs(context),
         }));
@@ -43,7 +52,7 @@ fn php_builtin_server(context: &NativeDevContext<'_>, host: &str) -> DevLaunch {
         program: PathBuf::from("php"),
         args: vec![
             OsString::from("-S"),
-            OsString::from(format!("{host}:{}", context.port.unwrap_or(8000))),
+            OsString::from(format!("{host}:{}", php_dev_port(context))),
             OsString::from("-t"),
             OsString::from("public"),
             OsString::from("public/index.php"),
@@ -51,3 +60,7 @@ fn php_builtin_server(context: &NativeDevContext<'_>, host: &str) -> DevLaunch {
         envs: env_host_port_pairs(context),
     }
 }
+
+#[cfg(test)]
+#[path = "test/mod.rs"]
+mod tests;

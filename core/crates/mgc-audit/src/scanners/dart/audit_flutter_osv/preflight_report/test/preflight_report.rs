@@ -3,12 +3,23 @@
 
 use super::*;
 
+/// An empty inventory is NOT clean: no package was inspected.
+///
+/// This test used to require `Available`, which is how a Dart project with no
+/// resolved packages produced a green audit.
+/// (Inventory rỗng KHÔNG sạch: không package nào được kiểm. Test này từng đòi
+/// `Available`, chính là cách project Dart chưa resolve ra audit xanh.)
 #[test]
-fn empty_inventory_is_clean() {
+fn empty_inventory_is_not_clean() {
     let report = report_without_registry_query(&[], &[]).expect("report empty inventory");
     assert_eq!(report.packages_audited, 0);
     assert_eq!(report.vulnerability_count, 0);
-    assert!(matches!(report.scanner_status, ScannerStatus::Available));
+    assert!(
+        matches!(report.scanner_status, ScannerStatus::Partial { .. }),
+        "an empty inventory must report Partial, got {:?}",
+        report.scanner_status
+    );
+    assert!(!report.is_clean());
 }
 
 #[test]

@@ -3,8 +3,26 @@
 
 use super::super::descriptor_budget;
 
+/// Serialises every case that reads or writes the process-wide variable.
+///
+/// `MAGICORE_MAX_OPEN_FILES` lives in one process-wide map, and the test harness
+/// runs cases in parallel threads. Without this lock a case that sets the
+/// variable makes the neighbouring case read `77` instead of the computed
+/// default, which is exactly the intermittent failure this file used to have.
+/// (`MAGICORE_MAX_OPEN_FILES` nằm trong một map toàn process, harness chạy song
+/// song; thiếu lock thì case set biến làm case bên cạnh đọc `77` thay vì mặc
+/// định — đúng lỗi chập chờn file này từng có.)
+static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn lock() -> std::sync::MutexGuard<'static, ()> {
+    ENV_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 #[test]
 fn the_budget_is_a_fraction_of_the_process_limit_within_bounds() {
+    let _guard = lock();
     let budget = descriptor_budget();
     assert!(budget >= 32, "budget must not collapse: {budget}");
     assert!(
@@ -16,6 +34,7 @@ fn the_budget_is_a_fraction_of_the_process_limit_within_bounds() {
 #[test]
 #[allow(unsafe_code)]
 fn an_explicit_override_is_honoured() {
+    let _guard = lock();
     // The variable is process-wide, so this test owns it for its duration.
     // Biến là toàn process, nên test này sở hữu nó trong thời gian chạy.
     // SAFETY: edition 2024 requires unsafe for set_var; no other thread reads
@@ -30,6 +49,7 @@ fn an_explicit_override_is_honoured() {
 #[test]
 #[allow(unsafe_code)]
 fn a_zero_override_is_ignored() {
+    let _guard = lock();
     // Zero would deadlock the semaphore; it must fall back, not be taken
     // literally.
     // Zero sẽ làm semaphore kẹt; phải quay về mặc định, không lấy đúng nghĩa.

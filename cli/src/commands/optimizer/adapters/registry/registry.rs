@@ -3,7 +3,8 @@
 
 use super::super::contract::OptimizerAdapter;
 use super::super::{
-    bun, candle, deno, flutter, go_ai, go_lib, node, python_lib, pytorch, react_native,
+    bun, candle, deno, dotnet_lib, flutter, go_ai, go_lib, java_lib, node, python_lib, pytorch,
+    react_native, swift_lib,
 };
 use super::super::{rust_lib, typescript_lib};
 
@@ -23,8 +24,15 @@ pub fn all_adapters() -> Vec<Box<dyn OptimizerAdapter>> {
         Box::new(go_lib::GoLibAdapter),
         Box::new(python_lib::PythonLibAdapter),
         Box::new(typescript_lib::TypeScriptLibAdapter),
+        Box::new(java_lib::JavaLibAdapter),
+        Box::new(dotnet_lib::DotNetLibAdapter),
+        Box::new(swift_lib::SwiftLibAdapter),
         // App adapters — adapters ứng dụng
         Box::new(flutter::FlutterAdapter),
         Box::new(react_native::ReactNativeAdapter),
     ]
 }
+
+#[cfg(test)]
+#[path = "test/mod.rs"]
+mod tests;

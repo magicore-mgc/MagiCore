@@ -14,9 +14,12 @@ impl LibAdapter {
     ///   gateway. Direct adapter add/remove/update methods fail closed.
     ///   TS rides the embedded web engine.
     /// - LockfileProvider: real manifest writers (cargo/pyproject/web).
-    /// - ArtifactFetcher: standalone `fetch(graph)` is supported only by
-    ///   TypeScript's web engine. Other native lanes fetch inside install
-    ///   and do not claim the independent capability.
+    /// - ArtifactFetcher: every language now owns a standalone
+    ///   `fetch(graph)` — TypeScript through the embedded Web engine, native
+    ///   languages through `artifact_fetcher/native/<language>` (download →
+    ///   verify → CAS import, the same sequence install performs). The
+    ///   capability is claimed only after the implementation exists, so the
+    ///   claim is evidence, not aspiration.
     /// - ContentStoreProvider: crate::install::run_install — native
     ///   download → verify → CAS import → materialize the toolchain layout
     ///   (cargo/pypi/go/maven/nuget), shared store for TS — real.
@@ -30,8 +33,10 @@ impl LibAdapter {
         Capability::ScaffoldProvider,
         Capability::DependencyResolver,
         Capability::LockfileProvider,
+        Capability::ArtifactFetcher,
         Capability::ContentStoreProvider,
         Capability::AuditProvider,
+        Capability::OptimizerProvider,
     ];
 
     /// Java Gradle is a build program, not an MGC-owned dependency
@@ -51,6 +56,33 @@ impl LibAdapter {
         Capability::ProjectDetector,
         Capability::ScaffoldProvider,
         Capability::AuditProvider,
+    ];
+
+    /// Every capability this core can perform for SOME project.
+    ///
+    /// `mgc capabilities` prints this because the matrix answers "what can MagiCore
+    /// do with this core", not "what does one particular language do". A caller
+    /// deciding whether `lib` can resolve a lockfile must not read `false` merely
+    /// because the sample project happened to be Java-Gradle.
+    /// (Mọi capability core này làm được với MỘT project nào đó. `mgc capabilities`
+    /// in bản này vì matrix trả lời "core này làm được gì", không phải "một ngôn
+    /// ngữ cụ thể làm gì".)
+    ///
+    /// Order is the base order followed by capabilities the narrower profiles add,
+    /// so the output is stable and readable.
+    /// (Thứ tự: bản gốc rồi tới phần hẹp hơn thêm vào.)
+    pub const CAPABILITIES_ALL: &'static [Capability] = &[
+        Capability::ProjectDetector,
+        Capability::ScaffoldProvider,
+        Capability::DependencyResolver,
+        Capability::LockfileProvider,
+        Capability::ArtifactFetcher,
+        Capability::ContentStoreProvider,
+        Capability::Materializer,
+        Capability::LifecycleRunner,
+        Capability::AuditProvider,
+        // Shared optimizer dispatch applies to every lib language.
+        Capability::OptimizerProvider,
     ];
 
     /// TS lane đi trên web engine nhúng — materializer (node_modules
@@ -74,9 +106,7 @@ impl LibAdapter {
     ];
 }
 
-pub(in crate::adapter::package_adapter) fn select_capabilities(
-    adapter: &LibAdapter,
-) -> &'static [Capability] {
+pub(in crate::adapter) fn select_capabilities(adapter: &LibAdapter) -> &'static [Capability] {
     match adapter.language {
         LibLanguage::Ts => LibAdapter::CAPABILITIES_TS,
         LibLanguage::Python if !adapter.python_native_owned() => {

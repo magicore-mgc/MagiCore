@@ -164,3 +164,141 @@ fn symlinked_legacy_manifest_is_rejected_for_test_core_detection() {
     .unwrap();
     assert!(detect_test_core(dir.path()).is_err());
 }
+
+// ── Java and .NET test lanes ────────────────────────────────────────────
+// `mgc build`/`mgc install` supported these languages while `mgc test` claimed
+// no runner existed; these cases pin the new lanes and their offline flags.
+// (`mgc build`/`install` hỗ trợ hai ngôn ngữ này trong khi `mgc test` báo không
+// có runner; các case này ghim lane mới và cờ offline.)
+
+#[test]
+fn maven_tests_run_offline_against_the_mgc_local_repository() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("pom.xml"),
+        "<project><modelVersion>4.0.0</modelVersion></project>",
+    )
+    .unwrap();
+
+    let (runner, args) = detect_test_runner(dir.path()).unwrap().unwrap();
+    assert_eq!(runner, "mvn");
+    assert_eq!(args, ["-o", "test"], "Maven must not reach the network");
+}
+
+#[test]
+fn both_gradle_dsls_select_gradle_offline() {
+    for manifest in ["build.gradle", "build.gradle.kts"] {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(manifest), "plugins { id 'java' }").unwrap();
+
+        let (runner, args) = detect_test_runner(dir.path()).unwrap().unwrap();
+        assert_eq!(runner, "gradle", "{manifest}");
+        assert_eq!(args, ["--offline", "test"], "{manifest} must run offline");
+    }
+}
+
+#[test]
+fn a_dotnet_project_tests_without_restoring() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("Fixture.csproj"),
+        "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>",
+    )
+    .unwrap();
+
+    let (runner, args) = detect_test_runner(dir.path()).unwrap().unwrap();
+    assert_eq!(runner, "dotnet");
+    assert_eq!(
+        args,
+        ["test", "--no-restore", "--nologo"],
+        "MagiCore already restored; dotnet must not restore again"
+    );
+}
+
+/// A solution file is enough: .NET test discovery works from the `.sln`.
+/// (File solution là đủ: dotnet test tìm được từ `.sln`.)
+#[test]
+fn a_dotnet_solution_also_selects_dotnet() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("Fixture.sln"),
+        "Microsoft Visual Studio Solution File",
+    )
+    .unwrap();
+
+    let (runner, _args) = detect_test_runner(dir.path()).unwrap().unwrap();
+    assert_eq!(runner, "dotnet");
+}
+
+/// The extension match ignores case, because Windows tooling does.
+/// (So khớp extension không phân biệt hoa thường vì tooling Windows như vậy.)
+#[test]
+fn the_dotnet_extension_match_ignores_case() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("Fixture.CSPROJ"), "<Project></Project>").unwrap();
+
+    let (runner, _args) = detect_test_runner(dir.path()).unwrap().unwrap();
+    assert_eq!(runner, "dotnet");
+}
+
+/// A directory named `something.csproj` is not a project file.
+/// (Thư mục tên `something.csproj` không phải project file.)
+#[test]
+fn a_directory_that_looks_like_a_project_file_is_ignored() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("Trap.csproj")).unwrap();
+
+    assert!(
+        detect_test_runner(dir.path()).unwrap().is_none(),
+        "a directory must not be mistaken for a .csproj"
+    );
+}
+
+/// No manifest means no runner, and the caller reports it rather than guessing.
+/// (Không manifest nghĩa là không runner; caller báo thay vì đoán.)
+#[test]
+fn an_empty_project_has_no_runner() {
+    let dir = tempfile::tempdir().unwrap();
+    assert!(detect_test_runner(dir.path()).unwrap().is_none());
+}
+
+/// Every language `mgc build` supports must have a test lane.
+///
+/// This is the parity rule stated as a test: the seven build manifests each
+/// resolve to a runner, so no language can be built but not tested.
+/// (Quy tắc parity dạng test: bảy manifest build đều quy ra một runner, nên
+/// không ngôn ngữ nào build được mà không test được.)
+#[test]
+fn every_buildable_language_has_a_test_runner() {
+    let cases: &[(&str, &str, &str)] = &[
+        (
+            "Cargo.toml",
+            "[package]\nname=\"x\"\nversion=\"0.1.0\"\n",
+            "cargo",
+        ),
+        ("go.mod", "module x\n", "go"),
+        ("pyproject.toml", "[project]\nname=\"x\"\n", "python3"),
+        ("pubspec.yaml", "name: x\n", "flutter"),
+        ("Package.swift", "// swift-tools-version: 5.9\n", "swift"),
+        ("pom.xml", "<project></project>", "mvn"),
+        ("build.gradle", "plugins { }", "gradle"),
+        ("Fixture.csproj", "<Project></Project>", "dotnet"),
+    ];
+    for (manifest, body, expected) in cases {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(manifest), body).unwrap();
+        let detected = detect_test_runner(dir.path())
+            .unwrap()
+            .unwrap_or_else(|| panic!("{manifest} must select a test runner"));
+        // Python's launcher is `python_cmd()` (python3 on unix, python on
+        // Windows), so assert the lane rather than the literal binary name.
+        // (Launcher Python là `python_cmd()` nên chỉ khẳng định lane.)
+        let matches =
+            detected.0 == *expected || (*expected == "python3" && detected.0.starts_with("python"));
+        assert!(
+            matches,
+            "{manifest} selected {} instead of {expected}",
+            detected.0
+        );
+    }
+}

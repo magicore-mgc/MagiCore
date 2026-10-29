@@ -2,7 +2,7 @@
 //! Facade LibAdapter đa ngôn ngữ dùng chung.
 
 mod adapter_factory;
-mod artifact_fetcher;
+pub(in crate::adapter) mod artifact_fetcher;
 mod audit_provider;
 mod capability_fallbacks;
 mod construction;
@@ -13,7 +13,8 @@ mod identity;
 mod lockfile_provider;
 mod native_policy;
 mod native_registry;
-mod package_adapter;
+mod optimizer_provider;
+pub(in crate::adapter) mod package_adapter;
 mod project_detection;
 mod resolve_first;
 mod scaffold_provider;

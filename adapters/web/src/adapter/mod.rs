@@ -1,5 +1,6 @@
 //! Web adapter owner wiring / wiring owner adapter web.
 mod adapter;
+mod optimizer_provider;
 pub use adapter::WebAdapter;
 mod age_policy;
 mod artifact_fetch;

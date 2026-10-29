@@ -4,9 +4,21 @@
 use crate::adapter::*;
 use crate::package::PackageId;
 
+/// A scan that inspected nothing is not clean.
+/// (Scan không kiểm gì thì không sạch.)
 #[test]
-fn audit_report_is_clean_when_no_vulns() {
+fn audit_report_of_zero_packages_is_not_clean() {
     let report = AuditReport::clean(0);
+    assert!(!report.is_clean());
+    assert!(matches!(
+        report.scanner_status,
+        crate::adapter::ScannerStatus::Partial { .. }
+    ));
+}
+
+#[test]
+fn audit_report_is_clean_when_a_package_was_inspected() {
+    let report = AuditReport::clean(1);
     assert!(report.is_clean());
 }
 
@@ -80,7 +92,10 @@ fn audit_report_never_clean_when_scanner_not_available() {
     let failed = AuditReport::scanner_failed("pip-audit", "schema drift");
     assert!(!failed.is_clean());
 
-    // Available + zero findings is the ONLY clean state.
-    // Available + 0 finding là trạng thái sạch DUY NHẤT.
-    assert!(AuditReport::clean(0).is_clean());
+    // Available + zero findings + at least one inspected package is the ONLY
+    // clean state.
+    // (Available + 0 finding + ít nhất một package đã kiểm là trạng thái sạch
+    // DUY NHẤT.)
+    assert!(AuditReport::clean(1).is_clean());
+    assert!(!AuditReport::clean(0).is_clean());
 }

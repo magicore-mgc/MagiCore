@@ -3,3 +3,4 @@
 //! Kiểm tra diagnostic tương thích và downcast typed error cục bộ.
 
 mod error;
+mod message_truthfulness;

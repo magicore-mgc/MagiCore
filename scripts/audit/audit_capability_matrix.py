@@ -44,11 +44,13 @@ E2E_TESTS = {
     "audit_app_kotlin_without_native_lock_reports_unsupported_not_tool_missing": ("app", "kotlin", "mgc-audit-unsupported", "unsupported_manifest"),
     "audit_unavailable_strict_fails_with_environment_exit_2": ("app", "flutter", "none", "tool_failure"),
     "audit_unavailable_non_strict_exits_0_with_warning": ("app", "flutter", "none", "tool_failure"),
-    # Go's active scanner is MGC OSV, but only direct go.mod pins are
-    # covered today; retain partial evidence and do not require it as a
-    # release-supported full-graph lane.
-    # Scanner Go hiện tại là OSV của MGC, nhưng mới phủ pin trực tiếp;
-    # giữ evidence partial, không bắt buộc như lane phủ graph đầy đủ.
+    # Go now reads `mgc.lock`, so coverage is the whole resolved graph and the
+    # lane is required (see EXPECTED_LANES). The `partial_coverage` case below
+    # stays: a project with no lock still has only `go.mod` pins and must keep
+    # reporting Partial rather than claiming a clean result.
+    # (Go nay đọc `mgc.lock` nên phủ toàn graph và là lane bắt buộc. Case
+    # `partial_coverage` vẫn giữ: project chưa có lock chỉ có pin `go.mod` và phải
+    # tiếp tục báo Partial, không được nhận là sạch.)
     "audit_lib_go_via_cli_reports_real_osv_finding_exit_1": ("lib", "go", "mgc-go-osv", "vulnerable_fixture"),
     "audit_lib_go_without_dependency_pins_is_partial_not_clean": ("lib", "go", "mgc-go-osv", "partial_coverage"),
     # P2 2026-09-10 — OSV-backed lanes (network advisories, no toolchain):
@@ -119,6 +121,13 @@ REQUIRED_KINDS = {"clean_fixture", "vulnerable_fixture", "tool_failure"}
 EXPECTED_LANES = [
     ("lib", "rust", "mgc-rust-osv"),
     ("lib", "python", "mgc-python-osv"),
+    # Go became a required lane once the scanner read `mgc.lock` instead of
+    # `go.mod`: the lock carries every resolved module, so coverage is no longer
+    # direct-only. Keeping it out of the manifest would let a transitive Go
+    # advisory ship while the matrix still looked complete.
+    # (Go thành lane bắt buộc khi scanner đọc `mgc.lock` thay vì `go.mod`: lock
+    # có mọi module đã resolve nên không còn direct-only.)
+    ("lib", "go", "mgc-go-osv"),
     ("lib", "java", "osv-maven"),
     ("lib", "dotnet", "osv-nuget"),
     ("app", "swift", "osv-swifturl"),

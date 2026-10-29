@@ -3,6 +3,7 @@
 
 pub mod container_flags;
 pub mod project_install_guard;
+pub mod project_manifest;
 pub mod source_flags;
 
 #[path = "shared.rs"]

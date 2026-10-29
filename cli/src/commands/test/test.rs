@@ -272,6 +272,43 @@ fn detect_test_runner(project_root: &Path) -> Result<Option<(String, Vec<String>
         )));
     }
 
+    // Maven/Gradle: `mgc build`/`mgc install` support Java, so `mgc test` must
+    // too — otherwise the same project could be built and installed but not
+    // tested, and the user would be told no runner exists.
+    // (-o / --offline keep the run on the MGC-populated local repository, the
+    // same rule the Rust/Go lanes follow: MagiCore resolves, the toolchain runs.)
+    // (Maven/Gradle: `mgc build`/`install` hỗ trợ Java nên `mgc test` cũng phải
+    // thế. `-o`/`--offline` giữ chạy trên local repo do MGC nạp, cùng quy tắc
+    // Rust/Go: MagiCore resolve, toolchain chạy.)
+    if read_project_manifest(project_root, "pom.xml")?.is_some() {
+        return Ok(Some((
+            "mvn".to_string(),
+            vec!["-o".to_string(), "test".to_string()],
+        )));
+    }
+    let has_gradle = read_project_manifest(project_root, "build.gradle")?.is_some()
+        || read_project_manifest(project_root, "build.gradle.kts")?.is_some();
+    if has_gradle {
+        return Ok(Some((
+            "gradle".to_string(),
+            vec!["--offline".to_string(), "test".to_string()],
+        )));
+    }
+
+    // .NET: `dotnet test` reuses the restore MagiCore already performed, so it
+    // must not restore again (`--no-restore`), matching `mgc build`.
+    // (.NET: `dotnet test` dùng lại restore MGC đã làm nên không restore lại.)
+    if crate::commands::core::shared::project_manifest::declares_dotnet_project(project_root) {
+        return Ok(Some((
+            "dotnet".to_string(),
+            vec![
+                "test".to_string(),
+                "--no-restore".to_string(),
+                "--nologo".to_string(),
+            ],
+        )));
+    }
+
     // Deno REMOVED from auto-detect (native-engine ruling 2026-09-10):
     // a deno.json project gets the honest migration error, not a silent
     // `deno test` spawn. Same for package.json scripts that used to be

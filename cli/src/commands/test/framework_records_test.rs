@@ -4,16 +4,22 @@
 use super::*;
 use std::collections::HashMap;
 
+/// Wizard owner folder per core (`wizard/<core>/<core>.rs`).
+///
+/// The file moved under its owner folder so each wizard follows the same-name
+/// rule; the table carries the new relative path rather than the flat file name.
+/// (Wizard nằm dưới owner folder cùng tên — bảng mang path tương đối mới thay vì
+/// tên file phẳng.)
 const WIZARD_CORES: &[(&str, &str)] = &[
-    ("ai.rs", "ai"),
-    ("app.rs", "app"),
-    ("cicd.rs", "cicd"),
-    ("cloud.rs", "clo"),
-    ("game.rs", "game"),
-    ("hardware.rs", "hardware"),
-    ("iot.rs", "iot"),
-    ("lib.rs", "lib"),
-    ("web.rs", "web"),
+    ("ai/ai.rs", "ai"),
+    ("app/app.rs", "app"),
+    ("cicd/cicd.rs", "cicd"),
+    ("cloud/cloud.rs", "clo"),
+    ("game/game.rs", "game"),
+    ("hardware/hardware.rs", "hardware"),
+    ("iot/iot.rs", "iot"),
+    ("lib/lib.rs", "lib"),
+    ("web/web.rs", "web"),
 ];
 
 fn wizard_ids(source: &str) -> Vec<String> {

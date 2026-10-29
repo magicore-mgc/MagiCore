@@ -233,6 +233,14 @@ jobs:
         run: python3 scripts/audit/audit_mutation_calls.py
       - name: Mutation-gate negative controls (fail if the gate is blind)
         run: python3 scripts/audit/audit_mutation_calls.py --self-test
+      # A test named "every"/"all"/"each" must iterate a real source, or say why
+      # in REVIEWED_NARROW. Three such tests covered 4-of-9, 2-of-4 and 16-of-24
+      # while their names claimed universality.
+      # (Test tên "every/all/each" phải lặp nguồn thật hoặc khai lý do.)
+      - name: Audit test-scope honesty (fail on "every" that covers a subset)
+        run: python3 scripts/audit/audit_test_scope.py
+      - name: Test-scope gate negative controls (fail if the gate is blind)
+        run: python3 scripts/audit/audit_test_scope.py --self-test
       - name: Audit ledger stays gitignored (local-only)
         run: git check-ignore -q docs/specs/dependencyDelegationAudit.json
 
@@ -570,11 +578,16 @@ jobs:
         # must never corrupt the store; doctor --repair must end HEALTHY.
         # (Gate 11-B.2 handshake failpoint: SIGKILL tại mọi phase install
         # không được làm hỏng store; doctor --repair phải kết thúc HEALTHY.)
-        run: cargo test -p mgc --test kill_injection_matrix --locked
+        # `--features fault-injection` is required: the parking hook is
+        # compiled only with that feature, so without it the target would pass
+        # without ever injecting a fault.
+        # (`--features fault-injection` bắt buộc: hook đỗ chỉ build kèm feature;
+        # thiếu nó target sẽ pass mà không hề inject lỗi.)
+        run: cargo test -p mgc --features fault-injection --test kill_injection_matrix --locked
         timeout-minutes: 30
 
       - name: stress shared store matrix (MUST PASS — no || true)
-        run: cargo test -p mgc --test stress_shared_store_matrix --locked
+        run: cargo test -p mgc --features fault-injection --test stress_shared_store_matrix --locked
         timeout-minutes: 20
 
       - name: install process race (MUST PASS — no || true)

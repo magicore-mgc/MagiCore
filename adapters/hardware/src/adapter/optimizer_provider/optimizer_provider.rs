@@ -8,10 +8,10 @@ use mgc_types::capabilities::OptimizerProvider;
 impl OptimizerProvider for HardwareAdapter {
     /// Evidence: optimizer/bench packages are materialized by the mgc
     /// generator (`mgc add-hardware <pkg>` — the old add/remove guidance)
-    /// and listed below; `mgc optimize`/`bench` run the mgc harness.
+    /// and listed below; `mgc optimizer`/`mgc bench` run the mgc harness.
     /// Dẫn chứng: package optimizer/bench được materialize bởi generator
     /// mgc (`mgc add-hardware <pkg>`) và liệt kê bên dưới;
-    /// `mgc optimize`/`bench` chạy harness của mgc.
+    /// `mgc optimizer`/`mgc bench` chạy harness của mgc.
     fn probe_optimizer(&self) -> MgResult<()> {
         Ok(())
     }

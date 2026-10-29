@@ -10,7 +10,7 @@ mod package_resolution;
 #[path = "post_update_install/mod.rs"]
 mod post_update_install;
 #[path = "target_selection/mod.rs"]
-mod target_selection;
+pub(in crate::commands) mod target_selection;
 #[path = "types/mod.rs"]
 mod types;
 pub(crate) use implementation::{native_update, update};

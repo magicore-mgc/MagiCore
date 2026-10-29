@@ -6,6 +6,7 @@
 
 pub mod auth;
 mod credential_security;
+mod liveness;
 pub mod model;
 pub mod npm;
 pub mod oci;
@@ -111,6 +112,7 @@ pub async fn serve(config: RegistryServerConfig) -> anyhow::Result<()> {
         .merge(trusted::routes())
         .merge(oci::routes())
         .merge(pypi::routes())
+        .merge(liveness::routes())
         .layer(axum::extract::DefaultBodyLimit::max(config.max_body_size))
         .layer(tower_http::cors::CorsLayer::permissive());
 
@@ -137,6 +139,18 @@ pub async fn serve(config: RegistryServerConfig) -> anyhow::Result<()> {
         app = app
             .route_layer(axum::middleware::from_fn(ratelimit::rate_limit_middleware))
             .layer(axum::Extension(limiter));
+    } else {
+        // Say it out loud. The default is "off", so an operator who binds to a
+        // non-loopback address gets an unthrottled public endpoint unless they
+        // read a log line; silence there is the difference between a choice and a
+        // surprise.
+        // (Nói rõ. Mặc định là "tắt", nên khi bind ra ngoài loopback mà không đặt
+        // giới hạn thì endpoint công khai không bị chặn — im lặng ở đây là khác
+        // biệt giữa lựa chọn và bất ngờ.)
+        tracing::warn!(
+            "rate limiting is OFF (--rate-limit 0): every client may issue unlimited requests; \
+             set --rate-limit <req/s/IP> before exposing this registry beyond loopback"
+        );
     }
     // Keep auth context outside route middleware so `from_fn` extractors can read it.
     // Đặt auth context ngoài middleware route để extractor `from_fn` đọc được.

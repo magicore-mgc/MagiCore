@@ -1,5 +1,9 @@
 # Rust
 target/
+# Rust module directories literally named `target` are SOURCE, not build output.
+# (Thư mục module Rust tên `target` là SOURCE, không phải build output.)
+!core/crates/mgc-lockfile/src/export/target/
+!cli/src/commands/build/web_engine/target/
 
 # Test scaffold artifacts
 /test-fw/
@@ -19,6 +23,9 @@ bazel-genfiles/
 
 # TypeScript/Node
 node_modules/
+# A Rust module directory literally named `node_modules` is SOURCE, not an install tree.
+# (Thư mục module Rust tên `node_modules` là SOURCE, không phải cây cài đặt.)
+!adapters/web/src/bin/bench_matrix/metrics/node_modules/
 dist/
 *.tsbuildinfo
 *.log
@@ -43,8 +50,13 @@ Thumbs.db
 __pycache__/
 *.py[cod]
 
-# Task docs (internal, not public)
-task/
+# Task docs (internal, not public) — anchored to the repo root so a RULE-named
+# source folder deeper in the tree is not swallowed.
+# (Docs task nội bộ — neo ở root để không nuốt folder source tên `task`.)
+/task/
+# Rust module directory literally named `task` is SOURCE.
+# (Thư mục module Rust tên `task` là SOURCE.)
+!core/crates/mgc-exec/src/parallel/task/
 
 # Secrets
 *.key

@@ -21,6 +21,7 @@ mod primary_thread;
 mod process_snapshot;
 
 #[cfg(windows)]
+#[allow(unsafe_code)] // SAFETY proof is on the block below. — Giải trình SAFETY nằm ngay dưới.
 pub(in crate::run::implementation::windows_job::implementation) fn windows_last_error() -> u32 {
     // SAFETY: GetLastError reads the calling thread's Win32 error slot.
     unsafe { windows_sys::Win32::Foundation::GetLastError() }

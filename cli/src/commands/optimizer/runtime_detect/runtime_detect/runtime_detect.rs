@@ -32,9 +32,21 @@ pub fn detect_runtimes(project_root: &Path, core: &str) -> Vec<DetectedRuntime> 
             });
         }
         _ => {
-            // Game/iot/cloud/cicd — generic detection or fallback — phát hiện chung hoặc dự phòng
+            // Game/iot/cloud/cicd/hardware — generic detection or fallback.
+            // (Game/iot/cloud/cicd/hardware — phát hiện chung hoặc dự phòng.)
             if project_root.join("Cargo.toml").exists() {
                 runtimes.push(DetectedRuntime::RustLib);
+            } else {
+                // No language manifest, but the project is still a real project:
+                // Godot ships `project.godot`, hardware scaffolds carry a marker,
+                // and a pipeline repo has only workflow files. The machine-level
+                // tuning (hardware profile, GPU snapshot) applies to all of them,
+                // so they get the generic lane instead of "No runtime detected".
+                // (Không manifest ngôn ngữ nhưng vẫn là project thật: Godot có
+                // `project.godot`, hardware có marker, pipeline chỉ có workflow.
+                // Tuning mức máy áp được cho tất cả, nên chúng nhận lane chung thay
+                // vì "No runtime detected".)
+                runtimes.push(DetectedRuntime::GenericToolchain);
             }
         }
     }

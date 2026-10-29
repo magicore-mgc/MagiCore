@@ -29,5 +29,7 @@ impl WebAdapter {
         Capability::Materializer,
         Capability::LifecycleRunner,
         Capability::AuditProvider,
+        // Shared optimizer dispatch (`mgc optimizer`) applies to this core.
+        Capability::OptimizerProvider,
     ];
 }

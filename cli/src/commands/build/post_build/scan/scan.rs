@@ -87,7 +87,12 @@ impl Report {
 /// are covered by the output SBOM's hashes instead.
 /// Đuôi văn bản đáng đọc. Asset nhị phân không đánh giá được theo cách này và
 /// đã được hash trong SBOM output.
-const TEXT_EXTENSIONS: [&str; 6] = ["js", "mjs", "cjs", "css", "html", "json"];
+// `map` is scanned because a source map is precisely the artefact that embeds
+// absolute build-machine paths; skipping it meant the `absolute-source-path`
+// rule could only ever fire on an inline map.
+// (`map` được scan vì source map chính là artefact nhúng đường dẫn build tuyệt
+// đối; bỏ qua nó khiến rule `absolute-source-path` chỉ bắt được map inline.)
+const TEXT_EXTENSIONS: [&str; 7] = ["js", "mjs", "cjs", "css", "html", "json", "map"];
 
 /// Scan every text file under `output_root`.
 /// Scan mọi file văn bản dưới `output_root`.
@@ -177,8 +182,16 @@ fn inspect_text(relative: &str, text: &str, report: &mut Report) {
     }
 
     // A source map that claims `sources` outside the project leaks build paths.
-    // Nếu map nguồn khai `sources` ngoài project thì lộ đường dẫn build.
-    if text.contains("webpack://") && text.contains("/Users/") {
+    // Every platform's home prefix counts: checking only `/Users/` (macOS) let a
+    // Linux or Windows build machine path ship undetected, so the same leak was
+    // reported on one OS and silent on the other two.
+    // (Mọi prefix home của từng nền tảng đều được tính: chỉ kiểm `/Users/` khiến
+    // đường dẫn máy build Linux/Windows lọt mà không báo.)
+    if text.contains("webpack://")
+        && ABSOLUTE_BUILD_PATH_MARKERS
+            .iter()
+            .any(|marker| text.contains(marker))
+    {
         report.findings.push(Finding {
             severity: Severity::Note,
             file: relative.to_string(),
@@ -187,6 +200,14 @@ fn inspect_text(relative: &str, text: &str, report: &mut Report) {
         });
     }
 }
+
+/// Home-prefix markers of a developer machine, one per supported OS.
+///
+/// Kept as data rather than inline literals so a new platform is one entry and
+/// the scanner cannot silently cover only the author's OS.
+/// (Marker prefix home của máy dev, mỗi OS một mục. Để dạng dữ liệu để thêm nền
+/// tảng mới chỉ là thêm một dòng và scanner không lặng lẽ chỉ phủ OS của tác giả.)
+const ABSOLUTE_BUILD_PATH_MARKERS: &[&str] = &["/Users/", "/home/", "C:\\Users\\", "/root/"];
 
 #[cfg(test)]
 #[path = "test/mod.rs"]

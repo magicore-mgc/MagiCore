@@ -7,6 +7,7 @@ mod dependency_resolver;
 mod factory;
 mod identity;
 mod lockfile_provider;
+mod optimizer_provider;
 mod package_adapter;
 mod platformio_manifest;
 mod project_detection;

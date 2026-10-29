@@ -10,6 +10,7 @@ mod factory;
 mod identity;
 mod lifecycle;
 mod lockfile;
+mod optimizer_provider;
 mod package_adapter;
 mod pending_install_state;
 

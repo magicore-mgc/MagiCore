@@ -31,14 +31,14 @@ const VULNERABLE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
          <artifact name="commons-text-1.9.jar">
          </artifact>
       </dependency>
-      <dependency group="com.google.guava" name="guava" version="32.0.0-jre">
+      <dependency group="com.google.guava" name="guava" version="33.7.2-jre">
       </dependency>
    </components>
 </verification-metadata>
 "#;
 
 const CLEAN: &str = r#"<components>
-   <dependency group="com.google.guava" name="guava" version="32.0.0-jre">
+   <dependency group="com.google.guava" name="guava" version="33.7.2-jre">
    </dependency>
    <dependency group="org.slf4j" name="slf4j-api" version="2.0.9">
    </dependency>

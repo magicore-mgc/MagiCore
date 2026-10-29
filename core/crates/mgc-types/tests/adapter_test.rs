@@ -4,9 +4,35 @@
 use mgc_types::adapter::*;
 use mgc_types::package::PackageId;
 
+/// A scan of ZERO packages is not a clean scan.
+///
+/// Nothing was inspected, so calling it clean advertises verified safety for a
+/// project that was never looked at. This test used to assert the opposite and
+/// was the contract that allowed `mgc audit` to print "✔ No vulnerabilities"
+/// on a manifest-less project.
+/// (Scan 0 package KHÔNG phải scan sạch: không có gì được kiểm nên gọi là sạch
+/// là quảng cáo an toàn đã xác minh cho project chưa từng được xem. Test này
+/// từng khẳng định ngược lại và chính là contract cho phép `mgc audit` in
+/// "✔ No vulnerabilities" trên project không manifest.)
 #[test]
-fn audit_report_is_clean_when_no_vulns() {
+fn audit_report_of_zero_packages_is_not_clean() {
     let report = AuditReport::clean(0);
+    assert!(
+        !report.is_clean(),
+        "zero packages audited cannot be verified clean"
+    );
+    assert!(matches!(
+        report.scanner_status,
+        ScannerStatus::Partial { .. }
+    ));
+    assert_eq!(report.packages_audited, 0);
+}
+
+/// One package with no findings IS a clean scan.
+/// (Một package không finding LÀ scan sạch.)
+#[test]
+fn audit_report_is_clean_when_a_package_was_inspected() {
+    let report = AuditReport::clean(1);
     assert!(report.is_clean());
 }
 
@@ -80,9 +106,12 @@ fn audit_report_never_clean_when_scanner_not_available() {
     let failed = AuditReport::scanner_failed("pip-audit", "schema drift");
     assert!(!failed.is_clean());
 
-    // Available + zero findings is the ONLY clean state.
-    // Available + 0 finding là trạng thái sạch DUY NHẤT.
-    assert!(AuditReport::clean(0).is_clean());
+    // Available + zero findings + at least one inspected package is the ONLY
+    // clean state.
+    // (Available + 0 finding + ít nhất một package đã kiểm là trạng thái sạch
+    // DUY NHẤT.)
+    assert!(AuditReport::clean(1).is_clean());
+    assert!(!AuditReport::clean(0).is_clean());
 }
 
 /// Deserialization must round-trip the tagged serde shape so external
@@ -329,4 +358,72 @@ fn audit_fix_default_names_the_core() {
         .expect("default prepare_add resolves immediately")
         .expect_err("default prepare_add must fail closed");
     assert!(prepare_err.to_string().contains("native prepare-add"));
+}
+
+/// `Available` alone never means clean — at least one package must be inspected.
+///
+/// Six production sites build `AuditReport { scanner_status: Available, .. }`
+/// directly instead of calling `clean()`, so a guard that lived only inside
+/// `clean()` left them able to report a verified-clean result for an empty graph.
+/// This asserts the shared predicate instead of one constructor.
+/// (Sáu nơi production dựng `AuditReport { Available, .. }` trực tiếp thay vì gọi
+/// `clean()`, nên chặn chỉ trong `clean()` vẫn để chúng báo sạch cho graph rỗng.
+/// Test này khẳng định predicate chung.)
+#[test]
+fn available_with_zero_packages_is_never_clean() {
+    let report = AuditReport {
+        packages_audited: 0,
+        vulnerability_count: 0,
+        vulnerabilities: vec![],
+        scanner_status: ScannerStatus::Available,
+    };
+    assert!(
+        !report.is_clean(),
+        "Available + no findings + zero packages inspects nothing"
+    );
+}
+
+/// Each extra package makes the report eligible again, so the boundary is exactly
+/// one and not something larger.
+/// (Mốc chính xác là một, không phải lớn hơn.)
+#[test]
+fn the_clean_boundary_is_exactly_one_package() {
+    for audited in [1usize, 2, 50] {
+        let report = AuditReport {
+            packages_audited: audited,
+            vulnerability_count: 0,
+            vulnerabilities: vec![],
+            scanner_status: ScannerStatus::Available,
+        };
+        assert!(
+            report.is_clean(),
+            "{audited} inspected packages must be clean"
+        );
+    }
+}
+
+/// A finding keeps the report dirty regardless of coverage.
+/// (Có finding thì không sạch dù phủ bao nhiêu.)
+#[test]
+fn one_finding_outranks_full_coverage() {
+    let vulnerability = Vulnerability {
+        package: PackageId::parse("pkg@1.0.0").unwrap(),
+        title: "GHSA-test".to_string(),
+        severity: "high".to_string(),
+        cve: String::new(),
+        severity_level: VulnerabilitySeverity::High,
+        patched_versions: None,
+        url: None,
+        scanner: None,
+        ecosystem: None,
+        evidence_at: None,
+        finding_class: FindingClass::Vulnerability,
+    };
+    let report = AuditReport {
+        packages_audited: 10,
+        vulnerability_count: 1,
+        vulnerabilities: vec![vulnerability],
+        scanner_status: ScannerStatus::Available,
+    };
+    assert!(!report.is_clean());
 }

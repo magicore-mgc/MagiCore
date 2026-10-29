@@ -5,7 +5,6 @@ use mgc_types::MgResult;
 // Unsupported probes/defaults from mgc_types::capabilities.
 // Capability chưa claim — impl rỗng kế thừa probe/default fail-closed
 // từ mgc_types::capabilities.
-impl mgc_types::capabilities::OptimizerProvider for LibAdapter {}
 impl mgc_types::capabilities::SimulatorProvider for LibAdapter {}
 impl mgc_types::capabilities::DeviceProvider for LibAdapter {}
 impl mgc_types::capabilities::DeployProvider for LibAdapter {}
