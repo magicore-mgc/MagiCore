@@ -9,7 +9,7 @@ spec:
   project: demo-project
   source:
     repoURL: 'https://example.invalid/repository'
-    targetRevision: v1.1.0-rc.10
+    targetRevision: v1.2.0
     path: deploy
   destination:
     server: https://kubernetes.default.svc

@@ -6,6 +6,65 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.2.0] - 2026-10-30
+
+First official release without a release-candidate suffix. Everything below is
+shipped in this version; items still open are listed in the release notes for
+v1.2.1.
+
+### Security
+- Cache entries are keyed by registry origin (`name@version` alone let one
+  registry's tarball be served to a project resolving the same id from
+  another), and a package without SRI integrity now fails closed behind an
+  explicit, logged escape hatch (`MAGICORE_ALLOW_UNSIGNED_INTEGRITY`).
+- Install hooks no longer reach bare `node`/`python`/`python3` from the install
+  scope; lifecycle hooks declare the project script scope, which still forbids
+  every package manager.
+- `mgc login` takes its registry from user configuration and environment only,
+  never from a `.npmrc` inside the project.
+- The registry server has no CORS layer by default; origins are opt-in with
+  `--cors-origin`.
+- Sigstore attestation identities must match a pinned workflow allowlist, and a
+  core attestation key is trusted only when the project pins it.
+- One project lock namespace for every core, keyed on the canonical project
+  path; a symlinked or non-directory `.magicore` is refused before any write.
+- Loopback tarballs require a loopback registry, and only the two canonical
+  npmjs CDN hosts are trusted.
+- `mgc verify-sbom <artifact> --trust-key <b64>` verifies build SBOM signatures
+  fail-closed; signing no longer writes `bundle..sig` for extensionless files.
+- CI generation refuses to emit a pipeline when the installer digest pin is
+  empty, and backs up a differing existing pipeline before overwriting it.
+- CAS heal verifies blobs as a stream instead of loading them whole.
+- Registration tokens carry an `mgc_` prefix and 244 random bits.
+- Rotation of attestation keys is bounded to a 30-day grace window, and the
+  stored attestation is covered by a sibling signature.
+- `libz-sys` updated for RUSTSEC-2026-0418.
+
+### Added
+- `mgc install-lib-binary` (alias `i-lib`): installs a signed binary into the
+  lib keg store, verifying an Ed25519 manifest and its BLAKE3 digest.
+- `mgc store stats --json`: CAS blobs and bytes, tarball cache entries and
+  bytes, memo hit/miss/eviction counters, and payload dedupe by inode.
+- `mgc model bench`: real per-runtime inference latency (median and p95) with
+  unavailable runtimes reported honestly instead of estimated.
+- `mgc ci-generate` emits an ArgoCD `AppProject`/`Application` pair.
+- Golden files pin every generated pipeline byte-for-byte.
+
+### Changed
+- Attestations bind the core identity (core version, tool version, MSRV,
+  ecosystem set) with domain separation, so a signature cannot be replayed onto
+  another core or protocol.
+- A CI/CD project's default verify chain no longer ends in a build step that
+  core can never satisfy.
+
+### Fixed
+- `create-lib`/`create-ai`/`create-app` scaffold from an explicit local source,
+  and `create-lib rust` lands the crate at the destination instead of a nested
+  directory.
+- Godot import no longer launches the GUI editor during scaffolding.
+- The web adapter no longer takes a second project lock while the CLI guard
+  already holds it, which broke installs routed through an adapter.
+
 ## [Unreleased]
 
 ### Breaking

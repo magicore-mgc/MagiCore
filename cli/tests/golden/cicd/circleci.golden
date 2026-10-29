@@ -25,7 +25,7 @@ jobs:
             else
               echo "WARNING: installer integrity NOT pinned (MGC_INSTALLER_SHA256 empty) — trusting commit SHA 51acbbb942d48407af82f5282fed0ffd5038516d only"
             fi
-            bash "$installer" --version v1.1.0-rc.10
+            bash "$installer" --version v1.2.0
       - run: mgc --version
       - run: mgc install
       - run:

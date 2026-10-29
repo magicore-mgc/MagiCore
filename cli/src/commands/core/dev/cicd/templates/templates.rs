@@ -26,8 +26,8 @@ pub(in crate::commands::core::dev::cicd) const MGC_INSTALLER_SHA: &str =
 
 /// Embedded SHA-256 of `scripts/install/install-from-gh.sh` at `MGC_INSTALLER_SHA`.
 /// Contract (P0-E/T0.5):
-/// - empty → the generated pipeline prints a loud WARNING and still runs
-///   (no break for existing pipelines);
+/// - empty → generation is refused (SEC-10): an unpinned installer lets the
+///   pipeline install whatever the tag points at today;
 /// - a `.sha256` file published next to the installer is verified whenever
 ///   present (mismatch fails the pipeline);
 /// - when set, a checksum mismatch FAILS the pipeline (fail-closed).

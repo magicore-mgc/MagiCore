@@ -308,6 +308,16 @@ jobs:
       - name: Global CLI tool install, execute, recovery, and Windows PATH E2E
         shell: bash
         run: cargo test -p mgc --test global_tool_e2e --locked -- --ignored --exact platform::global_cli_install_update_list_and_remove_are_isolated_and_persistent --test-threads=1 --nocapture
+      - name: Full workspace test suite (Windows)
+        # Windows was only ever checked by narrow spawn tests, so a Windows
+        # regression in an ordinary unit test could reach a release. This runs
+        # the whole workspace; the Linux job keeps the faster split it has.
+        # (Windows trước đây chỉ được kiểm bằng vài test spawn hẹp, nên lỗi
+        # regression Windows ở một unit test thường có thể lọt vào release. Job
+        # này chạy toàn workspace; job Linux giữ cách chia nhanh hiện tại.)
+        shell: bash
+        run: cargo test --workspace --no-fail-fast --locked -- --test-threads=1
+        timeout-minutes: 90
       - name: cargo check
         run: cargo check --workspace --all-targets --locked
       - name: module hygiene
