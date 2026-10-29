@@ -247,6 +247,11 @@ jobs:
   windows-spawn-tests:
     name: Windows Spawn Tests
     runs-on: windows-latest
+    # One job-level ceiling instead of per-step sums: a single hung suite must
+    # fail the job, and the full-suite step below is the slowest one.
+    # (Một trần cấp job thay cho tổng từng step: một suite treo phải làm job
+    # fail, và step full-suite bên dưới là step chậm nhất.)
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
