@@ -54,7 +54,9 @@ fn only_loopback_origins_may_open_the_hmr_socket() {
             "{denied} must be refused"
         );
     }
-    // A handshake with no Origin header at all is refused as well.
-    // (Handshake không có header Origin cũng bị từ chối.)
-    assert!(!origin_is_loopback(&HeaderMap::new()));
+    // A client with no Origin header is not a browser page and is already
+    // connected to the loopback listener, so it may proceed.
+    // (Client không có header Origin không phải trang trình duyệt và đã nối tới
+    // listener loopback, nên được tiếp tục.)
+    assert!(origin_is_loopback(&HeaderMap::new()));
 }

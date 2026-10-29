@@ -41,18 +41,25 @@ pub async fn hmr_ws_handler(
     ws.on_upgrade(|socket| handle_socket(socket, manager))
 }
 
-/// Whether the `Origin` header names a loopback host.
-/// Header `Origin` có trỏ host loopback không.
+/// Whether the handshake may proceed: a browser must present a loopback
+/// `Origin`, while a client that sends none is not a browser and already
+/// reached this loopback listener directly.
+/// Handshake có được tiếp tục không: trình duyệt phải gửi `Origin` loopback,
+/// còn client không gửi Origin không phải trình duyệt và đã kết nối trực tiếp
+/// tới listener loopback này.
 ///
-/// A missing origin is refused too: only a browser dev page on this machine is
-/// expected to connect.
-/// (Origin thiếu cũng bị từ chối: chỉ trang dev trên máy này mới được nối.)
+/// The attack this blocks is a page the developer visits: it always sends
+/// `Origin`. Refusing an absent header as well would break non-browser tools
+/// without adding protection.
+/// (Tấn công bị chặn là trang developer mở: nó luôn gửi `Origin`. Từ chối cả
+/// trường hợp thiếu header sẽ phá công cụ không phải trình duyệt mà không thêm
+/// bảo vệ.)
 fn origin_is_loopback(headers: &axum::http::HeaderMap) -> bool {
     let Some(origin) = headers
         .get(axum::http::header::ORIGIN)
         .and_then(|value| value.to_str().ok())
     else {
-        return false;
+        return headers.get(axum::http::header::ORIGIN).is_none();
     };
     let host = origin
         .split_once("://")
