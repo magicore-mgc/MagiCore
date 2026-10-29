@@ -86,8 +86,13 @@ pub(in crate::install::run_install) fn initialize<'a>(
     // The project lock serializes node_modules and lockfile mutation. Its OS
     // file lock is released automatically when a crashed process exits.
     // Khóa file theo project tuần tự hóa mutation và tự nhả khi process chết.
-    let project_key_lock = layout.root().to_string_lossy().to_string();
-    let install_lock = ProjectInstallLock::acquire_at(&layout.locks_dir(), &project_key_lock)
+    // SEC-07: key on the project root (the CLI guard's key) inside the shared
+    // store lock root, so every core contends on one file per project.
+    // (SEC-07: khoá theo project root (cùng key với CLI guard) trong root khoá
+    // store dùng chung, để mọi core tranh một file cho mỗi project.)
+    let project_key_lock = project_root.to_string_lossy().to_string();
+    let lock_root = mgc_store::default_store_root().join("locks");
+    let install_lock = ProjectInstallLock::acquire_at(&lock_root, &project_key_lock)
         .map_err(|error| MgError::Store(error.to_string()))?;
     let recovered = recover_interrupted_install(project_root, &node_modules, &layout.temp_dir())?;
     if recovered.restored_backup || recovered.removed_staging > 0 {

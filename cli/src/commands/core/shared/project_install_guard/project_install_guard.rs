@@ -34,12 +34,39 @@ pub(crate) struct ProjectInstallGuard {
 /// layout store để mọi core tranh cùng một file cho cùng một project — đó chính
 /// là mục đích của khoá.
 pub(crate) fn acquire(project_root: &Path, core: &str) -> Result<ProjectInstallGuard> {
-    // The lock lives under the project's own MagiCore metadata, so two installs
-    // of the same directory contend on the same file whichever core runs them.
-    // Khoá nằm dưới metadata MagiCore của chính project, nên hai lần cài cùng
-    // thư mục tranh cùng một file bất kể core nào chạy.
-    let locks_root = project_root.join(".magicore").join("locks");
+    // SEC-07: one lock namespace for every core. The Web adapter locks under
+    // its store layout, so locking under `<project>/.magicore/locks` here let
+    // `mgc install-web` and `mgc install` (another core) write one tree at the
+    // same time. Both routes now use the shared store lock root.
+    // (SEC-07: một namespace khoá cho mọi core. Adapter Web khoá dưới layout
+    // store, nên khoá dưới `<project>/.magicore/locks` ở đây khiến
+    // `mgc install-web` và `mgc install` (core khác) ghi cùng cây cùng lúc.
+    // Cả hai route giờ dùng chung root khoá của store.)
+    let locks_root = mgc_store::default_store_root().join("locks");
     let key = project_root.to_string_lossy().to_string();
+    // SEC-08: a repository can ship `.magicore/` as a symlink to elsewhere.
+    // The lock file itself lives in the store, but the guard refuses to run at
+    // all when the project-local metadata directory is not a real directory,
+    // so a planted link cannot redirect later staging either.
+    // (SEC-08: repo có thể ship `.magicore/` là symlink trỏ ra ngoài. File khoá
+    // nằm trong store, nhưng guard từ chối chạy khi thư mục metadata trong
+    // project không phải thư mục thật, để link bị cài không chuyển hướng được
+    // staging về sau.)
+    let metadata_dir = project_root.join(".magicore");
+    if let Ok(metadata) = std::fs::symlink_metadata(&metadata_dir) {
+        if metadata.file_type().is_symlink() {
+            anyhow::bail!(
+                "refusing to install ({core}): '{}' is a symlink; a real directory is required",
+                metadata_dir.display()
+            );
+        }
+        if !metadata.is_dir() {
+            anyhow::bail!(
+                "refusing to install ({core}): '{}' exists and is not a directory",
+                metadata_dir.display()
+            );
+        }
+    }
     let lock = mgc_store::ProjectInstallLock::acquire_at(&locks_root, &key).map_err(|error| {
         anyhow::anyhow!(
             "another MagiCore install holds this project ({core}): {error}. \
