@@ -81,7 +81,7 @@ pub(in crate::commands::audit::signatures) fn verify_public_attestation(
     // allowlist đã pin.)
     let workflow_identity = format!("https://github.com/{workflow}");
     let allowed = trusted_workflow_identities();
-    if !allowed.is_empty() && !allowed.iter().any(|pattern| workflow_identity == *pattern) {
+    if !allowed.is_empty() && !allowed.contains(&workflow_identity) {
         return Err(SigstoreAttestationError::Invalid);
     }
     if allowed.is_empty() {
