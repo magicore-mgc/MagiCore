@@ -2,7 +2,7 @@
 //! Export the stable hasher API and register local tests — Export API hasher ổn định và đăng ký test local.
 
 mod hash;
-pub use hash::Blake3Hasher;
+pub use hash::{Blake3Hasher, Blake3StreamingHasher};
 
 #[cfg(test)]
 #[path = "test/mod.rs"]

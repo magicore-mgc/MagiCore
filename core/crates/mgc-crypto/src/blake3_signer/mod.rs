@@ -7,5 +7,5 @@ mod file;
 mod hash;
 mod types;
 
-pub use hash::Blake3Hasher;
+pub use hash::{Blake3Hasher, Blake3StreamingHasher};
 pub use types::Blake3Hash;

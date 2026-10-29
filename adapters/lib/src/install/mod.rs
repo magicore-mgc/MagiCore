@@ -6,6 +6,7 @@ mod cargo_lock;
 pub mod fetch;
 // Public for integration tests proving cross-project store reuse; semver remains crate-internal.
 // Public cho integration test chứng minh dùng lại store giữa project; semver vẫn nội bộ crate.
+pub mod keg;
 pub mod shared_store;
 pub mod verify;
 
