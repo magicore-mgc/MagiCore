@@ -5,7 +5,7 @@ use super::*;
 
 #[tokio::test]
 async fn test_retry_deferred_does_not_bypass_max_stale_limit() {
-    let _env_guard = env_test_lock().lock().unwrap();
+    let _env_guard = crate::environment_test_guard();
     let shared = tempdir_real().unwrap();
     let registry = native::npm_registry::NpmRegistry::new("http://127.0.0.1:9");
     let cache = SharedWebCache {

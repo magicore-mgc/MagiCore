@@ -35,6 +35,18 @@ fn npm_tarball(name: &str, version: &str) -> Vec<u8> {
     encoder.finish().unwrap()
 }
 
+/// SRI for the fixture tarball; SEC-01 makes integrity mandatory.
+/// (SRI cho tarball fixture; SEC-01 bắt buộc integrity.)
+fn sri_for(name: &str, version: &str) -> String {
+    use base64::Engine as _;
+    use sha2::{Digest, Sha512};
+    format!(
+        "sha512-{}",
+        base64::engine::general_purpose::STANDARD
+            .encode(Sha512::digest(npm_tarball(name, version)))
+    )
+}
+
 struct NpmFixture {
     _server: mockito::ServerGuard,
     _mocks: Vec<mockito::Mock>,
@@ -54,7 +66,10 @@ impl NpmFixture {
                     "name": name,
                     "version": version,
                     "dependencies": {},
-                    "dist": { "tarball": format!("{url}/{name}/-/{name}-{version}.tgz") },
+                    "dist": {
+                        "tarball": format!("{url}/{name}/-/{name}-{version}.tgz"),
+                        "integrity": sri_for(name, version),
+                    },
                 } },
             });
             mocks.push(

@@ -7,7 +7,7 @@ fn dirhash_matches_known_shape() {
     let mk = |name: &str, data: &[u8]| zip_reader::ZipEntry {
         name: name.to_string(),
         data: data.to_vec(),
-            unix_mode: None,
+        unix_mode: None,
     };
     let a = vec![mk("m@v1/b", b"bbb"), mk("m@v1/a", b"aaa")];
     let b = vec![mk("m@v1/a", b"aaa"), mk("m@v1/b", b"bbb")];

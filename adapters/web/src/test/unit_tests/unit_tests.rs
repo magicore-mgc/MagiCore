@@ -6,6 +6,10 @@ use mgc_types::{Manifest, MgError, PackageId, PackageName, Version, VersionRange
 use mgc_types::adapter::{InstallOptions, ResolvedGraph, ResolvedPackage, PackageAdapter};
 // Tests mutate env single-threaded (edition 2024 unsafe rule) — test đổi env 1 luồng.
 use super::*;
+
+/// Registry origin used by install tests that seed cache entries.
+/// Origin registry dùng bởi test install có seed entry cache.
+pub(crate) const TEST_REGISTRY_URL: &str = "http://127.0.0.1:9";
 use crate::audit::parse_advisory_bulk_response;
 use base64::Engine;
 use flate2::Compression;
@@ -122,7 +126,11 @@ fn seed_cached_tarball(root: &Path, pkg: &PackageId) -> String {
 fn seed_cached_tarball_with_files(root: &Path, pkg: &PackageId, files: &[(&str, &[u8])]) -> String {
     let layout = Layout::new(root.join(".magicore").join("cache").join("web"));
     std::fs::create_dir_all(layout.root()).unwrap();
-    let cache = PackageCache::new(layout.cache_dir()).unwrap();
+    // SEC-01: production caches are scoped per registry origin; seeds must
+    // land in the same scope the install pipeline reads.
+    // SEC-01: cache production scope theo origin registry; seed phải nằm cùng
+    // scope mà pipeline install đọc.
+    let cache = PackageCache::for_registry(layout.cache_dir(), TEST_REGISTRY_URL).unwrap();
     let tarball_path = cache.tarball_path(pkg);
     if let Some(parent) = tarball_path.parent() {
         std::fs::create_dir_all(parent).unwrap();
@@ -135,7 +143,11 @@ fn seed_cached_tarball_with_files(root: &Path, pkg: &PackageId, files: &[(&str, 
 fn seed_shared_tarball_with_files(root: &Path, pkg: &PackageId, files: &[(&str, &[u8])]) -> String {
     let layout = Layout::new(root.to_path_buf());
     std::fs::create_dir_all(layout.root()).unwrap();
-    let cache = PackageCache::new(layout.cache_dir()).unwrap();
+    // SEC-01: production caches are scoped per registry origin; seeds must
+    // land in the same scope the install pipeline reads.
+    // SEC-01: cache production scope theo origin registry; seed phải nằm cùng
+    // scope mà pipeline install đọc.
+    let cache = PackageCache::for_registry(layout.cache_dir(), TEST_REGISTRY_URL).unwrap();
     let tarball_path = cache.tarball_path(pkg);
     if let Some(parent) = tarball_path.parent() {
         std::fs::create_dir_all(parent).unwrap();
@@ -203,10 +215,6 @@ fn restore_env_var(key: &str, previous: Option<std::ffi::OsString>) {
         // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe { std::env::remove_var(key) };
     }
-}
-
-fn env_test_lock() -> &'static std::sync::Mutex<()> {
-    crate::environment_test_lock()
 }
 
 struct ScopedEnvVar {

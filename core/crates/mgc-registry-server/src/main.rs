@@ -57,6 +57,11 @@ struct Args {
     )]
     trusted_proxy_ips: Vec<std::net::IpAddr>,
 
+    /// Browser origins allowed to call the API (repeatable). Empty = no CORS.
+    /// Origin trình duyệt được phép gọi API (lặp được). Rỗng = không CORS.
+    #[arg(long, env = "MAGICORE_REGISTRY_CORS_ORIGINS", value_delimiter = ',')]
+    cors_origins: Vec<String>,
+
     /// Log level
     #[arg(long, default_value = "info")]
     log_level: String,
@@ -84,6 +89,7 @@ async fn main() -> Result<()> {
         oidc_issuers: args.oidc_issuers,
         oidc_audience: args.oidc_audience,
         trusted_proxy_ips: args.trusted_proxy_ips,
+        cors_origins: args.cors_origins,
     })
     .await
 }

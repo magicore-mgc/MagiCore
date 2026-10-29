@@ -109,3 +109,32 @@ pub(in crate::cache) fn publish_cache_entry(temp: &Path, path: &Path) -> Result<
     std::fs::remove_file(temp)?;
     Ok(())
 }
+
+/// Publish a cache entry at a path whose parent is a mutable mirror slot.
+/// Publish entry cache vào path có parent là slot mirror có thể thay.
+///
+/// A scope directory that disagrees with the publisher is a previous entry
+/// from the same registry (for example after an upstream re-publish). Replace
+/// it atomically instead of failing the whole download: the caller has already
+/// verified the new bytes against integrity evidence.
+/// Thư mục scope khác với publisher là entry cũ của cùng registry (ví dụ sau
+/// khi upstream publish lại). Thay nguyên tử thay vì làm hỏng cả lần tải:
+/// caller đã verify bytes mới theo bằng chứng integrity.
+pub(in crate::cache) fn replace_cache_entry(temp: &Path, path: &Path) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    match std::fs::rename(temp, path) {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            // Windows refuses to replace an open file; fall back to remove+rename.
+            // Windows từ chối thay file đang mở; fallback xoá rồi đổi tên.
+            if path.exists() {
+                std::fs::remove_file(path)?;
+                std::fs::rename(temp, path)?;
+                return Ok(());
+            }
+            Err(err.into())
+        }
+    }
+}

@@ -41,9 +41,9 @@ pub(in crate::protocols::archive) fn extract_crate_tar_gz(
 
     for entry in archive.entries()? {
         let entry = entry?;
-        entry_count = entry_count
-            .checked_add(1)
-            .ok_or_else(|| ArchiveError::Integrity("Cargo crate entry count overflow".to_string()))?;
+        entry_count = entry_count.checked_add(1).ok_or_else(|| {
+            ArchiveError::Integrity("Cargo crate entry count overflow".to_string())
+        })?;
         if entry_count > MAX_TAR_ENTRIES {
             return Err(ArchiveError::Integrity(format!(
                 "Cargo crate archive exceeds the {MAX_TAR_ENTRIES} entry limit"
@@ -92,7 +92,8 @@ pub(in crate::protocols::archive) fn extract_crate_tar_gz(
         // deliver a `.pth`/site hook or a setuid member either.
         // (SEC-3: archive Cargo là source, nhưng `.crate` đóng lại không được
         // chuyển `.pth`/hook site hay thành viên setuid.)
-        InstallHookPolicy::deny().check(&archive_path.to_string_lossy(), entry.header().mode().ok())?;
+        InstallHookPolicy::deny()
+            .check(&archive_path.to_string_lossy(), entry.header().mode().ok())?;
         let size = entry.size();
         if size > MAX_TAR_ENTRY_UNCOMPRESSED {
             return Err(ArchiveError::Integrity(format!(

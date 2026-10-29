@@ -111,7 +111,11 @@ fn new_providers_are_reachable_from_project_config() {
         )
         .expect("write mgc.toml");
         let detected = mgc_cicd_adapter::detect_provider(dir.path());
-        assert_eq!(detected, Some(expected), "provider name '{name}' not recognized");
+        assert_eq!(
+            detected,
+            Some(expected),
+            "provider name '{name}' not recognized"
+        );
     }
 }
 

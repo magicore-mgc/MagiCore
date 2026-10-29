@@ -50,7 +50,7 @@ async fn test_install_materializes_node_modules_bin_links() {
         }],
     };
 
-    let adapter = WebAdapter::new().unwrap();
+    let adapter = WebAdapter::build(TEST_REGISTRY_URL.into(), None, vec![], None);
     adapter
         .install(&graph, dir.path(), InstallOptions::default())
         .await
@@ -172,7 +172,7 @@ async fn test_install_materializes_nested_conflicting_dependency_versions() {
         ],
     };
 
-    let adapter = WebAdapter::new().unwrap();
+    let adapter = WebAdapter::build(TEST_REGISTRY_URL.into(), None, vec![], None);
     adapter
         .install(&graph, dir.path(), InstallOptions::default())
         .await

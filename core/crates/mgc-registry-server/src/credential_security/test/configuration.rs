@@ -12,6 +12,7 @@ fn configuration_debug_redacts_tokens_and_url_credentials() {
         oidc_issuers: vec![],
         oidc_audience: None,
         trusted_proxy_ips: vec![],
+        cors_origins: vec![],
     };
     let debug = format!("{config:?}");
     for secret in [

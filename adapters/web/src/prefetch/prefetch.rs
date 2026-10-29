@@ -17,7 +17,7 @@ pub fn spawn_tarball_download(
 ) -> tokio::task::JoinHandle<MgResult<u64>> {
     tokio::spawn(async move {
         let cache = shared_cache
-            .package_cache()
+            .package_cache(&registry_url)
             .map_err(|e| mgc_types::MgError::Store(e.to_string()))?;
         let download_sem = Arc::new(tokio::sync::Semaphore::new(download_concurrency_limit()));
         let mut set: tokio::task::JoinSet<MgResult<u64>> = tokio::task::JoinSet::new();

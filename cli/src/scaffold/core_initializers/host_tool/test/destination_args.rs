@@ -13,8 +13,8 @@
 
 use std::path::Path;
 
-use crate::scaffold::core_initializers::types::DestinationArg;
 use crate::scaffold::core_initializers::RECORDS;
+use crate::scaffold::core_initializers::types::DestinationArg;
 
 /// The catalog must describe each framework with the shape its tool accepts.
 /// (Catalog phải mô tả mỗi framework bằng dạng mà tool của nó chấp nhận.)
@@ -80,8 +80,7 @@ fn project_name_comes_from_the_final_path_component() {
 /// (Path bất thường báo lỗi kèm hướng dẫn thay vì tên rỗng.)
 #[test]
 fn a_path_without_a_final_component_is_rejected() {
-    let error = super::super::project_name(Path::new("/"))
-        .expect_err("root has no project name");
+    let error = super::super::project_name(Path::new("/")).expect_err("root has no project name");
     let text = error.to_string();
     assert!(
         text.contains("cannot derive a project name"),
@@ -91,7 +90,10 @@ fn a_path_without_a_final_component_is_rejected() {
 
 /// The catalog record for a framework in any of the given ecosystems.
 /// (Record catalog cho framework trong một trong các ecosystem đã cho.)
-fn lookup(ecosystems: &[&str], framework: &str) -> Option<&'static crate::scaffold::core_initializers::types::CoreInitializer> {
+fn lookup(
+    ecosystems: &[&str],
+    framework: &str,
+) -> Option<&'static crate::scaffold::core_initializers::types::CoreInitializer> {
     RECORDS
         .iter()
         .find(|record| ecosystems.contains(&record.ecosystem) && record.framework == framework)

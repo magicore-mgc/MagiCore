@@ -2,7 +2,6 @@
 //! Điều phối chọn registry, nhập credential, đăng ký và lưu token.
 
 use anyhow::Result;
-use mgc_config::npmrc::NpmRc;
 
 use super::credentials::{prompt_text, read_password_inner};
 use super::error::LoginError;
@@ -17,14 +16,16 @@ pub async fn run(args: LoginArgs) -> Result<()> {
 }
 
 async fn run_inner(args: LoginArgs) -> Result<(), LoginError> {
+    // SEC-03: never take the credential destination from a project file.
+    // A cloned repository can plant `.npmrc` with `registry=https://evil`, and
+    // the password would be PUT to that host. Only explicit flag, user config
+    // and environment decide where a password goes.
+    // SEC-03: không lấy đích gửi credential từ file trong project.
+    // Repo clone có thể đặt `.npmrc` trỏ host lạ và mật khẩu sẽ được PUT tới
+    // đó. Chỉ flag tường minh, config của user và env quyết định đích.
     let registry = match args.registry {
         Some(url) => url,
-        None => {
-            let configured = NpmRc::load(&std::env::current_dir()?)
-                .ok()
-                .and_then(|rc| rc.registry);
-            registry_or_default(configured)
-        }
+        None => registry_or_default(mgc_config::npmrc::user_registry_only()),
     };
 
     let username = match args.username {

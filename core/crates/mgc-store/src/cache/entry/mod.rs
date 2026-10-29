@@ -4,5 +4,6 @@
 mod entry;
 
 pub(super) use entry::{
-    TempPathGuard, create_unique_temp_file, publish_cache_entry, unique_temp_path,
+    TempPathGuard, create_unique_temp_file, publish_cache_entry, replace_cache_entry,
+    unique_temp_path,
 };

@@ -45,7 +45,9 @@ pub async fn run(
     // (Flutter là scaffolder app duy nhất chạy không cần tương tác; chạy trước
     // mọi registry layer, giống các core khác.)
     if config.from_local.is_none()
-        && let Some(framework) = parsed_framework.as_ref().map(|spec| spec.normalized_name.as_str())
+        && let Some(framework) = parsed_framework
+            .as_ref()
+            .map(|spec| spec.normalized_name.as_str())
         && super::core_initializer::try_run("app", framework, std::path::Path::new(project_name))?
     {
         mgc_ui::success(&format!("Created app project: {project_name}"));
@@ -71,7 +73,9 @@ pub async fn run(
             // (Fail-closed như các core khác. Cảnh báo ở đây từng chạy tiếp vào
             // project rỗng kèm `mgc.toml`.)
             Ok(_) | Err(_) => {
-                return Err(crate::scaffold::error::scaffold_source_unavailable("app", fw));
+                return Err(crate::scaffold::error::scaffold_source_unavailable(
+                    "app", fw,
+                ));
             }
         }
     }

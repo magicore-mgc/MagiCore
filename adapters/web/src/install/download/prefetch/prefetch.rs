@@ -44,7 +44,7 @@ pub async fn prefetch_tarballs(
 ) -> MgResult<u64> {
     let mut bytes_from_cache = 0u64;
     let shared_package_cache = shared_cache
-        .map(|shared| shared.package_cache())
+        .map(|shared| shared.package_cache(registry.registry_url()))
         .transpose()
         .map_err(|error| MgError::Store(error.to_string()))?;
     let concurrency = download_concurrency_limit();
@@ -97,7 +97,10 @@ pub async fn prefetch_tarballs(
                 if package.integrity.is_empty() {
                     package.integrity = computed_integrity.clone();
                 }
-                let final_path = cache.tarball_path(&package.id);
+                let final_path = shared_package_cache
+                    .as_ref()
+                    .map(|shared| shared.tarball_path(&package.id))
+                    .unwrap_or_else(|| cache.tarball_path(&package.id));
                 publish_downloaded_tarball(staging.path(), &final_path, &computed_integrity)?;
                 if let Some(shared_package_cache) = shared_package_cache.as_ref() {
                     let _ = shared_package_cache.cache_tarball_from_path(&package.id, &final_path);

@@ -2,13 +2,15 @@ use crate::allowlist::*;
 
 #[test]
 fn allows_known_tools() {
+    // SEC-02: `python`, `python3` and `node` were moved to the
+    // project-language list because they evaluate inline programs; they are
+    // allowed only in project execution scopes (asserted below).
+    // (SEC-02: `python`, `python3`, `node` chuyển sang danh sách ngôn ngữ
+    // project vì chạy chương trình inline; chỉ cho trong scope chạy code.)
     for tool in [
         "cargo",
-        "python",
-        "python3",
         "go",
         "mvn",
-        "node",
         "git",
         "docker",
         "flutter",
@@ -53,7 +55,7 @@ fn language_runtimes_are_available_only_in_project_execution_scopes() {
     let root = Path::new("/tmp/project");
     let tools = [
         "bash", "clang", "clang++", "dotnet", "gcc", "g++", "godot", "java", "javac", "kotlinc",
-        "php", "tsx", "zig",
+        "node", "php", "python", "python3", "tsx", "zig",
     ];
     for tool in tools {
         for scope in [
@@ -152,7 +154,7 @@ fn xcrun_simctl_is_allowed_only_for_device_control_scope() {
 #[test]
 fn rejects_forbidden_npm_family() {
     for tool in [
-        "npm", "npx", "pnpm", "yarn", "bun", "deno", "bunx", "composer", "pub",
+        "npm", "npx", "pnpm", "yarn", "bun", "bunx", "composer", "pub",
     ] {
         let err = check_tool(tool).unwrap_err();
         assert!(
@@ -191,13 +193,13 @@ fn package_managers_are_blocked_in_every_execution_scope_even_with_compat() {
         ExecutionScope::DeviceControl,
         ExecutionScope::FrameworkInitializer,
     ] {
-        for tool in ["npm", "pnpm", "yarn", "bun", "deno", "npx", "bunx"] {
+        for tool in ["npm", "pnpm", "yarn", "bun", "npx", "bunx"] {
             assert!(
                 check_tool_with_scope(tool, scope, Some(root)).is_err(),
                 "{tool} unexpectedly allowed in {scope:?}"
             );
         }
-        for rival in ["bun", "deno", "composer", "pub"] {
+        for rival in ["bun", "composer", "pub"] {
             let err = check_tool_with_scope_compat(rival, scope, Some(root), Some(rival))
                 .expect_err("legacy compat mode must never authorize a rival runtime");
             assert!(
@@ -211,7 +213,7 @@ fn package_managers_are_blocked_in_every_execution_scope_even_with_compat() {
 #[test]
 fn allows_absolute_paths_to_allowlisted_tools() {
     check_tool("/usr/bin/cargo").unwrap();
-    check_tool("C:\\tools\\python.exe").unwrap();
+    check_tool("C:\\tools\\cargo.exe").unwrap();
 }
 
 #[test]

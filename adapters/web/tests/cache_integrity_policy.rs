@@ -13,9 +13,17 @@ fn run_isolated(name: &str, strict: bool) -> bool {
         .args(["--exact", name, "--test-threads=1", "--nocapture"])
         .env(CHILD_ENV, name)
         .env_remove("MGC_STRICT_INTEGRITY")
-        .env_remove("MAGICORE_STRICT_INTEGRITY");
+        .env_remove("MAGICORE_STRICT_INTEGRITY")
+        // SEC-01 made unsigned tarballs deny-by-default; this control asserts
+        // the documented escape hatch is the only way to accept one.
+        // (SEC-01 khiến tarball không SRI bị chặn mặc định; control này kiểm
+        // escape hatch là đường duy nhất được chấp nhận.)
+        .env_remove("MAGICORE_ALLOW_UNSIGNED_INTEGRITY")
+        .env_remove("MGC_ALLOW_UNSIGNED_INTEGRITY");
     if strict {
         command.env("MGC_STRICT_INTEGRITY", "1");
+    } else {
+        command.env("MAGICORE_ALLOW_UNSIGNED_INTEGRITY", "1");
     }
     let output = command
         .output()
@@ -123,6 +131,6 @@ fn permissive_missing_sri_cache_preparation_accepts() {
     assert_eq!(
         pkg.integrity,
         "sha512-ojkxJesguv5tUca+J4N0oV1Nk/1JHzsvRA1VQCWmM64t/SYemnt7/4QCU1srnoQw7ESAi5JeQq4nxIDfvlJlFg==",
-        "permissive cache identity must remain deterministic"
+        "the escape hatch must still record a deterministic cache identity"
     );
 }

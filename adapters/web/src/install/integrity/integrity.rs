@@ -4,7 +4,10 @@ use base64::Engine;
 use mgc_types::adapter::ResolvedPackage;
 use mgc_types::{MgError, MgResult};
 
-use crate::lockfile::{compute_sha512_b64, compute_tarball_integrity, strict_integrity_enforced};
+use crate::lockfile::{
+    allow_unsigned_integrity, compute_sha512_b64, compute_tarball_integrity,
+    strict_integrity_enforced,
+};
 
 #[path = "hashing/mod.rs"]
 mod hashing;
@@ -87,15 +90,27 @@ pub fn verify_tarball_reader_integrity<R: std::io::Read>(
 // Share policy decisions between byte buffers and file-backed downloads.
 // Chỉ nguồn hash khác nhau; chính sách strict và thuật toán giữ chung một chỗ.
 fn verify_sri_hashes(pkg: &ResolvedPackage, hash: impl Fn(&str) -> String) -> MgResult<()> {
-    // Empty integrity: strict mode fail, permissive mode warn
-    // Integrity trống: strict mode fail, permissive mode cho qua
+    // Empty integrity: always refuse unless the operator explicitly opts in.
+    // An entry with no SRI evidence cannot be told apart from poisoned bytes,
+    // so the permissive branch must be a loud, audited escape hatch.
+    // Integrity trống: luôn từ chối trừ khi người vận hành opt-in rõ ràng.
+    // Entry không có bằng chứng SRI không phân biệt được với bytes bị đầu độc,
+    // nên nhánh permissive phải là escape hatch ồn ào, có audit.
     if pkg.integrity.is_empty() {
-        if strict_integrity_enforced() {
+        // Test fixtures that let the resolver build the graph can opt in
+        // explicitly; production callers cannot reach this switch.
+        // Fixture test để resolver tạo graph có thể opt-in tường minh;
+        // caller production không chạm được cờ này.
+        if !allow_unsigned_integrity() {
             return Err(MgError::Other(format!(
-                "strict integrity: '{}' has no SRI integrity field",
+                "integrity: '{}' has no SRI integrity field; set MAGICORE_ALLOW_UNSIGNED_INTEGRITY=1 to accept unverified tarballs (logged)",
                 pkg.id.name_str()
             )));
         }
+        eprintln!(
+            "WARNING: integrity: '{}' has no SRI integrity field; accepted because MAGICORE_ALLOW_UNSIGNED_INTEGRITY is set",
+            pkg.id.name_str()
+        );
         return Ok(());
     }
 

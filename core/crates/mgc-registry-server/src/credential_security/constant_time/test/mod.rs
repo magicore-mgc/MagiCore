@@ -1,4 +1,5 @@
 //! Registers constant-time comparator tests.
 //! Đăng ký test bộ so sánh hằng thời gian.
 
-mod constant_time;
+// Tests are registered once by their owning module via #[path].
+// Test được đăng ký một lần bởi module sở hữu qua #[path].

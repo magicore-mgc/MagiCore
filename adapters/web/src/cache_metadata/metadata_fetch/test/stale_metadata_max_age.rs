@@ -5,7 +5,7 @@ use super::*;
 
 #[tokio::test]
 async fn test_stale_metadata_too_old_is_not_reused_when_network_fails() {
-    let _env_guard = env_test_lock().lock().unwrap();
+    let _env_guard = crate::environment_test_guard();
     let shared = tempdir_real().unwrap();
     let Some(listener) = bind_test_listener().await else {
         return;

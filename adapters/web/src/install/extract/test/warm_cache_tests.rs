@@ -32,7 +32,7 @@ fn warm_extraction_imports_into_the_validated_canonical_root() {
     let shared_cache = SharedWebCache {
         root: shared.path().to_path_buf(),
     };
-    let tarball = PackageCache::new(shared.path().join("cache"))
+    let tarball = PackageCache::for_registry(shared.path().join("cache"), TEST_REGISTRY_URL)
         .unwrap()
         .get_tarball(&package_id)
         .unwrap()
@@ -113,7 +113,7 @@ fn warm_extraction_rejects_a_tampered_tree_with_a_matching_marker() {
     let shared_cache = SharedWebCache {
         root: shared.path().to_path_buf(),
     };
-    let trusted_tarball = PackageCache::new(shared.path().join("cache"))
+    let trusted_tarball = PackageCache::for_registry(shared.path().join("cache"), TEST_REGISTRY_URL)
         .unwrap()
         .get_tarball(&package_id)
         .unwrap()
@@ -132,7 +132,7 @@ fn warm_extraction_rejects_a_tampered_tree_with_a_matching_marker() {
             ("package/index.js", b"module.exports = 'tampered';\n"),
         ],
     );
-    let tampered_tarball = PackageCache::new(tampered_source.path().join("cache"))
+    let tampered_tarball = PackageCache::for_registry(tampered_source.path().join("cache"), TEST_REGISTRY_URL)
         .unwrap()
         .get_tarball(&package_id)
         .unwrap()
@@ -208,7 +208,7 @@ fn verified_warm_archive_import_matches_cache_before_claiming_cas() {
         direct: true,
         dev: false,
     };
-    let tarball = PackageCache::new(cache.path().join("cache"))
+    let tarball = PackageCache::for_registry(cache.path().join("cache"), TEST_REGISTRY_URL)
         .unwrap()
         .get_tarball(&package_id)
         .unwrap()
@@ -273,7 +273,7 @@ fn ensure_extracted_package_root_from_bytes_uses_verified_warm_path_and_files_cl
         direct: true,
         dev: false,
     };
-    let tarball = PackageCache::new(shared.path().join("cache"))
+    let tarball = PackageCache::for_registry(shared.path().join("cache"), TEST_REGISTRY_URL)
         .unwrap()
         .get_tarball(&package_id)
         .unwrap()
@@ -352,7 +352,7 @@ fn verified_warm_archive_import_rejects_changed_or_extra_cache_files() {
         direct: true,
         dev: false,
     };
-    let tarball = PackageCache::new(cache.path().join("cache"))
+    let tarball = PackageCache::for_registry(cache.path().join("cache"), TEST_REGISTRY_URL)
         .unwrap()
         .get_tarball(&package_id)
         .unwrap()
@@ -610,7 +610,7 @@ fn cached_root_import_falls_back_for_nonstandard_archive_prefix() {
             ("content/index.js", b"module.exports = true;\n"),
         ],
     );
-    let tarball = PackageCache::new(cache.path().join("cache"))
+    let tarball = PackageCache::for_registry(cache.path().join("cache"), TEST_REGISTRY_URL)
         .unwrap()
         .get_tarball(&package_id)
         .unwrap()

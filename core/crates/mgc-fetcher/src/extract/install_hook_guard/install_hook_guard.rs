@@ -11,7 +11,9 @@
 //! import, `install.ps1` của NuGet chạy khi cài. Không cái nào cần package
 //! script để kích hoạt, nên install phải từ chối trước khi byte nào vào cache.)
 
-use super::super::archive_limits::{FORBIDDEN_MODE_BITS, NUGET_INSTALL_SCRIPT_BASENAMES, PYTHON_SITE_HOOK_MODULES};
+use super::super::archive_limits::{
+    FORBIDDEN_MODE_BITS, NUGET_INSTALL_SCRIPT_BASENAMES, PYTHON_SITE_HOOK_MODULES,
+};
 
 /// Environment opt-in naming packages allowed to ship install-hook entries.
 /// Biến môi trường nêu package được phép mang entry hook cài đặt.
@@ -64,7 +66,8 @@ impl InstallHookGuard {
 
     /// Check one archive entry before it is staged.
     /// Kiểm một entry archive trước khi staging.
-    pub fn check(&self, entry_path: &Path, mode: Option<u32>) -> ExtractionResult<()> {
+    #[allow(private_interfaces)] // ExtractionError is crate-private; callers map to MgError
+    pub(crate) fn check(&self, entry_path: &Path, mode: Option<u32>) -> ExtractionResult<()> {
         let Some(kind) = classify(entry_path, mode) else {
             return Ok(());
         };
@@ -95,7 +98,10 @@ pub(in crate::extract) fn classify(entry_path: &Path, mode: Option<u32>) -> Opti
     {
         return Some(HookKind::PrivilegedMode);
     }
-    let lossy = entry_path.to_string_lossy().replace('\\', "/").to_lowercase();
+    let lossy = entry_path
+        .to_string_lossy()
+        .replace('\\', "/")
+        .to_lowercase();
     let normalized = lossy.trim_start_matches("./");
     let basename = normalized.rsplit('/').next().unwrap_or("");
     if normalized.ends_with(".pth") {

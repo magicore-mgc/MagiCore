@@ -26,10 +26,7 @@ pub(in crate::extract) enum ExtractionError {
     TargetNotFile(PathBuf),
     DestinationHasNoParent,
     TruncatedEntry(PathBuf),
-    InstallHookNotAllowed {
-        path: PathBuf,
-        reason: &'static str,
-    },
+    InstallHookNotAllowed { path: PathBuf, reason: &'static str },
     CasImport(anyhow::Error),
     CasExport(anyhow::Error),
     Claim(anyhow::Error),

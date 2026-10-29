@@ -62,8 +62,12 @@ pub(in crate::install::run_install) fn initialize<'a>(
         ))
     })?;
 
-    let cache =
-        PackageCache::new(layout.cache_dir()).map_err(|error| MgError::Store(error.to_string()))?;
+    // SEC-01: the tarball cache is keyed by (registry origin, name, version).
+    // Entries written from one registry are never served to another.
+    // SEC-01: cache tarball khoá theo (origin registry, name, version).
+    // Entry ghi từ registry này không bao giờ được phục vụ cho registry khác.
+    let cache = PackageCache::for_registry(layout.cache_dir(), registry_url)
+        .map_err(|error| MgError::Store(error.to_string()))?;
     eprintln!("[magicore:debug] install:cache_open=ok");
     let database =
         Some(Database::open(&layout.db_path()).map_err(|error| MgError::Store(error.to_string()))?);

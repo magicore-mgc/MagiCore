@@ -61,10 +61,19 @@ fn package_metadata(registry_url: &str, version: &str) -> serde_json::Value {
         "name": "mgc-fixture",
         "version": version,
         "dependencies": {},
-        "dist": {
-            "tarball": format!("{registry_url}/mgc-fixture/-/mgc-fixture-{version}.tgz")
-        }
+        "dist": { "tarball": format!("{registry_url}/mgc-fixture/-/mgc-fixture-{version}.tgz"), "integrity": sri_of(&package_tarball(version)) }
     })
+}
+
+/// SRI digest for a fixture tarball (SEC-01: integrity is mandatory).
+/// (SRI của tarball fixture; SEC-01 bắt buộc integrity.)
+fn sri_of(bytes: &[u8]) -> String {
+    use base64::Engine as _;
+    use sha2::{Digest, Sha512};
+    format!(
+        "sha512-{}",
+        base64::engine::general_purpose::STANDARD.encode(Sha512::digest(bytes))
+    )
 }
 
 fn package_tarball(version: &str) -> Vec<u8> {

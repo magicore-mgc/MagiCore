@@ -20,6 +20,7 @@ pub async fn run(args: RegistryArgs, core: Option<&str>) -> Result<()> {
             oidc_issuers,
             oidc_audience,
             trusted_proxy_ips,
+            cors_origins,
         } => {
             let _ = tracing_subscriber::fmt()
                 .with_env_filter(
@@ -38,6 +39,7 @@ pub async fn run(args: RegistryArgs, core: Option<&str>) -> Result<()> {
                 oidc_issuers,
                 oidc_audience,
                 trusted_proxy_ips,
+                cors_origins,
             })
             .await
         }

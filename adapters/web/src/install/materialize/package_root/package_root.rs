@@ -10,10 +10,12 @@ use mgc_types::{MgError, MgResult, PackageId};
 use crate::cache::SharedWebCache;
 use crate::install::extract::ensure_extracted_package_root;
 
+#[allow(clippy::too_many_arguments)]
 pub fn materialization_package_root(
     layout: &Layout,
     store: &ContentStore,
     shared_cache: Option<&SharedWebCache>,
+    registry_url: &str,
     cache: &PackageCache,
     extracted_roots: &std::collections::HashMap<PackageId, PathBuf>,
     pkg: &ResolvedPackage,
@@ -40,7 +42,7 @@ pub fn materialization_package_root(
 
     if let Some(shared_cache) = shared_cache {
         let shared_package_cache = shared_cache
-            .package_cache()
+            .package_cache(registry_url)
             .map_err(|err| MgError::Store(err.to_string()))?;
         let shared_tarball = shared_package_cache.tarball_path(&pkg.id);
         if shared_tarball.exists() {

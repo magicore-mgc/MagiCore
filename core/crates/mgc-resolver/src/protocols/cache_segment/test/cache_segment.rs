@@ -1,4 +1,5 @@
 //! SEC-N1 cache path segment tests: traversal, separators, Windows quirks.
+#![allow(clippy::unwrap_used)]
 //! Test segment path cache SEC-N1: traversal, dấu phân cách, quirks Windows.
 
 use super::super::validate_cache_segment;
@@ -34,11 +35,7 @@ fn traversal_and_separators_are_refused() {
 fn windows_quirks_are_refused() {
     // `C:evil` is drive-relative on Windows and `name:$DATA` is an ADS.
     // (`C:evil` là tương đối ổ đĩa trên Windows và `name:$DATA` là ADS.)
-    for name in [
-        "C:evil",
-        "name:$DATA",
-        "trailing.",
-    ] {
+    for name in ["C:evil", "name:$DATA", "trailing."] {
         let error = validate_cache_segment(name, "test")
             .err()
             .map(|error| error.to_string());

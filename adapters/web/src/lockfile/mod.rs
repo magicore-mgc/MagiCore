@@ -18,8 +18,9 @@ mod v4_writer;
 
 pub use cache_dir::project_cache_dir;
 pub use checksum::{
-    compute_sha512_b64, compute_tarball_integrity, compute_tarball_integrity_reader,
-    maybe_warn_missing_lockfile_checksum, strict_integrity_enforced,
+    allow_unsigned_integrity, compute_sha512_b64, compute_tarball_integrity,
+    compute_tarball_integrity_reader, maybe_warn_missing_lockfile_checksum,
+    strict_integrity_enforced,
 };
 pub use graph_match::web_lockfile_matches_graph;
 pub use graph_restore::build_graph_from_lockfile;

@@ -45,6 +45,13 @@ pub struct RegistryServerConfig {
     pub oidc_issuers: Vec<String>,
     pub oidc_audience: Option<String>,
     pub trusted_proxy_ips: Vec<std::net::IpAddr>,
+    /// Browser origins allowed to call the API; empty means no CORS at all
+    /// (SEC-04: a permissive CORS layer lets any web page read a token from a
+    /// loopback registry).
+    /// Origin trình duyệt được phép gọi API; rỗng nghĩa là không CORS
+    /// (SEC-04: layer CORS permissive cho phép trang web bất kỳ đọc token của
+    /// registry đang chạy loopback).
+    pub cors_origins: Vec<String>,
 }
 
 /// Start the registry server (used by bin `mgc-registry` và `mgc registry serve`)
@@ -113,8 +120,27 @@ pub async fn serve(config: RegistryServerConfig) -> anyhow::Result<()> {
         .merge(oci::routes())
         .merge(pypi::routes())
         .merge(liveness::routes())
-        .layer(axum::extract::DefaultBodyLimit::max(config.max_body_size))
-        .layer(tower_http::cors::CorsLayer::permissive());
+        .layer(axum::extract::DefaultBodyLimit::max(config.max_body_size));
+
+    // SEC-04: CORS is opt-in per origin. The previous `CorsLayer::permissive()`
+    // handed `Access-Control-Allow-Origin: *` to every page, including the JSON
+    // body of the public registration endpoint that carries a fresh token.
+    // SEC-04: CORS phải opt-in theo từng origin. `CorsLayer::permissive()`
+    // trước đây cấp `Access-Control-Allow-Origin: *` cho mọi trang, kể cả body
+    // JSON của endpoint đăng ký công khai mang token mới.
+    if !config.cors_origins.is_empty() {
+        let mut cors = tower_http::cors::CorsLayer::new()
+            .allow_methods(tower_http::cors::Any)
+            .allow_headers(tower_http::cors::Any)
+            .max_age(std::time::Duration::from_secs(600));
+        for origin in &config.cors_origins {
+            let header = origin
+                .parse::<axum::http::HeaderValue>()
+                .map_err(|error| anyhow::anyhow!("invalid --cors-origin '{origin}': {error}"))?;
+            cors = cors.allow_origin(header);
+        }
+        app = app.layer(cors);
+    }
 
     app = app.route_layer(axum::middleware::from_fn(
         auth::trusted_transport_middleware,

@@ -21,7 +21,16 @@ fn package_root_reuses_cached_root_with_manifest_before_tarball_lookup() {
     .unwrap();
     let roots = std::collections::HashMap::from([(package.id.clone(), root.clone())]);
 
-    let result = materialization_package_root(&layout, &store, None, &cache, &roots, &package, 1);
+    let result = materialization_package_root(
+        &layout,
+        &store,
+        None,
+        "https://registry.npmjs.org",
+        &cache,
+        &roots,
+        &package,
+        1,
+    );
 
     assert_eq!(result.unwrap(), root);
 }

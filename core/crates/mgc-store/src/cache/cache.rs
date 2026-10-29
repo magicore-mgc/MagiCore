@@ -1,8 +1,14 @@
 //! Package cache for downloaded tarballs and metadata.
 //! Cache package cho tarball đã tải và metadata.
 
-use super::entry::{TempPathGuard, create_unique_temp_file, publish_cache_entry, unique_temp_path};
-use super::path::{metadata_path as metadata_cache_path, tarball_path as tarball_cache_path};
+use super::entry::{
+    TempPathGuard, create_unique_temp_file, publish_cache_entry, replace_cache_entry,
+    unique_temp_path,
+};
+use super::path::{
+    metadata_path as metadata_cache_path, registry_scope_directory,
+    tarball_path as tarball_cache_path,
+};
 use anyhow::Result;
 use mgc_types::PackageId;
 use std::fs::{File, OpenOptions};
@@ -10,15 +16,68 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 
 /// Package cache for downloaded tarballs and metadata.
+///
+/// The on-disk root may be narrowed to a registry scope: two registries that
+/// publish different bytes for the same `name@version` must not share cache
+/// entries (SEC-01). The scope is an opaque digest directory, so the root
+/// path itself stays free of URLs and credentials.
+/// Cache package cho tarball đã tải và metadata.
+/// Root trên đĩa có thể bị thu hẹp theo scope registry: hai registry publish
+/// bytes khác nhau cho cùng `name@version` không được dùng chung entry.
 #[derive(Clone)]
 pub struct PackageCache {
     root: PathBuf,
+    base_root: PathBuf,
 }
 
 impl PackageCache {
     pub fn new(root: PathBuf) -> Result<Self> {
         std::fs::create_dir_all(&root)?;
-        Ok(Self { root })
+        Ok(Self {
+            root: root.clone(),
+            base_root: root,
+        })
+    }
+
+    /// Open a cache narrowed to one registry origin (SEC-01).
+    /// Mở cache giới hạn theo một origin registry (SEC-01).
+    ///
+    /// Releases are identified by (registry, name, version): an entry written
+    /// from a private mirror is never served to a project that resolves the
+    /// same id from the public registry.
+    /// Bản phát hành được định danh bằng (registry, name, version): entry ghi
+    /// từ mirror riêng không bao giờ được phục vụ cho project resolve cùng id
+    /// từ registry công khai.
+    pub fn for_registry(root: PathBuf, registry: &str) -> Result<Self> {
+        let scoped = registry_scope_directory(&root, registry);
+        std::fs::create_dir_all(&scoped)?;
+        Ok(Self {
+            root: scoped,
+            base_root: root,
+        })
+    }
+
+    /// Narrow an existing cache to a registry origin, keeping its base root.
+    /// Thu hẹp cache hiện có theo một origin registry, giữ base root.
+    pub fn with_registry_scope(&self, registry: &str) -> Result<Self> {
+        let scoped = registry_scope_directory(&self.base_root, registry);
+        std::fs::create_dir_all(&scoped)?;
+        Ok(Self {
+            root: scoped,
+            base_root: self.base_root.clone(),
+        })
+    }
+
+    /// Root directory this cache instance reads and writes.
+    /// Thư mục root mà instance cache này đọc và ghi.
+    pub fn root(&self) -> &PathBuf {
+        &self.root
+    }
+
+    /// Unscoped root that all registry scopes of this cache live under.
+    /// Root chưa scope mà mọi scope registry của cache này nằm dưới.
+    pub fn base_root(&self) -> &PathBuf {
+        &self.base_root
     }
 
     /// Path to cached tarball for a given package version
@@ -26,7 +85,15 @@ impl PackageCache {
         tarball_cache_path(&self.root, id)
     }
 
-    /// Path to cached metadata JSON for a package
+    /// Path to cached metadata JSON for a package.
+    /// Đường dẫn metadata JSON của package.
+    ///
+    /// Metadata lives beside the tarballs in the same scope: a shared cache
+    /// root may be pointed at by `MGC_CACHE_DIR` from tests and CI, and a
+    /// foreign packument must not be served to another project.
+    /// (Metadata nằm cạnh tarball trong cùng scope: root cache dùng chung có
+    /// thể bị `MGC_CACHE_DIR` từ test/CI trỏ vào, và packument lạ không được
+    /// phục vụ cho project khác.)
     pub fn metadata_path(&self, name: &str) -> PathBuf {
         metadata_cache_path(&self.root, name)
     }
@@ -87,6 +154,28 @@ impl PackageCache {
             "could not allocate a unique cache staging file for {}",
             path.display()
         )
+    }
+
+    /// Replace a tarball whose publisher is certified by integrity evidence.
+    /// Thay tarball đã được integrity chứng thực nguồn.
+    ///
+    /// Used when the scope already holds bytes from the same registry that no
+    /// longer match (upstream re-publish, partial write): the new bytes are
+    /// written atomically over the stale entry instead of aborting the install.
+    /// Dùng khi scope đã có bytes của cùng registry không còn khớp (upstream
+    /// publish lại, ghi dở): bytes mới được ghi nguyên tử đè entry cũ thay vì
+    /// huỷ lần cài.
+    pub fn replace_verified_tarball(&self, id: &PackageId, data: &[u8]) -> Result<()> {
+        let path = self.tarball_path(id);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let (tmp, mut file) = create_unique_temp_file(&path)?;
+        let guard = TempPathGuard::new(tmp);
+        file.write_all(data)?;
+        drop(file);
+        replace_cache_entry(guard.path(), &path)?;
+        Ok(())
     }
 
     /// Cache metadata JSON

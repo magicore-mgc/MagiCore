@@ -183,7 +183,7 @@ fn package_metadata(registry_url: &str, version: &str) -> serde_json::Value {
         "name": "is-odd",
         "version": version,
         "dependencies": {},
-        "dist": { "tarball": format!("{registry_url}/is-odd/-/is-odd-{version}.tgz") }
+        "dist": { "tarball": format!("{registry_url}/is-odd/-/is-odd-{version}.tgz"), "integrity": sri_of(&package_tarball()) }
     })
 }
 
@@ -213,6 +213,17 @@ fn package_tarball() -> Vec<u8> {
         .unwrap();
     let encoder = archive.into_inner().unwrap();
     encoder.finish().unwrap()
+}
+
+/// SRI digest for a fixture tarball (SEC-01: integrity is mandatory).
+/// (SRI của tarball fixture; SEC-01 bắt buộc integrity.)
+fn sri_of(bytes: &[u8]) -> String {
+    use base64::Engine as _;
+    use sha2::{Digest, Sha512};
+    format!(
+        "sha512-{}",
+        base64::engine::general_purpose::STANDARD.encode(Sha512::digest(bytes))
+    )
 }
 
 fn find_mgc_binary() -> String {

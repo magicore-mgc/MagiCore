@@ -55,13 +55,27 @@ impl RegistryFixture {
     }
 }
 
+/// SRI entry for a fixture tarball so the install pipeline verifies it.
+/// (SRI của tarball fixture để pipeline install verify — integrity trống giờ
+/// fail-closed theo SEC-01.)
+fn sri_for_tarball(version: &str) -> String {
+    use sha2::{Digest, Sha512};
+    let digest = Sha512::digest(package_tarball(version));
+    let mut encoded = String::new();
+    use base64::Engine as _;
+    encoded.push_str("sha512-");
+    encoded.push_str(&base64::engine::general_purpose::STANDARD.encode(digest));
+    encoded
+}
+
 fn package_metadata(registry_url: &str, version: &str) -> serde_json::Value {
     serde_json::json!({
         "name": "lodash",
         "version": version,
         "dependencies": {},
         "dist": {
-            "tarball": format!("{registry_url}/lodash/-/lodash-{version}.tgz")
+            "tarball": format!("{registry_url}/lodash/-/lodash-{version}.tgz"),
+            "integrity": sri_for_tarball(version)
         }
     })
 }

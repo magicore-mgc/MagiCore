@@ -3,6 +3,17 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+/// SRI digest for a fixture tarball (SEC-01: integrity is mandatory).
+/// (SRI của tarball fixture; SEC-01 bắt buộc integrity.)
+fn sri_of(bytes: &[u8]) -> String {
+    use base64::Engine as _;
+    use sha2::{Digest, Sha512};
+    format!(
+        "sha512-{}",
+        base64::engine::general_purpose::STANDARD.encode(Sha512::digest(bytes))
+    )
+}
+
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use tempfile::TempDir;
@@ -32,9 +43,7 @@ impl RegistryFixture {
                     "bin": { BINARY: "bin/cli" },
                     "scripts": { "postinstall": "node postinstall.cjs" },
                     "dependencies": {},
-                    "dist": {
-                        "tarball": format!("{url}/{PACKAGE}/-/{PACKAGE}-{VERSION}.tgz")
-                    }
+                    "dist": { "tarball": format!("{url}/{PACKAGE}/-/{PACKAGE}-{VERSION}.tgz"), "integrity": sri_of(&package_tarball()) }
                 }
             }
         });

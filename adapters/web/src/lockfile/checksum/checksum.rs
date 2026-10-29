@@ -52,6 +52,19 @@ pub fn strict_integrity_enforced() -> bool {
     flag_enabled("MAGICORE_STRICT_INTEGRITY") || flag_enabled("MGC_STRICT_INTEGRITY")
 }
 
+/// Escape hatch for tarballs without SRI evidence.
+/// Escape hatch cho tarball không có bằng chứng SRI.
+///
+/// Fail-closed by default: a package without an integrity field cannot be
+/// distinguished from poisoned bytes, so accepting it requires an explicit
+/// opt-in that always logs a warning at the decision point.
+/// Mặc định fail-closed: package không có integrity không phân biệt được với
+/// bytes bị đầu độc, nên chấp nhận cần opt-in rõ ràng và luôn ghi cảnh báo.
+pub fn allow_unsigned_integrity() -> bool {
+    flag_enabled("MAGICORE_ALLOW_UNSIGNED_INTEGRITY")
+        || flag_enabled("MGC_ALLOW_UNSIGNED_INTEGRITY")
+}
+
 /// Whether the lockfile-checksum warning is suppressed.
 ///
 /// Suppression is the dangerous direction, so it must be an explicit opt-in:

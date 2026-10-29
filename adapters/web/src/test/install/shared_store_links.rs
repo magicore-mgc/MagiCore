@@ -50,7 +50,7 @@ async fn test_install_materialization_uses_store_links_from_cached_extract_root(
     };
 
     let adapter = WebAdapter::with_registry_and_shared_cache(
-        "https://registry.npmjs.org".into(),
+        TEST_REGISTRY_URL.into(),
         shared.path().to_path_buf(),
     );
     adapter
@@ -139,7 +139,7 @@ async fn test_install_repairs_broken_store_links_when_shared_packages_are_delete
     };
 
     let adapter = WebAdapter::with_registry_and_shared_cache(
-        "https://registry.npmjs.org".into(),
+        TEST_REGISTRY_URL.into(),
         shared.path().to_path_buf(),
     );
     adapter

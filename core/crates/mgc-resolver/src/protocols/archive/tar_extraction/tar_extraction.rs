@@ -1,7 +1,9 @@
 //! General safe tar.gz extraction.
 //! Giải nén tar.gz tổng quát theo quy tắc an toàn.
 
-use super::super::archive::{MAX_TAR_ENTRIES, MAX_TAR_ENTRY_UNCOMPRESSED, MAX_TAR_TOTAL_UNCOMPRESSED};
+use super::super::archive::{
+    MAX_TAR_ENTRIES, MAX_TAR_ENTRY_UNCOMPRESSED, MAX_TAR_TOTAL_UNCOMPRESSED,
+};
 use super::super::install_hook::InstallHookPolicy;
 use super::super::{ArchiveError, ArchiveResult};
 use std::collections::VecDeque;
@@ -16,6 +18,7 @@ use std::path::Path;
 /// (Giải nén tarball gzip trong bộ nhớ vào `dest`. Caller truyền policy hook
 /// cài đặt để đường này và đường fetcher không bao giờ lệch nhau về việc chấp
 /// nhận entry `.pth`/`sitecustomize.py`/`install.ps1`.)
+#[allow(private_interfaces)] // ArchiveError stays crate-private; the facade returns MgError
 pub(crate) fn extract_tar_gz(
     bytes: &[u8],
     dest: &Path,

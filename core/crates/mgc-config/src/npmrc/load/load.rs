@@ -5,6 +5,33 @@ use std::path::Path;
 
 use crate::npmrc::NpmRc;
 
+/// Registry configured by the *user*, ignoring any project file (SEC-03).
+/// Registry do *user* cấu hình, bỏ qua file trong project (SEC-03).
+///
+/// Credential operations (`mgc login`) must never take their destination from
+/// a file inside a cloned repository: a planted project `.npmrc` would
+/// redirect the password to an attacker's host. Environment wins, then
+/// `~/.npmrc`; a project file is deliberately not consulted.
+/// Thao tác credential (`mgc login`) không bao giờ lấy đích từ file trong repo
+/// clone: `.npmrc` trong project có thể chuyển mật khẩu sang host kẻ tấn công.
+/// Env thắng, rồi `~/.npmrc`; file trong project cố ý không đọc.
+pub fn user_registry_only() -> Option<String> {
+    for key in ["MAGICORE_NPM_REGISTRY", "NPM_CONFIG_REGISTRY"] {
+        if let Ok(value) = std::env::var(key) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+    let user_npmrc = dirs::home_dir()?.join(".npmrc");
+    if !user_npmrc.exists() {
+        return None;
+    }
+    let parsed = NpmRc::parse(&std::fs::read_to_string(user_npmrc).ok()?).ok()?;
+    parsed.registry
+}
+
 impl NpmRc {
     /// Load user and project `.npmrc`; project values override user values.
     /// Đọc .npmrc từ đường dẫn (project) + ~/.npmrc (user) — project ghi đè user.

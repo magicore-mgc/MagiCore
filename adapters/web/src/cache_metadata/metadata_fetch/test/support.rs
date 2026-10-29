@@ -2,7 +2,6 @@
 //! Fixture path tạm canonical, socket và biến môi trường cho test metadata.
 
 use std::io::ErrorKind;
-use std::sync::Mutex;
 use tokio::net::TcpListener;
 
 pub(super) fn tempdir_real() -> std::io::Result<tempfile::TempDir> {
@@ -43,10 +42,6 @@ pub(super) fn restore_env_var(key: &str, previous: Option<std::ffi::OsString>) {
         // buffer do caller sở hữu và còn sống trong lời gọi.
         unsafe { std::env::remove_var(key) };
     }
-}
-
-pub(super) fn env_test_lock() -> &'static Mutex<()> {
-    crate::environment_test_lock()
 }
 
 pub(super) fn reg_key(url: &str) -> String {

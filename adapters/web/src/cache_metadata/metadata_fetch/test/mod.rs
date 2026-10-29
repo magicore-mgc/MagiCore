@@ -15,7 +15,7 @@ use std::sync::{
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use self::support::{bind_test_listener, env_test_lock, reg_key, restore_env_var, tempdir_real};
+use self::support::{bind_test_listener, reg_key, restore_env_var, tempdir_real};
 
 #[path = "deferred_retry_respects_stale_limit.rs"]
 mod deferred_retry_respects_stale_limit;

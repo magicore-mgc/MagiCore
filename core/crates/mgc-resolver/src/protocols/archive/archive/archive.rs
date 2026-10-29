@@ -21,13 +21,14 @@ pub fn extract_tar_gz(bytes: &[u8], dest: &Path) -> MgResult<()> {
         dest,
         &super::super::InstallHookPolicy::deny(),
     )
-        .map_err(MgError::from)
+    .map_err(MgError::from)
 }
 
 /// Extract a tar.gz while allowing install hooks for one explicitly named
 /// package (operator escape hatch; the caller must warn loudly).
 /// Giải nén tar.gz và cho phép hook cài đặt cho một package được nêu tường minh
 /// (escape hatch của operator; caller phải cảnh báo rõ).
+#[allow(dead_code)]
 pub fn extract_tar_gz_allow_hooks(bytes: &[u8], dest: &Path, package: &str) -> MgResult<()> {
     super::super::tar_extraction::extract_tar_gz(
         bytes,

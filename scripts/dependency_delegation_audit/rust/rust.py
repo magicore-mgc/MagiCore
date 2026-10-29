@@ -24,6 +24,7 @@ from ..rules.rust import (
     EXECUTOR_ROUTE_PATTERNS,
     PLATFORM_PROCESS_BOUNDARY_REVIEWS,
     SPAWN_PATTERNS,
+    TEST_ONLY_MODULE_REVIEWS,
 )
 
 from .context import (
@@ -219,6 +220,9 @@ def scan_file(rel_path: str, abs_path: str) -> list:
             ):
                 continue
             if span is not None and _is_test_function(lines, span[1]):
+                op_class, status = "test-fixture", "allowed"
+                classification_reason = None
+            elif rel_path.replace(os.sep, "/") in TEST_ONLY_MODULE_REVIEWS:
                 op_class, status = "test-fixture", "allowed"
                 classification_reason = None
             else:

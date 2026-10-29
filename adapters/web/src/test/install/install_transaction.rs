@@ -75,7 +75,7 @@ async fn test_install_finalizes_lock_and_cleans_staging_tmp() {
         ],
     };
 
-    let adapter = WebAdapter::new().unwrap();
+    let adapter = WebAdapter::build(TEST_REGISTRY_URL.into(), None, vec![], None);
     let summary = adapter
         .install(&graph, dir.path(), InstallOptions::default())
         .await

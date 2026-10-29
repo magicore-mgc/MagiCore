@@ -42,6 +42,16 @@ PLATFORM_PROCESS_BOUNDARY_REVIEWS = {
 # (Hai lệnh toolchain nội bộ này bị giới hạn bởi `mgc-exec`: Cargo khóa
 # dependency/offline, rustc chỉ truy vấn host-target chỉ đọc. Ngoại lệ phải
 # khớp chính xác file, hàm và executable.)
+# A `src/**/test/**` module is a test owner (RULE §5): its helper functions
+# are compiled only under `#[cfg(test)]` even when they are not `#[test]`
+# themselves. Matching is path-scoped so production routes are unaffected.
+# (Module `src/**/test/**` là owner test (RULE §5): helper của nó chỉ biên
+# dịch dưới `#[cfg(test)]` dù bản thân không mang `#[test]`. Khớp theo path nên
+# route production không bị ảnh hưởng.)
+TEST_ONLY_MODULE_REVIEWS = {
+    "cli/src/commands/core/dev/cicd/templates/test/catalog.rs",
+}
+
 # The web lifecycle route is user-policy gated, parsed as one non-shell
 # invocation, and constrained to the install execution scope.
 # Route lifecycle web bị policy user chặn/mở, parse thành lệnh đơn không shell,

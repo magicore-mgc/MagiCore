@@ -218,7 +218,7 @@ fn lane_npm_10_concurrent_parses_no_cross_contamination() {
 fn insecure_loopback_requires_explicit_opt_in() {
     // Default deny: loopback http is rejected unless the operator opts in.
     // Serialized: env is process-global.
-    let _guard = crate::environment_test_lock().lock().unwrap();
+    let _guard = crate::environment_test_guard();
     let old = std::env::var_os("MAGICORE_WEB_ALLOW_INSECURE_LOCALHOST");
     let restore = |previous: Option<std::ffi::OsString>| {
         if let Some(value) = previous {

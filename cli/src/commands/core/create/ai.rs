@@ -48,7 +48,9 @@ pub async fn run(
     // iot/clo/cicd. Thiếu bước này, project AI rơi xuống registry layer chưa có
     // và chỉ tạo thư mục rỗng.)
     if config.from_local.is_none()
-        && let Some(framework) = parsed_framework.as_ref().map(|spec| spec.normalized_name.as_str())
+        && let Some(framework) = parsed_framework
+            .as_ref()
+            .map(|spec| spec.normalized_name.as_str())
         && super::core_initializer::try_run("ai", framework, std::path::Path::new(project_name))?
     {
         mgc_ui::success(&format!("Created ai project: {project_name}"));
@@ -77,7 +79,9 @@ pub async fn run(
             // (Fail-closed: tiếp tục sau cảnh báo để lại project rỗng; lệnh sau
             // hỏng trên thư mục không có source.)
             Ok(_) | Err(_) => {
-                return Err(crate::scaffold::error::scaffold_source_unavailable("ai", fw));
+                return Err(crate::scaffold::error::scaffold_source_unavailable(
+                    "ai", fw,
+                ));
             }
         }
     }

@@ -133,6 +133,7 @@ pub(in crate::install::run_install::materialization) async fn materialize_depend
             layout,
             store,
             shared_cache.as_ref(),
+            state.registry_url,
             active_package_cache,
             packages_with_scripts,
             &extracted_roots,

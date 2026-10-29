@@ -22,7 +22,7 @@ async fn test_install_materializes_manifest_dependency_into_node_modules() {
     )
     .unwrap();
 
-    let adapter = WebAdapter::new().unwrap();
+    let adapter = WebAdapter::build(TEST_REGISTRY_URL.into(), None, vec![], None);
     let name = PackageName::new("tailwindcss").unwrap();
     let manifest = adapter.parse_manifest(dir.path()).await.unwrap();
     assert!(manifest.find_dep("tailwindcss").is_some());
@@ -147,7 +147,7 @@ async fn test_install_multiple_packages_from_cache() {
         ],
     };
 
-    let adapter = WebAdapter::new().unwrap();
+    let adapter = WebAdapter::build(TEST_REGISTRY_URL.into(), None, vec![], None);
     let summary = adapter
         .install(&graph, dir.path(), InstallOptions::default())
         .await
@@ -168,7 +168,7 @@ async fn test_install_multiple_packages_from_cache() {
 #[tokio::test]
 async fn test_install_skips_when_matching_package_is_already_materialized() {
     // Same loopback opt-in as the cache test above (default deny).
-    let _env_guard = env_test_lock().lock().unwrap();
+    let _env_guard = crate::environment_test_guard();
     let old_insecure = std::env::var_os("MAGICORE_WEB_ALLOW_INSECURE_LOCALHOST");
     // SAFETY: test-only env mutation; callers hold `env_lock` so no other
     // test thread observes a partially written environment.
@@ -289,7 +289,7 @@ async fn test_install_materializes_scoped_package() {
         }],
     };
 
-    let adapter = WebAdapter::new().unwrap();
+    let adapter = WebAdapter::build(TEST_REGISTRY_URL.into(), None, vec![], None);
     let summary = adapter
         .install(&graph, dir.path(), InstallOptions::default())
         .await

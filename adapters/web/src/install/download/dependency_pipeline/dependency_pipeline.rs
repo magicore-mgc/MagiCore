@@ -56,8 +56,9 @@ pub async fn pipeline_download_and_extract(
         download_concurrency_limit().min(descriptor_budget),
     ));
     let pipeline_profile = Arc::new(PipelineProfile::from_env());
+    let registry_origin = registry.map(|r| r.registry_url()).unwrap_or_default();
     let shared_package_cache = shared_cache
-        .map(|shared| shared.package_cache())
+        .map(|shared| shared.package_cache(registry_origin))
         .transpose()
         .map_err(|e| MgError::Store(e.to_string()))?;
     let extract_concurrency = extract_concurrency_limit();

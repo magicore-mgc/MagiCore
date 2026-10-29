@@ -11,7 +11,12 @@ fn task_failure_sets_the_first_failure_index() {
     let (index, result) = run_task(
         4,
         &task("python3", &["-c", "import sys; sys.exit(3)"]),
-        &ExecOptions::default(),
+        // Runners execute project code, so they need the matching scope.
+        // (Runner chạy code project nên cần scope tương ứng.)
+        &ExecOptions {
+            execution_scope: Some(crate::allowlist::ExecutionScope::TestRunner),
+            ..ExecOptions::default()
+        },
         &cancellation,
         &first_failure,
         false,

@@ -2,8 +2,8 @@
 //! Giải nén global-packages NuGet và materialize sidecar SHA-512.
 
 use crate::protocols::ResolvedEntry;
-use crate::protocols::nuget::NuGetProtocol;
 use crate::protocols::cache_segment::validate_cache_segment;
+use crate::protocols::nuget::NuGetProtocol;
 use base64::Engine as _;
 use mgc_types::MgResult;
 use sha2::{Digest, Sha512};
@@ -39,8 +39,7 @@ impl NuGetProtocol {
         // giữ đúng chữ hoa/thường của id. Validate giá trị gốc từ registry
         // trước — đó là thứ có thể chứa `..` hay dấu phân cách — rồi hạ chữ
         // thường cho đường dẫn; không được gộp hai việc này.)
-        let id_segment =
-            validate_cache_segment(&entry.name.to_lowercase(), "NuGet package id")?;
+        let id_segment = validate_cache_segment(&entry.name.to_lowercase(), "NuGet package id")?;
         let version_segment =
             validate_cache_segment(&entry.version.to_lowercase(), "NuGet package version")?;
         let dir = nuget_root.join(&id_segment).join(&version_segment);
@@ -56,8 +55,7 @@ impl NuGetProtocol {
         // (File nén giữ NGUYÊN chữ hoa/thường của id
         // (`Demo.Lib.13.0.3.nupkg`) còn thư mục chứa dùng segment chữ thường,
         // đúng layout global-packages của NuGet.)
-        let archive_id =
-            validate_cache_segment(&entry.name, "NuGet package id")?;
+        let archive_id = validate_cache_segment(&entry.name, "NuGet package id")?;
         let nupkg_name = format!("{archive_id}.{version_segment}.nupkg");
         std::fs::write(dir.join(&nupkg_name), nupkg_bytes)?;
         crate::protocols::zip_reader::extract_zip(nupkg_bytes, &dir)?;

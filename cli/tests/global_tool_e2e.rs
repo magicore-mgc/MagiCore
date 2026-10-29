@@ -6,6 +6,17 @@ mod platform {
     use std::process::Command;
     use tempfile::TempDir;
 
+    /// SRI digest for a fixture tarball (SEC-01: integrity is mandatory).
+    /// (SRI của tarball fixture; SEC-01 bắt buộc integrity.)
+    fn sri_of(bytes: &[u8]) -> String {
+        use base64::Engine as _;
+        use sha2::{Digest, Sha512};
+        format!(
+            "sha512-{}",
+            base64::engine::general_purpose::STANDARD.encode(Sha512::digest(bytes))
+        )
+    }
+
     struct RegistryFixture {
         _server: mockito::ServerGuard,
         _mocks: Vec<mockito::Mock>,
@@ -79,9 +90,7 @@ mod platform {
             "version": version,
             "bin": { binary: "./bin/cli" },
             "dependencies": {},
-            "dist": {
-                "tarball": format!("{registry}/{package}/-/{package}-{version}.tgz")
-            }
+            "dist": { "tarball": format!("{registry}/{package}/-/{package}-{version}.tgz"), "integrity": sri_of(&package_tarball(package, "cli", version)) }
         })
     }
 

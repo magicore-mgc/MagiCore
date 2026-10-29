@@ -106,7 +106,7 @@ pub(in crate::install::run_install) fn prepare(
     state.shared_package_cache_for_install = state
         .shared_cache
         .as_ref()
-        .and_then(|shared| shared.package_cache().ok());
+        .and_then(|shared| shared.package_cache(state.registry_url).ok());
     let local_has_seeded_tarballs = state
         .graph
         .packages

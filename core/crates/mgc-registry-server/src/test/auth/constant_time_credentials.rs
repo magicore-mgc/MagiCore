@@ -24,8 +24,8 @@ async fn admin_bearer_token_accepts_only_the_exact_value() {
 
 #[tokio::test]
 async fn admin_basic_secret_accepts_only_the_exact_value() {
-    use base64::Engine;
     use axum::http::{HeaderMap, HeaderValue};
+    use base64::Engine;
 
     let tmp = tempfile::tempdir().unwrap();
     let store = Arc::new(RegistryStore::new(tmp.path()).await.unwrap());
@@ -41,8 +41,14 @@ async fn admin_basic_secret_accepts_only_the_exact_value() {
         headers
     };
 
-    assert!(auth.authenticate_headers(&basic("correct-admin-token")).is_some());
-    assert!(auth.authenticate_headers(&basic("correct-admin-tokea")).is_none());
+    assert!(
+        auth.authenticate_headers(&basic("correct-admin-token"))
+            .is_some()
+    );
+    assert!(
+        auth.authenticate_headers(&basic("correct-admin-tokea"))
+            .is_none()
+    );
     assert!(auth.authenticate_headers(&basic("")).is_none());
 }
 
@@ -65,7 +71,9 @@ async fn registered_token_matches_exactly_and_rejects_prefixes() {
     .await
     .unwrap();
 
-    let matched = auth.verify_token("scoped-token-value").expect("token matches");
+    let matched = auth
+        .verify_token("scoped-token-value")
+        .expect("token matches");
     assert_eq!(matched.name, "scoped-user");
     assert!(auth.verify_token("scoped-token-valu").is_none());
     assert!(auth.verify_token("scoped-token-valuee").is_none());

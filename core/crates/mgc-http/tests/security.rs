@@ -103,9 +103,8 @@ async fn cross_host_redirect_never_forwards_the_credential() {
             let read = stream.read(&mut buffer).unwrap_or(0);
             let seen = String::from_utf8_lossy(&buffer[..read]).to_string();
             let _ = seen_tx.send(seen);
-            let _ = stream.write_all(
-                b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
-            );
+            let _ = stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
         } else {
             let _ = seen_tx.send(String::new());
         }
@@ -210,7 +209,9 @@ async fn default_client_follows_same_host_redirect_and_keeps_credentials() {
         "redirect did not reach the same-host target: {forwarded}"
     );
     assert!(
-        forwarded.to_ascii_lowercase().contains("authorization: bearer same-host-token"),
+        forwarded
+            .to_ascii_lowercase()
+            .contains("authorization: bearer same-host-token"),
         "same-host redirect lost credentials: {forwarded}"
     );
 }

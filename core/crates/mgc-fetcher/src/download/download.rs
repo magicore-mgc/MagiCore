@@ -92,12 +92,12 @@ pub(crate) async fn download_with_progress_and_client(
 
     // Reject an oversized declared body before creating the destination file.
     // Từ chối body khai báo quá lớn trước khi tạo file đích.
-    if let Some(length) = response.content_length() {
-        if length > max_bytes {
-            anyhow::bail!(
-                "declared download size {length} bytes exceeds the {max_bytes} byte limit for {url}"
-            );
-        }
+    if let Some(length) = response.content_length()
+        && length > max_bytes
+    {
+        anyhow::bail!(
+            "declared download size {length} bytes exceeds the {max_bytes} byte limit for {url}"
+        );
     }
     let total_size = response.content_length().unwrap_or(0);
 
@@ -148,11 +148,7 @@ pub(crate) async fn download_with_progress_and_client(
 
 /// Close and delete a partially written destination, then propagate `error`.
 /// Đóng và xóa file đích đang dở, sau đó trả lỗi gốc.
-async fn abort_download(
-    dest: &Path,
-    file: tokio::fs::File,
-    error: anyhow::Error,
-) -> Result<()> {
+async fn abort_download(dest: &Path, file: tokio::fs::File, error: anyhow::Error) -> Result<()> {
     drop(file);
     // Removal failure must not mask the original error; the original error is
     // what the caller acts on.

@@ -58,11 +58,8 @@ fn temp_dest(name: &str) -> (tempfile::TempDir, PathBuf) {
 
 /// Run `download_with_progress` with a temporary cap override.
 /// Chạy `download_with_progress` với giới hạn ghi đè tạm thời.
-async fn download_under_cap(
-    url: &str,
-    dest: &std::path::Path,
-    cap: u64,
-) -> anyhow::Result<()> {
+#[allow(clippy::await_holding_lock)] // test-only env lock; the guard is released before returning
+async fn download_under_cap(url: &str, dest: &std::path::Path, cap: u64) -> anyhow::Result<()> {
     let _guard = ENV_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -140,8 +137,8 @@ async fn streamed_body_over_the_cap_is_aborted_and_deleted() {
     // phải bị xóa khi hủy.)
     let (_dir, dest) = temp_dest("stream-oversize.tgz");
     let body = vec![b'a'; 4096];
-    let mut head = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
-        .to_string();
+    let mut head =
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n".to_string();
     for chunk in body.chunks(1024) {
         head.push_str(&format!("{:x}\r\n", chunk.len()));
         head.push_str(std::str::from_utf8(chunk).unwrap());

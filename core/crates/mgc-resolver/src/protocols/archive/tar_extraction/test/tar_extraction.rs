@@ -1,8 +1,8 @@
 //! Tests safe extraction success and parent-traversal rejection.
 //! Kiểm thử giải nén an toàn và từ chối đường dẫn traversal.
 
-use super::super::super::test_support::{tar_gz_file, tar_gz_file_with_raw_path};
 use super::super::super::tar_extraction::extract_tar_gz;
+use super::super::super::test_support::{tar_gz_file, tar_gz_file_with_raw_path};
 use crate::protocols::archive::InstallHookPolicy;
 use std::path::Path;
 
@@ -11,7 +11,8 @@ fn extracts_regular_files_under_the_destination() {
     let root = tempfile::tempdir().expect("test operation must succeed");
     let archive = tar_gz_file("nested/file.txt", b"content");
 
-    extract_tar_gz(&archive, root.path(), &InstallHookPolicy::deny()).expect("test operation must succeed");
+    extract_tar_gz(&archive, root.path(), &InstallHookPolicy::deny())
+        .expect("test operation must succeed");
 
     assert_eq!(
         std::fs::read(root.path().join("nested/file.txt")).expect("test operation must succeed"),
@@ -92,13 +93,19 @@ fn raw_tar_gz(path: &str, link: Option<&str>, kind: tar::EntryType) -> Vec<u8> {
     let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
     let mut builder = tar::Builder::new(encoder);
     let path_bytes = path.as_bytes();
-    assert!(path_bytes.len() <= 100, "fixture path must fit the name field");
+    assert!(
+        path_bytes.len() <= 100,
+        "fixture path must fit the name field"
+    );
     let mut header = tar::Header::new_gnu();
     header.as_mut_bytes()[..100].fill(0);
     header.as_mut_bytes()[..path_bytes.len()].copy_from_slice(path_bytes);
     if let Some(link) = link {
         let link_bytes = link.as_bytes();
-        assert!(link_bytes.len() <= 100, "fixture link must fit the link field");
+        assert!(
+            link_bytes.len() <= 100,
+            "fixture link must fit the link field"
+        );
         header.as_mut_bytes()[157..257].fill(0);
         header.as_mut_bytes()[157..157 + link_bytes.len()].copy_from_slice(link_bytes);
     }

@@ -13,7 +13,7 @@ fn lifecycle_runs_simple_script_without_shell() {
     let marker = package.path().join("marker.txt");
     write_package_script(
         package.path(),
-        "python3 -c \"from pathlib import Path; Path('marker.txt').write_text('ok')\"",
+        "@PYTHON@ -c \"from pathlib import Path; Path('marker.txt').write_text('ok')\"",
     );
 
     LifecycleRunner::run_scripts(package.path(), project.path()).unwrap();
@@ -28,7 +28,7 @@ fn lifecycle_accepts_leading_env_assignment() {
     let package = tempfile::tempdir().unwrap();
     write_package_script(
         package.path(),
-        "MGC_LIFECYCLE_TEST=ok python3 -c \"import os; assert os.environ.get('MGC_LIFECYCLE_TEST') == 'ok'\"",
+        "MGC_LIFECYCLE_TEST=ok @PYTHON@ -c \"import os; assert os.environ.get('MGC_LIFECYCLE_TEST') == 'ok'\"",
     );
 
     LifecycleRunner::run_scripts(package.path(), project.path()).unwrap();
@@ -42,7 +42,7 @@ fn lifecycle_execution_uses_the_policy_checked_manifest_snapshot() {
     let package = tempfile::tempdir().unwrap();
     let marker = package.path().join("snapshot-marker.txt");
     let script = format!(
-        "python3 -c \"from pathlib import Path; Path('{}').write_text('checked')\"",
+        "@PYTHON@ -c \"from pathlib import Path; Path('{}').write_text('checked')\"",
         marker.display()
     );
     write_package_script(package.path(), &script);
@@ -59,7 +59,7 @@ fn lifecycle_execution_uses_the_policy_checked_manifest_snapshot() {
 fn lifecycle_timeout_kills_hung_process() {
     let project = tempfile::tempdir().unwrap();
     let package = tempfile::tempdir().unwrap();
-    write_package_script(package.path(), "python3 -c \"import time; time.sleep(2)\"");
+    write_package_script(package.path(), "@PYTHON@ -c \"import time; time.sleep(2)\"");
 
     let _timeout =
         super::helpers::ScopedEnvironmentVariable::set("MGC_LIFECYCLE_TIMEOUT_SECS", "1");

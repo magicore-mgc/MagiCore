@@ -15,6 +15,17 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 
+/// SRI digest for a fixture tarball (SEC-01: integrity is mandatory).
+/// (SRI của tarball fixture; SEC-01 bắt buộc integrity.)
+fn sri_of(bytes: &[u8]) -> String {
+    use base64::Engine as _;
+    use sha2::{Digest, Sha512};
+    format!(
+        "sha512-{}",
+        base64::engine::general_purpose::STANDARD.encode(Sha512::digest(bytes))
+    )
+}
+
 fn find_mgc_binary() -> String {
     std::env::var("CARGO_BIN_EXE_mgc")
         .expect("CARGO_BIN_EXE_mgc not set — run via `cargo test -p mgc`")
@@ -94,7 +105,7 @@ impl NpmFixture {
                     "name": name,
                     "version": version,
                     "dependencies": {},
-                    "dist": { "tarball": format!("{url}/{name}/-/{name}-{version}.tgz") },
+                    "dist": { "tarball": format!("{url}/{name}/-/{name}-{version}.tgz"), "integrity": sri_of(&"{url}/{name}/-/{name}-{version}.tgz") },
                 } },
             });
             mocks.push(

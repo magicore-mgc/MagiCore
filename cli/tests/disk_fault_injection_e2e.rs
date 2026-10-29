@@ -46,6 +46,17 @@ use tempfile::TempDir;
 #[cfg(target_os = "macos")]
 const ENOSPC_PROBE_BYTES: usize = 1024 * 1024;
 
+/// SRI digest for a fixture tarball (SEC-01: integrity is mandatory).
+/// (SRI của tarball fixture; SEC-01 bắt buộc integrity.)
+fn sri_of(bytes: &[u8]) -> String {
+    use base64::Engine as _;
+    use sha2::{Digest, Sha512};
+    format!(
+        "sha512-{}",
+        base64::engine::general_purpose::STANDARD.encode(Sha512::digest(bytes))
+    )
+}
+
 fn find_mgc_binary() -> String {
     std::env::var("CARGO_BIN_EXE_mgc")
         .expect("CARGO_BIN_EXE_mgc not set — run via `cargo test -p mgc`")
@@ -202,7 +213,7 @@ fn enospc_on_the_store_volume_fails_clean_and_recovers() {
             "name": "is-odd",
             "version": "3.0.1",
             "dependencies": {},
-            "dist": { "tarball": format!("{url}/is-odd/-/is-odd-3.0.1.tgz") }
+            "dist": { "tarball": format!("{url}/is-odd/-/is-odd-3.0.1.tgz"), "integrity": sri_of(&make_tarball()) }
         }}
     });
     let _metadata_mock = server
@@ -396,7 +407,7 @@ fn readonly_store_dir_blocks_install_cleanly_and_recovers() {
             "name": "is-odd",
             "version": "3.0.1",
             "dependencies": {},
-            "dist": { "tarball": format!("{url}/is-odd/-/is-odd-3.0.1.tgz") }
+            "dist": { "tarball": format!("{url}/is-odd/-/is-odd-3.0.1.tgz"), "integrity": sri_of(&make_tarball()) }
         }}
     });
     let _metadata_mock = server
@@ -497,7 +508,7 @@ fn readonly_node_modules_blocks_materialize_cleanly_and_recovers() {
             "name": "is-odd",
             "version": "3.0.1",
             "dependencies": {},
-            "dist": { "tarball": format!("{url}/is-odd/-/is-odd-3.0.1.tgz") }
+            "dist": { "tarball": format!("{url}/is-odd/-/is-odd-3.0.1.tgz"), "integrity": sri_of(&make_tarball()) }
         }}
     });
     let _metadata_mock = server

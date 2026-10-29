@@ -13,7 +13,10 @@ fn url(raw: &str) -> Url {
 #[test]
 fn same_host_same_scheme_is_allowed() {
     let initial = url("https://registry.example.com/pkg");
-    assert!(same_origin_for_test(&url("https://registry.example.com/other"), &[initial]));
+    assert!(same_origin_for_test(
+        &url("https://registry.example.com/other"),
+        &[initial]
+    ));
 }
 
 #[test]
@@ -56,7 +59,10 @@ fn scheme_upgrade_that_changes_the_default_port_is_allowed() {
 #[test]
 fn https_downgrade_to_http_is_never_same_origin() {
     let initial = url("https://registry.example.com/pkg");
-    assert!(!same_origin_for_test(&url("http://registry.example.com/pkg"), &[initial]));
+    assert!(!same_origin_for_test(
+        &url("http://registry.example.com/pkg"),
+        &[initial]
+    ));
 }
 
 #[test]
@@ -77,7 +83,10 @@ fn downgrade_is_judged_against_the_chain_start() {
 
 #[test]
 fn empty_chain_is_never_same_origin() {
-    assert!(!same_origin_for_test(&url("https://registry.example.com/pkg"), &[]));
+    assert!(!same_origin_for_test(
+        &url("https://registry.example.com/pkg"),
+        &[]
+    ));
 }
 
 #[test]

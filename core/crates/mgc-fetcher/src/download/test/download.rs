@@ -1,9 +1,7 @@
 //! SEC-9 download cap resolution tests.
 //! Test xác định giới hạn tải SEC-9.
 
-use super::super::{
-    DEFAULT_MAX_DOWNLOAD_BYTES, MAX_DOWNLOAD_BYTES_ENV, max_download_bytes,
-};
+use super::super::{DEFAULT_MAX_DOWNLOAD_BYTES, MAX_DOWNLOAD_BYTES_ENV, max_download_bytes};
 use std::sync::Mutex;
 
 /// The environment is process-global; serialize tests that mutate it.

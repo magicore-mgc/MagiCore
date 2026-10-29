@@ -22,6 +22,7 @@ fn strict_layout_creates_virtual_store_for_an_empty_graph() {
         &layout,
         &store,
         None,
+        "https://registry.npmjs.org",
         &cache,
         &mut packages_with_scripts,
         &std::collections::HashMap::new(),

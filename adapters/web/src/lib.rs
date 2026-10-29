@@ -38,12 +38,23 @@ mod tests;
 #[path = "test/script_policy_tests.rs"]
 mod script_policy_tests;
 
-/// Serialize tests that change process-wide environment variables.
-/// Tuần tự hóa các test thay đổi biến môi trường dùng chung của process.
+/// Process-wide environment lock for parallel tests that mutate env vars, or a
+/// poisoning-free guard. A test that panics while holding the lock must not
+/// fail every later test in the same binary, so acquisition always recovers.
+/// (Lock môi trường dùng chung cho test song song đổi env, hoặc guard không
+/// nhiễm độc. Test panic khi giữ lock không được làm hỏng mọi test sau, nên
+/// mọi lần acquire đều khôi phục.)
 #[cfg(test)]
 pub(crate) fn environment_test_lock() -> &'static std::sync::Mutex<()> {
     static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
     LOCK.get_or_init(|| std::sync::Mutex::new(()))
+}
+
+#[cfg(test)]
+pub(crate) fn environment_test_guard() -> std::sync::MutexGuard<'static, ()> {
+    environment_test_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 pub use lockfile::{read_web_lockfile, read_web_lockfile_checked};

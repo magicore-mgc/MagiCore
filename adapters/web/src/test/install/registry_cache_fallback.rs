@@ -7,7 +7,7 @@ use super::*;
 async fn test_install_uses_cache_when_registry_is_unavailable() {
     // Loopback http tarballs require explicit opt-in (default deny) —
     // hold the env lock so parallel tests never observe a torn value.
-    let _env_guard = env_test_lock().lock().unwrap();
+    let _env_guard = crate::environment_test_guard();
     let old_insecure = std::env::var_os("MAGICORE_WEB_ALLOW_INSECURE_LOCALHOST");
     // SAFETY: test-only env mutation; callers hold `env_lock` so no other
     // test thread observes a partially written environment.
@@ -124,13 +124,14 @@ async fn test_install_uses_shared_tarball_cache_for_new_project() {
     assert_eq!(summary.added, vec![react.clone()]);
     assert!(summary.bytes_from_cache > 0);
     assert!(dir.path().join("node_modules/react/index.js").exists());
+    // SEC-01: shared entries live under a registry-origin scope directory, so
+    // assert through the scoped cache handle instead of the legacy layout.
+    // SEC-01: entry dùng chung nằm dưới thư mục scope origin registry, nên
+    // assert qua handle cache đã scope thay vì layout cũ.
     assert!(
-        shared
-            .path()
-            .join("cache")
-            .join("react")
-            .join("18.2.0.tgz")
-            .exists()
+        PackageCache::for_registry(shared.path().join("cache"), TEST_REGISTRY_URL)
+            .unwrap()
+            .contains_tarball(&react)
     );
 }
 
@@ -167,7 +168,7 @@ async fn test_install_recovers_from_corrupted_local_cache_using_shared_cache() {
     seed_shared_tarball_with_files(shared.path(), &react, &files);
     let local_layout = Layout::new(dir.path().join(".magicore").join("cache").join("web"));
     std::fs::create_dir_all(local_layout.root()).unwrap();
-    let local_cache = PackageCache::new(local_layout.cache_dir()).unwrap();
+    let local_cache = PackageCache::for_registry(local_layout.cache_dir(), TEST_REGISTRY_URL).unwrap();
     local_cache.cache_tarball(&react, b"corrupted").unwrap();
 
     let graph = ResolvedGraph {
@@ -194,7 +195,7 @@ async fn test_install_recovers_from_corrupted_local_cache_using_shared_cache() {
     assert!(dir.path().join("node_modules/react/index.js").exists());
 
     assert!(local_cache.get_tarball(&react).unwrap().is_none());
-    let shared_cache = PackageCache::new(shared.path().join("cache")).unwrap();
+    let shared_cache = PackageCache::for_registry(shared.path().join("cache"), TEST_REGISTRY_URL).unwrap();
     let repaired = shared_cache.get_tarball(&react).unwrap().unwrap();
     assert_eq!(repaired, good_tarball);
 }
@@ -241,7 +242,7 @@ async fn test_install_fails_when_registry_is_unavailable_and_cache_is_missing() 
 
 #[tokio::test]
 async fn test_install_retries_flaky_tarball_download() {
-    let _env_guard = env_test_lock().lock().unwrap();
+    let _env_guard = crate::environment_test_guard();
     let _allow_insecure = ScopedEnvVar::set("MAGICORE_WEB_ALLOW_INSECURE_LOCALHOST", "1");
     let dir = tempdir_real().unwrap();
     std::fs::write(
@@ -310,7 +311,7 @@ async fn test_install_retries_flaky_tarball_download() {
         }],
     };
 
-    let adapter = WebAdapter::new().unwrap();
+    let adapter = WebAdapter::build(TEST_REGISTRY_URL.into(), None, vec![], None);
     let summary = adapter
         .install(&graph, dir.path(), InstallOptions::default())
         .await

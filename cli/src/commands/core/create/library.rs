@@ -96,7 +96,9 @@ pub async fn run(
         // `lib`, `ai`, `app` là ngoại lệ.)
         Err(error) if explicit_ref || !error.is_availability_failure() => return Err(error.into()),
         Ok(_) | Err(_) => {
-            return Err(crate::scaffold::error::scaffold_source_unavailable("lib", lang));
+            return Err(crate::scaffold::error::scaffold_source_unavailable(
+                "lib", lang,
+            ));
         }
     }
 

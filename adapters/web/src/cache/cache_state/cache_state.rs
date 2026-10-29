@@ -81,10 +81,22 @@ impl SharedWebCache {
         }
     }
 
-    pub fn package_cache(&self) -> anyhow::Result<PackageCache> {
+    /// Shared tarball cache for one registry origin (SEC-01).
+    /// Cache tarball dùng chung cho một origin registry (SEC-01).
+    ///
+    /// Fails closed when the registry origin is unknown: an unscoped shared
+    /// cache would serve one registry's bytes to another project.
+    /// Fail-closed khi chưa biết origin registry: cache dùng chung không scope
+    /// sẽ phục vụ bytes của registry này cho project của registry khác.
+    pub fn package_cache(&self, registry_url: &str) -> anyhow::Result<PackageCache> {
+        if registry_url.trim().is_empty() {
+            anyhow::bail!(
+                "shared cache requires a registry origin; refusing an unscoped shared package cache"
+            );
+        }
         let layout = Layout::new(self.root.clone());
         std::fs::create_dir_all(layout.root())?;
-        PackageCache::new(layout.cache_dir())
+        PackageCache::for_registry(layout.cache_dir(), registry_url)
     }
 
     pub fn maybe_prune(&self) {

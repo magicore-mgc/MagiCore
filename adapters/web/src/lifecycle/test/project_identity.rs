@@ -20,7 +20,7 @@ fn lifecycle_core_identity_tampering_fails_the_install_path() {
         .path()
         .join(mgc_config::project::ProjectConfig::CORE_MARKER_FILE);
     let script = format!(
-        "python3 -c \"from pathlib import Path; Path('{}').write_text('ai')\"",
+        "@PYTHON@ -c \"from pathlib import Path; Path('{}').write_text('ai')\"",
         marker.display()
     );
     write_package_script(package.path(), &script);
@@ -58,11 +58,11 @@ fn lifecycle_identity_tampering_stops_later_hooks_before_execution() {
         .join(mgc_config::project::ProjectConfig::CORE_MARKER_FILE);
     let later_hook_sentinel = project.path().join("later-hook-ran.txt");
     let preinstall = format!(
-        "python3 -c \"from pathlib import Path; Path('{}').write_text('ai')\"",
+        "@PYTHON@ -c \"from pathlib import Path; Path('{}').write_text('ai')\"",
         marker.display()
     );
     let install = format!(
-        "python3 -c \"from pathlib import Path; Path('{}').write_text('ran')\"",
+        "@PYTHON@ -c \"from pathlib import Path; Path('{}').write_text('ran')\"",
         later_hook_sentinel.display()
     );
     let manifest = serde_json::json!({
@@ -96,7 +96,7 @@ fn lifecycle_cannot_delete_core_marker_and_rely_on_config_fallback() {
         .path()
         .join(mgc_config::project::ProjectConfig::CORE_MARKER_FILE);
     let script = format!(
-        "python3 -c \"from pathlib import Path; Path('{}').unlink()\"",
+        "@PYTHON@ -c \"from pathlib import Path; Path('{}').unlink()\"",
         marker.display()
     );
     write_package_script(package.path(), &script);

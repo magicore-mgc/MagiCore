@@ -11,12 +11,7 @@
 use crate::protocols::archive::InstallHookPolicy;
 use crate::protocols::zip_reader::{extract_zip, extract_zip_with_policy, test_support::build_zip};
 
-/// 1. The litellm 1.107.0 payload shape: a wheel ZIP with a `.pth` entry, a
-///    clean module, and dist-info bookkeeping. A real installer only needs the
-///    `.pth` to execute code at every interpreter start.
-/// (1. Hình dạng payload litellm 1.107.0: ZIP wheel có entry `.pth`, module
-/// sạch, và dist-info. Installer thật chỉ cần `.pth` để chạy code mỗi lần
-/// interpreter khởi động.)
+/// Case 1: The litellm 1.107.0 payload shape: a wheel ZIP with a `.pth` entry, a clean module, and dist-info bookkeeping. A real installer only needs the `.pth` to execute code at every interpreter start. (1. Hình dạng payload litellm 1.107.0: ZIP wheel có entry `.pth`, module sạch, và dist-info. Installer thật chỉ cần `.pth` để chạy code mỗi lần interpreter khởi động.)
 fn litellm_wheel() -> Vec<u8> {
     build_zip(&[
         (
@@ -33,10 +28,7 @@ fn litellm_wheel() -> Vec<u8> {
     ])
 }
 
-/// 2. A wheel that hides `sitecustomize.py` in a package directory. Python's
-///    `site` imports it whenever that directory is on `sys.path`.
-/// (2. Wheel giấu `sitecustomize.py` trong thư mục package. `site` của Python
-/// import nó bất cứ khi nào thư mục đó nằm trên `sys.path`.)
+/// Case 2: A wheel that hides `sitecustomize.py` in a package directory. Python's `site` imports it whenever that directory is on `sys.path`. (2. Wheel giấu `sitecustomize.py` trong thư mục package. `site` của Python import nó bất cứ khi nào thư mục đó nằm trên `sys.path`.)
 fn sitecustomize_wheel() -> Vec<u8> {
     build_zip(&[
         ("pkg/sitecustomize.py", b"import os\n".to_vec(), 8),
@@ -44,10 +36,7 @@ fn sitecustomize_wheel() -> Vec<u8> {
     ])
 }
 
-/// 3. A NuGet package with `tools/install.ps1`, the script the NuGet client
-///    runs for packages.config projects.
-/// (3. Gói NuGet có `tools/install.ps1` — script NuGet client chạy cho
-/// project packages.config.)
+/// Case 3: A NuGet package with `tools/install.ps1`, the script the NuGet client runs for packages.config projects. (3. Gói NuGet có `tools/install.ps1` — script NuGet client chạy cho project packages.config.)
 fn nuget_install_script_package() -> Vec<u8> {
     build_zip(&[
         ("Demo.Lib.nuspec", b"<package/>".to_vec(), 8),

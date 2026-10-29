@@ -5,4 +5,5 @@ mod load;
 mod lookup;
 mod parse;
 mod types;
+pub use load::user_registry_only;
 pub use types::{NpmCredential, NpmRc};

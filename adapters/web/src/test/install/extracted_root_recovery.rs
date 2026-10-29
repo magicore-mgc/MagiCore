@@ -50,7 +50,7 @@ async fn test_install_rebuilds_shared_extracted_root_when_marker_mismatches() {
     };
 
     let adapter = WebAdapter::with_registry_and_shared_cache(
-        "https://registry.npmjs.org".into(),
+        TEST_REGISTRY_URL.into(),
         shared.path().to_path_buf(),
     );
     adapter
@@ -165,7 +165,7 @@ async fn test_install_rebuilds_cached_root_when_file_tree_is_incomplete() {
         b"module.exports = {};\n",
     )
     .unwrap();
-    let tarball = PackageCache::new(shared.path().join("cache"))
+    let tarball = PackageCache::for_registry(shared.path().join("cache"), TEST_REGISTRY_URL)
         .unwrap()
         .get_tarball(&rollup)
         .unwrap()
@@ -179,7 +179,7 @@ async fn test_install_rebuilds_cached_root_when_file_tree_is_incomplete() {
     write_extracted_package_marker(&shared_root, &marker).unwrap();
 
     let adapter = WebAdapter::with_registry_and_shared_cache(
-        "https://registry.npmjs.org".into(),
+        TEST_REGISTRY_URL.into(),
         shared.path().to_path_buf(),
     );
     adapter
@@ -235,7 +235,7 @@ async fn test_install_rebuilds_legacy_root_when_marker_signature_is_missing() {
         .unwrap();
     std::fs::write(shared_root.join("decode.js"), b"module.exports = {};\n").unwrap();
 
-    let tarball = PackageCache::new(shared.path().join("cache"))
+    let tarball = PackageCache::for_registry(shared.path().join("cache"), TEST_REGISTRY_URL)
         .unwrap()
         .get_tarball(&entities)
         .unwrap()
@@ -248,7 +248,7 @@ async fn test_install_rebuilds_legacy_root_when_marker_signature_is_missing() {
     write_extracted_package_marker(&shared_root, &marker).unwrap();
 
     let adapter = WebAdapter::with_registry_and_shared_cache(
-        "https://registry.npmjs.org".into(),
+        TEST_REGISTRY_URL.into(),
         shared.path().to_path_buf(),
     );
     adapter
@@ -310,7 +310,7 @@ async fn test_default_cache_validation_rebuilds_v3_root_when_file_tree_is_incomp
         b"module.exports = {};\n",
     )
     .unwrap();
-    let tarball = PackageCache::new(shared.path().join("cache"))
+    let tarball = PackageCache::for_registry(shared.path().join("cache"), TEST_REGISTRY_URL)
         .unwrap()
         .get_tarball(&rollup)
         .unwrap()
@@ -320,7 +320,7 @@ async fn test_default_cache_validation_rebuilds_v3_root_when_file_tree_is_incomp
     write_extracted_package_marker(&shared_root, &marker).unwrap();
 
     let adapter = WebAdapter::with_registry_and_shared_cache(
-        "https://registry.npmjs.org".into(),
+        TEST_REGISTRY_URL.into(),
         shared.path().to_path_buf(),
     );
     adapter

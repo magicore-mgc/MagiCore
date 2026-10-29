@@ -48,6 +48,14 @@ pub enum RegistryCmd {
             value_delimiter = ','
         )]
         trusted_proxy_ips: Vec<std::net::IpAddr>,
+        /// Browser origins allowed to call the API (repeatable). Empty = no CORS.
+        /// Origin trình duyệt được phép gọi API (lặp được). Rỗng = không CORS.
+        #[arg(
+            long = "cors-origin",
+            env = "MAGICORE_REGISTRY_CORS_ORIGINS",
+            value_delimiter = ','
+        )]
+        cors_origins: Vec<String>,
     },
     /// Bind a package to a trusted CI repository (requires admin token).
     /// Ràng buộc package với repository CI đáng tin (cần admin token).

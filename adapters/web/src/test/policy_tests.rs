@@ -45,7 +45,7 @@ fn test_trust_gate_fail_closed_with_escape_hatch() {
 
 #[test]
 fn test_prefetch_defaults_are_conservative() {
-    let _guard = env_test_lock().lock().unwrap();
+    let _guard = crate::environment_test_guard();
     let old_resolve = std::env::var_os("MAGICORE_WEB_RESOLVE_PREFETCH");
     // SAFETY: test-only env mutation; callers hold `env_lock` so no other
     // test thread observes a partially written environment.
@@ -64,7 +64,7 @@ fn test_prefetch_defaults_are_conservative() {
 
 #[test]
 fn test_prefetch_flag_can_be_enabled_explicitly() {
-    let _guard = env_test_lock().lock().unwrap();
+    let _guard = crate::environment_test_guard();
     let old_resolve = std::env::var_os("MAGICORE_WEB_RESOLVE_PREFETCH");
     // SAFETY: test-only env mutation; callers hold `env_lock` so no other
     // test thread observes a partially written environment.
