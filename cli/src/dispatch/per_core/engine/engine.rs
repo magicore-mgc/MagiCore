@@ -55,6 +55,13 @@ pub(in crate::dispatch) fn engine_to_common(command: EngineCommands) -> Option<C
         EngineCommands::Flash { board, skip_build } => {
             Some(CommonCommand::Flash { board, skip_build })
         }
+        EngineCommands::VerifySbom {
+            artifact,
+            trust_key,
+        } => Some(CommonCommand::VerifySbom {
+            artifact,
+            trust_key,
+        }),
         EngineCommands::Deploy { run } => Some(CommonCommand::Deploy { run }),
         EngineCommands::CiGenerate => Some(CommonCommand::CiGenerate),
         EngineCommands::Verify => Some(CommonCommand::Verify),

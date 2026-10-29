@@ -20,6 +20,7 @@ pub(in crate::dispatch::engine) fn recursive_supported(command: &Commands) -> bo
             | Commands::Bare(BareCommands::Update { .. })
             | Commands::Bare(BareCommands::List { .. })
             | Commands::Engine(EngineCommands::Build { .. })
+            | Commands::Engine(EngineCommands::VerifySbom { .. })
             | Commands::Engine(EngineCommands::Run { .. })
             | Commands::Engine(EngineCommands::Test { .. })
             | Commands::Engine(EngineCommands::Optimizer { .. })

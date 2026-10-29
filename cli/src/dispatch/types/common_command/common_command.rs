@@ -99,6 +99,12 @@ pub enum CommonCommand {
         run: bool,
     },
     CiGenerate,
+    /// Verify an SBOM signature produced by `mgc build` (SEC-15).
+    /// Verify chữ ký SBOM do `mgc build` tạo (SEC-15).
+    VerifySbom {
+        artifact: String,
+        trust_key: String,
+    },
     Verify,
     Start,
     Exec {

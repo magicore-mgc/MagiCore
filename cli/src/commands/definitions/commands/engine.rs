@@ -125,6 +125,17 @@ pub enum EngineCommands {
         )]
         allow_output_warnings: bool,
     },
+    #[command(about = "Verify an SBOM signature written by `mgc build` (fail-closed)")]
+    VerifySbom {
+        /// Artifact to verify; its sibling `<artifact>.sig` is read.
+        /// Artifact cần verify; file `<artifact>.sig` cạnh nó được đọc.
+        artifact: String,
+        /// Pinned Ed25519 public key (base64) that must have produced the
+        /// signature.
+        /// Public key Ed25519 đã pin (base64) phải là key tạo chữ ký.
+        #[arg(long = "trust-key", value_name = "BASE64")]
+        trust_key: String,
+    },
     #[command(about = "Flash firmware to a device (IoT esp32)")]
     Flash {
         #[arg(long, help = "Board override (e.g., esp32c3, esp32s3)")]

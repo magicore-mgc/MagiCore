@@ -61,6 +61,10 @@ pub async fn dispatch_common(
         CommonCommand::Flash { board, skip_build } => {
             super::dev_route::flash(board, skip_build).await
         }
+        CommonCommand::VerifySbom {
+            artifact,
+            trust_key,
+        } => verify_sbom_command(&artifact, &trust_key),
         CommonCommand::Deploy { run } => super::deploy_command::dispatch(run).await,
         #[cfg(feature = "cicd")]
         CommonCommand::CiGenerate => commands::core::dev::cicd::ci_generate(),
@@ -263,3 +267,18 @@ pub async fn dispatch_common(
 #[cfg(test)]
 #[path = "test/mod.rs"]
 mod test;
+
+/// Verify a build artefact against its signature (SEC-15).
+/// Verify artefact build với chữ ký của nó (SEC-15).
+fn verify_sbom_command(artifact: &str, trust_key: &str) -> anyhow::Result<()> {
+    let verified = commands::build::post_build::verify_sbom::verify(
+        std::path::Path::new(artifact),
+        trust_key,
+    )?;
+    println!(
+        "\u{2713} signature verified: {} (key {})",
+        verified.artifact.display(),
+        verified.signature.display()
+    );
+    Ok(())
+}

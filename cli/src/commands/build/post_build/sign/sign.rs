@@ -62,13 +62,15 @@ pub(crate) fn sign_artifact(artifact: &Path, keyring_path: &Path) -> Result<Sign
 
     let signature = signer.sign(&bytes);
     let encoded = signature.to_base64();
-    let signature_path = artifact.with_extension(format!(
-        "{}.sig",
-        artifact
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or_default()
-    ));
+    // SEC-15: one naming rule shared with the verifier. `with_extension`
+    // produced `bundle..sig` for an extensionless artifact, which the verifier
+    // would never look for.
+    // (SEC-15: một quy tắc đặt tên dùng chung với verifier. `with_extension`
+    // tạo `bundle..sig` cho artifact không có extension, verifier sẽ không bao
+    // giờ tìm file đó.)
+    let mut signed_name = artifact.file_name().unwrap_or_default().to_os_string();
+    signed_name.push(".sig");
+    let signature_path = artifact.with_file_name(signed_name);
     let document = serde_json::json!({
         "file": artifact.file_name().and_then(|n| n.to_str()).unwrap_or_default(),
         "algorithm": "ed25519",

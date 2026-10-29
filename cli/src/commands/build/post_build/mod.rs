@@ -18,6 +18,8 @@ mod runtime_guard;
 mod scan;
 #[path = "sign/mod.rs"]
 mod sign;
+#[path = "verify_sbom/mod.rs"]
+pub(crate) mod verify_sbom;
 
 pub(crate) use output_sbom::write as write_output_sbom;
 pub(crate) use run::{PostBuildOptions, run as run_post_build, run_for_core};

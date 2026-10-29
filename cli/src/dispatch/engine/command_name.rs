@@ -42,6 +42,7 @@ pub(super) fn command_name(command: &Commands) -> &'static str {
         Commands::Engine(EngineCommands::Test { .. }) => "test",
         Commands::Engine(EngineCommands::Optimizer { .. }) => "optimizer",
         Commands::Engine(EngineCommands::Build { .. }) => "build",
+        Commands::Engine(EngineCommands::VerifySbom { .. }) => "verify-sbom",
         Commands::Engine(EngineCommands::Flash { .. }) => "flash",
         Commands::Engine(EngineCommands::Deploy { .. }) => "deploy",
         Commands::Engine(EngineCommands::CiGenerate) => "ci-generate",
