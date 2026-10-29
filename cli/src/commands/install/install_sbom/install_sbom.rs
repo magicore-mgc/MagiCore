@@ -77,10 +77,53 @@ pub(crate) async fn write_sbom(root: &Path) -> Result<Option<PathBuf>> {
     // thi hành. Biến nó thành lỗi install sẽ báo trùng policy và phá hợp đồng
     // install rỗng đã tài liệu hoá.
     match generated {
-        Ok(()) => Ok(Some(output)),
+        Ok(()) => {
+            record_identity(&output);
+            Ok(Some(output))
+        }
         Err(error) => {
             eprintln!("WARN: SBOM not written for this install: {error}");
             Ok(None)
         }
     }
 }
+
+/// Write the install SBOM's identity beside it (SEC-14).
+/// Ghi identity của SBOM install bên cạnh nó (SEC-14).
+///
+/// The document described the graph but not itself, so two SBOMs could not be
+/// told apart and nobody could check that the bytes on disk were the ones the
+/// install produced. The sidecar records the BLAKE3 digest, size and the
+/// producing tool version; it is written only after a successful generation.
+/// (Tài liệu mô tả graph nhưng không mô tả chính nó, nên hai SBOM không phân
+/// biệt được và không ai kiểm được bytes trên đĩa đúng là bản install sinh ra.
+/// Sidecar ghi digest BLAKE3, kích thước và version tool tạo; chỉ ghi sau khi
+/// sinh thành công.)
+fn record_identity(sbom: &Path) {
+    let digest = match mgc_crypto::blake3_signer::Blake3Hasher::hash_file(sbom) {
+        Ok(digest) => digest,
+        Err(error) => {
+            eprintln!("WARN: install SBOM digest not recorded: {error}");
+            return;
+        }
+    };
+    let size = std::fs::metadata(sbom).map(|meta| meta.len()).unwrap_or(0);
+    let identity = serde_json::json!({
+        "file": sbom.file_name().and_then(|name| name.to_str()).unwrap_or_default(),
+        "blake3": digest.to_hex(),
+        "bytes": size,
+        "tool_version": env!("CARGO_PKG_VERSION"),
+    });
+    let mut sidecar = sbom.as_os_str().to_os_string();
+    sidecar.push(".identity.json");
+    if let Err(error) = std::fs::write(
+        PathBuf::from(sidecar),
+        serde_json::to_vec_pretty(&identity).unwrap_or_default(),
+    ) {
+        eprintln!("WARN: install SBOM identity not written: {error}");
+    }
+}
+
+#[cfg(test)]
+#[path = "test/mod.rs"]
+mod test;
