@@ -103,8 +103,8 @@ async fn unity_add_fails_closed_until_mgc_owns_upm_resolution() {
 }
 
 #[tokio::test]
-async fn audit_returns_clean_for_game_project() {
-    integration::audit_sbom::audit_returns_clean_for_game_project().await;
+async fn audit_reports_unsupported_instead_of_a_clean_scan() {
+    integration::audit_sbom::audit_reports_unsupported_instead_of_a_clean_scan().await;
 }
 
 #[test]
