@@ -106,6 +106,9 @@ struct RegistryFixture {
     _server: mockito::ServerGuard,
     _mocks: Vec<mockito::Mock>,
     url: String,
+    /// Tarball hits observed by the mock, which counts real HTTP requests.
+    /// Số lượt trúng tarball mà mock quan sát — mock đếm request HTTP thật.
+    tarball_hits: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl RegistryFixture {
@@ -124,19 +127,38 @@ impl RegistryFixture {
             .with_body(metadata.to_string())
             .expect_at_least(1)
             .create();
+        // Every tarball answer is counted, so a refetch is measured instead of
+        // inferred; `expect_at_least(1)` keeps the mock answering if a bug
+        // makes the install ask again.
+        // (Mọi lần trả tarball đều được đếm để refetch được đo chứ không suy
+        // đoán; `expect_at_least(1)` giữ mock trả lời nếu bug khiến install
+        // hỏi lại.)
+        let tarball_hits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = tarball_hits.clone();
         let tarball_mock = server
             .mock("GET", "/is-odd/-/is-odd-3.0.1.tgz")
             .with_status(200)
             .with_header("content-type", "application/octet-stream")
             .with_body(package_tarball())
             .expect_at_least(1)
+            .with_body_from_request(move |_| {
+                counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                package_tarball()
+            })
             .create();
 
         Self {
             _server: server,
             _mocks: vec![metadata_mock, tarball_mock],
             url,
+            tarball_hits,
         }
+    }
+
+    /// How many times the tarball endpoint was actually requested.
+    /// Số lần endpoint tarball thực sự được gọi.
+    fn tarball_requests(&self) -> usize {
+        self.tarball_hits.load(std::sync::atomic::Ordering::SeqCst)
     }
 }
 
@@ -501,4 +523,81 @@ fn concurrent_same_digest_does_not_double_store() {
             project.display()
         );
     }
+}
+
+/// P-2.1/P-2.2: fifty projects with the same dependency set share one tarball
+/// cache, so the tarball is fetched from the registry exactly once.
+/// (P-2.1/P-2.2: năm mươi project cùng dependency set dùng chung một cache
+/// tarball, nên tarball chỉ được tải từ registry đúng một lần.)
+///
+/// The second install of the same dependency set must not hit the registry at
+/// all: mockito reports the request count per mock, so "no refetch" is measured
+/// rather than assumed. Every project still gets its own materialized copy,
+/// which is the isolation half of the criterion.
+/// (Lần cài thứ hai cùng dependency set không được chạm registry: mockito báo
+/// số request theo từng mock, nên "không tải lại" được đo chứ không giả định.
+/// Mỗi project vẫn có bản materialize riêng — nửa isolation của tiêu chí.)
+#[test]
+fn fifty_projects_with_one_dependency_set_fetch_each_tarball_once() {
+    let temp = TempDir::new().unwrap();
+    let mgc = find_mgc_binary();
+    let registry = RegistryFixture::new();
+    let shared_cache = temp.path().join("shared-cache");
+
+    let projects: Vec<PathBuf> = (1..=50)
+        .map(|index| create_web_project(&temp, &format!("shared-{index}")))
+        .collect();
+
+    let first = install_cmd(&mgc, &projects[0], &registry.url, &shared_cache)
+        .output()
+        .unwrap();
+    assert!(
+        first.status.success(),
+        "first install must succeed:\n{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    // The mock only ever answers the tarball once; any later request would be
+    // an unmatched 501 and the install below would fail, so success itself is
+    // the measurement.
+    // (Mock chỉ trả tarball đúng một lần; request sau sẽ là 501 không khớp và
+    // lần cài dưới đây fail — nên chính việc thành công là phép đo.)
+    let after_first = registry.tarball_requests();
+    assert_eq!(after_first, 1, "the first install fetches the tarball once");
+
+    for project in projects.iter().skip(1) {
+        let output = install_cmd(&mgc, project, &registry.url, &shared_cache)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "install for {} must succeed:\n{}",
+            project.display(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            project.join("node_modules/is-odd/package.json").exists(),
+            "{} must be materialized from the shared cache",
+            project.display()
+        );
+    }
+
+    // P-2.1: forty-nine later installs added zero registry tarball requests.
+    // (P-2.1: bốn mươi chín lần cài sau không thêm request tarball nào.)
+    assert_eq!(
+        registry.tarball_requests(),
+        after_first,
+        "projects 2..50 must reuse the cached tarball instead of refetching"
+    );
+
+    // P-2.2: each project keeps its own copy, so editing one cannot corrupt
+    // another project's tree.
+    // (P-2.2: mỗi project giữ bản riêng, nên sửa một project không thể làm hỏng
+    // cây của project khác.)
+    let first_manifest = projects[0].join("node_modules/is-odd/package.json");
+    std::fs::write(&first_manifest, b"{\"tampered\":true}").unwrap();
+    assert_ne!(
+        std::fs::read(&first_manifest).unwrap(),
+        std::fs::read(projects[1].join("node_modules/is-odd/package.json")).unwrap(),
+        "projects must not share one mutable copy"
+    );
 }
