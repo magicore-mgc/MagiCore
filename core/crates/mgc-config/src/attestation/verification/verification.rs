@@ -133,15 +133,30 @@ pub fn verify(project_root: &Path, identities_dir: &Path) -> anyhow::Result<Atte
         }
         candidates.push(previous.public_key.clone());
     }
+    // SEC-12/N-02: the file carries the key it is verified with, so a project
+    // that pins nothing would accept a document an attacker wrote and signed.
+    // An unpinned project therefore has no trust root at all and the result is
+    // a mismatch, not a pass. `[trust].keys` inside the same verified manifest
+    // only narrows further; it is never the sole root on its own, because the
+    // manifest is exactly what an attacker with write access rewrites.
+    // (SEC-12/N-02: file mang chính key dùng để verify, nên project không pin gì
+    // sẽ chấp nhận tài liệu kẻ tấn công tự viết và tự ký. Project không pin thì
+    // không có gốc tin cậy và kết quả là mismatch, không phải pass. `[trust].keys`
+    // trong cùng manifest chỉ thu hẹp thêm; nó không bao giờ là gốc duy nhất vì
+    // manifest chính là thứ kẻ có quyền ghi sẽ sửa.)
     let trusted = trusted_keys(project_root);
-    if !trusted.is_empty() {
-        candidates.retain(|key| trusted.iter().any(|pinned| pinned == key));
-        if candidates.is_empty() {
-            return Ok(AttestationStatus::Mismatch(
-                "attestation key is not one of the trusted keys pinned for this project"
-                    .to_string(),
-            ));
-        }
+    if trusted.is_empty() {
+        return Ok(AttestationStatus::Mismatch(
+            "no trusted key is pinned for this project, so the attestation cannot be \
+             distinguished from one written by anyone with write access"
+                .to_string(),
+        ));
+    }
+    candidates.retain(|key| trusted.iter().any(|pinned| pinned == key));
+    if candidates.is_empty() {
+        return Ok(AttestationStatus::Mismatch(
+            "attestation key is not one of the trusted keys pinned for this project".to_string(),
+        ));
     }
     for public_key_b64 in candidates {
         let Ok(public_key) =

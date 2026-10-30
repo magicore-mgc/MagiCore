@@ -58,3 +58,49 @@ fn different_projects_get_distinct_locks() {
     let _second = ProjectInstallLock::acquire_at(&locks, b.to_str().unwrap()).unwrap();
     assert_eq!(std::fs::read_dir(&locks).unwrap().count(), 2);
 }
+
+/// N-01: the lock handoff is a file naming the live holder, not an environment
+/// string a caller can claim for itself.
+/// (N-01: handoff là file ghi người giữ còn sống, không phải chuỗi môi trường
+/// mà caller tự nhận được.)
+#[test]
+fn handoff_reports_only_a_live_holder_and_disappears_with_the_file() {
+    let root = tempfile::tempdir().unwrap();
+    let locks = root.path().join("locks");
+    std::fs::create_dir_all(&locks).unwrap();
+    let project = root.path().join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let key = project.to_string_lossy().to_string();
+
+    assert!(
+        ProjectInstallLock::held_by_live_process(&locks, &key).is_none(),
+        "no handoff file means nobody holds the project"
+    );
+
+    let handoff = ProjectInstallLock::handoff_path(&locks, &key);
+    std::fs::write(&handoff, std::process::id().to_string()).unwrap();
+    #[cfg(unix)]
+    assert_eq!(
+        ProjectInstallLock::held_by_live_process(&locks, &key),
+        Some(std::process::id()),
+        "the current process is alive and holds the handoff"
+    );
+
+    // A pid that cannot be running any more must not count as a holder: the
+    // dead-holder case is exactly how a stale handoff could fake the lock.
+    // (Pid không thể còn chạy không được tính là người giữ: trường hợp người
+    // giữ đã chết chính là cách file cũ có thể giả mạo lock.)
+    #[cfg(unix)]
+    {
+        let impossible = 4_000_000u32;
+        std::fs::write(&handoff, impossible.to_string()).unwrap();
+        assert_eq!(
+            ProjectInstallLock::held_by_live_process(&locks, &key),
+            None,
+            "a dead pid must not be treated as the holder"
+        );
+    }
+
+    std::fs::remove_file(&handoff).unwrap();
+    assert!(ProjectInstallLock::held_by_live_process(&locks, &key).is_none());
+}

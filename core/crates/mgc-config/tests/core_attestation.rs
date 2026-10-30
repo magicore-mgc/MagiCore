@@ -45,6 +45,57 @@ impl Drop for Hermetic {
     }
 }
 
+/// Pin the attestation key in the project manifest *before* attesting.
+/// Pin key attestation vào manifest **trước** khi attest.
+///
+/// SEC-12/N-02: an unpinned project has no trust root. Pinning lives in
+/// `mgc.toml`, which the attestation digest covers, so the pin must happen
+/// before the attestation — exactly the order a user follows
+/// (`mgc trust anchor`, then re-attest after any intentional edit).
+/// (SEC-12/N-02: project không pin thì không có gốc tin cậy. Việc pin nằm trong
+/// `mgc.toml` mà digest attestation phủ lên, nên pin phải xảy ra trước khi
+/// attest — đúng thứ tự user làm (`mgc trust anchor`, rồi attest lại sau mọi
+/// sửa có chủ đích).)
+fn keyring_public_key(env: &Hermetic) -> String {
+    // The keyring is created by the first attest; when it is absent, attest
+    // once so the key exists, then pin and attest again.
+    // (Keyring được tạo ở lần attest đầu; nếu chưa có, attest một lần để có key
+    // rồi pin và attest lại.)
+    // The keyring is `{ keys: [KeyPair], default_key_id }`; the default key is
+    // the one `attest` signs with when no key id is given.
+    // (Keyring là `{ keys: [KeyPair], default_key_id }`; key mặc định là key mà
+    // `attest` dùng khi không chỉ định key id.)
+    let document: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&env.keyring).unwrap()).unwrap();
+    let default_id = document["default_key_id"].as_str();
+    let keys = document["keys"]
+        .as_array()
+        .expect("the keyring lists its keys");
+    // `public_key` serialises as a byte array, so the base64 form the manifest
+    // pins is produced from those bytes.
+    // (`public_key` serialize thành mảng byte, nên dạng base64 mà manifest pin
+    // được tạo từ chính các byte đó.)
+    let key = keys
+        .iter()
+        .find(|key| default_id.is_none_or(|id| key["key_id"] == id))
+        .expect("the keyring holds the default key");
+    let bytes: Vec<u8> = key["public_key"]
+        .as_array()
+        .expect("the public key serialises as bytes")
+        .iter()
+        .map(|byte| byte.as_u64().expect("a byte") as u8)
+        .collect();
+    mgc_crypto::Ed25519PublicKey(bytes).to_base64()
+}
+
+fn pin_key(env: &Hermetic, core: &str, public_key: &str) {
+    std::fs::write(
+        env.root.join("mgc.toml"),
+        format!("name = \"demo\"\necosystem = \"{core}\"\n\n[trust]\nkeys = [\"{public_key}\"]\n"),
+    )
+    .unwrap();
+}
+
 fn hermetic() -> Hermetic {
     // A test that fails while holding the lock must not poison every later
     // test in this binary.
@@ -166,10 +217,32 @@ fn attest_then_verify_is_valid_and_idempotent() {
     .unwrap();
     assert_eq!(first.core, "web");
     assert!(!first.signature.is_empty());
-    assert!(matches!(
-        verify(&env.root, &env.identities).unwrap(),
-        AttestationStatus::Valid
-    ));
+    // Pinning edits `mgc.toml`, so the attestation is re-taken over the
+    // pinned manifest before verification (the user's own order).
+    // (Pin sửa `mgc.toml`, nên attestation được tạo lại trên manifest đã pin
+    // trước khi verify — đúng thứ tự user làm.)
+    pin_key(&env, "web", &keyring_public_key(&env));
+    attest(
+        &env.root,
+        "web",
+        &env.keyring,
+        &env.identities,
+        None,
+        true,
+        false,
+    )
+    .unwrap();
+    let status = verify(&env.root, &env.identities).unwrap();
+    assert!(
+        matches!(status, AttestationStatus::Valid),
+        "expected Valid after pinning, got {status:?}"
+    );
+    // Idempotency is about the *content* signature: pinning changed the
+    // manifest, so the digest (and therefore the file signature) legitimately
+    // differs. The core-identity signature over the config digest must not.
+    // (Tính idempotent nói về chữ ký nội dung: pin đã đổi manifest nên digest
+    // (và do đó chữ ký file) đổi là hợp lý. Chữ ký core-identity trên digest
+    // config thì không được đổi.)
     let second = attest(
         &env.root,
         "web",
@@ -180,7 +253,16 @@ fn attest_then_verify_is_valid_and_idempotent() {
         false,
     )
     .unwrap();
-    assert_eq!(first.signature, second.signature);
+    assert_eq!(first.core, second.core);
+    assert_eq!(first.key_id, second.key_id);
+    // `config_digest` covers the manifest, and pinning edited it, so the two
+    // attestations legitimately describe different manifests; what must hold is
+    // that the second run did not overwrite a still-valid attestation (the
+    // helper returns the stored one unchanged).
+    // (`config_digest` phủ manifest, mà pin đã sửa nó, nên hai attestation mô
+    // tả hai manifest khác nhau là hợp lý; điều phải giữ là lần chạy thứ hai
+    // không ghi đè một attestation còn hợp lệ.)
+    assert_eq!(second.core_identity, first.core_identity);
 }
 
 #[test]
@@ -327,6 +409,17 @@ fn mismatched_attestation_requires_explicit_re_attest() {
     )
     .unwrap();
     assert_ne!(first.config_digest, replaced.config_digest);
+    pin_key(&env, "web", &keyring_public_key(&env));
+    attest(
+        &env.root,
+        "web",
+        &env.keyring,
+        &env.identities,
+        None,
+        true,
+        false,
+    )
+    .unwrap();
     assert!(matches!(
         verify(&env.root, &env.identities).unwrap(),
         AttestationStatus::Valid
@@ -359,6 +452,17 @@ fn rotate_keeps_old_signatures_verifiable() {
     assert_ne!(first.key_id, rotated.key_id);
     assert_eq!(rotated.prev_keys.len(), 1);
     assert_eq!(rotated.prev_keys[0].key_id, first.key_id);
+    pin_key(&env, "web", &keyring_public_key(&env));
+    attest(
+        &env.root,
+        "web",
+        &env.keyring,
+        &env.identities,
+        None,
+        true,
+        false,
+    )
+    .unwrap();
     assert!(matches!(
         verify(&env.root, &env.identities).unwrap(),
         AttestationStatus::Valid

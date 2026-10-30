@@ -5,6 +5,13 @@ use super::super::acquire;
 
 #[test]
 fn a_second_install_on_the_same_project_is_refused() {
+    // The store root is process-wide; every guard test holds this lock so a
+    // sibling cannot repoint it mid-acquisition.
+    // (Root store là toàn process; mọi test guard giữ lock này để test anh em
+    // không đổi nó giữa lúc acquire.)
+    let _env = super::super::test_env_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let dir = tempfile::tempdir().unwrap();
     let project = dir.path().join("project");
     std::fs::create_dir_all(&project).unwrap();
@@ -92,6 +99,13 @@ fn the_guard_reports_that_the_current_thread_holds_it() {
     let project = dir.path().join("project");
     std::fs::create_dir_all(&project).unwrap();
 
+    // The store root is process-wide, so every test that repoints it holds this
+    // lock for its whole life.
+    // (Root store là toàn process, nên mọi test đổi nó giữ lock này suốt vòng
+    // đời.)
+    let _env = super::super::test_env_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let previous = std::env::var_os("MGC_DATA_DIR");
     // SAFETY: test-only env mutation; restored on drop below so no other test
     // observes a torn environment.

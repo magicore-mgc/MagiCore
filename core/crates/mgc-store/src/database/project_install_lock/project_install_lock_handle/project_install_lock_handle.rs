@@ -53,6 +53,34 @@ impl ProjectInstallLock {
         Self::acquire_impl(root, project_root)
     }
 
+    /// Path of the handoff file that records which pid already holds the lock.
+    /// Đường dẫn file handoff ghi pid đang giữ lock.
+    ///
+    /// It lives next to the lock so a caller in another crate can ask "is this
+    /// project already locked by a live process?" without an environment
+    /// variable a user could set (N-01).
+    /// (File nằm cạnh lock để caller ở crate khác hỏi "project này đã bị một
+    /// process còn sống giữ chưa?" mà không cần biến môi trường người dùng đặt
+    /// được — N-01.)
+    pub fn handoff_path(locks_root: &std::path::Path, project_root: &str) -> std::path::PathBuf {
+        let canonical = std::fs::canonicalize(project_root)
+            .unwrap_or_else(|_| std::path::PathBuf::from(project_root));
+        let digest = mgc_crypto::Blake3Hasher::hash_string(&canonical.to_string_lossy()).to_hex();
+        locks_root.join(format!("{digest}.handoff"))
+    }
+
+    /// Whether the handoff names this very process (or a live holder).
+    /// Handoff có ghi chính process này (hoặc một người giữ còn sống) không.
+    pub fn held_by_live_process(locks_root: &std::path::Path, project_root: &str) -> Option<u32> {
+        let path = Self::handoff_path(locks_root, project_root);
+        let pid: u32 = std::fs::read_to_string(&path).ok()?.trim().parse().ok()?;
+        if process_is_alive(pid) {
+            Some(pid)
+        } else {
+            None
+        }
+    }
+
     /// Lock file this handle holds open (used by tests and diagnostics).
     /// File lock mà handle này đang giữ (test và chẩn đoán dùng).
     pub fn path(&self) -> &std::path::Path {
@@ -103,6 +131,38 @@ impl ProjectInstallLock {
             ))
         })?;
         Ok(Self { file, path })
+    }
+}
+
+/// Whether a pid names a live process.
+/// Pid có trỏ tới process còn sống không.
+fn process_is_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        // Signal 0 probes existence without delivering anything.
+        // (Signal 0 chỉ kiểm sự tồn tại, không gửi gì.)
+        if pid == 0 {
+            return false;
+        }
+        // SAFETY: `kill(pid, 0)` only probes existence; it delivers no signal
+        // and the pid is not dereferenced.
+        // AN TOÀN: `kill(pid, 0)` chỉ kiểm tồn tại; không gửi signal và pid
+        // không bị dereference.
+        #[allow(unsafe_code)]
+        let alive = unsafe { libc::kill(pid as libc::pid_t, 0) } == 0;
+        // `EPERM` means the process exists but belongs to another user.
+        // (`EPERM` nghĩa là process tồn tại nhưng thuộc user khác.)
+        alive || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    }
+    #[cfg(not(unix))]
+    {
+        // Windows has no cheap equivalent here; the handoff is only an
+        // optimisation inside one CLI run, and a stale file falls back to
+        // taking the lock normally.
+        // (Windows không có cách tương đương rẻ; handoff chỉ là tối ưu trong
+        // một lần chạy CLI, file cũ sẽ quay về việc lấy lock bình thường.)
+        let _ = pid;
+        true
     }
 }
 

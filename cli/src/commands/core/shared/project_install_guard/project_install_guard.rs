@@ -25,21 +25,17 @@ use anyhow::Result;
 pub(crate) struct ProjectInstallGuard {
     _lock: mgc_store::ProjectInstallLock,
     project: std::path::PathBuf,
+    handoff: std::path::PathBuf,
 }
 
 impl Drop for ProjectInstallGuard {
     fn drop(&mut self) {
         if let Ok(mut held) = held_projects().lock() {
             held.remove(&self.project);
-            if held.is_empty() {
-                // SAFETY: as above, and only when no lock is held any more.
-                // AN TOÀN: như trên, và chỉ khi không còn giữ lock nào.
-                #[allow(unsafe_code)]
-                unsafe {
-                    std::env::remove_var("MGC_PROJECT_LOCK_HELD")
-                };
-            }
         }
+        // The handoff only exists while this guard does.
+        // (Handoff chỉ tồn tại trong vòng đời guard này.)
+        let _ = std::fs::remove_file(&self.handoff);
     }
 }
 
@@ -59,6 +55,21 @@ impl Drop for ProjectInstallGuard {
 /// (Guard là khoá cấp process, nhưng lớp lồng nhau (adapter web bên trong
 /// `mgc install`, target monorepo bên trong `install-web`) chạy cùng thread;
 /// hỏi trước biến deadlock thành quyết định.)
+/// Serialize guard tests that share the process-wide `MGC_DATA_DIR`.
+/// Tuần tự hoá test guard dùng chung `MGC_DATA_DIR` của process.
+///
+/// Each test points the store at its own temp dir; without serialization two
+/// of them rewrite the variable while the other is acquiring, and the loser
+/// contends on a different store's lock file (a flake, not a product bug).
+/// (Mỗi test trỏ store vào temp dir riêng; không tuần tự hoá thì hai test ghi
+/// đè biến trong lúc test kia đang acquire, bên thua lại tranh lock của store
+/// khác — flaky, không phải lỗi sản phẩm.)
+#[cfg(test)]
+pub(crate) fn test_env_lock() -> &'static std::sync::Mutex<()> {
+    static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| std::sync::Mutex::new(()))
+}
+
 fn held_projects() -> &'static std::sync::Mutex<std::collections::HashSet<std::path::PathBuf>> {
     static HELD: std::sync::OnceLock<
         std::sync::Mutex<std::collections::HashSet<std::path::PathBuf>>,
@@ -122,23 +133,25 @@ pub(crate) fn acquire(project_root: &Path, core: &str) -> Result<ProjectInstallG
     if let Ok(mut held) = held_projects().lock() {
         held.insert(canonical_key.clone());
     }
-    // The marker is process state for in-process adapter layers. Recording the
-    // holder in `held_projects` above is the authoritative answer; the variable
-    // only lets the web adapter (another crate) ask without a new dependency.
-    // (Marker là state của process cho lớp adapter cùng process. Bản ghi trong
-    // `held_projects` ở trên mới là câu trả lời chuẩn; biến chỉ cho adapter web
-    // (crate khác) hỏi mà không cần dependency mới.)
-    // SAFETY: the CLI entry point is single-threaded before dispatch, and this
-    // variable only marks lock ownership for in-process adapter layers.
-    // AN TOÀN: entry point CLI đơn luồng trước dispatch, và biến này chỉ đánh
-    // dấu quyền giữ lock cho lớp adapter cùng process.
-    #[allow(unsafe_code)]
-    unsafe {
-        std::env::set_var("MGC_PROJECT_LOCK_HELD", "1")
-    };
+    // The web adapter (another crate) must know the lock is already held so it
+    // does not deadlock on the same file. N-01: an environment string was a
+    // user-settable bypass — `MGC_PROJECT_LOCK_HELD=1 mgc install` skipped the
+    // lock entirely. The handoff is now a per-process, per-project file next to
+    // the lock, carrying the holder pid; the adapter only honours it while that
+    // pid is alive.
+    // (Adapter web phải biết lock đã được giữ để không deadlock trên cùng file.
+    // N-01: một biến môi trường đã thành bypass do người dùng đặt được —
+    // `MGC_PROJECT_LOCK_HELD=1 mgc install` bỏ qua lock hoàn toàn. Handoff giờ
+    // là file per-process, per-project cạnh lock, mang pid người giữ; adapter
+    // chỉ chấp nhận khi pid đó còn sống.)
+    let handoff = mgc_store::ProjectInstallLock::handoff_path(&locks_root, &key);
+    std::fs::write(&handoff, std::process::id().to_string()).map_err(|error| {
+        anyhow::anyhow!("cannot record the install lock handoff for {core}: {error}")
+    })?;
     Ok(ProjectInstallGuard {
         _lock: lock,
         project: canonical_key,
+        handoff,
     })
 }
 

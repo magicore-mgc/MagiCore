@@ -17,8 +17,17 @@ use mgc_store::{ContentStore, Database, Layout, PackageCache};
 /// (Do guard của CLI đặt, là điểm tuần tự hoá duy nhất mọi core dùng. Đây là
 /// dấu hiệu chứ không phải bypass: guard là OS file lock đã giữ sẵn, lấy hai
 /// lần trong cùng process sẽ deadlock.)
-fn caller_holds_project_lock() -> bool {
-    std::env::var("MGC_PROJECT_LOCK_HELD").is_ok_and(|value| value == "1")
+fn caller_holds_project_lock(project_root: &std::path::Path) -> bool {
+    // N-01: only the holder's own handoff file counts, and only while that pid
+    // is alive; the caller's environment cannot claim the lock.
+    // (N-01: chỉ file handoff của chính người giữ được tính, và chỉ khi pid đó
+    // còn sống; môi trường của caller không thể tự nhận đã giữ lock.)
+    let locks_root = mgc_store::default_store_root().join("locks");
+    mgc_store::ProjectInstallLock::held_by_live_process(
+        &locks_root,
+        &project_root.to_string_lossy(),
+    )
+    .is_some()
 }
 use mgc_types::adapter::{InstallOptions, InstallSummary, ResolvedGraph};
 use mgc_types::{MgError, MgResult};
@@ -190,7 +199,7 @@ pub(in crate::install::run_install) fn initialize<'a>(
         default_store,
         node_modules,
         summary,
-        _install_lock: if caller_holds_project_lock() {
+        _install_lock: if caller_holds_project_lock(project_root) {
             None
         } else {
             let lock_root = mgc_store::default_store_root().join("locks");

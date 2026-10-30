@@ -70,8 +70,18 @@ jobs:
             exit 1
           fi
       - name: Run audit
-        # All known advisories have been fixed as of 2026-08-31 (commit 0a9804c)
-        run: cargo audit --color never
+        # The waiver list is single-sourced: this step reads the reviewed
+        # [advisories] ignore entries from deny.toml, so `cargo audit` and
+        # `cargo deny check` can never disagree.
+        # (Danh sách waiver có một nguồn: bước này đọc các entry ignore đã
+        # review trong deny.toml, nên `cargo audit` và `cargo deny check` không
+        # bao giờ lệch nhau.)
+        run: |
+          set -euo pipefail
+          ignored="$(python3 scripts/audit/audit_ignored_advisories.py .)"
+          echo "reviewed waivers: ${ignored:-<none>}"
+          # shellcheck disable=SC2086 # the list is space-separated ids
+          cargo audit --color never --ignore $ignored
       - name: Install cargo-deny
         run: cargo install cargo-deny --version 0.19.0 --locked
       - name: Enforce deny.toml policy

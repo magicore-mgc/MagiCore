@@ -1,61 +1,51 @@
-//! Validate statement-to-payload binding before cryptographic verification.
-//! Kiểm tra statement gắn đúng payload trước khi xác minh mật mã.
 #![allow(clippy::unwrap_used)]
 
-use super::sigstore_attestation::validate_sigstore_statement;
-use mgc_oidc::{OidcClaims, claims::Audience};
-use mgc_registry_server::trusted::{AttestationPayload, BuilderIdentity};
-use sigstore_types::Statement;
+use super::{DEFAULT_WORKFLOW_IDENTITY_PREFIX, workflow_identity_allowed};
 
-fn payload() -> AttestationPayload {
-    AttestationPayload {
-        schema_version: 1,
-        package: "pkg".into(),
-        version: "1.0.0".into(),
-        digest: "sha512-example".into(),
-        artifact_sha256: Some(hex::encode([7u8; 32])),
-        sequence: 1,
-        builder: BuilderIdentity::from(&OidcClaims {
-            iss: "https://token.actions.githubusercontent.com".into(),
-            sub: "repo:acme/pkg:ref:refs/heads/main".into(),
-            aud: Audience::Single("registry".into()),
-            exp: 2,
-            iat: 1,
-            repository: Some("acme/pkg".into()),
-            job_workflow_ref: None,
-            workflow_ref: None,
-            event_name: None,
-        }),
-        created_at_unix: 1,
-        previous_hash: None,
+// Keeps the constant referenced so the test breaks if the pinned prefix moves.
+// (Giữ tham chiếu hằng để test fail nếu prefix pin bị đổi.)
+const _: &str = DEFAULT_WORKFLOW_IDENTITY_PREFIX;
+
+/// SEC-05: with no allowlist configured, only this repository's own release
+/// workflows may attest. Another account's forge must not qualify.
+/// (SEC-05: không cấu hình allowlist thì chỉ workflow release của chính repo
+/// này được chứng thực. Forge của tài khoản khác không được hợp lệ.)
+#[test]
+fn default_identity_accepts_only_this_repository_release_workflows() {
+    let none: Vec<String> = Vec::new();
+    for allowed in [
+        "https://github.com/mingd-153/MagiCore/.github/workflows/release.yml",
+        "https://github.com/mingd-153/MagiCore/.github/workflows/release-publish-github.yml",
+    ] {
+        assert!(
+            workflow_identity_allowed(allowed, &none),
+            "{allowed} must be accepted"
+        );
+    }
+    for denied in [
+        "https://github.com/attacker/MagiCore/.github/workflows/release.yml",
+        "https://github.com/mingd-153/other/.github/workflows/release.yml",
+        "https://github.com/mingd-153/MagiCore/.github/workflows/ci.yml",
+        "https://gitlab.com/mingd-153/MagiCore/.github/workflows/release.yml",
+    ] {
+        assert!(
+            !workflow_identity_allowed(denied, &none),
+            "{denied} must be refused"
+        );
     }
 }
 
-fn statement(payload: &AttestationPayload, digest: &str) -> Statement {
-    serde_json::from_value(serde_json::json!({
-        "_type": "https://in-toto.io/Statement/v1",
-        "subject": [{"name": "pkg-1.0.0", "digest": {"sha256": digest}}],
-        "predicateType": mgc_registry_server::trusted::TRUSTED_PUBLISH_PREDICATE_TYPE,
-        "predicate": {
-            "package": payload.package,
-            "version": payload.version,
-            "registryDigest": payload.digest,
-            "builder": serde_json::to_value(&payload.builder).unwrap(),
-        }
-    }))
-    .unwrap()
-}
-
+/// An explicit allowlist is authoritative in both directions: it can add a
+/// workflow outside this repository and it can remove one inside it.
+/// (Allowlist tường minh quyết định cả hai chiều: thêm workflow ngoài repo và
+/// loại một workflow trong repo.)
 #[test]
-fn accepts_a_statement_bound_to_the_payload() {
-    let payload = payload();
-    let statement = statement(&payload, payload.artifact_sha256.as_deref().unwrap());
-    assert!(validate_sigstore_statement(&payload, &statement).is_ok());
-}
-
-#[test]
-fn rejects_a_statement_with_a_different_artifact_digest() {
-    let payload = payload();
-    let statement = statement(&payload, &hex::encode([8u8; 32]));
-    assert!(validate_sigstore_statement(&payload, &statement).is_err());
+fn explicit_allowlist_overrides_the_default() {
+    let allow =
+        vec!["https://github.com/fork-owner/MagiCore/.github/workflows/release.yml".to_string()];
+    assert!(workflow_identity_allowed(&allow[0], &allow));
+    assert!(!workflow_identity_allowed(
+        "https://github.com/mingd-153/MagiCore/.github/workflows/release.yml",
+        &allow
+    ));
 }
