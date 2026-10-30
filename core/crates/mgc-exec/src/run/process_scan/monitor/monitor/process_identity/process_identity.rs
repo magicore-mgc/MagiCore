@@ -8,7 +8,7 @@ use super::super::super::super::linux_process_stat_snapshot;
 use super::super::super::super::macos_process_snapshot;
 use anyhow::Result;
 
-pub(in crate::run::implementation::process_scan::monitor::implementation) fn current_process_scan_snapshot(
+pub(in crate::run::implementation) fn current_process_scan_snapshot(
     pid: u32,
     system: &sysinfo::System,
 ) -> Result<Option<ProcessScanSnapshot>> {
@@ -38,7 +38,7 @@ pub(in crate::run::implementation::process_scan::monitor::implementation) fn cur
 }
 
 #[cfg(unix)]
-pub(in crate::run::implementation::process_scan::monitor::implementation) fn live_descendant_identities(
+pub(in crate::run::implementation) fn live_descendant_identities(
     root_pid: u32,
     process_snapshots: &std::collections::HashMap<u32, ProcessScanSnapshot>,
 ) -> Vec<(sysinfo::Pid, ProcessScanSnapshot)> {
@@ -74,7 +74,7 @@ pub(in crate::run::implementation::process_scan::monitor::implementation) fn liv
 }
 
 #[cfg(unix)]
-pub(in crate::run::implementation::process_scan::monitor::implementation) fn process_identity_is_live(
+pub(in crate::run::implementation) fn process_identity_is_live(
     initial: ProcessScanSnapshot,
     current: ProcessScanSnapshot,
 ) -> bool {

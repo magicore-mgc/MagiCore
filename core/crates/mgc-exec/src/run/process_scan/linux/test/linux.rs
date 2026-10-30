@@ -29,7 +29,7 @@ fn linux_process_stat_keeps_exact_identity_when_pid_is_reused_within_one_second(
     // linux::implementation, so the monitor owner is three levels up.
     // (Bố cục: process_scan::{linux, monitor}; file này nằm trong
     // linux::implementation, nên owner monitor ở ba cấp trên.)
-    assert!(!super::super::super::monitor::process_identity_is_live(
+    assert!(!super::super::super::monitor::implementation::process_identity_is_live(
         original, reused
     ));
 

@@ -26,7 +26,7 @@ pub fn atomic_replace_file_with_write_through(
 ) -> Result<(), AtomicReplaceError> {
     #[cfg(windows)]
     {
-        super::windows_replace(staging, destination, write_through)
+        super::windows_replace::windows_replace(staging, destination, write_through)
     }
     #[cfg(not(windows))]
     {

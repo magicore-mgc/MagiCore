@@ -1,9 +1,10 @@
 //! Wires the Windows replacement implementation and its long-path tests.
 //! Nối implementation thay file Windows và test path dài.
 
-// The long-path tests reach the implementation through `super::super`, one
-// level above this module, so the inner module may not be private.
-// (Test path dài chạm implementation qua `super::super`, cao hơn module này một
-// cấp, nên module bên trong không được private.)
+// A module and a re-export of the same name cannot coexist, and the long-path
+// tests reach the implementation through `super::super`, so the module is
+// public at that scope and callers name the function through it.
+// (Module và re-export cùng tên không thể cùng tồn tại; test path dài chạm
+// implementation qua `super::super`, nên module public ở scope đó và caller gọi
+// hàm qua module.)
 pub(super) mod windows_replace;
-pub(super) use self::windows_replace::windows_replace;
