@@ -26,6 +26,10 @@ class RepoLedgerContractPart1(unittest.TestCase):
         for token in (
             "std::env::current_exe()",
             "registry_install_args(allow_scripts)",
+            # Native install still runs in the install scope: it is the package
+            # manager path, not project code (SEC-02 scoped only project hooks).
+            # (Install native vẫn chạy trong install scope: đó là đường package
+            # manager, không phải code project — SEC-02 chỉ scope hook project.)
             "ExecutionScope::Install",
             "run_project_binary_inherited(&executable, &args, &options)",
         ):

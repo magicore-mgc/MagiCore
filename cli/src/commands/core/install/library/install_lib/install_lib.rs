@@ -1,3 +1,10 @@
+//! GATE-EXEMPT: installs a pre-built binary artifact, not a package
+//! dependency — nothing resolves a registry manifest, so there is no
+//! dependency resolution to route through the lane gate.
+//! (GATE-EXEMPT: cài artifact binary dựng sẵn, không phải dependency package —
+//! không resolve manifest registry nên không có dependency resolution để đi qua
+//! lane gate.)
+//!
 //! `mgc install-lib` — install a signed binary into the lib keg store (E-3).
 //! `mgc install-lib` — cài binary có chữ ký vào keg store của core lib (E-3).
 //!

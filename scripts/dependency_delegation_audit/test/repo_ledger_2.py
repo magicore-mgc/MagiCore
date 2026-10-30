@@ -91,7 +91,11 @@ class RepoLedgerContractPart2(unittest.TestCase):
         self.assertEqual(route_findings[0]["status"], "allowed")
         self.assertEqual(route_findings[0]["op_class"], "audited-executor-route")
         self.assertIn("parse_script_invocation(script)", lifecycle)
-        self.assertIn("ExecutionScope::Install", lifecycle)
+        # SEC-02: hooks run project code, so they declare the script scope;
+        # package managers stay forbidden in every scope.
+        # (SEC-02: hook chạy code project nên khai script scope; package manager
+        # vẫn bị cấm ở mọi scope.)
+        self.assertIn("ExecutionScope::ScriptRunner", lifecycle)
         self.assertIn("#[cfg(test)]\n    pub(crate) fn run_scripts(", lifecycle)
 
         install_path = os.path.join(repo_root, "adapters/web/src/install/run_install/lifecycle/lifecycle.rs")
@@ -137,7 +141,13 @@ class RepoLedgerContractPart2(unittest.TestCase):
         runner = source[function_start:function_end]
         self.assertIn("reject_forbidden_pm_script(cmd)", runner)
         self.assertIn("parse_script_invocation(cmd)", runner)
-        self.assertIn("ExecutionScope::Install", runner)
+        # `publish` runs the npm publish hooks, which are project code: the
+        # same SEC-02 rule applies, and pinning `Install` here would silently
+        # accept a regression back to the install scope.
+        # (`publish` chạy hook npm publish — code project: cùng quy tắc SEC-02,
+        # và ghim `Install` ở đây sẽ âm thầm chấp nhận hồi quy về install
+        # scope.)
+        self.assertIn("ExecutionScope::ScriptRunner", runner)
         self.assertIn("cwd: Some(project_root.to_path_buf())", runner)
 
         publish_start = source.index("async fn publish_project(")

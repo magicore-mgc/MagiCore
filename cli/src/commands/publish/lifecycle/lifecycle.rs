@@ -58,7 +58,12 @@ pub(in crate::commands) fn run_lifecycle(
             timeout: Some(publish_lifecycle_timeout()),
             env,
             clean_env: true,
-            execution_scope: Some(mgc_exec::allowlist::ExecutionScope::Install),
+            // Publish hooks are project code (SEC-02), so they run in the
+            // script scope; the install scope no longer admits bare language
+            // runtimes.
+            // (Hook publish là code project — SEC-02 — nên chạy ở script scope;
+            // install scope không còn nhận runtime ngôn ngữ trần.)
+            execution_scope: Some(mgc_exec::allowlist::ExecutionScope::ScriptRunner),
             ..Default::default()
         };
         mgc_exec::prelude::run_inherited(&invocation.program, &invocation.args, &opts)?;
