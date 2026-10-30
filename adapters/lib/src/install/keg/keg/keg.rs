@@ -68,6 +68,21 @@ impl KegStore {
         Ok(Self::new(KegLayout::resolve()?))
     }
 
+    /// Whether the current process opted into the keg transfer layer.
+    /// Process hiện tại có opt-in vào lớp keg không.
+    ///
+    /// P-6.1..P-6.3: migrating whole dependency trees into kegs changes the
+    /// on-disk layout a project's toolchain reads, so the layer is additive and
+    /// opt-in: without `MGC_LIB_KEG=1` no adapter path touches it and an
+    /// existing project keeps the layout it already has.
+    /// (P-6.1..P-6.3: chuyển cả cây dependency vào keg đổi layout trên đĩa mà
+    /// toolchain của project đọc, nên lớp này là additive và opt-in: không có
+    /// `MGC_LIB_KEG=1` thì không đường adapter nào chạm vào nó và project hiện
+    /// có giữ nguyên layout đang dùng.)
+    pub fn is_enabled_by_environment() -> bool {
+        std::env::var("MGC_LIB_KEG").is_ok_and(|value| value == "1" || value == "true")
+    }
+
     /// Borrow the underlying layout.
     /// Mượn layout bên dưới.
     pub fn layout(&self) -> &KegLayout {
