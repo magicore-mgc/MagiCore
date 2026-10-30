@@ -5,9 +5,7 @@
 // parsers are direct siblings and the monitor owner is one level up.
 // (include! giữ test trong module implementation của linux, nên các parser là
 // sibling trực tiếp và owner monitor ở trên một cấp.)
-use super::{
-    linux_proc_process_dir_is_gone, parse_linux_process_stat, parse_linux_process_stat_entry,
-};
+use super::{parse_linux_process_stat, parse_linux_process_stat_entry};
 
 #[cfg(target_os = "linux")]
 #[test]

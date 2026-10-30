@@ -3,9 +3,9 @@
 
 use super::super::super::super::ShadowPath;
 use super::super::super::super::process_scan::WindowsProcessSnapshot;
-#[cfg(all(windows, test))]
-use super::super::super::super::unique_temp_dir;
 use super::error::NpmProbeAuthenticationError;
+#[cfg(all(windows, test))]
+use crate::run::implementation::unique_temp_dir;
 use std::path::{Path, PathBuf};
 
 #[cfg(test)]
@@ -16,7 +16,7 @@ mod test;
 use super::super::super::super::{windows_current_executable_sha256, windows_sha256_file};
 
 #[cfg(all(windows, test))]
-pub(super) fn is_shadow_windows_npm_version_probe(
+pub(in crate::run::implementation) fn is_shadow_windows_npm_version_probe(
     process: &WindowsProcessSnapshot,
     executable_path: &Path,
     shadow_path: &ShadowPath,

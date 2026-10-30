@@ -18,7 +18,7 @@ mod shadow_path;
 #[cfg(unix)]
 pub(in crate::run) use shadow_path::is_generated_shadow_directory;
 #[cfg(any(windows, test))]
-pub(in crate::run) use shadow_path::unique_temp_dir;
+pub(in crate::run::implementation) use shadow_path::unique_temp_dir;
 #[path = "guarded_path/mod.rs"]
 mod guarded_path;
 pub(in crate::run) use guarded_path::{guarded_path_env, is_path_env_key};
