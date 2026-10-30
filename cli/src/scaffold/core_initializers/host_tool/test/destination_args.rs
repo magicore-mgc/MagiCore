@@ -28,29 +28,33 @@ fn catalog_uses_the_destination_shape_each_tool_accepts() {
         "flutter takes a positional destination"
     );
 
-    // `cargo new --lib <path>` and `mvn` name the artifact, they do not place
-    // the project at the path argument.
-    // (`cargo new --lib <path>` và `mvn` đặt tên artifact, không đặt project tại
-    // argument path.)
-    for framework in ["rust", "python"] {
-        let record = lookup(&["lib"], framework)
-            .unwrap_or_else(|| panic!("lib/{framework} must be registered"));
-        assert_eq!(
-            record.destination,
-            DestinationArg::NameInCwd,
-            "lib/{framework} runs inside the destination and names the project"
-        );
-    }
+    // `cargo new --lib <path>` names the artifact; it does not place the
+    // project at the path argument. `lib/python` no longer has a host tool at
+    // all (its only official scaffolder is a forbidden package manager), so the
+    // catalog is asserted to be absent rather than given a shape.
+    // (`cargo new --lib <path>` đặt tên artifact chứ không đặt project tại
+    // argument path. `lib/python` không còn host tool (scaffolder chính thức
+    // duy nhất của nó là package manager bị cấm), nên catalog được khẳng định
+    // là vắng mặt thay vì gán một hình dạng.)
+    let rust = lookup(&["lib"], "rust").expect("lib/rust must be registered");
+    assert_eq!(
+        rust.destination,
+        DestinationArg::NameInCwd,
+        "lib/rust runs inside the destination and names the project"
+    );
+    assert!(
+        lookup(&["lib"], "python").is_none(),
+        "lib/python must not claim a host tool it cannot run"
+    );
 
     // Tools that run inside the target directory and only name the project.
-    for (ecosystem, framework) in [
-        ("lib", "go"),
-        ("lib", "python"),
-        ("ai", "python-agent"),
-        ("ai", "mcp-server"),
-        ("clo", "cdk-typescript"),
-        ("iot", "zephyr"),
-    ] {
+    // `lib/python`, `ai/python-agent` and `ai/mcp-server` are absent on purpose:
+    // their only official scaffolders are forbidden package managers, so the
+    // catalog lists no host tool for them.
+    // (`lib/python`, `ai/python-agent` và `ai/mcp-server` cố ý vắng mặt: các
+    // scaffolder chính thức duy nhất của chúng là package manager bị cấm, nên
+    // catalog không liệt kê host tool nào.)
+    for (ecosystem, framework) in [("lib", "go"), ("clo", "cdk-typescript"), ("iot", "zephyr")] {
         let record = lookup(&[ecosystem], framework)
             .unwrap_or_else(|| panic!("{ecosystem}/{framework} must be registered"));
         assert_eq!(

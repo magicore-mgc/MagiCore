@@ -123,22 +123,12 @@ pub(crate) const RECORDS: &[CoreInitializer] = &[
         destination: DestinationArg::NameInCwd,
         board: None,
     },
-    CoreInitializer {
-        ecosystem: "lib",
-        framework: "python",
-        program: "uv",
-        // `uv init` creates the project in the working directory; the package
-        // name comes from the directory name.
-        // (`uv init` tạo project ngay trong thư mục làm việc; tên package lấy
-        // từ tên thư mục.)
-        args_before: &["init", "--lib", "--no-workspace"],
-        args_after: &[],
-        probe: &["--version"],
-        install_hint: "https://docs.astral.sh/uv/getting-started/installation/",
-        marker: "pyproject.toml",
-        destination: DestinationArg::NameInCwd,
-        board: None,
-    },
+    // `lib/python` has no unpackaged official scaffolder either: `uv` is a
+    // forbidden package manager and embedding a project skeleton is banned by
+    // RULE §9.8. Projects are scaffolded from `--from-local`.
+    // (`lib/python` cũng không có scaffolder chính thức không-đóng-gói: `uv` là
+    // package manager bị cấm và nhúng khung project bị RULE §9.8 cấm. Project
+    // được scaffold từ `--from-local`.)
     CoreInitializer {
         ecosystem: "lib",
         framework: "go",
@@ -190,33 +180,18 @@ pub(crate) const RECORDS: &[CoreInitializer] = &[
         destination: DestinationArg::Flag("--output"),
         board: None,
     },
-    // AI core — the two frameworks the registry advertises, each with its own
-    // official scaffolder.
-    // Core AI — hai framework registry khai báo, mỗi cái có scaffolder chính thức.
-    CoreInitializer {
-        ecosystem: "ai",
-        framework: "python-agent",
-        program: "uv",
-        args_before: &["init", "--no-workspace"],
-        args_after: &[],
-        probe: &["--version"],
-        install_hint: "https://docs.astral.sh/uv/getting-started/installation/",
-        marker: "pyproject.toml",
-        destination: DestinationArg::NameInCwd,
-        board: None,
-    },
-    CoreInitializer {
-        ecosystem: "ai",
-        framework: "mcp-server",
-        program: "uv",
-        args_before: &["init", "--no-workspace"],
-        args_after: &[],
-        probe: &["--version"],
-        install_hint: "https://docs.astral.sh/uv/getting-started/installation/",
-        marker: "pyproject.toml",
-        destination: DestinationArg::NameInCwd,
-        board: None,
-    },
+    // AI core — no official unpackaged scaffolder exists for these frameworks.
+    // `uv` is a forbidden package manager in the dependency policy, and the
+    // product may not embed framework source (RULE §9.8), so Python AI projects
+    // are created from a local source the user supplies (`--from-local`) and
+    // the catalog records no host tool. Listing a program here would be a claim
+    // the product cannot honour.
+    // (Core AI — không có scaffolder chính thức dạng không-đóng-gói cho các
+    // framework này. `uv` là package manager bị cấm trong policy dependency và
+    // sản phẩm không được nhúng source FW (RULE §9.8), nên project AI Python
+    // được tạo từ nguồn local do người dùng cung cấp (`--from-local`) và
+    // catalog không ghi host tool. Ghi một program ở đây là claim sản phẩm
+    // không thể thực hiện.)
     // App core — Flutter is the only app framework with a real scaffolder that
     // runs unattended. Swift/Kotlin/React Native and the rest stay fail-closed.
     // Core app — Flutter là framework app duy nhất có scaffolder chạy không cần
