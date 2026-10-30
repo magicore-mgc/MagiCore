@@ -1,10 +1,10 @@
-//! Linux process snapshot tests — PID identity, zombie state, and disappearing proc entries.
-//! (Kiểm tra parser cùng ranh giới bỏ qua race process đã thoát.)
+// Linux process snapshot tests — PID identity, zombie state, and disappearing proc entries.
+// (Kiểm tra parser cùng ranh giới bỏ qua race process đã thoát.)
 
-// `#[path]` puts this file in `linux::test`, so its parent is the linux module
-// that owns the parsers; the monitor owner sits one level above that.
-// (`#[path]` đặt file này trong `linux::test`, nên parent là module linux sở
-// hữu các parser; owner monitor nằm trên một cấp nữa.)
+// include! keeps the tests inside the linux implementation module, so the
+// parsers are direct siblings and the monitor owner is one level up.
+// (include! giữ test trong module implementation của linux, nên các parser là
+// sibling trực tiếp và owner monitor ở trên một cấp.)
 #[cfg(test)]
 use super::parse_linux_process_stat_entry;
 use super::{linux_proc_process_dir_is_gone, parse_linux_process_stat};
