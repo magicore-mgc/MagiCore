@@ -78,10 +78,12 @@ jobs:
         # bao giờ lệch nhau.)
         run: |
           set -euo pipefail
-          ignored="$(python3 scripts/audit/audit_ignored_advisories.py .)"
-          echo "reviewed waivers: ${ignored:-<none>}"
-          # shellcheck disable=SC2086 # the list is space-separated ids
-          cargo audit --color never --ignore $ignored
+          args=()
+          for id in $(python3 scripts/audit/audit_ignored_advisories.py .); do
+            args+=(--ignore "$id")
+          done
+          echo "reviewed waivers: ${args[*]:-<none>}"
+          cargo audit --color never "${args[@]}"
       - name: Install cargo-deny
         run: cargo install cargo-deny --version 0.19.0 --locked
       - name: Enforce deny.toml policy
