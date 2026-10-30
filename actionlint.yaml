@@ -1,0 +1,12 @@
+# actionlint configuration.
+# Cấu hình actionlint.
+#
+# `macos-15-intel` is the label this repository's release-distribution contract
+# pins for the x64 macOS archive; actionlint's bundled label table predates it,
+# so it is declared here rather than changing the workflow the contract checks.
+# (`macos-15-intel` là label mà contract phân phối release của repo này ghim cho
+# archive macOS x64; bảng label đi kèm actionlint cũ hơn label đó, nên nó được
+# khai ở đây thay vì sửa workflow mà contract đang kiểm.)
+self-hosted-runner:
+  labels:
+    - macos-15-intel

@@ -48,13 +48,11 @@ jobs:
           - os: ubuntu-24.04-arm
             os_name: linux
             arch: arm64
-          # The x64 macOS archive runs on a Rosetta-capable arm64 runner: the
-          # `macos-15-intel` label actionlint knows is not one GitHub publishes,
-          # and a workflow entry naming a missing label never schedules.
-          # (Archive macOS x64 chạy trên runner arm64 có Rosetta: label
-          # `macos-15-intel` không phải label GitHub phát hành, và một entry nêu
-          # label không tồn tại sẽ không bao giờ được lên lịch.)
-          - os: macos-15-large
+          # The Intel macOS runner verifies the x64 archive. The contract test
+          # pins this label, so changing it is a contract change, not a lint fix.
+          # (Runner macOS Intel kiểm archive x64. Contract test ghim label này,
+          # nên đổi nó là thay đổi contract, không phải sửa lint.)
+          - os: macos-15-intel
             os_name: macos
             arch: x64
           - os: macos-latest

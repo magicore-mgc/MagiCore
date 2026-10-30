@@ -40,7 +40,11 @@ jobs:
         # golden của generator dưới dạng YAML.)
         run: |
           bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
-          ./actionlint -color
+          # The repository config supplies the runner label its release contract
+          # pins but actionlint's bundled table does not know yet.
+          # (Config của repo bổ sung label runner mà contract release ghim nhưng
+          # bảng có sẵn của actionlint chưa biết.)
+          ./actionlint -color -config-file actionlint.yaml
       - name: Validate Phase 0 coverage schema, fixture, and anti-laundering rules
         run: |
           python3 -m json.tool ci/evidence/coverage-manifest.schema.json >/dev/null
