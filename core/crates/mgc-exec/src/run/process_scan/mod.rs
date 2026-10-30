@@ -40,7 +40,7 @@ pub(in crate::run::implementation) use macos::{macos_process_snapshot, macos_pro
 
 #[cfg(any(windows, test))]
 #[path = "windows/mod.rs"]
-mod windows;
+pub(in crate::run::implementation) mod windows;
 
 #[cfg(any(windows, test))]
 pub(in crate::run::implementation) use windows::{WindowsProcessScan, WindowsProcessSnapshot};

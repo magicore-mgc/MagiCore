@@ -3,7 +3,7 @@
 
 mod windows_executable_identity;
 
-pub(super) use windows_executable_identity::{
+pub(in crate::run::implementation) use windows_executable_identity::{
     windows_current_executable_sha256, windows_sha256_file,
 };
 #[cfg(test)]

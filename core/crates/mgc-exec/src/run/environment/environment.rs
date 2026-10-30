@@ -26,7 +26,7 @@ pub(in crate::run) use guarded_path::{guarded_path_env, is_path_env_key};
 #[path = "windows_executable_identity/mod.rs"]
 mod windows_executable_identity;
 #[cfg(windows)]
-pub(super) use windows_executable_identity::{
+pub(in crate::run::implementation) use windows_executable_identity::{
     windows_current_executable_sha256, windows_sha256_file,
 };
 

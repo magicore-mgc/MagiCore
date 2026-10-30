@@ -10,8 +10,9 @@ mod implementation;
 pub(in crate::run::implementation) use implementation::{
     WindowsProcessScan, WindowsProcessSnapshot,
 };
-// `retry_windows_process_scan` is reached through the inner implementation
-// module by its consumers, so forwarding it here would be an unused import on
-// non-Windows builds.
-// (`retry_windows_process_scan` được consumer lấy qua module implementation
-// bên trong, nên chuyển tiếp ở đây là import thừa trên build không-Windows.)
+// The scan-result module imports the retry helper through this facade, so the
+// facade must forward it (E0432 until it did).
+// (Module scan-result import helper retry qua facade này, nên facade phải
+// chuyển tiếp — trước đó là E0432.)
+#[cfg(windows)]
+pub(in crate::run::implementation) use implementation::retry_windows_process_scan;

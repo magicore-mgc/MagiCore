@@ -16,7 +16,7 @@ use super::super::{ForbiddenProcess, WindowsJobInspection};
 #[cfg(windows)]
 use crate::allowlist::ExecutionScope;
 #[cfg(windows)]
-use crate::run::implementation::process_scan::implementation::retry_windows_process_scan;
+use crate::run::implementation::process_scan::retry_windows_process_scan;
 #[cfg(windows)]
 use anyhow::Result;
 #[cfg(windows)]

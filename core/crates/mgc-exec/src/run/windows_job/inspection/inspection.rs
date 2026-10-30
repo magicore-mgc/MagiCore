@@ -20,7 +20,7 @@ mod policy_metadata;
 mod scan_result;
 
 #[cfg(windows)]
-pub(super) use job_inspection::windows_job_descendants;
+pub(in crate::run::implementation) use job_inspection::windows_job_descendants;
 #[cfg(windows)]
 pub(in crate::run::implementation) use scan_result::find_forbidden_job_descendant_with_timeout;
 #[cfg(any(windows, test))]
