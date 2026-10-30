@@ -1,8 +1,6 @@
 //! Shared RAM-unit conversion and OS probe selection.
 //! (Dùng chung phép đổi đơn vị RAM và chọn probe theo hệ điều hành.)
 use crate::commands::optimizer::detect::HardwareInfo;
-#[cfg(target_os = "linux")]
-use std::path::Path;
 
 impl HardwareInfo {
     /// Đọc dung lượng RAM từ hệ điều hành
