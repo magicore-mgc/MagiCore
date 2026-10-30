@@ -120,6 +120,15 @@ pub async fn run(
         "ai" => build_ai(&root).await,
         #[cfg(not(feature = "ai"))]
         "ai" => Err(crate::error::core_not_in_build("ai")),
+        // A CI/CD project generates pipeline configuration; it has no build
+        // artefact, and the verify lane already says so. Report the same
+        // guidance here instead of a generic "not implemented yet", which reads
+        // like a missing feature rather than an intentional boundary.
+        // (Project CI/CD sinh cấu hình pipeline, không có artefact build, và lane
+        // verify đã nói đúng điều đó. Trả cùng hướng dẫn ở đây thay vì
+        // "not implemented yet" chung chung, vốn đọc như thiếu tính năng chứ
+        // không phải ranh giới có chủ đích.)
+        "cicd" => Err(crate::error::core_not_in_build("cicd")),
         other => bail!("'mgc build' not implemented for '{}' core yet", other),
     }
 }

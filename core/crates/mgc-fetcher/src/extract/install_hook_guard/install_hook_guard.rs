@@ -13,6 +13,7 @@
 
 use super::super::archive_limits::{
     FORBIDDEN_MODE_BITS, NUGET_INSTALL_SCRIPT_BASENAMES, PYTHON_SITE_HOOK_MODULES,
+    mode_declares_symlink,
 };
 
 /// Environment opt-in naming packages allowed to ship install-hook entries.
@@ -29,6 +30,9 @@ pub(in crate::extract) enum HookKind {
     PythonSiteCustomize,
     NuGetInstallScript,
     PrivilegedMode,
+    /// An archive member declares `S_IFLNK` in its mode word.
+    /// Entry archive khai `S_IFLNK` trong mode word.
+    SymlinkMode,
 }
 
 impl HookKind {
@@ -38,6 +42,7 @@ impl HookKind {
             Self::PythonSiteCustomize => "Python sitecustomize/usercustomize hook",
             Self::NuGetInstallScript => "NuGet install.ps1 script",
             Self::PrivilegedMode => "setuid/setgid archive member",
+            Self::SymlinkMode => "symbolic-link archive member",
         }
     }
 }
@@ -93,10 +98,13 @@ impl InstallHookGuard {
 /// Classify an entry path (and optional POSIX mode word).
 /// Phân loại path entry (và mode POSIX tùy chọn).
 pub(in crate::extract) fn classify(entry_path: &Path, mode: Option<u32>) -> Option<HookKind> {
-    if let Some(mode) = mode
-        && mode & FORBIDDEN_MODE_BITS != 0
-    {
-        return Some(HookKind::PrivilegedMode);
+    if let Some(mode) = mode {
+        if mode_declares_symlink(mode) {
+            return Some(HookKind::SymlinkMode);
+        }
+        if mode & FORBIDDEN_MODE_BITS != 0 {
+            return Some(HookKind::PrivilegedMode);
+        }
     }
     let lossy = entry_path
         .to_string_lossy()

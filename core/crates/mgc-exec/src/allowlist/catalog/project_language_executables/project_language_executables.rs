@@ -10,5 +10,5 @@
 // arbitrary code execution trong khi `bash`/`tsx` vẫn bị chặn (SEC-02).)
 pub(crate) const PROJECT_LANGUAGE_EXECUTABLES: &[&str] = &[
     "bash", "clang", "clang++", "dotnet", "gcc", "g++", "godot", "java", "javac", "kotlinc",
-    "node", "php", "python", "python3", "tsx", "zig",
+    "dart", "node", "php", "python", "python3", "swift", "tsx", "zig",
 ];

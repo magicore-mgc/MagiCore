@@ -101,7 +101,20 @@ jobs:
           mkdir -p "$HOME/.magicore-verify/bin"
           cd dist-verify
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            tar -xf "$ARCHIVE" -C "$HOME/.magicore-verify/bin"
+            # The release ships a flat .zip on Windows and the bash `tar` on
+            # these runners is Git's GNU tar, which cannot read zip (see
+            # scripts/release/binary_e2e/archive/install_clean_prefix.sh), so
+            # extraction goes through PowerShell. The archive path stays
+            # relative and the destination crosses the shell boundary through
+            # an environment variable, so bash never expands a Windows path
+            # byte (an unquoted backslash path would fold `\U` into an escape).
+            # (Bản phát hành dùng .zip phẳng trên Windows, còn `tar` trong bash
+            # ở runner là GNU tar của Git, không đọc được zip, nên giải nén
+            # bằng PowerShell. Path archive giữ tương đối và đích truyền qua
+            # biến môi trường để bash không nội suy byte path Windows.)
+            MGC_VERIFY_PREFIX="$HOME/.magicore-verify/bin"
+            export MGC_VERIFY_PREFIX
+            powershell.exe -NoProfile -Command "Expand-Archive -LiteralPath '$ARCHIVE' -DestinationPath \"\$env:MGC_VERIFY_PREFIX\" -Force"
             MGC="$HOME/.magicore-verify/bin/mgc.exe"
           else
             tar -xzf "$ARCHIVE" -C "$HOME/.magicore-verify/bin"

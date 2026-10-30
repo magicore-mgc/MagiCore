@@ -73,9 +73,15 @@ jobs:
         if: matrix.ext == 'zip'
         shell: pwsh
         run: |
-          $archive = "magicore-*-${{ matrix.os_name }}-${{ matrix.arch }}.zip"
+          # `Expand-Archive -Path` does not expand wildcards, and `-LiteralPath`
+          # rejects them outright, so resolve the downloaded archive first.
+          # (`Expand-Archive -Path` không mở rộng wildcard, `-LiteralPath` lại
+          # từ chối wildcard, nên phải resolve archive đã tải trước.)
+          $archive = Get-ChildItem -Path "magicore-*-${{ matrix.os_name }}-${{ matrix.arch }}.zip" |
+            Select-Object -First 1
+          if (-not $archive) { throw "downloaded release archive not found" }
           New-Item -ItemType Directory -Force -Path test-install
-          Expand-Archive -Path $archive -DestinationPath test-install -Force
+          Expand-Archive -LiteralPath $archive.FullName -DestinationPath test-install -Force
           Get-ChildItem test-install
 
       - name: Test mgc --version
