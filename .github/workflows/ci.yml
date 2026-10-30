@@ -3,7 +3,11 @@ name: CI
 on:
   workflow_call:
   push:
-    branches: [main, development, "feature/**", "fix/**"]
+    # A release branch must run the same gates as main: the Windows lane and the
+    # full suite are what a release decision rests on.
+    # (Nhánh release phải chạy cùng gate như main: lane Windows và full suite là
+    # cơ sở cho quyết định phát hành.)
+    branches: [main, development, "feature/**", "fix/**", "release/**"]
   pull_request:
     branches: [main, development]
 
