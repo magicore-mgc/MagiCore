@@ -5,26 +5,38 @@
 #[path = "types/mod.rs"]
 mod types;
 #[cfg(any(unix, test))]
-pub(super) use types::ProcessScanSnapshot;
+// Consumers live under `run::implementation::process_scan::monitor`, one level
+// below this module, so the re-export must reach `run::implementation` — the
+// same visibility the monitor items use. On macOS the field-level access below
+// compiled anyway, which is why only Linux builds caught it.
+// (Consumer nằm dưới `run::implementation::process_scan::monitor`, thấp hơn
+// module này một mức, nên re-export phải tới `run::implementation` — đúng
+// visibility mà các item monitor dùng. Trên macOS field-level access vẫn biên
+// dịch được, nên chỉ build Linux mới bắt được.)
+pub(in crate::run::implementation) use types::ProcessScanSnapshot;
 
 #[cfg(any(unix, test))]
 mod monitor;
 #[cfg(unix)]
-pub(super) use monitor::{MonitoredRootNotVisible, find_forbidden_descendant_tracking};
+pub(in crate::run::implementation) use monitor::{
+    MonitoredRootNotVisible, find_forbidden_descendant_tracking,
+};
 
 #[cfg(target_os = "linux")]
 #[path = "linux/mod.rs"]
 mod linux;
 
 #[cfg(target_os = "linux")]
-pub(super) use linux::{linux_process_snapshots, linux_process_stat_snapshot};
+pub(in crate::run::implementation) use linux::{
+    linux_process_snapshots, linux_process_stat_snapshot,
+};
 
 #[cfg(target_os = "macos")]
 #[path = "macos/mod.rs"]
 mod macos;
 
 #[cfg(target_os = "macos")]
-pub(super) use macos::{macos_process_snapshot, macos_process_snapshots};
+pub(in crate::run::implementation) use macos::{macos_process_snapshot, macos_process_snapshots};
 
 #[cfg(any(windows, test))]
 #[path = "windows/mod.rs"]
