@@ -19,7 +19,9 @@ fn linux_process_stat_keeps_exact_identity_when_pid_is_reused_within_one_second(
     assert_eq!(original.process_group, Some(7));
     assert_eq!(original.process_start_ticks, 12345);
     assert!(!original.is_zombie);
-    assert!(!super::super::super::process_identity_is_live(
+    // The identity helper lives under the monitor owner, one branch over.
+    // (Helper identity nằm dưới owner monitor, ở nhánh khác.)
+    assert!(!super::super::monitor::process_identity_is_live(
         original, reused
     ));
 

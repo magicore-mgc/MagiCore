@@ -15,8 +15,12 @@ mod types;
 // dịch được, nên chỉ build Linux mới bắt được.)
 pub(in crate::run::implementation) use types::ProcessScanSnapshot;
 
+// The Linux snapshot tests read an identity helper through this module, so it is
+// visible at the same scope its users are.
+// (Test snapshot Linux đọc helper identity qua module này, nên nó visible ở
+// cùng scope với nơi dùng.)
 #[cfg(any(unix, test))]
-mod monitor;
+pub(in crate::run::implementation) mod monitor;
 #[cfg(unix)]
 pub(in crate::run::implementation) use monitor::{
     MonitoredRootNotVisible, find_forbidden_descendant_tracking,
