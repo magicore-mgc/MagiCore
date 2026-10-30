@@ -1,5 +1,5 @@
-//! Tests the bounded thread-local deferred close ledger.
-//! Kiểm tra ledger deferred close có giới hạn theo thread.
+// Tests the bounded thread-local deferred close ledger.
+// Kiểm tra ledger deferred close có giới hạn theo thread.
 
 use super::{
     MAX_DEFERRED_HANDLE_CLOSE_DETAILS, record_handle_close_failure,
