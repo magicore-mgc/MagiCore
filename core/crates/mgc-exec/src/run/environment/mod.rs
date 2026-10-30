@@ -11,4 +11,6 @@ pub(in crate::run) use implementation::{
     NPM_VERSION_PROBE_SHIM_CONTENT, is_generated_shadow_directory,
 };
 #[cfg(windows)]
-pub(super) use implementation::{windows_current_executable_sha256, windows_sha256_file};
+pub(in crate::run::implementation) use implementation::{
+    windows_current_executable_sha256, windows_sha256_file,
+};

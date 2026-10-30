@@ -4,8 +4,6 @@
 #[cfg(any(windows, test))]
 use super::super::super::super::super::process_scan::WindowsProcessScan;
 #[cfg(windows)]
-use super::super::super::super::super::process_scan::retry_windows_process_scan;
-#[cfg(windows)]
 use super::super::super::super::super::{CompatAuditContext, ShadowPath};
 #[cfg(windows)]
 use super::super::super::super::ProcessTreeGuard;
@@ -18,12 +16,14 @@ use super::super::{ForbiddenProcess, WindowsJobInspection};
 #[cfg(windows)]
 use crate::allowlist::ExecutionScope;
 #[cfg(windows)]
+use crate::run::implementation::process_scan::implementation::retry_windows_process_scan;
+#[cfg(windows)]
 use anyhow::Result;
 #[cfg(windows)]
 use std::time::{Duration, Instant};
 
 #[cfg(any(windows, test))]
-pub(in crate::run::implementation::windows_job) fn windows_job_has_active_descendants(
+pub(in crate::run::implementation) fn windows_job_has_active_descendants(
     root_pid: u32,
     process_ids: &[u32],
 ) -> bool {

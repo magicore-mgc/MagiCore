@@ -61,7 +61,7 @@ pub(in crate::run::implementation) fn windows_job_descendants(
 /// Inspect process IDs owned by this private Job Object.
 /// Chỉ kiểm tra các PID thuộc Job Object riêng của lệnh đang chạy.
 #[cfg(windows)]
-pub(in crate::run::implementation::windows_job::inspection::implementation) fn inspect_windows_job(
+pub(in crate::run::implementation) fn inspect_windows_job(
     guard: &ProcessTreeGuard,
     root_pid: u32,
     exempt: &[&str],
