@@ -9,14 +9,15 @@ use super::super::super::file_access::{
 use super::super::error::{CoreMarkerError, Result};
 
 /// Canonicalize a core name (trim, lowercase, alias mapping).
-/// Chuẩn hóa tên core (trim, chữ thường và ánh xạ bí danh).
+///
+/// Delegates to `mgc_types::Ecosystem::canonical_core_name` — the ONE alias
+/// table. A local `if name == "cloud"` here was the third compensating layer
+/// for the `Ecosystem::as_str()` split (H-1, loop1500).
+/// Chuẩn hóa tên core (trim, chữ thường và ánh xạ bí danh) qua bảng alias duy
+/// nhất trong `mgc_types`.
 pub(in crate::project::project::core_marker) fn canonical_core(name: &str) -> String {
     let name = name.trim().to_ascii_lowercase();
-    if name == "cloud" {
-        "clo".to_string()
-    } else {
-        name
-    }
+    mgc_types::Ecosystem::canonical_core_name(&name)
 }
 
 pub(in crate::project::project::core_marker) fn is_known_core(name: &str) -> bool {

@@ -11,13 +11,8 @@ use std::path::Path;
 pub(in crate::commands::store) fn ensure_web_store_owner(project_root: &Path) -> Result<()> {
     let marker = ProjectConfig::read_core_marker(project_root)?
         .ok_or_else(crate::error::store_core_signature_required)?;
-    let configured = ProjectConfig::load(project_root)?.map(|config| {
-        if config.ecosystem == "cloud" {
-            "clo".to_string()
-        } else {
-            config.ecosystem
-        }
-    });
+    let configured = ProjectConfig::load(project_root)?
+        .map(|config| mgc_types::Ecosystem::canonical_core_name(config.ecosystem.trim()));
 
     if let Some(configured) = &configured
         && &marker != configured
@@ -39,13 +34,8 @@ pub(in crate::commands::store) fn ensure_store_core_owner(
 ) -> Result<()> {
     let marker = ProjectConfig::read_core_marker(project_root)?
         .ok_or_else(|| crate::error::store_core_marker_required(expected))?;
-    let configured = ProjectConfig::load(project_root)?.map(|config| {
-        if config.ecosystem == "cloud" {
-            "clo".to_string()
-        } else {
-            config.ecosystem
-        }
-    });
+    let configured = ProjectConfig::load(project_root)?
+        .map(|config| mgc_types::Ecosystem::canonical_core_name(config.ecosystem.trim()));
     if let Some(configured) = &configured
         && &marker != configured
     {

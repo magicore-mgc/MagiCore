@@ -72,7 +72,8 @@ pub async fn run(
                 crate::scaffold::spec::ScaffoldRef::Default
             )
         });
-        match crate::commands::template::ensure_layer(&format!("cloud/{request}")).await {
+        let namespace = crate::scaffold::framework_registry::template_registry_namespace("clo");
+        match crate::commands::template::ensure_layer(&format!("{namespace}/{request}")).await {
             Ok(status) if status.is_available() => {}
             Ok(_) => {
                 mgc_ui::warning(&format!(

@@ -21,15 +21,11 @@ pub(in crate::commands::import) fn project_lock_owner(root: &Path) -> Result<Str
     validate_core_owner(core)
 }
 
-/// Normalize only the legacy config alias used by the previous import path.
-/// Chuẩn hóa đúng alias config cũ mà import đang hỗ trợ.
+/// Normalize the legacy config alias through the ONE alias table.
+/// Chuẩn hóa alias config cũ qua bảng alias duy nhất.
 fn normalize_config_owner(ecosystem: &str) -> String {
     let core = ecosystem.trim().to_ascii_lowercase();
-    if core == "cloud" {
-        "clo".to_string()
-    } else {
-        core
-    }
+    mgc_types::Ecosystem::canonical_core_name(&core)
 }
 
 /// Reject unsupported owners before assigning imported packages to a core.

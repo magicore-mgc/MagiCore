@@ -24,9 +24,71 @@ mod gpu_env;
 
 pub(crate) use gpu_env::gpu_env_file;
 
-pub(crate) fn has_core_level_optimization(core: &str) -> bool {
-    matches!(core, "clo" | "cloud" | "cicd")
+/// What `mgc optimizer` can do for a core — used by the fail-closed gate.
+/// (`mgc optimizer` làm được gì cho core — dùng cho gate fail-closed.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OptimizerCoverage {
+    /// Machine-level files plus a deploy/container profile; no runtime needed.
+    /// (File mức máy + profile deploy/container; không cần runtime.)
+    CoreLevel,
+    /// Only the machine-level files (profile.json + gpu.env) are guaranteed.
+    /// A language runtime is required for anything beyond them.
+    /// (Chỉ đảm bảo file mức máy; cần runtime cho phần sau.)
+    MachineLevelOnly,
 }
+
+impl OptimizerCoverage {
+    /// True when "no runtime detected" must NOT abort the run.
+    /// (True khi "không detect được runtime" KHÔNG được phép abort.)
+    pub(crate) fn survives_without_runtime(self) -> bool {
+        matches!(self, Self::CoreLevel)
+    }
+}
+
+/// Classify optimizer coverage for `core` (accepts the `cloud` host tag).
+/// Phân loại độ phủ optimizer cho `core` (chấp nhận cả tag host `cloud`).
+pub(crate) fn optimizer_coverage(core: &str) -> OptimizerCoverage {
+    let canonical = mgc_types::Ecosystem::from_str(core)
+        .map(|ecosystem| ecosystem.as_str())
+        .unwrap_or(core);
+    if DEPLOY_PROFILE_CORES.contains(&canonical) {
+        OptimizerCoverage::CoreLevel
+    } else {
+        // Claimed cores without a deploy profile (and `hardware`, which claims
+        // nothing) only guarantee the two machine-level files. The pre-run gate
+        // is therefore left exactly as it was for them: a missing runtime still
+        // aborts, so automation never reads "optimized" from a run that wrote
+        // nothing beyond the manifest.
+        // (Core đã claim nhưng không có deploy profile — và `hardware` — chỉ đảm
+        // bảo hai file mức máy; gate giữ nguyên, thiếu runtime vẫn abort.)
+        OptimizerCoverage::MachineLevelOnly
+    }
+}
+
+/// Whether a core has a safe optimization profile that does not require a
+/// language runtime.
+/// (Core nào có profile tối ưu an toàn mà không cần runtime ngôn ngữ.)
+#[cfg(test)]
+pub(crate) fn has_core_level_optimization(core: &str) -> bool {
+    optimizer_coverage(core) == OptimizerCoverage::CoreLevel
+}
+
+/// Cores for which a deploy/container concurrency profile is generated.
+/// (Core được sinh profile concurrency deploy/container.)
+pub(crate) const DEPLOY_PROFILE_CORES: &[&str] = &["clo", "cicd"];
+
+/// Was: the optimizer capability contract (PA-1/PA-2, reviewLoop0902).
+///
+/// The table now lives in `mgc_types::capabilities`
+/// (`OPTIMIZER_CAPABILITY_CORES` / `optimizer_capability_supported`) because
+/// BOTH sides need it: the adapters' `probe_optimizer` and this CLI gate.
+/// Re-exported here so the CLI keeps one import path and the two cannot drift.
+/// (Bảng đã chuyển sang `mgc_types::capabilities` vì cả adapter lẫn CLI gate
+/// đều cần; re-export để CLI giữ một điểm import và hai bên không thể lệch.)
+#[cfg(test)]
+pub(crate) use mgc_types::capabilities::{
+    OPTIMIZER_CAPABILITY_CORES, optimizer_capability_supported,
+};
 
 /// Generate optimized configuration files for each Core and actual Hardware specs — sinh các file cấu hình tối ưu phù hợp với từng Core và thông số Hardware thực tế
 /// REFACTORED: Runtime detection + adapter pattern (no hardcoding per core) — đã refactor: phát hiện runtime + pattern adapter
@@ -36,6 +98,11 @@ pub fn generate_optimizations_for_core(
     project_root: &Path,
 ) -> Vec<OptimizedConfigFile> {
     let mut files = vec![];
+    // One canonical name for every branch below (accepts the `cloud` host tag).
+    // (Một tên chuẩn cho mọi nhánh dưới — chấp nhận tag `cloud`.)
+    let core = mgc_types::Ecosystem::from_str(core)
+        .map(|ecosystem| ecosystem.as_str())
+        .unwrap_or(core);
 
     // 0. Metadata Optimizer Manifest for all Cores — metadata manifest chung cho mọi Core
     files.push(OptimizedConfigFile {
@@ -55,7 +122,7 @@ pub fn generate_optimizations_for_core(
     // Cloud and CI/CD profiles tune deployment/build concurrency without
     // depending on a language runtime being present.
     // (Profile Cloud và CI/CD tối ưu concurrency mà không cần runtime ngôn ngữ.)
-    if has_core_level_optimization(core) {
+    if DEPLOY_PROFILE_CORES.contains(&core) {
         let upload_limit = hw.cpu_cores.map(|cores| cores.max(2));
         let upload_line = upload_limit
             .map(|limit| format!("MGC_PARALLEL_UPLOADS={limit}\n"))

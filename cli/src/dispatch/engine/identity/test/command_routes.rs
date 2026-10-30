@@ -1,12 +1,19 @@
 use super::*;
 
+/// The 45 core-scoped dependency routes bind to the CLI CANONICAL core id.
+///
+/// `install-clo` maps to `clo`, not to the adapter's `cloud` name: the core id
+/// is what `CoreIdent::core_id()` returns and what `Ecosystem::as_str()` prints
+/// (H-1, loop1500). The adapter name is a runtime detail and never a binding.
+/// (45 route theo core bind vào core id CHUẨN: `install-clo` → `clo`, không phải
+/// tên adapter `cloud`.)
 #[test]
 fn explicit_dependency_command_mapping_covers_all_45_public_routes() {
     let cases = [
         ("install-web", "web", false),
         ("install-game", "game", false),
         ("install-ai", "ai", false),
-        ("install-clo", "cloud", false),
+        ("install-clo", "clo", false),
         ("install-cicd", "cicd", false),
         ("install-iot", "iot", false),
         ("install-app", "app", false),
@@ -15,7 +22,7 @@ fn explicit_dependency_command_mapping_covers_all_45_public_routes() {
         ("add-web", "web", true),
         ("add-game", "game", true),
         ("add-ai", "ai", true),
-        ("add-clo", "cloud", true),
+        ("add-clo", "clo", true),
         ("add-cicd", "cicd", true),
         ("add-iot", "iot", true),
         ("add-app", "app", true),
@@ -24,7 +31,7 @@ fn explicit_dependency_command_mapping_covers_all_45_public_routes() {
         ("remove-web", "web", true),
         ("remove-game", "game", true),
         ("remove-ai", "ai", true),
-        ("remove-clo", "cloud", true),
+        ("remove-clo", "clo", true),
         ("remove-cicd", "cicd", true),
         ("remove-iot", "iot", true),
         ("remove-app", "app", true),
@@ -33,7 +40,7 @@ fn explicit_dependency_command_mapping_covers_all_45_public_routes() {
         ("list-web", "web", false),
         ("list-game", "game", false),
         ("list-ai", "ai", false),
-        ("list-clo", "cloud", false),
+        ("list-clo", "clo", false),
         ("list-cicd", "cicd", false),
         ("list-iot", "iot", false),
         ("list-app", "app", false),
@@ -42,7 +49,7 @@ fn explicit_dependency_command_mapping_covers_all_45_public_routes() {
         ("update-web", "web", false),
         ("update-game", "game", false),
         ("update-ai", "ai", false),
-        ("update-clo", "cloud", false),
+        ("update-clo", "clo", false),
         ("update-cicd", "cicd", false),
         ("update-iot", "iot", false),
         ("update-app", "app", false),

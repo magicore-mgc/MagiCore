@@ -6,17 +6,27 @@ use mgc_types::MgResult;
 use mgc_types::capabilities::OptimizerProvider;
 
 impl OptimizerProvider for GameAdapter {
-    /// Evidence: `mgc optimizer` dispatches this core and writes its profile.
+    /// Evidence: `mgc optimizer` for `game` completes WITHOUT a language
+    /// runtime — it always writes `.mgc-optimizer/profile.json` and
+    /// `.mgc-optimizer/gpu.env`, and for `clo`/`cicd` also
+    /// `.mgc-optimizer/deploy_concurrency.env` (generators step 0/0a/`deploy_concurrency`).
     ///
-    /// This capability was withheld while `ai` declared it with the SAME
-    /// evidence — "the optimizer CLI dispatches this core". The dispatch is
-    /// shared infrastructure (`optimizer/generators.rs` writes `profile.json`
-    /// and `gpu.env` for every core), so withholding it here advertised less
-    /// than the product does.
-    /// (Capability từng bị giữ lại trong khi `ai` khai với CÙNG dẫn chứng —
-    /// "optimizer CLI dispatch core này". Dispatch là hạ tầng dùng chung nên giữ
-    /// lại là quảng cáo ít hơn thực tế.)
+    /// PA-1/PA-2 (reviewLoop0902): the claim and the CLI dispatch table used to
+    /// be written independently, so the manifest could advertise a core the gate
+    /// then refused. The probe now reads the contract that
+    /// `OPTIMIZER_CAPABILITY_CORES` pins, so the two cannot disagree:
+    /// if this line ever fails, the core must be added there (or the claim dropped).
+    /// (Dẫn chứng: `mgc optimizer` cho `game` hoàn tất khi KHÔNG có runtime —
+    /// luôn ghi profile.json + gpu.env. Probe đọc chính bảng contract.)
     fn probe_optimizer(&self) -> MgResult<()> {
-        Ok(())
+        mgc_types::capabilities::optimizer_capability_supported("game")
+            .then_some(())
+            .ok_or_else(|| {
+                mgc_types::capabilities::unsupported_capability(
+                    "game",
+                    "optimizer",
+                    "this core is not in the optimizer capability contract",
+                )
+            })
     }
 }

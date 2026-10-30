@@ -231,6 +231,67 @@ fn claimed_capabilities_are_backed() {
     }
 }
 
+/// (0) H-1 identity invariant: `Ecosystem::as_str()` MUST equal the adapter's
+/// `core_id()`, and the claim itself must agree with the optimizer contract.
+///
+/// This is the pin the loop1500 report asked for. Before it, `Ecosystem::Cloud`
+/// stringified to `"cloud"` while `core_id()` returned `"clo"`, and three
+/// layers (marker canonicalization, dev routing, security config) compensated
+/// with their own alias tables. A future change that reintroduces a second
+/// name fails here instead of silently needing a fourth compensating layer.
+/// (Bất biến identity H-1: `Ecosystem::as_str()` PHẢI bằng `core_id()`, và
+/// claim optimizer phải khớp contract — lệch sẽ fail ở đây.)
+#[test]
+fn ecosystem_as_str_matches_core_id() {
+    for case in build_cases() {
+        assert_eq!(
+            case.adapter.ecosystem().as_str(),
+            case.adapter.core_id(),
+            "{}: Ecosystem::as_str() drifted from CoreIdent::core_id() — a second \
+             core name is being introduced",
+            case.core
+        );
+        assert_eq!(
+            Ecosystem::from_str(case.adapter.core_id()),
+            Some(case.adapter.ecosystem()),
+            "{}: core_id() must parse back to the adapter's own ecosystem",
+            case.core
+        );
+    }
+}
+
+/// (0b) PA-1/PA-2: `OptimizerProvider` is claimed exactly when the shared
+/// contract admits the core — the manifest and the CLI dispatch table cannot
+/// disagree again.
+/// (PA-1/PA-2: claim `OptimizerProvider` đúng bằng contract — manifest và bảng
+/// dispatch CLI không thể lệch nữa.)
+#[test]
+fn optimizer_claim_matches_the_dispatch_contract() {
+    for case in build_cases() {
+        let claimed = case
+            .adapter
+            .capabilities()
+            .contains(&Capability::OptimizerProvider);
+        assert_eq!(
+            claimed,
+            optimizer_capability_supported(case.core),
+            "{}: claiming OptimizerProvider while outside OPTIMIZER_CAPABILITY_CORES \
+             (or the reverse) advertises a run `mgc optimizer` refuses",
+            case.core
+        );
+    }
+    // Exhaustive on the contract side too: every contract entry must be a real
+    // core in the matrix, so a typo cannot silently disable a claim.
+    // (Contract cũng phải exhaustive: mọi entry phải có trong matrix.)
+    let cores: Vec<&str> = build_cases().iter().map(|case| case.core).collect();
+    for core in OPTIMIZER_CAPABILITY_CORES {
+        assert!(
+            cores.contains(core),
+            "'{core}' is in the optimizer contract but has no adapter case"
+        );
+    }
+}
+
 /// (2) Every capability NOT claimed must fail closed (probe Unsupported).
 /// (2) Mọi capability KHÔNG claim phải fail-closed (probe Unsupported).
 #[test]
@@ -449,7 +510,12 @@ fn capability_map_matches_audited_contract() {
                 // — trait chấp nhận đó là dẫn chứng. Contract cũ nói "không
                 // scaffold", tức quảng cáo ít hơn thực tế.)
                 Capability::ScaffoldProvider,
-                Capability::OptimizerProvider,
+                // Optimizer is NOT claimed (PA-1, reviewLoop0902): the
+                // optimizer/bench template listing is scaffold evidence, and
+                // `mgc optimizer` has no hardware-specific lane — the claim used
+                // to pass a probe that always returned `Ok(())`.
+                // (Không claim optimizer: template optimizer/bench là dẫn chứng
+                // scaffold; probe cũ luôn trả `Ok(())`.)
                 Capability::AuditProvider,
             ],
         ),

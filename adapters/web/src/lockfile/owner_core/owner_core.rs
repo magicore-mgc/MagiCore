@@ -34,10 +34,9 @@ pub(crate) fn web_lock_owner_core(project_root: &Path) -> MgResult<String> {
 }
 
 fn canonical_core_name(value: &str) -> String {
+    // One alias table for the whole workspace (`mgc_types::Ecosystem`); the
+    // local `if core == "cloud"` copy was a compensating layer for H-1.
+    // (Một bảng alias duy nhất; bản copy `if core == "cloud"` là lớp bù cho H-1.)
     let core = value.trim().to_ascii_lowercase();
-    if core == "cloud" {
-        "clo".to_string()
-    } else {
-        core
-    }
+    mgc_types::Ecosystem::canonical_core_name(&core)
 }

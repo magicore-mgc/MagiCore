@@ -11,10 +11,17 @@ pub(in crate::commands) fn trusted_oci_artifact_manifest(
 ) -> Result<Vec<u8>> {
     use sha2::Digest as _;
 
-    let core_id = mgc_types::Ecosystem::from_str(core)
-        .ok_or_else(|| anyhow!("unknown MagiCore core: {core}"))?
-        .as_str();
-    let prefix = format!("{core_id}/");
+    let ecosystem = mgc_types::Ecosystem::from_str(core)
+        .ok_or_else(|| anyhow!("unknown MagiCore core: {core}"))?;
+    let core_id = ecosystem.as_str();
+    // The descriptor prefix is the published OCI namespace, which for Cloud is
+    // `cloud/` while the CLI identity is `clo`.
+    // (Prefix descriptor là namespace OCI đã publish; Cloud là `cloud/` trong
+    // khi identity CLI là `clo`.)
+    let prefix = format!(
+        "{}/",
+        ecosystem.passthrough_namespace(mgc_types::NamespaceRole::AdapterDirectory)
+    );
     let package = repository
         .strip_prefix(&prefix)
         .filter(|package| !package.is_empty())

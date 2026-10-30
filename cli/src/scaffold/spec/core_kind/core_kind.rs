@@ -28,13 +28,20 @@ impl CoreKind {
             CoreKind::Game => "game",
             CoreKind::Iot => "iot",
             CoreKind::Cicd => "cicd",
-            CoreKind::Cloud => "cloud",
+            CoreKind::Cloud => "clo",
             CoreKind::Hardware => "hardware",
         }
     }
 
-    /// Parse an established lowercase core name.
-    /// Parse tên core viết thường hiện hành.
+    /// Parse an established lowercase core name OR a template/registry layer
+    /// namespace, and return the core kind.
+    ///
+    /// `as_str()` is the CLI identity (`clo`), so the reverse parse accepts it.
+    /// The layer namespace (`cloud/`) is NOT an identity: it reaches this parser
+    /// from template paths that name a published directory, so it is resolved
+    /// through the one alias table and must never be returned as `as_str()`.
+    /// (Parse tên chuẩn hoặc namespace layer template. Namespace `cloud/` không
+    /// phải identity — nó được resolve qua bảng alias duy nhất.)
     pub fn from_str_core(s: &str) -> Option<Self> {
         match s {
             "web" => Some(CoreKind::Web),
@@ -44,7 +51,10 @@ impl CoreKind {
             "game" => Some(CoreKind::Game),
             "iot" => Some(CoreKind::Iot),
             "cicd" => Some(CoreKind::Cicd),
-            "cloud" => Some(CoreKind::Cloud),
+            // `clo` is the identity; `cloud` is the published layer namespace
+            // that `mgc create-clo` fetches. Both name the same core kind.
+            // (`clo` là identity; `cloud` là namespace layer đã publish — cùng kind.)
+            "clo" | "cloud" => Some(CoreKind::Cloud),
             "hardware" => Some(CoreKind::Hardware),
             _ => None,
         }

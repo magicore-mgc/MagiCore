@@ -31,12 +31,11 @@ pub(in crate::dispatch) fn resolve(declarations: Vec<String>) -> Result<Option<S
 }
 
 fn canonical_core_hint(core: &str) -> String {
+    // One alias table (`mgc_types::Ecosystem`); the local copy here was the
+    // CLI-side duplicate of the marker writer's `if core == "cloud"` (H-1).
+    // (Một bảng alias duy nhất; bản copy ở đây trùng với bản trong marker.)
     let core = core.trim().to_ascii_lowercase();
-    if core == "cloud" {
-        "clo".to_string()
-    } else {
-        core
-    }
+    mgc_types::Ecosystem::canonical_core_name(&core)
 }
 
 #[cfg(test)]

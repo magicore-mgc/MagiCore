@@ -9,17 +9,12 @@ pub async fn run(core: Option<&str>, force: bool) -> Result<()> {
     let ctx = crate::context::ProjectContext::load_with_core(core)?;
     let project_root = ctx.root();
     let ecosystem = ctx.adapter().ecosystem();
-    let detected_core = match ecosystem {
-        mgc_types::Ecosystem::Web => "web",
-        mgc_types::Ecosystem::Game => "game",
-        mgc_types::Ecosystem::Ai => "ai",
-        mgc_types::Ecosystem::Cloud => "cloud",
-        mgc_types::Ecosystem::Cicd => "cicd",
-        mgc_types::Ecosystem::Iot => "iot",
-        mgc_types::Ecosystem::App => "app",
-        mgc_types::Ecosystem::Lib => "lib",
-        mgc_types::Ecosystem::Hardware => "hardware",
-    };
+    // `Ecosystem::as_str()` IS the CLI core id (H-1): the hand-written match
+    // here used to send `clo` projects in as `cloud`, which then needed an alias
+    // in every consumer downstream.
+    // (`Ecosystem::as_str()` chính là core id CLI; match viết tay trước đây đẩy
+    // project `clo` vào dưới tên `cloud` và buộc downstream phải có alias.)
+    let detected_core = ecosystem.as_str();
 
     mgc_ui::info(&format!(
         "Running MagiCore Optimizer for `{}` core in {}",

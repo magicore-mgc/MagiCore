@@ -218,9 +218,24 @@ pub fn iot_default_board(framework: &str) -> Option<&'static str> {
 }
 
 /// Local-project ecosystem for a CLI core id (`clo` is stored as `cloud`).
-/// Ecosystem project local cho core id của CLI (`clo` được lưu là `cloud`).
+///
+/// This is the LAYER/REGISTRY namespace, never the project identity: `cloud`
+/// is the published template directory and the npm package namespace, while
+/// the CLI identity stays `clo` (see `Ecosystem::passthrough_namespace`).
+/// An unknown name borrows the caller's string so the failure names it.
+/// (Ecosystem project local cho core id CLI — namespace layer/registry, KHÔNG
+/// phải identity project. Tên lạ mượn chuỗi của caller để lỗi nêu đúng tên.)
 pub fn ecosystem_for_core(core: &str) -> &str {
-    if core == "clo" { "cloud" } else { core }
+    match mgc_types::Ecosystem::from_str(core) {
+        Some(ecosystem) => ecosystem.passthrough_namespace(mgc_types::NamespaceRole::TemplateLayer),
+        None => core,
+    }
+}
+
+/// npm registry package namespace for the template layer of `core`.
+/// Namespace package trên npm registry cho layer template của `core`.
+pub fn template_registry_namespace(core: &str) -> &str {
+    ecosystem_for_core(core)
 }
 
 /// Framework marker file that proves a local project really is this

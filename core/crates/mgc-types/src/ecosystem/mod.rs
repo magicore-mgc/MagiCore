@@ -3,7 +3,7 @@
 
 mod ecosystem;
 
-pub use self::ecosystem::Ecosystem;
+pub use self::ecosystem::{Ecosystem, NamespaceRole};
 
 #[cfg(test)]
 #[path = "test/ecosystem.rs"]

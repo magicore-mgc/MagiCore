@@ -10,6 +10,15 @@ use std::path::Path;
 pub fn detect_runtimes(project_root: &Path, core: &str) -> Vec<DetectedRuntime> {
     let mut runtimes = vec![];
 
+    // Callers may still hand over the `cloud` host tag; resolve once so the
+    // branches below only ever see canonical names (no branch may depend on
+    // which spelling arrived — that duplication is what H-1 was).
+    // (Caller có thể truyền tag `cloud`; chuẩn hóa một lần để nhánh dưới chỉ thấy
+    // tên chuẩn.)
+    let core = mgc_types::Ecosystem::from_str(core)
+        .map(|ecosystem| ecosystem.as_str())
+        .unwrap_or(core);
+
     match core {
         "web" => {
             runtimes.extend(detect_web_runtime(project_root));
@@ -23,7 +32,7 @@ pub fn detect_runtimes(project_root: &Path, core: &str) -> Vec<DetectedRuntime> 
         "app" => {
             runtimes.extend(detect_app_runtime(project_root));
         }
-        "clo" | "cloud" if detect_cloud_node_runtime(project_root) => {
+        "clo" if detect_cloud_node_runtime(project_root) => {
             // Cloud IaC projects use Node.js for Pulumi/CDK manifests; keep the
             // runtime identity separate from the package-manager choice.
             // (Pulumi/CDK chạy trên Node.js; phân biệt runtime với package manager.)

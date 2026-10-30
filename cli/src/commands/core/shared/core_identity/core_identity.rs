@@ -13,15 +13,16 @@ pub(crate) fn ensure_project_core_identity(root: &Path, expected: &str) -> Resul
     let Some(detected) = detected else {
         return Err(crate::error::project_core_identity_missing(root, expected));
     };
-    let expected = if expected == "cloud" { "clo" } else { expected };
-    let detected = if detected == "cloud" {
-        "clo"
-    } else {
-        detected.as_str()
-    };
+    // Both sides go through the ONE alias table: `mgc_config` already returns
+    // canonical names, and `expected` may still arrive as the `cloud` host tag
+    // from an adapter-facing caller.
+    // (Hai phía đều đi qua bảng alias duy nhất; `expected` có thể vẫn là tag
+    // host `cloud` từ caller phía adapter.)
+    let expected = mgc_types::Ecosystem::canonical_core_name(expected);
+    let detected = mgc_types::Ecosystem::canonical_core_name(&detected);
     if detected != expected {
         return Err(crate::error::project_core_identity_mismatch(
-            root, expected, detected,
+            root, &expected, &detected,
         ));
     }
     Ok(())

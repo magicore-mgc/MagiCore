@@ -32,9 +32,14 @@ impl Scaffolder {
         core: &str,
         framework: &str,
     ) -> TemplateRoot {
-        // The CLI alias must resolve the same namespace that preflight fetched.
-        // Alias clo phải đọc cloud/, đúng nơi ensure_layer đã publish cache.
-        let namespace = if core == "clo" { "cloud" } else { core };
+        // The CLI identity must resolve the same namespace that preflight
+        // fetched: `clo` (identity) -> `cloud` (published layer directory).
+        // (Identity CLI phải đọc đúng namespace preflight đã tải: clo → cloud.)
+        let namespace = mgc_types::Ecosystem::from_str(core)
+            .map(|ecosystem| {
+                ecosystem.passthrough_namespace(mgc_types::NamespaceRole::TemplateLayer)
+            })
+            .unwrap_or(core);
         TemplateRoot::resolve(&format!("{namespace}/{framework}"))
     }
 }

@@ -7,9 +7,13 @@ use mgc_types::capabilities::Capability;
 impl HardwareAdapter {
     /// Capability manifest (Global Gate 1) — code-reality notes:
     /// - ProjectDetector: `manifest_is_any_mg` (any mgc.toml) — real.
-    /// - OptimizerProvider: the optimizer/bench framework — template
-    ///   materialization via `mgc add-hardware`/`create-hardware` and the
-    ///   optimizer/bench listing below — real (mgc-owned generator).
+    /// - OptimizerProvider is NOT claimed (PA-1, reviewLoop0902). The
+    ///   optimizer/bench framework is ScaffoldProvider evidence — the
+    ///   `mgc create-hardware`/`mgc add-hardware` template listing. `mgc optimizer`
+    ///   on a hardware project only writes the machine-level profile through the
+    ///   generic lane and aborts when no language runtime exists, which is the
+    ///   normal shape of a hardware scaffold. Claiming it advertised a dispatch
+    ///   the manifest could not back; see `optimizer_provider` for the probe.
     /// - AuditProvider: shared polyglot dispatch (sibling manifests get
     ///   real scans) — real.
     ///
@@ -23,7 +27,6 @@ impl HardwareAdapter {
         // (Scaffold nằm ở lane CLI, không phải module adapter; trait chấp nhận cả
         // hai. Xem `unclaimed_capabilities` để biết vì sao claim.)
         Capability::ScaffoldProvider,
-        Capability::OptimizerProvider,
         Capability::AuditProvider,
     ];
 }

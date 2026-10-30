@@ -2,7 +2,13 @@
 //!
 //! ## Quy tắc
 //!
-//! - Mỗi core có port default cố định, độc nhất trong bảng (không trùng).
+//! - Mỗi core CÓ dev server mới có port default cố định, độc nhất (không trùng).
+//! - `lib` KHÔNG có mặt trong bảng: `mgc dev` cho `lib` là vòng build-watch
+//!   (không serve process) nên `DevRoute::Lib` từ chối `--port`. Bảng nói `lib`
+//!   có port trong khi dispatch từ chối chính là bẫy M-3/PORT_LIB — hai bên nay
+//!   cùng một sự thật: không port, không server.
+//!   (Only cores with a dev server have a port. `lib` is a build-watch loop with
+//!   no server, so it has no port and `mgc dev lib --port` is refused.)
 //! - `web FE = 4315`, `web BE = 3415` (user chốt trước).
 //! - Các core còn lại dùng các hoán vị khác của {1,3,4,5}: 5134/5143/5413/4351/4513/1345.
 //! - `--port` flag override 1 lần mà không ghi đè bảng.
@@ -20,7 +26,6 @@
 //! | game      | 4351        | hoán vị 4·3·1·5              |
 //! | iot       | 4513        | hoán vị 4·3·1·5              |
 //! | app       | 1345        | hoán vị 4·3·1·5              |
-//! | lib       | 1354        | hoán vị 4·3·1·5 (build-watch)|
 
 use std::net::TcpListener;
 
@@ -40,11 +45,10 @@ pub const PORT_GAME: u16 = 4351;
 pub const PORT_IOT: u16 = 4513;
 /// Port mặc định App core (mobile/desktop)
 pub const PORT_APP: u16 = 1345;
-/// Port mặc định Lib core (build-watch server)
-pub const PORT_LIB: u16 = 1354;
 
 /// Trả về port mặc định cho một core name (canonical — dùng "clo" không dùng "cloud").
-/// Return `None` nếu core không có server (vd: hardware).
+/// Return `None` nếu core không có server (vd: hardware, lib).
+/// (`lib` trả `None` vì `mgc dev lib` không mở port — xem `DevRoute::Lib`.)
 pub fn default_port(core: &str) -> Option<u16> {
     match core {
         "web" => Some(PORT_WEB_FE),
@@ -54,7 +58,9 @@ pub fn default_port(core: &str) -> Option<u16> {
         "game" => Some(PORT_GAME),
         "iot" => Some(PORT_IOT),
         "app" => Some(PORT_APP),
-        "lib" | "library" => Some(PORT_LIB),
+        // `lib` không có dev server: `mgc dev lib` là build-watch và
+        // `DevRoute::Lib` từ chối `--port` — bảng port không được mâu thuẫn.
+        // (`lib` serves nothing: no port here, and dev refuses `--port`.)
         // hardware không có dev server
         _ => None,
     }

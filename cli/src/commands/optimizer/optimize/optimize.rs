@@ -65,7 +65,7 @@ pub fn optimize_project(project_root: &Path, core: &str, force: bool) -> Result<
             detected_runtimes[0],
             runtime_detect::DetectedRuntime::Unknown
         );
-    if runtime_unavailable && !generators::has_core_level_optimization(core) {
+    if runtime_unavailable && !generators::optimizer_coverage(core).survives_without_runtime() {
         // Fail closed: automation reading Ok(()) here would report a
         // successful optimization that never happened (V1.2: no success
         // without verifiable state change).

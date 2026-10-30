@@ -87,7 +87,13 @@ fn supported_frameworks_is_scoped_per_core() {
 fn cli_aliases_resolve_to_the_registry_tables() {
     assert_eq!(supported_frameworks("library"), supported_frameworks("lib"));
     assert_eq!(supported_frameworks("cloud"), supported_frameworks("clo"));
+    // The layer/registry namespace for the Cloud core is its published
+    // directory name; the project identity stays `clo`.
+    // (Namespace layer/registry là tên thư mục đã publish; identity vẫn `clo`.)
     assert_eq!(ecosystem_for_core("clo"), "cloud");
+    assert_eq!(template_registry_namespace("clo"), "cloud");
+    assert_eq!(ecosystem_for_core("web"), "web");
+    assert_eq!(template_registry_namespace("web"), "web");
     assert_eq!(ecosystem_for_core("library"), "library");
 }
 

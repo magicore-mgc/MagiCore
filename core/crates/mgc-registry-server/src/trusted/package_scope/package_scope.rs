@@ -23,11 +23,21 @@ pub fn scoped_package(protocol: &str, package: &str) -> Result<String, StatusCod
     }
 }
 
-/// Namespace one OCI artifact repository under a canonical MagiCore core id.
-/// Đặt OCI repository dưới mã core MagiCore chuẩn để trust không chéo core.
+/// Namespace one OCI artifact repository under a core's published namespace.
+/// Đặt OCI repository dưới namespace đã publish của core để trust không chéo core.
 pub fn core_scoped_oci_repository(core: &str, package: &str) -> Result<String, StatusCode> {
     let core = mgc_types::Ecosystem::from_str(core).ok_or(StatusCode::BAD_REQUEST)?;
-    let repository = format!("{}/{package}", core.as_str());
+    // OCI repositories use the PUBLISHED namespace, not the CLI identity: the
+    // Cloud adapter ships as `mgc-cloud-adapter`, its templates live under
+    // `cloud/`, and repositories already stored under `cloud/...` must keep
+    // resolving. Other cores have identical identity and namespace.
+    // (Repository OCI dùng namespace đã publish, không phải identity CLI:
+    // adapter Cloud là `mgc-cloud-adapter`, template dưới `cloud/`, và repo đã
+    // lưu dưới `cloud/...` phải resolve tiếp. Core khác trùng cả hai.)
+    let repository = format!(
+        "{}/{package}",
+        core.passthrough_namespace(mgc_types::NamespaceRole::AdapterDirectory)
+    );
     validate_oci_repository(&repository)?;
     Ok(repository)
 }

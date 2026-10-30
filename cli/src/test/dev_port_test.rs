@@ -15,7 +15,6 @@ fn all_default_ports_are_unique() {
         PORT_GAME,
         PORT_IOT,
         PORT_APP,
-        PORT_LIB,
     ];
     let mut seen = std::collections::HashSet::new();
     for p in &ports {
@@ -33,10 +32,24 @@ fn default_port_returns_correct_values() {
     assert_eq!(default_port("game"), Some(PORT_GAME));
     assert_eq!(default_port("iot"), Some(PORT_IOT));
     assert_eq!(default_port("app"), Some(PORT_APP));
-    assert_eq!(default_port("lib"), Some(PORT_LIB));
-    assert_eq!(default_port("library"), Some(PORT_LIB)); // alias
     assert_eq!(default_port("hardware"), None); // hardware không có server
     assert_eq!(default_port("unknown"), None);
+}
+
+/// `lib` has no dev server, so it must have no port: `DevRoute::Lib` refuses
+/// `--port` and runs the build-watch loop instead (PORT_LIB/M-3, loop1500).
+/// (lib không có dev server nên không có port: `DevRoute::Lib` từ chối `--port`.)
+#[test]
+fn lib_has_no_port_because_it_serves_nothing() {
+    assert_eq!(default_port("lib"), None);
+    assert_eq!(default_port("library"), None);
+    assert_eq!(resolve_port("lib", None), None);
+    // An explicit override is still honoured for the table's own callers —
+    // `mgc dev` never reaches it for `lib` because dispatch rejects the flag
+    // first, which is the single refusal point.
+    // (Override vẫn được tôn trọng; `mgc dev` không tới được đây vì dispatch
+    // từ chối cờ trước — một điểm từ chối duy nhất.)
+    assert_eq!(resolve_port("lib", Some(1999)), Some(1999));
 }
 
 #[test]
@@ -62,7 +75,6 @@ fn all_port_values_are_valid_permutations() {
         PORT_GAME,
         PORT_IOT,
         PORT_APP,
-        PORT_LIB,
     ];
     let valid_digits: std::collections::HashSet<char> = "1345".chars().collect();
     for p in &ports {

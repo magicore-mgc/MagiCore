@@ -17,10 +17,11 @@ pub use adapter::*;
 pub use capabilities::{
     ArtifactFetcher, AuditProvider, Capability, ContentStoreProvider, CoreIdent,
     DependencyResolver, DeployProvider, DeviceProvider, LifecycleRunner, LockfileProvider,
-    Materializer, ModelRuntimeProvider, OptimizerProvider, ProjectDetector, ScaffoldProvider,
-    SimulatorProvider, unsupported_capability,
+    Materializer, ModelRuntimeProvider, OPTIMIZER_CAPABILITY_CORES, OptimizerProvider,
+    ProjectDetector, ScaffoldProvider, SimulatorProvider, optimizer_capability_supported,
+    unsupported_capability,
 };
-pub use ecosystem::Ecosystem;
+pub use ecosystem::{Ecosystem, NamespaceRole};
 pub use error::{MgError, MgResult};
 pub use jsonc::strip_jsonc;
 pub use manifest::Manifest;
