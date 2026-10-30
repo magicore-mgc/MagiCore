@@ -55,7 +55,7 @@ pub use dispatch::run;
 /// visibility cho owner dev; mọi kiểm tra vẫn nằm trong `build_lib`.)
 #[cfg(feature = "lib")]
 pub(in crate::commands) async fn build_lib_for_dev(root: &std::path::Path) -> anyhow::Result<()> {
-    build_lib(root).await
+    build_lib(root, false).await
 }
 pub(crate) use shared::{python_cmd, tool_unavailable};
 

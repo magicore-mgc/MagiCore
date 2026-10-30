@@ -3,7 +3,10 @@ use super::AiBuildError;
 
 /// Build an AI project with its native language toolchain — build project AI bằng toolchain gốc.
 #[cfg(feature = "ai")]
-pub(in crate::commands::build::implementation) async fn build_ai(root: &Path) -> Result<()> {
+pub(in crate::commands::build::implementation) async fn build_ai(
+    root: &Path,
+    allow_output_warnings: bool,
+) -> Result<()> {
     use crate::commands::optimizer::runtime_detect::DetectedRuntime;
 
     let runtime = if project_manifest_present(root, "pyproject.toml")? {
@@ -72,7 +75,7 @@ pub(in crate::commands::build::implementation) async fn build_ai(root: &Path) ->
         _ => unreachable!("AI build selects only an AI runtime"),
     }
 
-    crate::commands::build::post_build::run_for_core(root, "ai", root, false)?;
+    crate::commands::build::post_build::run_for_core(root, "ai", root, allow_output_warnings)?;
     mgc_ui::success("AI build completed");
     Ok(())
 }

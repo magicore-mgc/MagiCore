@@ -18,18 +18,20 @@ Each adapter implements the `mgc-adapter-base` traits for a specific technology 
 
 ## Architecture
 
-Each adapter follows the same internal structure:
+Each adapter follows the same owner-folder layout: a top-level `lib.rs` facade
+plus one folder per responsibility, each with a same-named file and a `mod.rs`
+that wires it (per RULE §2).
 
 ```
 adapters/<name>/
 ├── Cargo.toml
 └── src/
-    ├── lib.rs          # Re-exports + public API
-    ├── install.rs      # Package installation logic
-    ├── manifest.rs     # Package manifest parsing (package.json / mgc.toml / etc.)
-    ├── scaffold.rs     # Project scaffolding templates
-    ├── audit.rs        # Security advisory checks
-    └── ...
+    ├── lib.rs          # Public facade: re-exports the adapter type
+    ├── adapter/        # Adapter type + capability manifest (adapter/adapter.rs)
+    ├── install/        # Package installation (install/<owner>/<owner>.rs)
+    ├── manifest/       # Manifest parsing (package.json / mgc.toml / etc.)
+    ├── audit/          # Security advisory checks
+    └── ...             # One folder per responsibility; no flat install.rs
 ```
 
 ## `web/` — Reference Implementation

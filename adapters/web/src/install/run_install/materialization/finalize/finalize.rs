@@ -45,7 +45,7 @@ pub(in crate::install::run_install::materialization) fn finish<'a>(
     if !node_modules.join(".bin").exists() && affected_root_bin_links.is_empty() {
         affected_root_bin_links = root_packages.to_vec();
     }
-    eprintln!("[magicore:debug] install:rebuild_bin_links_start");
+    crate::install::debug_trace::install_debug(format_args!("install:rebuild_bin_links_start"));
     rebuild_bin_links(
         node_modules,
         &root_packages,

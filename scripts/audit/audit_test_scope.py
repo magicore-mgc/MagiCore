@@ -61,7 +61,7 @@ ITERATES_SOURCE = re.compile(
     r"WEB_FRONTEND|WEB_BACKEND|WEB_FULLSTACK|WEB_ALL|WEB_ALIAS"
     r"|framework_registry::|CAPABILITIES_ALL|CAPABILITIES_PYTHON"
     r"|supported_frameworks\(|is_supported\("
-    r"|DetectedRuntime::|Capability::"
+    r"|DetectedRuntime::|Capability::|Ecosystem::ALL"
     r"|for\s+\w+\s+in\s+\w+\.iter\(\)"
 )
 
@@ -116,6 +116,12 @@ REVIEWED_NARROW = {
     "adapters/web/src/supply_chain/test/supply_chain.rs::all_age_gate_sources_disable_resolution_reuse": (
         "iterates the age-gate source table the resolver consults, so a new source "
         "without this behaviour fails here"
+    ),
+    "core/crates/mgc-types/src/capabilities/optimizer_contract/test/mod.rs::every_contract_core_is_a_canonical_ecosystem_name": (
+        "iterates OPTIMIZER_CAPABILITY_CORES, the product's own admission constant "
+        "that the sibling test pins to an exact list, and asserts each entry maps "
+        "back to a canonical Ecosystem name via Ecosystem::from_str — a new entry "
+        "that is not a real ecosystem fails here"
     ),
 }
 

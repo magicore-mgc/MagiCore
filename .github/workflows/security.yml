@@ -54,7 +54,7 @@ jobs:
       - name: Setup current Rust toolchain
         uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
         with:
-          toolchain: "1.99.0"
+          toolchain: "1.99.1"
       - name: Setup current Go toolchain
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -131,7 +131,7 @@ jobs:
       - name: Setup current Rust toolchain
         uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
         with:
-          toolchain: "1.99.0"
+          toolchain: "1.99.1"
       - name: Setup current Python runtime
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -210,7 +210,7 @@ jobs:
       - name: Setup current Rust toolchain
         uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
         with:
-          toolchain: "1.99.0"
+          toolchain: "1.99.1"
       # Go toolchain (CI fix 2026-09-11): esbuild-rs 0.13.8's build
       # script compiles a Go library at BUILD time — without Go the mgc
       # crate cannot compile on macOS/Windows runners (ubuntu ships Go
@@ -284,7 +284,7 @@ jobs:
       - name: Setup current Rust toolchain
         uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
         with:
-          toolchain: "1.99.0"
+          toolchain: "1.99.1"
 
       - name: Setup current Python runtime
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0

@@ -564,7 +564,7 @@ fn build_cloud_fails_when_toolchain_missing() {
     std::fs::write(tmp.join("mgc.toml"), "[cloud]\ntype = \"terraform\"\n").unwrap();
     std::fs::write(tmp.join("main.tf"), "provider \"aws\" {}\n").unwrap();
     let rt = tokio::runtime::Runtime::new().unwrap();
-    assert!(rt.block_on(super::build_cloud(&tmp)).is_err());
+    assert!(rt.block_on(super::build_cloud(&tmp, false)).is_err());
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
@@ -592,7 +592,7 @@ fn iot_build_refuses_platformio_without_native_backend() {
     .unwrap();
     let rt = tokio::runtime::Runtime::new().unwrap();
     let error = rt
-        .block_on(super::build_iot(project.path()))
+        .block_on(super::build_iot(project.path(), false))
         .expect_err("PlatformIO must not be invoked as a build backend");
     assert!(
         error
@@ -634,7 +634,7 @@ fn lib_ts_build_fails_when_tsc_missing() {
     )
     .unwrap();
     let rt = tokio::runtime::Runtime::new().unwrap();
-    assert!(rt.block_on(super::build_lib(&tmp)).is_err());
+    assert!(rt.block_on(super::build_lib(&tmp, false)).is_err());
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
@@ -650,7 +650,7 @@ fn lib_java_maven_build_does_not_fall_through_to_typescript() {
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let error = rt
-        .block_on(super::build_lib(tmp.path()))
+        .block_on(super::build_lib(tmp.path(), false))
         .expect_err("Java Maven build must not be mistaken for TypeScript");
     let message = error.to_string();
     assert!(

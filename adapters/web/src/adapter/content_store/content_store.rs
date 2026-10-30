@@ -27,10 +27,10 @@ impl ContentStoreProvider for WebAdapter {
     ) -> MgResult<InstallSummary> {
         // Phase tracing for CI diagnosability — tường minh điểm vào install
         // (stderr) khi một io error trần làm CI fail không rõ phase.
-        eprintln!(
-            "[magicore:debug] install:project_root={}",
+        crate::install::debug_trace::install_debug(format_args!(
+            "install:project_root={}",
             project_root.display()
-        );
+        ));
         let prefetch_handle = self.prefetch_handle_guard().take();
         run_install_with_registry(
             &self.provider.registry,

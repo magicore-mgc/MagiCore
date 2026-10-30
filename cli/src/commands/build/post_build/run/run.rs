@@ -142,15 +142,45 @@ pub(crate) fn run_for_core(
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| core.to_string());
+    // Record the project's real version, not a fake constant: the SBOM and the
+    // signed manifest must describe the artefact actually built. Fall back to
+    // "0.0.0" (a visibly-unknown version) when the project has no config, so a
+    // missing config never masquerades as a released 1.0.0.
+    // Ghi đúng phiên bản thật của project, không dùng hằng giả: SBOM và manifest
+    // ký phải mô tả đúng artefact đã build. Fallback "0.0.0" (phiên bản hiển thị
+    // là chưa biết) khi project không có config — tránh giả thành 1.0.0 đã phát hành.
+    let version = project_version(root);
     run(
         output,
         PostBuildOptions {
             name: &name,
-            version: "1.0.0",
+            version: &version,
             fail_on_findings: !allow_warnings,
             // Only a JavaScript-shaped output has scripts to prepend to.
             // Chỉ output dạng JavaScript mới có script để chèn.
             embed_identity: matches!(core, "web"),
         },
     )
+}
+
+// Read the project version from `mgc.toml`. Only an explicitly recorded
+// `version` key is used; if the file is absent, unreadable, or omits `version`,
+// return a visibly-unknown "0.0.0" rather than the schema's serde default
+// (which is a hardcoded placeholder, not the project's real version).
+// Đọc phiên bản project từ `mgc.toml`. Chỉ dùng key `version` được ghi tường
+// minh; nếu thiếu file, không đọc được, hoặc thiếu `version`, trả "0.0.0" hiển
+// thị chưa biết — không dùng serde default (vốn là hằng giả, không phải version
+// thật của project).
+pub(crate) fn project_version(root: &Path) -> String {
+    let path = root.join("mgc.toml");
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return "0.0.0".to_string();
+    };
+    let Ok(document) = content.parse::<toml::Value>() else {
+        return "0.0.0".to_string();
+    };
+    match document.get("version").and_then(toml::Value::as_str) {
+        Some(version) if !version.trim().is_empty() => version.to_string(),
+        _ => "0.0.0".to_string(),
+    }
 }

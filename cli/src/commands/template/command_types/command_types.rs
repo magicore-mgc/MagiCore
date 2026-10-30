@@ -9,13 +9,13 @@
 //! vẫn resolve registry layer lúc scaffold và đường resolve cần kiểu yêu cầu.
 //! Không có subcommand `mgc template`: initializer của chính framework là nguồn
 //! scaffold duy nhất.
-#![allow(dead_code)]
 
 use clap::Parser;
 
 /// A request to resolve one layer from the configured registry.
 /// Yêu cầu resolve một layer từ registry đã cấu hình.
 #[derive(Debug, Parser, Clone)]
+#[allow(dead_code)] // Fields carry the request shape the resolver reads; not all are consumed yet.
 pub struct TemplateFetchArgs {
     pub core: String,
     pub name: String,

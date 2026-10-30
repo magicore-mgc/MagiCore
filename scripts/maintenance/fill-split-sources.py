@@ -33,11 +33,11 @@ REACT_CLIENT = {
 """,
     "client/vite.config.ts": """import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-export default defineConfig({ plugins: [react()], server: { port: 5173 } });
+export default defineConfig({ plugins: [react()], server: { port: 4315 } });
 """,
     "client/vite.config.js": """import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-export default defineConfig({ plugins: [react()], server: { port: 5173 } });
+export default defineConfig({ plugins: [react()], server: { port: 4315 } });
 """,
     "client/main.tsx": """import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -66,11 +66,11 @@ NODE_SERVER = {
     "server/tsconfig.json": """{ "compilerOptions": { "target": "ES2022", "module": "ESNext", "moduleResolution": "bundler", "strict": true, "esModuleInterop": true, "skipLibCheck": true, "outDir": "dist" }, "include": ["src"] }
 """,
     "server/server.ts": """import { app } from "./lib/app.js";
-const port = parseInt(process.env.PORT || "3000", 10);
+const port = parseInt(process.env.PORT || "3415", 10);
 app.listen(port, () => console.log(`running on :${port}`));
 """,
     "server/server.js": """import { app } from "./lib/app.js";
-const port = parseInt(process.env.PORT || "3000", 10);
+const port = parseInt(process.env.PORT || "3415", 10);
 app.listen(port, () => console.log(`running on :${port}`));
 """,
 }
@@ -81,13 +81,13 @@ HONO_NODE_SERVER = {
     "server/tsconfig.json": NODE_SERVER["server/tsconfig.json"],
     "server/server.ts": """import { serve } from "@hono/node-server";
 import { app } from "./lib/app.js";
-const port = parseInt(process.env.PORT || "3000", 10);
+const port = parseInt(process.env.PORT || "3415", 10);
 serve({ fetch: app.fetch, port });
 console.log(`running on :${port}`);
 """,
     "server/server.js": """import { serve } from "@hono/node-server";
 import { app } from "./lib/app.js";
-const port = parseInt(process.env.PORT || "3000", 10);
+const port = parseInt(process.env.PORT || "3415", 10);
 serve({ fetch: app.fetch, port });
 console.log(`running on :${port}`);
 """,
@@ -168,7 +168,7 @@ NESTJS_NODE_SERVER = {
     "server/server.ts": """import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module.js";
-const port = parseInt(process.env.PORT || "3000", 10);
+const port = parseInt(process.env.PORT || "3415", 10);
 const app = await NestFactory.create(AppModule);
 await app.listen(port);
 console.log(`running on :${port}`);
@@ -176,7 +176,7 @@ console.log(`running on :${port}`);
     "server/server.js": """import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module.js";
-const port = parseInt(process.env.PORT || "3000", 10);
+const port = parseInt(process.env.PORT || "3415", 10);
 const app = await NestFactory.create(AppModule);
 await app.listen(port);
 console.log(`running on :${port}`);

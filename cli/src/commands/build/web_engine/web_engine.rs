@@ -213,11 +213,16 @@ fn project_label(root: &Path) -> String {
 /// assurances.
 /// Giao cho runner sau build dùng chung để mọi core có cùng bảo đảm.
 fn run_post_build(root: &Path, name: String, allow_warnings: bool) -> Result<()> {
+    // Record the project's real version via the shared owner; a project with no
+    // `mgc.toml` records "0.0.0" rather than a fake 1.0.0.
+    // Ghi phiên bản thật qua owner dùng chung; project không có `mgc.toml` ghi
+    // "0.0.0" thay vì giả 1.0.0.
+    let version = crate::commands::build::post_build::project_version(root);
     crate::commands::build::post_build::run_post_build(
         &root.join("dist"),
         crate::commands::build::post_build::PostBuildOptions {
             name: &name,
-            version: "1.0.0",
+            version: &version,
             fail_on_findings: !allow_warnings,
             embed_identity: true,
         },

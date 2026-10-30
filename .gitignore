@@ -182,3 +182,7 @@ data/registry/
 # Hướng dẫn cấu trúc và rà soát được user cho phép đưa vào Git.
 !/CODEBASE_REVIEW.md
 !/codebaseRoadmap.md
+
+# Agent Manager runtime state (worktrees, sessions) is local-only.
+# Trạng thái runtime của Agent Manager là cục bộ, không đưa vào Git.
+/.kilo/

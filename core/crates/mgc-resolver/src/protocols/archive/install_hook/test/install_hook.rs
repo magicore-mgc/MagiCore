@@ -114,6 +114,16 @@ fn setuid_and_setgid_modes_are_refused() {
 }
 
 #[test]
+fn symlink_mode_entries_are_refused_as_symlink() {
+    // A member whose mode word declares S_IFLNK must be refused as a symlink,
+    // matching the fetcher guard, even when the tar typeflag is a regular file.
+    // Entry khai S_IFLNK trong mode phải bị từ chối là symlink, khớp guard của
+    // fetcher, dù typeflag tar là file thường.
+    let hook = classify_entry("pkg/link", Some(0o120644)).expect("symlink mode must be refused");
+    assert_eq!(hook.kind, InstallHookKind::SymlinkMode);
+}
+
+#[test]
 fn ordinary_package_files_are_accepted() {
     for path in [
         "package/package.json",

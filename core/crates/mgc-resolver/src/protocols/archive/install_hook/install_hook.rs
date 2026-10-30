@@ -39,6 +39,9 @@ pub enum InstallHookKind {
     /// setuid/setgid archive member — never legitimate in a package.
     /// Thành viên archive setuid/setgid — không bao giờ hợp lệ trong package.
     PrivilegedMode,
+    /// An archive member declares `S_IFLNK` in its mode word.
+    /// Entry archive khai `S_IFLNK` trong mode word.
+    SymlinkMode,
 }
 
 impl InstallHookKind {
@@ -50,6 +53,7 @@ impl InstallHookKind {
             Self::PythonSiteCustomize => "Python sitecustomize/usercustomize hook",
             Self::NuGetInstallScript => "NuGet install.ps1 script",
             Self::PrivilegedMode => "setuid/setgid archive member",
+            Self::SymlinkMode => "symbolic-link archive member",
         }
     }
 }
@@ -97,11 +101,32 @@ const NUGET_INSTALL_SCRIPT_BASENAMES: &[&str] = &["install.ps1", "init.ps1"];
 /// Bit mode POSIX mà entry archive giải nén không bao giờ được bật.
 pub const FORBIDDEN_MODE_BITS: u32 = 0o6000;
 
+/// POSIX file-type bits and the symbolic-link type (`S_IFLNK`), so an entry
+/// whose mode word declares a symlink is refused even when its tar typeflag
+/// claims a regular file. — Bit loại file POSIX và loại symlink (`S_IFLNK`), để
+/// entry khai symlink trong mode vẫn bị từ chối dù typeflag tar ghi file thường.
+const FILE_TYPE_BITS: u32 = 0o170000;
+const SYMLINK_FILE_TYPE: u32 = 0o120000;
+
+/// Whether a POSIX mode word declares a symbolic link.
+/// Mode POSIX có khai báo symlink không.
+fn mode_declares_symlink(mode: u32) -> bool {
+    mode & FILE_TYPE_BITS == SYMLINK_FILE_TYPE
+}
+
 /// Classify an archive entry path, returning its hook kind when refused.
 /// `mode` is the POSIX permission word when the archive carries one.
 /// Phân loại path entry archive, trả loại hook khi bị từ chối. `mode` là mode
 /// quyền POSIX khi archive có mang.
 pub fn classify_entry(entry_path: &str, mode: Option<u32>) -> Option<InstallHook> {
+    if let Some(mode) = mode
+        && mode_declares_symlink(mode)
+    {
+        return Some(InstallHook {
+            path: entry_path.to_owned(),
+            kind: InstallHookKind::SymlinkMode,
+        });
+    }
     if let Some(mode) = mode
         && mode & FORBIDDEN_MODE_BITS != 0
     {

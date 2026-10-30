@@ -29,7 +29,7 @@ We follow the [Contributor Covenant](https://www.contributor-covenant.org/). Be 
 
 | Tool | Version | Install |
 |---|---|---|
-| Rust | 1.85+ (edition 2024) | [rustup.rs](https://rustup.rs/) |
+| Rust | 1.99+ (edition 2024) | [rustup.rs](https://rustup.rs/) |
 | Node.js | 18+ | For web adapter tests |
 | Git | 2.40+ | [git-scm.com](https://git-scm.com/) |
 | cargo-deny | latest | `cargo install cargo-deny` |
@@ -101,9 +101,9 @@ MagiCore/
 ├── cli/src/
 │   ├── commands/       # One file per CLI command (install.rs, audit.rs, mcp.rs…)
 │   ├── dispatch/       # Command routing engine (common.rs, per_core.rs, engine.rs)
-│   └── scaffold/       # Project scaffolding templates
+│   └── scaffold/       # Framework init resolution (registry-backed; no embedded templates)
 │
-├── core/crates/        # 18 foundational Rust crates
+├── core/crates/        # 25 foundational Rust crates
 │   ├── mgc-types/       # Shared types, IDs, error traits
 │   ├── mgc-store/       # Content-Addressable Storage (CAS)
 │   ├── mgc-resolver/    # Dependency graph solver (SAT)

@@ -93,11 +93,11 @@ pub async fn run(
         #[cfg(not(feature = "web"))]
         "web" => Err(crate::error::core_not_in_build("web")),
         #[cfg(feature = "app")]
-        "app" => build_app(&root).await,
+        "app" => build_app(&root, allow_output_warnings).await,
         #[cfg(not(feature = "app"))]
         "app" => Err(crate::error::core_not_in_build("app")),
         #[cfg(feature = "clo")]
-        "cloud" => build_cloud(&root).await,
+        "cloud" => build_cloud(&root, allow_output_warnings).await,
         #[cfg(not(feature = "clo"))]
         "cloud" => Err(crate::error::core_not_in_build("clo")),
         #[cfg(feature = "game")]
@@ -105,11 +105,11 @@ pub async fn run(
         #[cfg(not(feature = "game"))]
         "game" => Err(crate::error::core_not_in_build("game")),
         #[cfg(feature = "iot")]
-        "iot" => build_iot(&root).await,
+        "iot" => build_iot(&root, allow_output_warnings).await,
         #[cfg(not(feature = "iot"))]
         "iot" => Err(crate::error::core_not_in_build("iot")),
         #[cfg(feature = "lib")]
-        "lib" => build_lib(&root).await,
+        "lib" => build_lib(&root, allow_output_warnings).await,
         #[cfg(not(feature = "lib"))]
         "lib" => Err(crate::error::core_not_in_build("lib")),
         #[cfg(feature = "hardware")]
@@ -117,7 +117,7 @@ pub async fn run(
         #[cfg(not(feature = "hardware"))]
         "hardware" => Err(crate::error::core_not_in_build("hardware")),
         #[cfg(feature = "ai")]
-        "ai" => build_ai(&root).await,
+        "ai" => build_ai(&root, allow_output_warnings).await,
         #[cfg(not(feature = "ai"))]
         "ai" => Err(crate::error::core_not_in_build("ai")),
         // A CI/CD project generates pipeline configuration; it has no build

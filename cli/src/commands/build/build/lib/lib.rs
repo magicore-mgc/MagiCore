@@ -5,7 +5,10 @@ use super::manifest::{find_local_csproj, has_java_build_manifest};
 /// Lib build (09 §5): rust → cargo; ts → tsc qua node_modules/.bin (npm-format,
 /// full resolver — không wrapper PM); python → isolated MGC-managed build module.
 #[cfg(feature = "lib")]
-pub(in crate::commands::build::implementation) async fn build_lib(root: &Path) -> Result<()> {
+pub(in crate::commands::build::implementation) async fn build_lib(
+    root: &Path,
+    allow_output_warnings: bool,
+) -> Result<()> {
     // Load optimizer env for lib runtime
     // Tải env optimizer cho runtime thư viện
     let runtime = detect_lib_runtime(root);
@@ -18,7 +21,7 @@ pub(in crate::commands::build::implementation) async fn build_lib(root: &Path) -
             Some(source) => build_rust_with_managed_source(root, optimizer_envs, &source)?,
             None => build_rust_with_env(root, optimizer_envs)?,
         }
-        return post_build_lib(root);
+        return post_build_lib(root, allow_output_warnings);
     }
     if project_manifest_present(root, "pyproject.toml")? {
         let python = python_cmd();
@@ -122,7 +125,7 @@ pub(in crate::commands::build::implementation) async fn build_lib(root: &Path) -
         };
         return mgc_exec::prelude::run_inherited("node", &args, &opts)
             .map(|_| ())
-            .and_then(|()| post_build_lib(root));
+            .and_then(|()| post_build_lib(root, allow_output_warnings));
     }
     Err(crate::error::web_missing_executable(
         "tsc",
@@ -139,11 +142,16 @@ pub(in crate::commands::build::implementation) async fn build_lib(root: &Path) -
 /// Mô tả artefact mà build thư viện tạo. Rust ghi `target/`, Python ghi `dist/`
 /// hoặc để package tại chỗ, TypeScript ghi theo `tsconfig`. Runner mô tả thư mục
 /// tồn tại và bỏ qua cái không có.
-fn post_build_lib(root: &Path) -> Result<()> {
+fn post_build_lib(root: &Path, allow_output_warnings: bool) -> Result<()> {
     for candidate in ["target", "dist", "build/lib"] {
         let dir = root.join(candidate);
         if dir.is_dir() {
-            return crate::commands::build::post_build::run_for_core(root, "lib", &dir, false);
+            return crate::commands::build::post_build::run_for_core(
+                root,
+                "lib",
+                &dir,
+                allow_output_warnings,
+            );
         }
     }
     Ok(())

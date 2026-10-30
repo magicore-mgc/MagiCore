@@ -69,11 +69,11 @@ pub(in crate::install::run_install::materialization) async fn materialize_depend
         profile.mark("prepare_extracted_roots", start);
     } else {
         let pipeline_step_started_at = std::time::Instant::now();
-        eprintln!(
-            "[magicore:debug] install:pipeline_start pkgs={} materialized={}",
+        crate::install::debug_trace::install_debug(format_args!(
+            "install:pipeline_start pkgs={} materialized={}",
             fetch_graph.packages.len(),
             already_materialized.len()
-        );
+        ));
         let (pipeline_bytes, extracted_roots, persist_handles) = pipeline_download_and_extract(
             fetch_graph,
             already_materialized,
@@ -85,10 +85,10 @@ pub(in crate::install::run_install::materialization) async fn materialize_depend
             cas_generation,
         )
         .await?;
-        eprintln!(
-            "[magicore:debug] install:pipeline_done extracted={}",
+        crate::install::debug_trace::install_debug(format_args!(
+            "install:pipeline_done extracted={}",
             extracted_roots.len()
-        );
+        ));
         summary.bytes_from_cache += pipeline_bytes;
         profile.mark_step(
             "pipeline_download_and_extract_step",
@@ -118,7 +118,9 @@ pub(in crate::install::run_install::materialization) async fn materialize_depend
         affected_root_bin_links = root_packages_to_link.clone();
 
         let strict_materialize_step_started_at = std::time::Instant::now();
-        eprintln!("[magicore:debug] install:strict_materialize_start");
+        crate::install::debug_trace::install_debug(format_args!(
+            "install:strict_materialize_start"
+        ));
         // Test-only failpoint: park just before the node_modules tree is
         // materialized (claims + CAS blobs are already committed upstream).
         // (Failpoint chỉ-cho-test: đỗ ngay trước khi cây node_modules được
@@ -144,7 +146,7 @@ pub(in crate::install::run_install::materialization) async fn materialize_depend
         // (Failpoint chỉ-cho-test: đỗ sau khi materialization đã commit cây
         // hardlink (vẫn trước promote/refs).)
         mgc_store::failpoint::hit("after-materialize");
-        eprintln!("[magicore:debug] install:strict_materialize_done");
+        crate::install::debug_trace::install_debug(format_args!("install:strict_materialize_done"));
         profile.mark_step(
             "materialize_strict_layout_step",
             strict_materialize_step_started_at,

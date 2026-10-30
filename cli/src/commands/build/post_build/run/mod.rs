@@ -4,4 +4,4 @@
 #[path = "run.rs"]
 mod implementation;
 
-pub(crate) use implementation::{PostBuildOptions, run, run_for_core};
+pub(crate) use implementation::{PostBuildOptions, project_version, run, run_for_core};

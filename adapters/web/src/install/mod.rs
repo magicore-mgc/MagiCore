@@ -2,6 +2,7 @@
 //! Các owner Web install và route public ổn định.
 
 pub mod bin;
+pub mod debug_trace;
 pub mod download;
 pub mod extract;
 pub mod fetch;

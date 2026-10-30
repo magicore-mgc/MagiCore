@@ -26,9 +26,8 @@ pub enum AddCommands {
         #[arg(short = 'g', long)]
         global: bool,
         #[arg(
-            short,
             long,
-            help = "Pin version for all listed packages (lanes without version semantics fail loudly)"
+            help = "Pin version for all listed packages (lanes without version semantics fail loudly; no short flag: -v is the global version alias)"
         )]
         version: Option<String>,
         /// Explicit toolchain-compat lane for delegated dependency
@@ -57,9 +56,8 @@ pub enum AddCommands {
         #[arg(short = 'g', long)]
         global: bool,
         #[arg(
-            short,
             long,
-            help = "Pin version for all listed packages (lanes without version semantics fail loudly)"
+            help = "Pin version for all listed packages (lanes without version semantics fail loudly; no short flag: -v is the global version alias)"
         )]
         version: Option<String>,
         /// Explicit toolchain-compat lane for delegated dependency
@@ -88,9 +86,8 @@ pub enum AddCommands {
         #[arg(short = 'g', long)]
         global: bool,
         #[arg(
-            short,
             long,
-            help = "Pin version for all listed packages (lanes without version semantics fail loudly)"
+            help = "Pin version for all listed packages (lanes without version semantics fail loudly; no short flag: -v is the global version alias)"
         )]
         version: Option<String>,
         /// Explicit toolchain-compat lane for delegated dependency
@@ -119,9 +116,8 @@ pub enum AddCommands {
         #[arg(short = 'g', long)]
         global: bool,
         #[arg(
-            short,
             long,
-            help = "Pin version for all listed packages (lanes without version semantics fail loudly)"
+            help = "Pin version for all listed packages (lanes without version semantics fail loudly; no short flag: -v is the global version alias)"
         )]
         version: Option<String>,
         /// Explicit toolchain-compat lane for delegated dependency
@@ -150,9 +146,8 @@ pub enum AddCommands {
         #[arg(short = 'g', long)]
         global: bool,
         #[arg(
-            short,
             long,
-            help = "Pin version for all listed packages (lanes without version semantics fail loudly)"
+            help = "Pin version for all listed packages (lanes without version semantics fail loudly; no short flag: -v is the global version alias)"
         )]
         version: Option<String>,
         /// Explicit toolchain-compat lane for delegated dependency
@@ -181,9 +176,8 @@ pub enum AddCommands {
         #[arg(short = 'g', long)]
         global: bool,
         #[arg(
-            short,
             long,
-            help = "Pin version for all listed packages (lanes without version semantics fail loudly)"
+            help = "Pin version for all listed packages (lanes without version semantics fail loudly; no short flag: -v is the global version alias)"
         )]
         version: Option<String>,
         /// Explicit toolchain-compat lane for delegated dependency
@@ -212,9 +206,8 @@ pub enum AddCommands {
         #[arg(short = 'g', long)]
         global: bool,
         #[arg(
-            short,
             long,
-            help = "Pin version for all listed packages (lanes without version semantics fail loudly)"
+            help = "Pin version for all listed packages (lanes without version semantics fail loudly; no short flag: -v is the global version alias)"
         )]
         version: Option<String>,
         /// Explicit toolchain-compat lane for delegated dependency
@@ -243,9 +236,8 @@ pub enum AddCommands {
         #[arg(short = 'g', long)]
         global: bool,
         #[arg(
-            short,
             long,
-            help = "Pin version for all listed packages (lanes without version semantics fail loudly)"
+            help = "Pin version for all listed packages (lanes without version semantics fail loudly; no short flag: -v is the global version alias)"
         )]
         version: Option<String>,
         /// Explicit toolchain-compat lane for delegated dependency
@@ -266,9 +258,8 @@ pub enum AddCommands {
         #[arg(required = true)]
         packages: Vec<String>,
         #[arg(
-            short,
             long,
-            help = "Pin version for all listed packages (lanes without version semantics fail loudly)"
+            help = "Pin version for all listed packages (lanes without version semantics fail loudly; no short flag: -v is the global version alias)"
         )]
         version: Option<String>,
         /// Explicit toolchain-compat lane for delegated dependency

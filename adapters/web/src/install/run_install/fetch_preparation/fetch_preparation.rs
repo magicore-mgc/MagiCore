@@ -16,7 +16,7 @@ pub(in crate::install::run_install) async fn prepare(state: &mut InstallState<'_
                 let _ = std::fs::remove_dir_all(staging_root);
             }
         })?;
-    eprintln!("[magicore:debug] install:prune_cache_start");
+    crate::install::debug_trace::install_debug(format_args!("install:prune_cache_start"));
     prune_project_local_cache(&state.layout);
     state.profile.mark("prune_project_local_cache", state.start);
 

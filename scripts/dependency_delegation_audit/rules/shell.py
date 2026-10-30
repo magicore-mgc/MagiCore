@@ -234,23 +234,6 @@ SHELL_DEPENDENCY_COMMAND_REVIEWS = {
 # A source edit invalidates every review for that file; only listed call lines
 # can be cleared. Hash nguồn đầy đủ; chỉ các dòng được liệt kê mới được duyệt.
 SHELL_SOURCE_DYNAMIC_COMMAND_REVIEWS = {
-    "scripts/release/binary_e2e/web/create_install_test_build_audit.sh": {
-        "source_sha256": "661dde6fbb84b22abfe39f7eb680e7577d304b7d9da662a51cbe72d14a7bc464",
-        "lines": {
-            6: "create mode: runs the freshly built mgc release binary with a literal create-web template invocation in an isolated fixture directory.",
-            20: "install mode: literal mgc install against the generated fixture project.",
-            28: "test mode: literal mgc test against the generated fixture project.",
-            29: "build mode: literal mgc build against the generated fixture project.",
-            39: "audit mode: literal mgc audit against the generated fixture project.",
-        },
-    },
-    "scripts/release/binary_e2e/web/run_script_probe.sh": {
-        "source_sha256": "f1a6c25c9c83f6f0eeb045efde47f2f11d8b33571ddb99db4ecaaa4b5a5e5e06",
-        "lines": {
-            7: "sources the sibling probe_process.sh helper from the same fixed script directory.",
-            28: "runs the literal mgc run subcommand with the fixture script name in a background job.",
-        },
-    },
     "scripts/ci/docker/app/build_flutter_container.sh": {
         "source_sha256": "e1f9dd97045f8e00366f088c87d5aa5ffadd7ed370fc6bb565ce04348d441da5",
         "lines": {18: "Runs the selected MGC release binary with fixed install arguments inside a disposable Docker fixture and isolated data/cache directories."},
@@ -316,8 +299,8 @@ SHELL_SOURCE_DYNAMIC_COMMAND_REVIEWS = {
         "lines": {27: "Runs the release binary's fixed install subcommand in the cache-reuse fixture.", 46: "Runs the release binary's fixed offline install subcommand after warming the cache."},
     },
     "scripts/release/binary_e2e/web/create_install_test_build_audit.sh": {
-        "source_sha256": "661dde6fbb84b22abfe39f7eb680e7577d304b7d9da662a51cbe72d14a7bc464",
-        "lines": {6: "Captures fixed web project-generation output from the selected release binary in a temporary fixture.", 20: "Runs the release binary's fixed install subcommand in the temporary fixture.", 28: "Runs the release binary's fixed test subcommand in the generated fixture.", 29: "Runs the release binary's fixed build subcommand in the generated fixture.", 39: "Runs the release binary's fixed audit subcommand in the generated fixture."},
+        "source_sha256": "4aee1887b53c2b4251f66b03adf416a77e9adc309048ae4bc6465aea263f8757",
+        "lines": {6: "Captures fixed web project-generation output from the selected release binary in a temporary fixture.", 23: "Runs the release binary's fixed install subcommand in the temporary fixture.", 31: "Runs the release binary's fixed test subcommand in the generated fixture.", 32: "Runs the release binary's fixed build subcommand in the generated fixture.", 42: "Runs the release binary's fixed audit subcommand in the generated fixture."},
     },
     "scripts/release/binary_e2e/web/dev_server_probe.sh": {
         "source_sha256": "d7501a600458c6df2726443c735c9aa751f6e1fa25a243b0a6ae85be53c2b0b8",

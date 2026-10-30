@@ -6,7 +6,10 @@ use super::IotBuildError;
 /// IoT chỉ hỗ trợ lane Rust của MagiCore; builder ngoài có thể tự resolve
 /// dependency nên không được coi là backend build native.
 #[cfg(feature = "iot")]
-pub(in crate::commands::build::implementation) async fn build_iot(root: &Path) -> Result<()> {
+pub(in crate::commands::build::implementation) async fn build_iot(
+    root: &Path,
+    allow_output_warnings: bool,
+) -> Result<()> {
     if project_manifest_present(root, "platformio.ini")? {
         return Err(IotBuildError::Unsupported {
             target: "iot/platformio",
@@ -42,7 +45,7 @@ pub(in crate::commands::build::implementation) async fn build_iot(root: &Path) -
             root,
             "iot",
             &root.join("target"),
-            false,
+            allow_output_warnings,
         );
     }
     Err(IotBuildError::FrameworkNotDetected {

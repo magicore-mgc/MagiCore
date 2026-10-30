@@ -2,7 +2,7 @@
 # Usage: docker build -t magicore .
 #        docker run --rm magicore --help
 
-ARG RUST_IMAGE=docker.io/library/rust:1.99.0-slim-trixie
+ARG RUST_IMAGE=docker.io/library/rust:1.99.1-slim-trixie
 ARG GO_IMAGE=docker.io/library/golang:1.27.2-trixie
 ARG RUNTIME_IMAGE=gcr.io/distroless/cc-debian13
 

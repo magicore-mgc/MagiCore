@@ -11,7 +11,7 @@ MagiCore (<code>mgc</code>) is a Rust CLI and workspace for scaffolding projects
 
 ## Current status
 
-- Workspace version: **1.1.0-rc.10**; Rust edition 2024; minimum Rust version 1.94.
+- Workspace version: **1.2.0**; Rust edition 2024; minimum Rust version 1.99.
 - This is a pre-release, not a production-stable or drop-in replacement claim.
 - CI evidence is commit-specific. Before merging or tagging, review the PR's Checks and workflow artifacts for the exact source SHA; runs on another SHA do not qualify this checkout.
 - Green CI applies to declared lanes; it does not qualify every framework or operation.
@@ -67,7 +67,7 @@ Native Python install can materialize compatible prebuilt wheels without invokin
 
 ## Build from source
 
-Requirements: Rust 1.94 or newer.
+Requirements: Rust 1.99 or newer.
 
 ~~~bash
 git clone https://github.com/mingd-153/MagiCore.git
@@ -85,11 +85,11 @@ Release archives exist only for versions listed on the [GitHub Releases page](ht
 
 ## Quick start
 
-Install first — see [INSTALL.md](INSTALL.md) for the released binary, build from
-source, and per-platform steps. There is no `cargo install mgc` and no
-`curl … | sh` one-liner.
+Install first — see [`packaging/README.md`](packaging/README.md) for the released
+binary, build from source, and per-platform steps. There is no `cargo install mgc`
+and no `curl … | sh` one-liner.
 
-Check [REQUIREMENTS.md](REQUIREMENTS.md) before your first `create-*`:
+Before your first `create-*`, note the runtime requirement:
 `create-web` for JavaScript/TypeScript frameworks needs Node.js on `PATH`.
 
 ~~~bash
@@ -127,7 +127,7 @@ Run <code>mgc cache status</code> from a project to see the MagiCore data size, 
 
 ## Verification and performance
 
-The repository defines six PR workflows: CI, resolver archive security, lifecycle capability evidence, release archive E2E, delegated compatibility, and the cross-platform stress matrix. Path filters mean not every workflow runs for every PR; inspect that PR's Checks and workflow artifacts for the lanes actually exercised. See the [CI workflow](.github/workflows/ci.yml), [lifecycle workflow](.github/workflows/lifecycle-matrix.yml), [release E2E workflow](.github/workflows/release-binary-e2e.yml), [delegated compatibility workflow](.github/workflows/delegated-compatibility-matrix.yml), and [stress workflow](.github/workflows/stress-matrix.yml).
+The repository defines eighteen workflows; the ones that gate a PR are CI, resolver archive security, lifecycle capability evidence, release archive E2E, delegated compatibility, and the cross-platform stress matrix. Path filters mean not every workflow runs for every PR; inspect that PR's Checks and workflow artifacts for the lanes actually exercised. See the [CI workflow](.github/workflows/ci.yml), [lifecycle workflow](.github/workflows/lifecycle-matrix.yml), [release E2E workflow](.github/workflows/release-binary-e2e.yml), [delegated compatibility workflow](.github/workflows/delegated-compatibility-matrix.yml), and [stress workflow](.github/workflows/stress-matrix.yml).
 
 This README makes no speed comparison. Do not claim an advantage over npm, pnpm, Bun, or another tool without current validated benchmarks and a published method/baseline.
 

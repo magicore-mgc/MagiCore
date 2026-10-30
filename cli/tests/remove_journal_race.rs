@@ -102,14 +102,17 @@ impl NpmFixture {
         let url = server.url();
         let mut mocks = Vec::new();
         for (name, version) in packages {
+            let tarball = npm_tarball(name, version);
+            let integrity = sri_of(&tarball);
             let metadata = serde_json::json!({
                 "name": name,
                 "dist-tags": { "latest": version },
+                "time": seeded_publish_times(&[version]),
                 "versions": { version.to_string(): {
                     "name": name,
                     "version": version,
                     "dependencies": {},
-                    "dist": { "tarball": format!("{url}/{name}/-/{name}-{version}.tgz"), "integrity": sri_of(&"{url}/{name}/-/{name}-{version}.tgz") },
+                    "dist": { "tarball": format!("{url}/{name}/-/{name}-{version}.tgz"), "integrity": integrity },
                 } },
             });
             mocks.push(
@@ -120,7 +123,6 @@ impl NpmFixture {
                     .with_body(metadata.to_string())
                     .create(),
             );
-            let tarball = npm_tarball(name, version);
             mocks.push(
                 server
                     .mock("GET", format!("/{name}/-/{name}-{version}.tgz").as_str())

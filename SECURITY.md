@@ -1,8 +1,8 @@
 # MagiCore Security Notes
 
-**Applies to:** MagiCore 1.1.0-rc.10 source candidate
+**Applies to:** MagiCore 1.2.0 source candidate
 
-**Reviewed:** 2026-10-08
+**Reviewed:** 2026-10-30
 
 MagiCore is a project and dependency workflow tool. Its execution checks are guardrails around commands that MagiCore starts; they are not an operating-system sandbox. A child process generally runs with the current user's filesystem, network, and account permissions.
 

@@ -5,7 +5,10 @@ use super::multi::build_multi_app;
 /// C9 — build app: single framework or all selected multi-platform targets.
 /// Missing, unknown, or unsupported targets make the aggregate build fail.
 #[cfg(feature = "app")]
-pub(in crate::commands::build::implementation) async fn build_app(root: &Path) -> Result<()> {
+pub(in crate::commands::build::implementation) async fn build_app(
+    root: &Path,
+    allow_output_warnings: bool,
+) -> Result<()> {
     let config = read_app_build_config(root)?;
     let language = resolve_app_language_from_config(root, config.as_ref())?;
 
@@ -41,7 +44,7 @@ pub(in crate::commands::build::implementation) async fn build_app(root: &Path) -
         return Err(crate::error::build_toolchain_missing(tool));
     }
     run_allowlisted_tool_with_env(root, tool, args, env_opt)?;
-    post_build_app(root)?;
+    post_build_app(root, allow_output_warnings)?;
     mgc_ui::success(&format!("App build completed ({language})"));
     Ok(())
 }
@@ -54,11 +57,16 @@ pub(in crate::commands::build::implementation) async fn build_app(root: &Path) -
 /// Mô tả artefact mà build app framework tạo. Flutter ghi `build/`, target web
 /// lồng `build/web/`; target khác cũng ở dưới `build/`. Runner chọn cái tồn tại
 /// nên thư mục thiếu là no-op, không phải lỗi.
-fn post_build_app(root: &Path) -> Result<()> {
+fn post_build_app(root: &Path, allow_output_warnings: bool) -> Result<()> {
     for candidate in ["build/web", "build"] {
         let dir = root.join(candidate);
         if dir.is_dir() {
-            return crate::commands::build::post_build::run_for_core(root, "app", &dir, false);
+            return crate::commands::build::post_build::run_for_core(
+                root,
+                "app",
+                &dir,
+                allow_output_warnings,
+            );
         }
     }
     Ok(())

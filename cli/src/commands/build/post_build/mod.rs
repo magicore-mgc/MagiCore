@@ -22,7 +22,7 @@ mod sign;
 pub(crate) mod verify_sbom;
 
 pub(crate) use output_sbom::write as write_output_sbom;
-pub(crate) use run::{PostBuildOptions, run as run_post_build, run_for_core};
+pub(crate) use run::{PostBuildOptions, project_version, run as run_post_build, run_for_core};
 pub(crate) use runtime_guard::{BuildIdentity, inject as inject_build_identity, sbom_sha256};
 pub(crate) use scan::scan as scan_output;
 pub(crate) use sign::{Signed, sign_artifact};

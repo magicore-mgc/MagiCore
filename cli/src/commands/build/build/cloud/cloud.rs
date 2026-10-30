@@ -56,7 +56,10 @@ pub(in crate::commands::build::implementation) fn pulumi_preview_args() -> [&'st
 }
 
 #[cfg(feature = "clo")]
-pub(in crate::commands::build::implementation) async fn build_cloud(root: &Path) -> Result<()> {
+pub(in crate::commands::build::implementation) async fn build_cloud(
+    root: &Path,
+    allow_output_warnings: bool,
+) -> Result<()> {
     let kind = mgc_cloud_adapter::detect_type(root).ok_or_else(|| {
         CloudBuildError::FrameworkNotDetected {
             root: root.to_path_buf(),
@@ -124,6 +127,6 @@ pub(in crate::commands::build::implementation) async fn build_cloud(root: &Path)
     // describing is the configuration that was evaluated.
     // Build IaC xuất plan chứ không phải cây artefact, nên thứ đáng mô tả là
     // cấu hình đã được đánh giá.
-    crate::commands::build::post_build::run_for_core(root, "cloud", root, false)?;
+    crate::commands::build::post_build::run_for_core(root, "cloud", root, allow_output_warnings)?;
     Ok(())
 }

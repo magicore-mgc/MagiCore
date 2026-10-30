@@ -90,13 +90,13 @@ pub(in crate::install::run_install) fn initialize<'a>(
     // Entry ghi từ registry này không bao giờ được phục vụ cho registry khác.
     let cache = PackageCache::for_registry(layout.cache_dir(), registry_url)
         .map_err(|error| MgError::Store(error.to_string()))?;
-    eprintln!("[magicore:debug] install:cache_open=ok");
+    crate::install::debug_trace::install_debug(format_args!("install:cache_open=ok"));
     let database =
         Some(Database::open(&layout.db_path()).map_err(|error| MgError::Store(error.to_string()))?);
-    eprintln!("[magicore:debug] install:db_open=ok");
+    crate::install::debug_trace::install_debug(format_args!("install:db_open=ok"));
     let default_store =
         ContentStore::new(layout.cas_dir()).map_err(|error| MgError::Store(error.to_string()))?;
-    eprintln!("[magicore:debug] install:cas_open=ok");
+    crate::install::debug_trace::install_debug(format_args!("install:cas_open=ok"));
     std::fs::create_dir_all(&node_modules).map_err(|error| {
         MgError::Other(format!(
             "failed to create '{}': {error}",

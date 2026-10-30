@@ -94,7 +94,7 @@ pub enum BareCommands {
     Add {
         #[arg(required = true)]
         packages: Vec<String>,
-        #[arg(short, long)]
+        #[arg(long)]
         version: Option<String>,
         #[arg(short = 'D', long)]
         dev: bool,

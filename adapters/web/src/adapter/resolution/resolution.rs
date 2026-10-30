@@ -18,10 +18,10 @@ impl WebAdapter {
         manifest: &Manifest,
         allow_shortcircuit: bool,
     ) -> MgResult<ResolvedGraph> {
-        eprintln!(
-            "[magicore:debug] resolve:packages={}",
+        crate::install::debug_trace::install_debug(format_args!(
+            "resolve:packages={}",
             manifest.all_dependencies().count()
-        );
+        ));
         let started_at = Instant::now();
         let mut profile = ResolveProfile::from_env();
         let Some(prepared) =

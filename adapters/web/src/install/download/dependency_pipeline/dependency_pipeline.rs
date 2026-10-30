@@ -87,6 +87,21 @@ pub async fn pipeline_download_and_extract(
             let lock = tarball_prefetch_lock(&pkg.id);
             let _guard = lock.lock().await;
 
+            // Fund this task's concurrent opens from the process-wide descriptor
+            // budget. The numeric clamp above bounds how many tasks run at once;
+            // this permit is the actual gate that stops the process from opening
+            // more descriptors than the budget allows, so a burst of overlapping
+            // sockets and part files cannot reach the kernel EMFILE wall.
+            // Cấp ngân sách descriptor process cho các lần mở đồng thời của task
+            // này. Clamp số ở trên chỉ chặn số task chạy cùng lúc; permit này mới
+            // là cổng thật giữ process không mở quá ngân sách, để chùm socket và
+            // file part chồng nhau không chạm trần EMFILE của kernel.
+            let _descriptor_permit = mgc_platform::global_descriptor_semaphore()
+                .acquire_owned()
+                .await
+                .map_err(PipelineError::ExtractSemaphoreClosed)
+                .map_err(MgError::from)?;
+
             let download_started_at = std::time::Instant::now();
             let fetch = get_tarball_bytes_with_registry(
                 &pkg,

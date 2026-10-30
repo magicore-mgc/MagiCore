@@ -1,7 +1,7 @@
 //! SEC-3 guard tests: classification, fail-closed default, escape hatch.
 //! Test cổng SEC-3: phân loại, mặc định fail-closed, escape hatch.
 
-use super::super::install_hook_guard::{InstallHookGuard, classify};
+use super::super::install_hook_guard::{HookKind, InstallHookGuard, classify};
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -71,6 +71,21 @@ fn sitecustomize_nuget_scripts_and_privileged_modes_are_classified() {
     assert!(classify(Path::new("init.ps1"), None).is_some());
     assert!(classify(Path::new("bin/tool"), Some(0o4755)).is_some());
     assert!(classify(Path::new("bin/tool"), Some(0o2755)).is_some());
+}
+
+#[test]
+fn symlink_mode_entries_are_classified_as_symlink_not_plain() {
+    // A tar member whose mode declares S_IFLNK (0o120000) must be classified as
+    // a symlink hook even though the plain-file bits are 0 — this is the guard
+    // that stops a symlink entry from being written as a regular file.
+    // Member tar có mode khai S_IFLNK (0o120000) phải bị phân loại là symlink dù
+    // bit file thường bằng 0 — đây là cổng chặn entry symlink bị ghi như file thường.
+    let classified = classify(Path::new("pkg/link"), Some(0o120644));
+    assert_eq!(
+        classified,
+        Some(HookKind::SymlinkMode),
+        "S_IFLNK mode must classify as SymlinkMode"
+    );
 }
 
 #[test]

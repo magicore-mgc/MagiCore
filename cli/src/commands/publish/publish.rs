@@ -11,7 +11,7 @@ use mgc_ui::info;
 use std::fs;
 use std::path::PathBuf;
 
-#[derive(Args, Debug, Clone)]
+#[derive(Args, Clone)]
 pub struct PublishArgs {
     #[arg(long, value_parser = ["npm", "pypi", "oci"], default_value = "npm")]
     pub protocol: String,
@@ -84,6 +84,48 @@ pub struct PublishArgs {
         help = "OIDC audience (defaults to the registry origin)"
     )]
     pub trusted_audience: Option<String>,
+}
+
+// Manual Debug redacts the credential-bearing fields so a future debug/panic
+// format cannot leak a publish token or a 2FA one-time code.
+// Debug thủ công che các trường mang credential để log/panic sau này không rò
+// token publish hoặc mã OTP 2FA.
+impl std::fmt::Debug for PublishArgs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn redacted(value: &Option<String>) -> &'static str {
+            if value.is_some() {
+                "[REDACTED]"
+            } else {
+                "None"
+            }
+        }
+        f.debug_struct("PublishArgs")
+            .field("protocol", &self.protocol)
+            .field("package", &self.package)
+            .field("version", &self.version)
+            .field("artifacts", &self.artifacts)
+            .field("image", &self.image)
+            .field("tag", &self.tag)
+            .field("access", &self.access)
+            .field("dry_run", &self.dry_run)
+            .field("json", &self.json)
+            .field("otp", &redacted(&self.otp))
+            .field("force", &self.force)
+            .field("ignore_scripts", &self.ignore_scripts)
+            .field("allow_scripts", &self.allow_scripts)
+            .field("no_git_checks", &self.no_git_checks)
+            .field("publish_branch", &self.publish_branch)
+            .field("batch", &self.batch)
+            .field("report_summary", &self.report_summary)
+            .field("patch", &self.patch)
+            .field("minor", &self.minor)
+            .field("major", &self.major)
+            .field("registry", &self.registry)
+            .field("token", &redacted(&self.token))
+            .field("trusted", &self.trusted)
+            .field("trusted_audience", &self.trusted_audience)
+            .finish()
+    }
 }
 
 pub async fn run(args: PublishArgs, core: Option<&str>, recursive: bool) -> Result<()> {
