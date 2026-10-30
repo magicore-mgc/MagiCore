@@ -14,4 +14,4 @@ mod implementation;
 // (Hàm scoped tới `atomic_replace`, cao hơn facade này hai cấp, nên re-export
 // phải cấp cùng scope.)
 #[cfg(windows)]
-pub(in crate::atomic_replace) use implementation::windows_replace;
+pub(crate) use implementation::windows_replace;

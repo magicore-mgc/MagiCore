@@ -8,11 +8,14 @@ CREATE_OUTPUT="$("$MGCBIN" create-web react test-web 2>&1)" || {
   exit 1
 }
 printf '%s\n' "$CREATE_OUTPUT"
-if ! grep -q 'create: installing initializer create-vite@latest' <<<"$CREATE_OUTPUT"; then
-  echo "release E2E did not observe the official framework creator running through the MGC create initializer flow" >&2
-  exit 1
-fi
 cd test-web
+# The product does not print an "installing initializer" banner any more: the
+# initializer runs as a registry package and its identity is recorded in the
+# provenance file. The gate must assert the durable evidence (provenance), not a
+# log line that the product no longer emits.
+# (Sản phẩm không in banner "installing initializer" nữa: initializer chạy như
+# package registry và danh tính được ghi vào file provenance. Gate phải kiểm
+# bằng chứng bền (provenance), không phải dòng log sản phẩm không còn in.)
 if ! grep -Eq 'npm:create-vite@[0-9]+\.[0-9]+\.[0-9]+#generator=vite:react-ts' .mgc-provenance.json; then
   echo "release E2E scaffold provenance does not identify its online generator" >&2
   exit 1
