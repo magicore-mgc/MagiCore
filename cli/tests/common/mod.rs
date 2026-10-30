@@ -495,7 +495,9 @@ pub fn scaffold(framework: &str, project: &str) -> PathBuf {
 pub fn initializer_available(framework: &str) -> bool {
     match framework {
         "django" => which("django-admin"),
-        "laravel" => which("composer"),
+        // `laravel` has no initializer record (the catalog advertises only the
+        // frameworks that really scaffold), so it is not gated here.
+        // (`laravel` không có record initializer nên không xét ở đây.)
         _ => has_official_initializer("web", framework),
     }
 }
@@ -532,7 +534,6 @@ pub fn has_official_initializer(core: &str, framework: &str) -> bool {
         ("web", "spring-boot"),
         ("web", "quarkus"),
         ("web", "django"),
-        ("web", "laravel"),
     ];
     OFFICIAL.contains(&(core, framework))
 }

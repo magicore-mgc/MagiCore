@@ -2,6 +2,8 @@
 
 This owner implements a closed six-row inventory: Node, Python 3, Rust, Cargo, Git and Docker. `TOOLCHAIN_PROBES` pins each display name, executable basename and exact argv; a nearest-owner test pins its order and arguments. Python uses `-S --version` to skip `site` and `sitecustomize`; Rust uses the executor-approved `-vV` host query.
 
+`inventory()` returns the general six rows. `inventory_for_core(core)` keeps those six rows first and appends the tools the detected core requires (from the `core_toolchain` owner), tagging each appended tool with its `required_by_core`. A tool already covered by a general row (`node`, `git`) is tagged in place instead of probed a second time, so each executable is looked up and run at most once per report.
+
 PATH is read as an OS string and split with OS path APIs. Empty/missing entries are skipped; the first regular-file candidate wins, with `.exe` lookup on Windows. Relative PATH parents are pinned to an absolute directory, keeping the executable leaf for MGC allowlist recognition. The selected path is revalidated and passed directly to `mgc_exec::run`, so the child does not repeat PATH lookup. The executor command API accepts UTF-8 paths only: a found non-Unicode executable is displayed safely but its probe returns `?`.
 
 Each probe has a five-second timeout, MGC process-tree supervision and bounded stdout/stderr capture. The child environment is cleared; MGC restores the guarded PATH and Windows-required process variables, then this owner passes only UTF-8 values for `HOME`, `CARGO_HOME`, `RUSTUP_HOME`, `RUSTUP_TOOLCHAIN`, `ASDF_DATA_DIR`, `MISE_DATA_DIR`, `PYENV_ROOT` and `VOLTA_HOME`. Runtime startup variables such as `NODE_OPTIONS`, `PYTHONPATH`, `PYTHONHOME` and `PYTHONSTARTUP` are omitted. A custom shim needing an unlisted variable can be found but return `?`. Version display uses the first line available in the bounded MGC stdout tail, strips controls and caps text at 256 bytes; visible paths escape terminal controls.
@@ -13,6 +15,8 @@ Executor caveat: `ExecutionScope::constraints()` declares fields such as `audit_
 # Inventory toolchain
 
 Owner này triển khai inventory đóng sáu hàng: Node, Python 3, Rust, Cargo, Git và Docker. `TOOLCHAIN_PROBES` khóa tên hiển thị, basename executable và argv chính xác; test gần owner khóa thứ tự và đối số. Python dùng `-S --version` để bỏ `site` và `sitecustomize`; Rust dùng query host `-vV` được executor cho phép.
+
+`inventory()` trả sáu hàng chung. `inventory_for_core(core)` giữ sáu hàng đó ở đầu rồi nối các tool mà core đã nhận diện cần (lấy từ owner `core_toolchain`), gắn `required_by_core` cho từng tool được nối. Tool đã được hàng chung bao phủ (`node`, `git`) được gắn tag tại chỗ thay vì probe lần hai, nên mỗi executable được tra và chạy tối đa một lần mỗi report.
 
 PATH được đọc dạng OS string và tách bằng API path của OS. Entry thiếu/rỗng được bỏ qua; candidate file thường đầu tiên được chọn, Windows còn tìm dạng `.exe`. Parent PATH tương đối được ghim thành directory tuyệt đối, giữ leaf để MGC nhận diện đúng tên allowlist. Path được kiểm tra lại và truyền thẳng cho `mgc_exec::run`, không tra PATH lần hai trong process con. API command của executor chỉ nhận path UTF-8: executable không Unicode được hiển thị an toàn nhưng probe trả `?`.
 

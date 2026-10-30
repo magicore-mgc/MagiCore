@@ -30,6 +30,10 @@ pub struct Tool {
     pub name: &'static str,
     pub path: Option<String>,
     pub version: String,
+    /// Core that requires this tool, or `None` for a general inventory tool.
+    /// Core yêu cầu tool này, hoặc `None` nếu là tool inventory chung.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub required_by_core: Option<&'static str>,
 }
 
 #[derive(Debug, Serialize)]

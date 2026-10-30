@@ -11,6 +11,7 @@ fn report() -> DoctorReport {
             name: "git",
             path: None,
             version: "MISSING".to_string(),
+            required_by_core: None,
         }],
         store_dir: "/tmp/mgc-store".to_string(),
         store_writable: false,

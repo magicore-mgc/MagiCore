@@ -40,10 +40,57 @@ pub async fn run(
     config.project_name = project_name.to_string();
     super::source::apply(&mut config, source);
 
-    // The framework's own program is the first source. Running it early keeps a
-    // stale local project from masking a broken initializer.
-    // Chương trình của chính framework là nguồn đầu tiên. Chạy sớm để project
-    // local cũ không che initializer hỏng.
+    // Docker is generated-project metadata, so record it before either the local
+    // generator or the registry path writes metadata.
+    // (Feature docker là metadata của project sinh ra, nên ghi nhận trước khi
+    // local generator hoặc đường registry ghi metadata.)
+    if container.docker && !config.features.iter().any(|feature| feature == "docker") {
+        config.features.push("docker".to_string());
+    }
+
+    // Built-in local generator first (offline): the cloud adapter ships real file
+    // writers for cdk/pulumi/terraform/cloudflare. Generating here keeps an
+    // offline machine from dead-ending at a registry 404 and never spawns
+    // terraform/cdk/pulumi — the framework's own program is only used below for
+    // providers this core has no generator for.
+    // (Local generator có sẵn chạy trước, offline: adapter cloud có generator file
+    // thật cho cdk/pulumi/terraform/cloudflare. Sinh ở đây để máy offline không
+    // chết ở registry 404 và không spawn terraform/cdk/pulumi — chương trình của
+    // framework chỉ dùng bên dưới cho provider core này không có generator.)
+    // An explicit `--from-local` owns the source choice: never overwrite it.
+    // (`--from-local` do người dùng chọn nguồn: không ghi đè.)
+    if config.from_local.is_none()
+        && let Some(fw) = config.frameworks.first()
+    {
+        let target = std::path::Path::new(project_name);
+        if super::local_generator::try_local_scaffold(
+            &super::local_generator::LocalScaffoldRequest {
+                core: "clo",
+                framework: fw,
+                target,
+                board: None,
+            },
+        )
+        .await?
+        {
+            // The adapter already created the files, so write only MagiCore's
+            // metadata (mgc.toml + .mgc.core) — re-scaffolding would collide
+            // with the directory the generator just created.
+            // (Adapter đã tạo file, nên chỉ ghi metadata MagiCore; scaffold lại
+            // sẽ đụng thư mục generator vừa tạo.)
+            super::save_scaffold_metadata(target, &config)?;
+            mgc_ui::success(&format!(
+                "Created cloud project '{project_name}' with the built-in '{fw}' generator (offline)."
+            ));
+            return Ok(());
+        }
+    }
+
+    // The framework's own program is the next source, for providers with no
+    // built-in generator. Running it early keeps a stale local project from
+    // masking a broken initializer.
+    // Chương trình của chính framework là nguồn kế tiếp, cho provider không có
+    // generator. Chạy sớm để project local cũ không che initializer hỏng.
     if config.from_local.is_none()
         && let Some(framework) = config.frameworks.first()
     {
@@ -52,9 +99,6 @@ pub async fn run(
             mgc_ui::success(&format!("Created clo project: {project_name}"));
             return Ok(());
         }
-    }
-    if container.docker && !config.features.iter().any(|feature| feature == "docker") {
-        config.features.push("docker".to_string());
     }
     if let Some(fw) = config.frameworks.first() {
         // Phase 3: Handle typed result

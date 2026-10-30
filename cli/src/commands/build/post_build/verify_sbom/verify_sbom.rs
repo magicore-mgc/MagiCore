@@ -89,7 +89,18 @@ pub fn verify(artifact: &Path, trust_key_b64: &str) -> Result<Verified> {
         .and_then(|value| value.as_str())
         .unwrap_or_default();
     if signature_key != trust_key_b64 {
-        anyhow::bail!("signature was made by a key that is not the pinned trust key");
+        // Name the key that actually signed (the signature records its `key_id`)
+        // so the mismatch is diagnosable against `mgc trust list`.
+        // (Nêu khoá đã ký thật — chữ ký ghi `key_id`) để lỗi lệch chẩn đoán được
+        // với `mgc trust list`.)
+        let signed_by = document
+            .get("key_id")
+            .and_then(|value| value.as_str())
+            .unwrap_or("an unnamed key");
+        anyhow::bail!(
+            "signature was made by a key that is not the pinned trust key (signed by '{signed_by}'); \
+             pass that key with --trust-key, e.g. the public key `mgc trust list` prints for it"
+        );
     }
 
     let signature = mgc_crypto::Ed25519Signature::from_base64(

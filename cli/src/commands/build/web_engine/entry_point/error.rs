@@ -12,7 +12,7 @@ impl fmt::Display for EntryPointError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NotFound => formatter.write_str(
-                "Could not find entry point. Checked: src/index.ts, src/index.tsx, src/main.ts, src/main.tsx, and package.json main/module fields",
+                "Could not find entry point. Checked conventional browser entries (src/index.*, src/main.*, index.*, main.*), package.json main/module/bin fields, and conventional server entries (server.js, app.js, index.js, src/server.js)",
             ),
         }
     }

@@ -10,6 +10,7 @@ fn report_json_keeps_all_public_fields_and_names() {
             name: "git",
             path: Some("/usr/bin/git".to_string()),
             version: "git version 2".to_string(),
+            required_by_core: None,
         }],
         store_dir: "/tmp/mgc-store".to_string(),
         store_writable: true,

@@ -71,6 +71,7 @@ fn rejects_create_and_install_commands() {
         framework: "fixture".to_owned(),
         project_name: "fixture".to_owned(),
         source: Default::default(),
+        automation: Default::default(),
     };
     let install = CoreCommand::InstallWeb {
         packages: Vec::new(),

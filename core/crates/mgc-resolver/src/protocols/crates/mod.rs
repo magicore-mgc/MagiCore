@@ -16,6 +16,13 @@ mod types;
 mod version;
 
 pub use crates::CratesProtocol;
+/// Cargo registry source readiness marker (owned by the materialize path).
+/// Marker sẵn sàng cho source registry Cargo (do đường materialize sở hữu).
+pub use materialize::NON_ARCHIVE_SOURCE_FILES;
+pub use materialize::{
+    CARGO_SOURCE_MARKER, has_cargo_source_marker, registry_package_dir, registry_source_root,
+    write_cargo_source_marker,
+};
 pub(super) use types::{
     ActivatedCrateFeatures, CrateDependencyRequest, CrateIndexEntry, CrateResolutionState,
 };

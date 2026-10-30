@@ -3,6 +3,8 @@
 
 #[path = "backend_detect/mod.rs"]
 mod backend_detect;
+#[path = "cargo_source_repair/mod.rs"]
+mod cargo_source_repair;
 #[path = "engine_choice/mod.rs"]
 mod engine_choice;
 mod entry_point;
@@ -25,6 +27,7 @@ mod target;
 mod tool_execution;
 
 pub(crate) use backend_detect::is_backend_project;
+pub(crate) use cargo_source_repair::repair_managed_sources;
 pub(crate) use engine_choice::{
     Engine as BuildEngine, Preference as EnginePreference, choose as choose_engine,
 };

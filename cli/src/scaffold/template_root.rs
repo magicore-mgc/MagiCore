@@ -26,7 +26,10 @@ impl TemplateRoot {
             }
         }
 
-        // 2. Registry cache ONLY: ~/.mgc/templates/{rel} (mgc template fetch).
+        // 2. Registry cache ONLY: ~/.mgc/templates/{rel}, written by the scaffold
+        // layer fetch during `mgc create-*`; there is no `mgc template` command.
+        // (Chỉ cache registry: ~/.mgc/templates/{rel}, do bước tải layer lúc
+        // `mgc create-*` ghi; không có lệnh `mgc template`.)
         let cached = crate::commands::template::templates_cache_dir().join(rel);
         if cached.is_dir() {
             return TemplateRoot::disk(cached);

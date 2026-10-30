@@ -78,11 +78,14 @@ impl fmt::Display for ScaffoldResolveError {
                     f,
                     concat!(
                         "Required scaffold layer '{}' is not available.\n\n",
-                        "Tried:\n{}\n\nNext steps:\n",
-                        "- Run: mgc template fetch {} {}@{}\n",
-                        "- Or configure registry: mgc config set registry.scaffold <url>"
+                        "Tried:\n{}\n\nNext steps for '{}' (framework '{}'@{}):\n{}"
                     ),
-                    layer, attempted_sources, core, template, tag
+                    layer,
+                    attempted_sources,
+                    core,
+                    template,
+                    tag,
+                    super::super::remedy::missing_layer_next_steps(core)
                 )
             }
             ScaffoldResolveError::RegistryUnavailable { registry, offline } => {

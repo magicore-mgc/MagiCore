@@ -12,6 +12,17 @@ pub enum CommonCommands {
         template: Option<String>,
         #[arg(
             long,
+            value_name = "NAME",
+            help = "Project name (non-interactive; validated like the wizard, no re-prompt)"
+        )]
+        name: Option<String>,
+        #[arg(
+            long,
+            help = "Accept all defaults without prompting (CI-friendly); derives the project name from the current directory when --name is absent"
+        )]
+        yes: bool,
+        #[arg(
+            long,
             help = "Write a plain-text core identity marker (.mgc.core); this is not a cryptographic signature"
         )]
         signature: Option<String>,

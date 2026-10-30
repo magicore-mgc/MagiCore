@@ -12,6 +12,12 @@ pub(crate) enum RustNativeInstallError {
     Store(#[from] mgc_store::cas::StoreError),
     #[error("Rust source cache entry '{path}' is not a regular directory")]
     SourceCacheNotRegularDirectory { path: String },
+    #[error(
+        "Rust source cache entry '{path}' is not fully materialized (Cargo's readiness marker is missing or invalid); run `mgc install` so the source is rebuilt from its verified archive"
+    )]
+    SourceNotMaterialized { path: String },
+    #[error("cannot write Cargo's registry source readiness marker: {source}")]
+    SourceMarker { source: io::Error },
     #[error("cannot inspect Rust source cache '{path}': {source}")]
     SourceCacheInspection { path: String, source: io::Error },
     #[error(
@@ -48,6 +54,7 @@ impl RustNativeInstallError {
         matches!(
             self,
             Self::SourceCacheNotRegularDirectory { .. }
+                | Self::SourceNotMaterialized { .. }
                 | Self::CacheNotRegularFile { .. }
                 | Self::CacheOpen { .. }
                 | Self::OpenedCacheInspection { .. }

@@ -9,10 +9,17 @@
 
 use super::super::*;
 
-/// Every fullstack id must resolve to a backend half that the registry lists.
-/// (Mọi id fullstack phải quy về một nửa backend mà registry liệt kê.)
+/// Every fullstack id must resolve to a backend half the registry knows.
+///
+/// `WEB_BACKEND` is the scaffoldable set and `WEB_BACKEND_UNSUPPORTED` the
+/// known-but-not-yet set; the union is every backend name the registry models,
+/// and a fullstack half must belong to it. Checking only `WEB_BACKEND` would
+/// fail for the Rust/Go/Python/PHP halves that have no record yet.
+/// (Mọi id fullstack phải quy về một nửa backend mà registry biết. `WEB_BACKEND`
+/// là tập scaffold được, `WEB_BACKEND_UNSUPPORTED` là tập đã biết chưa hỗ trợ;
+/// hợp là toàn bộ backend registry mô hình hoá, và nửa fullstack phải thuộc đó.)
 #[test]
-fn every_fullstack_id_has_a_listed_backend() {
+fn every_fullstack_id_has_a_known_backend() {
     for id in WEB_FULLSTACK {
         let (_, backend) = id
             .split_once('-')
@@ -23,10 +30,11 @@ fn every_fullstack_id_has_a_listed_backend() {
             "laravel" => "laravel",
             other => other,
         };
+        let known = WEB_BACKEND.contains(&backend) || WEB_BACKEND_UNSUPPORTED.contains(&backend);
         assert!(
-            WEB_BACKEND.contains(&backend),
-            "fullstack id '{id}' names backend '{backend}', which WEB_BACKEND does not list; \
-             `is_supported` would accept the combination while the backend half is unknown"
+            known,
+            "fullstack id '{id}' names backend '{backend}', which the registry does not model \
+             in WEB_BACKEND or WEB_BACKEND_UNSUPPORTED"
         );
     }
 }
@@ -58,12 +66,12 @@ fn the_diagnostic_list_has_no_duplicates() {
     }
 }
 
-/// Django and Laravel previously had an initializer and a dev launcher but no
-/// registry entry, so the gate rejected a combination the product supports.
-/// (Django/Laravel từng có initializer và dev launcher nhưng thiếu entry registry,
-/// nên cổng từ chối tổ hợp sản phẩm vẫn hỗ trợ.)
+/// A host-tool backend with a record is advertised; the gate accepts every
+/// backend the create lane can resolve a source for.
+/// (Backend host-tool có record được công bố; cổng nhận mọi backend mà create
+/// lane resolve được nguồn.)
 #[test]
-fn host_tool_backends_are_registered() {
+fn host_tool_backends_reflect_their_records() {
     assert!(is_supported("web", "django"));
     assert!(is_supported("web", "laravel"));
 }

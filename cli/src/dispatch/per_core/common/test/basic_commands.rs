@@ -15,13 +15,19 @@ fn mapped(command: CommonCommands) -> CommonCommand {
 fn maps_init_info_search_and_outdated_payloads() {
     match mapped(CommonCommands::Init {
         template: Some("web/react".to_owned()),
+        name: Some("ci-app".to_owned()),
+        yes: true,
         signature: Some("core=web".to_owned()),
     }) {
         CommonCommand::Init {
             template,
+            name,
+            yes,
             signature,
         } => {
             assert_eq!(template.as_deref(), Some("web/react"));
+            assert_eq!(name.as_deref(), Some("ci-app"));
+            assert!(yes);
             assert_eq!(signature.as_deref(), Some("core=web"));
         }
         _ => panic!("init command mapped to a different variant"),

@@ -7,11 +7,14 @@
 //! boundary — mọi create-<core> đều đi qua đây trước khi chạm filesystem.
 
 mod core_initializer;
+pub(crate) mod local_generator;
 mod metadata;
 mod source;
 mod validation;
 
-pub(crate) use metadata::scaffold_and_save_metadata;
+pub mod automation;
+
+pub(crate) use metadata::{save_scaffold_metadata, scaffold_and_save_metadata};
 pub use validation::validate_project_name;
 
 #[cfg(feature = "ai")]

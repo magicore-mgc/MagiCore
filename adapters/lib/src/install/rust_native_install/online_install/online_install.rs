@@ -11,6 +11,7 @@ use std::time::Instant;
 use super::super::super::{cargo_compat, content_store, entry_from_package};
 use super::super::artifact_cache::{cargo_archive_path, read_cached_rust_artifact};
 use super::super::error::RustNativeInstallError;
+use super::super::source_readiness::{finalize_source, require_cargo_source_marker, source_root};
 
 pub(in crate::install::rust_native_install) async fn install_rust_online(
     graph: &ResolvedGraph,
@@ -44,13 +45,20 @@ async fn install_rust_online_with_protocol(
         };
         protocol.verify(&entry, &bytes)?;
         store.import_bytes(&bytes)?;
-        let source_root = cargo_home
-            .join("registry")
-            .join("src")
-            .join(format!("{}-{}", entry.name, entry.version));
+        let source_root = source_root(cargo_home, &entry.name, &entry.version);
         match std::fs::symlink_metadata(&source_root) {
             Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
                 cargo_compat::verify_source_checksum(&source_root, &entry.sha256, &bytes)?;
+                // A directory that verifies its checksum record but has no Cargo
+                // marker was written by an older MagiCore release; Cargo would
+                // re-extract it on the next build. Repairing the marker here is
+                // safe because the checksum record has just re-verified the tree.
+                // (Thư mục checksum hợp lệ nhưng thiếu marker Cargo là do bản
+                // MagiCore cũ ghi; Cargo sẽ giải nén lại ở build sau. Vá marker ở
+                // đây an toàn vì checksum record vừa xác minh lại cây.)
+                if require_cargo_source_marker(&source_root).is_err() {
+                    mgc_resolver::protocols::write_cargo_source_marker(&source_root)?;
+                }
             }
             Ok(_) => {
                 return Err(RustNativeInstallError::SourceCacheNotRegularDirectory {
@@ -59,7 +67,7 @@ async fn install_rust_online_with_protocol(
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 protocol.materialize(&entry, &bytes, cargo_home)?;
-                cargo_compat::write_source_checksum(&source_root, &entry.sha256, &bytes)?;
+                finalize_source(&source_root, &entry.sha256, &bytes)?;
             }
             Err(error) => {
                 return Err(RustNativeInstallError::SourceCacheInspection {

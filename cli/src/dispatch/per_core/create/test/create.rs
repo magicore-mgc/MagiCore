@@ -18,11 +18,14 @@ macro_rules! assert_basic_variant {
                 framework,
                 project_name,
                 source,
+                automation,
             } => {
                 assert_eq!(framework, "sample-framework");
                 assert_eq!(project_name, "sample-project");
                 assert_eq!(source.from_local, None);
                 assert!(!source.no_local);
+                assert!(!automation.yes);
+                assert!(automation.name.is_none());
             }
             _ => panic!("create adapter produced a different basic variant"),
         }
@@ -37,6 +40,7 @@ macro_rules! assert_container_variant {
                 project_name,
                 container,
                 source,
+                automation,
             } => {
                 assert_eq!(framework, "sample-framework");
                 assert_eq!(project_name, "sample-project");
@@ -44,6 +48,8 @@ macro_rules! assert_container_variant {
                 assert_eq!(container.k8s, $k8s);
                 assert_eq!(source.from_local, None);
                 assert!(!source.no_local);
+                assert!(!automation.yes);
+                assert!(automation.name.is_none());
             }
             _ => panic!("create adapter produced a different container variant"),
         }
@@ -57,6 +63,7 @@ fn maps_all_basic_framework_project_variants() {
             framework: "sample-framework".to_owned(),
             project_name: "sample-project".to_owned(),
             source: Default::default(),
+            automation: Default::default(),
         },
         CreateGame
     );
@@ -65,6 +72,7 @@ fn maps_all_basic_framework_project_variants() {
             framework: "sample-framework".to_owned(),
             project_name: "sample-project".to_owned(),
             source: Default::default(),
+            automation: Default::default(),
         },
         CreateCicd
     );
@@ -73,6 +81,7 @@ fn maps_all_basic_framework_project_variants() {
             framework: "sample-framework".to_owned(),
             project_name: "sample-project".to_owned(),
             source: Default::default(),
+            automation: Default::default(),
         },
         CreateIot
     );
@@ -81,6 +90,7 @@ fn maps_all_basic_framework_project_variants() {
             framework: "sample-framework".to_owned(),
             project_name: "sample-project".to_owned(),
             source: Default::default(),
+            automation: Default::default(),
         },
         CreateHardware
     );
@@ -97,6 +107,7 @@ fn maps_all_container_payloads_without_losing_flags() {
                 k8s: false
             },
             source: Default::default(),
+            automation: Default::default(),
         },
         CreateAi,
         true,
@@ -111,6 +122,7 @@ fn maps_all_container_payloads_without_losing_flags() {
                 k8s: true
             },
             source: Default::default(),
+            automation: Default::default(),
         },
         CreateClo,
         false,
@@ -125,6 +137,7 @@ fn maps_all_container_payloads_without_losing_flags() {
                 k8s: true
             },
             source: Default::default(),
+            automation: Default::default(),
         },
         CreateApp,
         true,
@@ -139,6 +152,7 @@ fn maps_all_container_payloads_without_losing_flags() {
                 k8s: false
             },
             source: Default::default(),
+            automation: Default::default(),
         },
         CreateLib,
         false,

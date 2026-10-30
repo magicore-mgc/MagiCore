@@ -10,6 +10,12 @@ pub enum GameEngine {
 }
 
 impl GameEngine {
+    /// Parse a user-facing engine name into its canonical identity.
+    /// Phân giải tên engine người dùng nhập về identity chuẩn.
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::from_str(value)
+    }
+
     pub(crate) fn from_str(s: &str) -> Option<Self> {
         match s {
             "bevy" => Some(Self::Bevy),

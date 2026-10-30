@@ -26,7 +26,15 @@ pub(in crate::install::cargo_compat::source_checksum::implementation) fn hash_so
             .map_err(|error| MgError::Other(format!("read managed Cargo source entry: {error}")))?;
         entries.sort_by_key(|entry| entry.file_name());
         for entry in entries {
-            if entry.file_name() == ".cargo-checksum.json" {
+            // Bookkeeping files (MagiCore's checksum record and Cargo's own
+            // readiness marker) are not part of the crate payload.
+            // (File bookkeeping — checksum record của MagiCore và marker sẵn sàng
+            // của Cargo — không thuộc payload crate.)
+            if entry.file_name() == ".cargo-checksum.json"
+                || mgc_resolver::protocols::NON_ARCHIVE_SOURCE_FILES
+                    .iter()
+                    .any(|name| entry.file_name() == std::ffi::OsStr::new(name))
+            {
                 continue;
             }
             let path = entry.path();

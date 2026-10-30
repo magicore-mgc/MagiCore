@@ -33,6 +33,13 @@ pub(in crate::commands::core::web::implementation::dev::native_launch) fn infer_
 fn native_cargo_run_args(project_root: &Path) -> Result<Vec<OsString>> {
     let source_root =
         mgc_lib_adapter::install::cargo_compat::validate_build_for_core(project_root, "web")?;
+    // `mgc dev` on a Rust web backend reads the same managed `registry/src` as
+    // `mgc build`, so a legacy store must be repaired here too.
+    // (`mgc dev` với backend Rust đọc cùng `registry/src` managed như `mgc build`,
+    // nên store legacy cũng phải được vá ở đây.)
+    if let Some(source_root) = source_root.as_deref() {
+        crate::commands::build::repair_managed_sources(source_root)?;
+    }
     cargo_run_args_from_managed_source(source_root.as_deref())
 }
 

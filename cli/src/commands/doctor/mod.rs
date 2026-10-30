@@ -3,6 +3,7 @@
 
 mod analysis;
 mod command;
+mod core_toolchain;
 mod doctor;
 mod error;
 mod low_disk_space;

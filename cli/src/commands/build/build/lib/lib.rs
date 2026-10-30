@@ -18,7 +18,7 @@ pub(in crate::commands::build::implementation) async fn build_lib(
         crate::commands::freshness::check_lib_cargo_freshness(root)?;
         let store_source = mgc_lib_adapter::install::cargo_compat::validate_build(root)?;
         match store_source {
-            Some(source) => build_rust_with_managed_source(root, optimizer_envs, &source)?,
+            Some(source) => finish_managed_rust_build(root, optimizer_envs, &source)?,
             None => build_rust_with_env(root, optimizer_envs)?,
         }
         return post_build_lib(root, allow_output_warnings);

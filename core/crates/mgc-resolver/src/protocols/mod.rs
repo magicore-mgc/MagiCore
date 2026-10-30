@@ -44,7 +44,11 @@ mod registry_root;
 mod resolved_entry;
 
 pub use composer::ComposerProtocol;
-pub use crates::CratesProtocol;
+pub use crates::NON_ARCHIVE_SOURCE_FILES;
+pub use crates::{
+    CARGO_SOURCE_MARKER, CratesProtocol, has_cargo_source_marker, registry_package_dir,
+    registry_source_root, write_cargo_source_marker,
+};
 pub use digest::{sha256_hex, store_ref_for_blake3};
 pub use go::GoModProtocol;
 pub(super) use graph_resolution::GRAPH_RESOLVE_CONCURRENCY;

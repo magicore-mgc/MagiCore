@@ -1,5 +1,6 @@
 use super::super::{project_cargo_lock, rust_packages, rust_root_ids, validate_build_ownership};
 use crate::install::cargo_compat::verify_source_checksum;
+use crate::install::rust_native_install::require_cargo_source_marker;
 use mgc_types::{MgError, MgResult};
 use std::path::{Path, PathBuf};
 
@@ -85,6 +86,19 @@ pub(in crate::install) fn validate_build_for_core_impl(
         verify_source_checksum(&source_dir, expected_sha256, &archive).map_err(|error| {
             MgError::Other(format!(
                 "managed Cargo source verification failed for '{}'@{}: {error}; run `mgc install`",
+                package.name, package.version
+            ))
+        })?;
+        // Cargo only accepts a `registry/src` directory that carries its own
+        // readiness marker; without it Cargo silently re-extracts the directory,
+        // which deletes `.cargo-checksum.json` and leaves the build reporting a
+        // missing checksum file. Fail here with a repair instruction instead.
+        // (Cargo chỉ nhận thư mục `registry/src` có marker sẵn sàng; thiếu nó
+        // Cargo âm thầm giải nén lại, xoá `.cargo-checksum.json` và build báo
+        // thiếu checksum. Dừng tại đây kèm hướng sửa thay vì để lỗi xảy ra sau.)
+        require_cargo_source_marker(&source_dir).map_err(|error| {
+            MgError::Other(format!(
+                "managed Cargo source is not ready for '{}'@{}: {error}; run `mgc install`",
                 package.name, package.version
             ))
         })?;

@@ -113,8 +113,12 @@ pub(crate) fn run(output_dir: &Path, options: PostBuildOptions<'_>) -> Result<()
 
     mgc_ui::info(&format!("Output SBOM: {}", sbom_path.display()));
 
-    let keyring = mgc_platform::paths::mgc_data_dir().join("keyring.json");
-    match sign_artifact(&sbom_path, &keyring)? {
+    // Signing resolves the `mgc trust` keyring first (one source of truth for
+    // `mgc trust init` and `mgc build`); `data_dir` only covers the legacy
+    // single-seed file, which the resolver warns about.
+    // (Ký ưu tiên keyring `mgc trust` — một nguồn chân lý cho `mgc trust init` và
+    // `mgc build`); `data_dir` chỉ cho file một-seed kiểu cũ, resolver có cảnh báo.)
+    match sign_artifact(&sbom_path, &mgc_platform::paths::mgc_data_dir())? {
         Signed::Signature(path) => mgc_ui::info(&format!("Signed: {}", path.display())),
         Signed::Skipped(reason) => mgc_ui::info(&format!("Output not signed: {reason}")),
     }

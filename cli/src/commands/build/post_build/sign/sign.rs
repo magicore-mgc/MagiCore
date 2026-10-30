@@ -10,16 +10,21 @@
 //! nhận. Chữ ký đi kèm artefact, nên server hoặc cổng CI verify được mà không
 //! phải tin máy đã tạo ra nó.
 //!
-//! The key comes from the data directory that `mgc store` already manages;
-//! a project without a keyring is not signed and says why, because silently
-//! producing unsigned artefacts is how "signed releases" become fiction.
-//! Khoá đến từ data dir mà `mgc store` đã quản lý; project chưa có keyring thì
-//! không ký và nói rõ lý do, vì lặng lẽ tạo artefact không ký là cách "bản phát
-//! hành có ký" trở thành hư cấu.
+//! The key is the default key of the `mgc trust` keyring — the same key
+//! `mgc trust sign` uses — so "I ran `mgc trust init`" actually means builds are
+//! signed. A project without a keyring is not signed and says why, because
+//! silently producing unsigned artefacts is how "signed releases" become fiction.
+//! Khoá là khoá mặc định của keyring `mgc trust` — đúng khoá `mgc trust sign`
+//! dùng — nên "tôi đã chạy `mgc trust init`" thực sự có nghĩa build được ký.
+//! Project không có keyring thì không ký và nói rõ lý do, vì lặng lẽ tạo
+//! artefact không ký là cách "bản phát hành có ký" trở thành hư cấu.
 
 use std::path::Path;
 
 use anyhow::Result;
+use mgc_ui::warning;
+
+use super::key_source::resolve_signing_key;
 
 /// Outcome of an attempted signing.
 /// Kết quả của một lần thử ký.
@@ -33,34 +38,53 @@ pub(crate) enum Signed {
     Skipped(String),
 }
 
-/// Sign `artifact` with the project keyring, writing `<artifact>.sig`.
-/// Ký `artifact` bằng keyring của project, ghi `<artifact>.sig`.
-pub(crate) fn sign_artifact(artifact: &Path, keyring_path: &Path) -> Result<Signed> {
+/// Sign `artifact` with the signed-in keyring, writing `<artifact>.sig`.
+///
+/// `data_dir` is the MagiCore data directory; it only matters for the legacy
+/// single-seed keyring, which is still honoured after a warning.
+/// Ký `artifact` bằng keyring đã đăng ký, ghi `<artifact>.sig`. `data_dir` là
+/// data dir MagiCore; chỉ dùng cho keyring một-seed kiểu cũ, vẫn được tôn trọng
+/// kèm cảnh báo.
+pub(crate) fn sign_artifact(artifact: &Path, data_dir: &Path) -> Result<Signed> {
     if !artifact.is_file() {
         anyhow::bail!("cannot sign '{}': not a file", artifact.display());
     }
     let bytes = std::fs::read(artifact)?;
 
-    let signer = match load_signer(keyring_path) {
-        Ok(signer) => signer,
+    let key = match resolve_signing_key(data_dir) {
+        Ok(key) => key,
         Err(error) => {
-            return Ok(Signed::Skipped(format!(
-                // The message used to say "run `mgc key generate`" — there is no
-                // such command. What the loader actually needs is a keyring JSON
-                // file with a `signing_key` field holding a 32-byte hex seed, so
-                // the message names that shape instead of a command that cannot
-                // be typed.
-                // (Message từng nói "run `mgc key generate`" — lệnh không tồn tại.
-                // Loader cần file keyring JSON có field `signing_key` chứa seed hex
-                // 32 byte, nên message nêu đúng hình dạng đó.)
-                "no signing key at '{}': {error}; create that file with a JSON object \
-                 like {{\"signing_key\": \"<64 hex chars = 32-byte Ed25519 seed>\"}}",
-                keyring_path.display()
-            )));
+            if let Some(reason) = error.downcast_ref::<super::key_source::KeyResolutionError>()
+                && matches!(reason, super::key_source::KeyResolutionError::NoKey)
+            {
+                return Ok(Signed::Skipped(error.to_string()));
+            }
+            // A keyring that exists but cannot be read is a broken signing
+            // setup, not a reason to publish silently unsigned. Fail closed so
+            // the user fixes the key they believe is in effect.
+            // (Keyring có tồn tại nhưng không đọc được là thiết lập ký hỏng,
+            // không phải lý do phát hành im lặng không ký. Fail-closed để người
+            // dùng sửa đúng khoá mà họ tưởng đang dùng.)
+            return Err(error);
         }
     };
 
-    let signature = signer.sign(&bytes);
+    if let Some(other) = &key.conflict {
+        // Two keyrings exist: say which one signed, because a verifier pins a
+        // public key and a mismatch is the user's next support question.
+        // (Có hai keyring: nói rõ cái nào đã ký, vì verifier pin public key và
+        // lệch khoá là câu hỏi tiếp theo của người dùng.)
+        warning(&format!(
+            "two signing keyrings exist; signing with '{}' (key {}). Ignoring '{}'; remove or \
+             consolidate it, or set {} to choose explicitly",
+            key.source.display(),
+            key.key_id,
+            other.display(),
+            super::key_source::SIGNING_KEYRING_ENV,
+        ));
+    }
+
+    let signature = key.signer.sign(&bytes);
     let encoded = signature.to_base64();
     // SEC-15: one naming rule shared with the verifier. `with_extension`
     // produced `bundle..sig` for an extensionless artifact, which the verifier
@@ -74,44 +98,18 @@ pub(crate) fn sign_artifact(artifact: &Path, keyring_path: &Path) -> Result<Sign
     let document = serde_json::json!({
         "file": artifact.file_name().and_then(|n| n.to_str()).unwrap_or_default(),
         "algorithm": "ed25519",
+        // The key that signed, so `mgc verify-sbom --trust-key` can be pinned
+        // from the same keyring (`mgc trust list` prints it).
+        // (Khoá đã ký, để `mgc verify-sbom --trust-key` pin được từ chính keyring
+        // — `mgc trust list` in ra.)
+        "key_id": key.key_id,
         "signature": encoded,
-        "public_key": signer.public_key().to_base64(),
+        "public_key": key.public_key_b64,
     });
     std::fs::write(&signature_path, serde_json::to_vec_pretty(&document)?)?;
     Ok(Signed::Signature(signature_path))
 }
 
-type Signer = mgc_crypto::Ed25519Signer;
-
-fn load_signer(keyring_path: &Path) -> Result<Signer> {
-    let raw = std::fs::read(keyring_path)?;
-    let value: serde_json::Value = serde_json::from_slice(&raw)?;
-    let seed_hex = value
-        .get("signing_key")
-        .and_then(|k| k.as_str())
-        .ok_or_else(|| anyhow::anyhow!("keyring has no 'signing_key' field"))?;
-    let seed = decode_hex(seed_hex)?;
-    if seed.len() != 32 {
-        anyhow::bail!("signing key must be 32 bytes, got {}", seed.len());
-    }
-    let mut array = [0u8; 32];
-    array.copy_from_slice(&seed);
-    Ok(mgc_crypto::Ed25519Signer::from_seed(&array)?)
-}
-
-fn decode_hex(value: &str) -> Result<Vec<u8>> {
-    if !value.len().is_multiple_of(2) {
-        anyhow::bail!("hex string has odd length");
-    }
-    let mut out = Vec::with_capacity(value.len() / 2);
-    let bytes = value.as_bytes();
-    for pair in bytes.chunks(2) {
-        let text = std::str::from_utf8(pair)?;
-        out.push(u8::from_str_radix(text, 16)?);
-    }
-    Ok(out)
-}
-
 #[cfg(test)]
 #[path = "test/mod.rs"]
-mod tests;
+pub(crate) mod tests;

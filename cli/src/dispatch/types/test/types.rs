@@ -9,6 +9,7 @@ fn stable_facade_exposes_both_route_types() {
         framework: "bevy".into(),
         project_name: "fixture".into(),
         source: Default::default(),
+        automation: Default::default(),
     });
 
     assert!(matches!(

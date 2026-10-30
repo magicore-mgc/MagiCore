@@ -12,6 +12,7 @@ fn healthy_report_preserves_inventory_and_store_snapshot() {
             name: "git",
             path: Some("/usr/bin/git".to_string()),
             version: "git version 2".to_string(),
+            required_by_core: None,
         }],
         StoreSnapshot {
             directory: "/tmp/mgc-store".into(),

@@ -4,6 +4,8 @@
 pub enum CommonCommand {
     Init {
         template: Option<String>,
+        name: Option<String>,
+        yes: bool,
         signature: Option<String>,
     },
     Dev {

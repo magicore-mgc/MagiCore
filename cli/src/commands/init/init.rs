@@ -19,7 +19,7 @@ mod project_metadata;
 pub(super) use project_metadata::write_mgc_toml;
 #[path = "project_name/mod.rs"]
 mod project_name;
-pub(super) use project_name::ask_project_name;
+pub(super) use project_name::{ask_project_name, resolve_non_interactive_name};
 #[path = "web_dependency_seed/mod.rs"]
 mod web_dependency_seed;
 pub(super) use web_dependency_seed::seed_web_deps;
@@ -33,7 +33,21 @@ pub(super) use web_features::ask_web_features;
 /// `--signature <core>` remains a compatibility flag that writes a plain-text
 /// `.mgc.core` identity marker; it does not create a cryptographic signature.
 /// (Flag tương thích này ghi marker core dạng text, không tạo chữ ký mật mã.)
-pub async fn run(template: Option<String>, signature: Option<String>) -> Result<()> {
+///
+/// `--name <NAME>` and `--yes` make the command usable NON-INTERACTIVELY for
+/// CI: `--name` is used verbatim (validated, no re-prompt) and `--yes` skips
+/// every prompt, deriving the name from the current directory when `--name` is
+/// absent. Without either flag the interactive wizard is preserved unchanged.
+/// (`--name`/`--yes` giúp lệnh chạy KHÔNG tương tác cho CI: `--name` dùng
+/// nguyên văn (đã xác thực, không hỏi lại) và `--yes` bỏ mọi prompt, suy tên
+/// từ thư mục hiện tại khi thiếu `--name`. Không có cờ nào thì giữ nguyên
+/// wizard tương tác.)
+pub async fn run(
+    template: Option<String>,
+    name: Option<String>,
+    yes: bool,
+    signature: Option<String>,
+) -> Result<()> {
     if let Some(core) = signature {
         let cwd = std::env::current_dir().map_err(|e| crate::error::cwd_deleted(&e))?;
         let root = ProjectConfig::find_project_root(&cwd).unwrap_or(cwd);
@@ -47,6 +61,10 @@ pub async fn run(template: Option<String>, signature: Option<String>) -> Result<
         return Ok(());
     }
     print_banner();
+
+    // Non-interactive name wins over the prompt; `None` keeps the wizard path.
+    // Tên không tương tác thắng prompt; `None` giữ nguyên luồng wizard.
+    let non_interactive_name = resolve_non_interactive_name(name, yes)?;
 
     if let Some(t) = template {
         let mut config = if t == "web" {
@@ -79,8 +97,11 @@ pub async fn run(template: Option<String>, signature: Option<String>) -> Result<
                 ..Default::default()
             }
         };
-        config.project_name = ask_project_name()?;
-        if t == "web" {
+        config.project_name = match non_interactive_name.clone() {
+            Some(resolved) => resolved,
+            None => ask_project_name()?,
+        };
+        if t == "web" && !yes {
             let (features, show_multi) = ask_web_features(&config);
             if !features.is_empty() {
                 if show_multi {
@@ -107,12 +128,23 @@ pub async fn run(template: Option<String>, signature: Option<String>) -> Result<
         return Ok(());
     }
 
+    // `--yes` without `--template` has no deterministic core to default to,
+    // so it fails fast instead of silently prompting (fail-closed + clear fix).
+    // `--yes` không kèm `--template` không có core tất định để mặc định, nên
+    // fail fast thay vì âm thầm hỏi (fail-closed + cách sửa rõ ràng).
+    if yes {
+        anyhow::bail!(
+            "--yes requires --template <core> (no deterministic core default exists); \
+             for a fully non-interactive run use: mgc init --template <core> --yes [--name <NAME>]"
+        );
+    }
+
     section("Choose your project type", 1, 4);
     let core = pick_core();
 
     section("Configure your project", 2, 4);
 
-    let (mut config, features, show_multi) = run_core_wizard(&core)?;
+    let (mut config, features, show_multi) = run_core_wizard(&core, non_interactive_name.as_ref())?;
 
     section("Additional features", 3, 4);
     if !features.is_empty() {
@@ -144,6 +176,9 @@ pub async fn run(template: Option<String>, signature: Option<String>) -> Result<
     Ok(())
 }
 
+#[cfg(test)]
+#[path = "test/non_interactive.rs"]
+mod non_interactive;
 #[cfg(test)]
 #[path = "test/init.rs"]
 mod tests;

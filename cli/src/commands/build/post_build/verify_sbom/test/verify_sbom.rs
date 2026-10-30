@@ -121,3 +121,20 @@ fn signature_path_matches_the_signer() {
         PathBuf::from("dist/bundle.sig")
     );
 }
+
+/// A key mismatch names the key that signed and how to obtain it, instead of a
+/// bare refusal (the user's keyring is the only place that key is discoverable).
+/// (Lệch khoá phải nêu khoá đã ký và cách lấy, thay vì chỉ từ chối trơn — keyring
+/// của người dùng là nơi duy nhất tìm được khoá đó.)
+#[test]
+fn a_key_mismatch_names_the_signing_key_and_how_to_obtain_it() {
+    let (_dir, path) = artifact();
+    write_signature(&path, &signer(7));
+
+    let error = verify(&path, &signer(9).public_key().to_base64())
+        .expect_err("a different pinned key must fail");
+
+    let message = error.to_string();
+    assert!(message.contains("not the pinned trust key"), "{message}");
+    assert!(message.contains("mgc trust list"), "{message}");
+}

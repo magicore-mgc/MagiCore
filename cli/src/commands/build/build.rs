@@ -104,3 +104,27 @@ use web_go_backend::ensure_go_build_output_dir;
 mod tests;
 
 pub(crate) use web_engine::node_bin_args;
+
+/// Repair legacy Cargo registry sources before any managed Rust build.
+/// Vá source registry Cargo legacy trước mọi build Rust managed.
+pub(in crate::commands) fn repair_managed_sources(source_root: &Path) -> Result<usize> {
+    web_engine::repair_managed_sources(source_root)
+}
+
+/// Build Rust from the MagiCore-managed source, repairing legacy stores first.
+///
+/// Every core that builds against the managed `registry/src` goes through this
+/// one entry so the readiness-marker repair cannot be wired into only one of
+/// them (`lib`, `iot`, `web` dev share the same store and the same failure).
+/// Build Rust từ source do MagiCore quản lý, vá store legacy trước. Mọi core
+/// build trên `registry/src` managed đều đi qua đúng một entry này để bước vá
+/// marker không thể chỉ được nối vào một core (`lib`, `iot`, dev `web` dùng
+/// chung store và cùng lỗi).
+pub(in crate::commands) fn finish_managed_rust_build(
+    root: &Path,
+    optimizer_envs: std::collections::HashMap<String, String>,
+    source_root: &Path,
+) -> Result<()> {
+    repair_managed_sources(source_root)?;
+    build_rust_with_managed_source(root, optimizer_envs, source_root)
+}

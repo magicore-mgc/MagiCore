@@ -93,7 +93,7 @@ fn display_messages_are_stable_and_unsupported_core_lists_all_nine() {
 }
 
 #[test]
-fn required_layer_error_retains_fetch_and_registry_guidance() {
+fn required_layer_error_retains_remedy_and_registry_guidance() {
     let error = ScaffoldResolveError::RequiredLayerMissing {
         layer: "web/frontend/nextjs".to_string(),
         core: "web".to_string(),
@@ -101,13 +101,37 @@ fn required_layer_error_retains_fetch_and_registry_guidance() {
         tag: "latest".to_string(),
         attempted_sources: "cache miss".to_string(),
     };
-    assert_eq!(
-        error.to_string(),
-        concat!(
-            "Required scaffold layer 'web/frontend/nextjs' is not available.\n\n",
-            "Tried:\ncache miss\n\nNext steps:\n",
-            "- Run: mgc template fetch web nextjs@latest\n",
-            "- Or configure registry: mgc config set registry.scaffold <url>"
-        )
+    let message = error.to_string();
+    assert!(
+        message.starts_with(
+            "Required scaffold layer 'web/frontend/nextjs' is not available.\n\nTried:\ncache miss\n\nNext steps for 'web' (framework 'nextjs'@latest):\n"
+        ),
+        "{message}"
     );
+    assert!(message.contains("--from-local <path>"), "{message}");
+    assert!(message.contains("official initializer"), "{message}");
+    assert!(message.contains("MGC_NPM_REGISTRY"), "{message}");
+}
+
+#[test]
+fn required_layer_error_never_names_a_nonexistent_subcommand() {
+    // The previous wording told users to run `mgc template fetch`, and `mgc
+    // template` is not a subcommand at all.
+    // (Wording cũ bảo user chạy `mgc template fetch`, mà `mgc template` không phải
+    // subcommand.)
+    let cases = ["web", "game", "iot", "clo", "lib"];
+    for core in cases {
+        let error = ScaffoldResolveError::RequiredLayerMissing {
+            layer: format!("{core}/layer"),
+            core: core.to_string(),
+            template: "framework".to_string(),
+            tag: "latest".to_string(),
+            attempted_sources: "HTTP 404".to_string(),
+        };
+        let message = error.to_string();
+        assert!(
+            !crate::scaffold::resolver::remedy::names_nonexistent_subcommand(&message),
+            "core '{core}' guidance names a nonexistent subcommand: {message}"
+        );
+    }
 }

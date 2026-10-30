@@ -61,26 +61,18 @@ pub const AI: &[&str] = &["mcp-server", "python-agent"];
 /// Runtime AI project có thể khai — chỉ để detect, không phải đích scaffold.
 pub const AI_RUNTIMES: &[&str] = &["candle", "jax", "onnx", "pytorch", "tensorflow"];
 pub const HARDWARE: &[&str] = &["optimizer", "bench"];
-/// Web backend/frontend ids known to MagiCore (source still comes from the
-/// registry layer; this list only answers "is this framework supported?").
-/// Id Web backend/frontend MagiCore biết (source vẫn từ registry layer; danh
-/// sách chỉ trả lời "framework này có được hỗ trợ không?").
-/// Backend ids MagiCore can scaffold or materialize for the Web core.
+/// Web backend ids with a real scaffold source, so `is_supported` may say yes.
 ///
-/// Two families live here and both must be listed or a supported combination
-/// becomes unreachable through `mgc create-web`:
-/// - languages with a scaffold record (Express, NestJS, Spring, Quarkus,
-///   Django, Laravel) — these run the framework's own initializer;
-/// - languages the scaffold writes from a MagiCore-owned layer instead
-///   (the remaining JS/Python/Go/Rust/.NET/PHP backends).
-///
-/// `django` and `laravel` were previously absent while their initializers and
-/// dev launchers existed, so `is_supported("web", "django")` returned false even
-/// though `mgc create-web django` worked. The fullstack ids were absent for the
-/// same reason.
-/// (Hai nhóm backend Web: có record initializer và có layer do MagiCore sở hữu.
-/// Thiếu `django`/`laravel`/id fullstack trước đây làm `is_supported` trả false
-/// trong khi lệnh create-web vẫn chạy được.)
+/// An id belongs here only when `mgc create-web <id>` can resolve a project
+/// from some source the create lane really has: an initializer catalog record
+/// (`commands/core/web/create/initializers/catalog`), or an official/local
+/// project the lane can materialize for that framework. The remaining known
+/// backends live in `WEB_BACKEND_UNSUPPORTED`.
+/// (Id backend Web CÓ nguồn scaffold thật để `is_supported` được phép nói có.
+/// Một id chỉ ở đây khi `mgc create-web <id>` resolve được project từ nguồn mà
+/// create lane thật sự có: record initializer, hoặc project chính thức/local
+/// mà lane materialize được. Các backend đã biết còn lại ở
+/// `WEB_BACKEND_UNSUPPORTED`.)
 pub const WEB_BACKEND: &[&str] = &[
     "actix-web",
     "axum",
@@ -91,34 +83,49 @@ pub const WEB_BACKEND: &[&str] = &[
     "fastapi",
     "fiber",
     "flask",
-    "fastify",
     "gin",
-    "hono",
-    "koa",
     "laravel",
     "nest",
     "nestjs",
     "quarkus",
-    "spring",
     "spring-boot",
     "symfony",
-    "trpc",
 ];
+
+/// Web backend ids MagiCore knows but cannot scaffold yet — no initializer
+/// record, no framework metadata, and no verified scaffold source.
+///
+/// These were previously listed in `WEB_BACKEND`, so `is_supported` returned
+/// true while `mgc create-web fastify x` failed closed with "no scaffold
+/// source" (or, for `koa`/`spring`, with a bare "Unsupported web framework").
+/// They stay named here on purpose: `create-web` reports "not yet supported for
+/// scaffolding" instead of a generic error, and a framework graduates by
+/// gaining a catalog record or a verified source, not by editing this list.
+/// (Id backend Web MagiCore biết nhưng chưa scaffold được — không có record,
+/// không có metadata framework, không nguồn đã xác minh. Trước đây chúng nằm
+/// trong `WEB_BACKEND` nên `is_supported` trả true trong khi `create-web
+/// fastify x` fail-closed. Chúng được nêu tên ở đây để `create-web` báo "not
+/// yet supported for scaffolding" thay vì lỗi chung.)
+pub const WEB_BACKEND_UNSUPPORTED: &[&str] = &["fastify", "hono", "koa", "spring", "trpc"];
 
 /// Aliases `normalize_web_framework` maps onto a canonical id.
 ///
 /// A gate that ran *after* normalisation would accept these, but it runs at the
 /// CLI boundary on the user's literal word — so the registry must list the
 /// aliases too, or `create-web ts` is rejected while the product supports it.
+/// Every alias target here is a scaffoldable id, so no alias needs a separate
+/// rejected list.
 /// (Alias mà `normalize_web_framework` quy về id chuẩn. Cổng chạy tại CLI
 /// boundary trên đúng chữ người dùng gõ, nên registry phải liệt kê cả alias,
-/// nếu không `create-web ts` bị từ chối trong khi sản phẩm vẫn hỗ trợ.)
+/// nếu không `create-web ts` bị từ chối trong khi sản phẩm vẫn hỗ trợ. Mọi đích
+/// alias ở đây đều scaffold được nên không cần danh sách alias bị từ chối.)
 pub const WEB_ALIAS: &[&str] = &[
     "backend",
     "custom",
+    "dotnet",
     "frontend",
-    "go",
     "fullstack",
+    "go",
     "java",
     "next-app",
     "node",
@@ -255,8 +262,14 @@ pub fn framework_marker(ecosystem: &str, framework: &str) -> Option<&'static [&'
     }
 }
 
-/// Whether `core`/`framework` is a known pair.
-/// Cặp `core`/`framework` có được biết không.
+/// Whether `core`/`framework` is a known AND scaffoldable pair.
+///
+/// Returns false for an id in `WEB_BACKEND_UNSUPPORTED`: MagiCore knows the
+/// name but cannot scaffold it, and `is_known_web_unsupported` lets the caller
+/// say so honestly.
+/// (Cặp `core`/`framework` vừa được biết vừa scaffold được. Trả false cho id
+/// trong `WEB_BACKEND_UNSUPPORTED`: MagiCore biết tên nhưng chưa scaffold được,
+/// và `is_known_web_unsupported` để caller báo đúng sự thật.)
 pub fn is_supported(core: &str, framework: &str) -> bool {
     let table = match core {
         "game" => GAME,
@@ -276,6 +289,17 @@ pub fn is_supported(core: &str, framework: &str) -> bool {
         _ => return false,
     };
     table.contains(&framework)
+}
+
+/// Whether `framework` is a Web id MagiCore knows but cannot scaffold yet.
+///
+/// `create-web` uses this to tell "known but not scaffoldable yet" apart from
+/// "not a Web framework at all", so a user who types `fastify` or `koa` hears
+/// the honest roadmap message instead of a generic unknown-framework error.
+/// (Id Web MagiCore biết nhưng chưa scaffold được. `create-web` dùng để phân
+/// biệt "đã biết nhưng chưa scaffold được" với "không phải framework Web".)
+pub fn is_known_web_unsupported(framework: &str) -> bool {
+    WEB_BACKEND_UNSUPPORTED.contains(&framework)
 }
 
 /// Every framework id the registry accepts for `core`, in stable order.
@@ -299,8 +323,14 @@ pub fn supported_frameworks(core: &str) -> &'static [&'static str] {
     }
 }
 
-/// Web ids from all three families, concatenated for diagnostics.
-/// Id Web của cả ba nhóm, nối lại để báo lỗi.
+/// Web ids from all accepted families, concatenated for diagnostics.
+///
+/// Only ids `is_supported("web", ..)` accepts appear here, so the "Supported
+/// 'web' frameworks" list printed on a rejection never re-advertises a name
+/// that cannot be scaffolded.
+/// (Id Web của mọi nhóm được nhận, nối lại để báo lỗi. Chỉ id `is_supported`
+/// nhận mới có ở đây, nên danh sách "Supported 'web' frameworks" in khi từ chối
+/// không bao giờ quảng cáo lại tên không scaffold được.)
 pub const WEB_ALL: &[&str] = &[
     // Frontend — xem WEB_FRONTEND. Giữ khớp tuyệt đối với bảng bên trên.
     "angular",
@@ -337,18 +367,13 @@ pub const WEB_ALL: &[&str] = &[
     "fastapi",
     "fiber",
     "flask",
-    "fastify",
     "gin",
-    "hono",
-    "koa",
     "laravel",
     "nest",
     "nestjs",
     "quarkus",
-    "spring",
     "spring-boot",
     "symfony",
-    "trpc",
     // Fullstack — xem WEB_FULLSTACK.
     "react-actix-web",
     "react-axum",

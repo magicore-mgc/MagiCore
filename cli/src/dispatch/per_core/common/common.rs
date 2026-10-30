@@ -7,9 +7,13 @@ pub(in crate::dispatch) fn common_to_dispatch(command: CommonCommands) -> Option
     match command {
         CommonCommands::Init {
             template,
+            name,
+            yes,
             signature,
         } => Some(CommonCommand::Init {
             template,
+            name,
+            yes,
             signature,
         }),
         CommonCommands::Adopt { core, path } => Some(CommonCommand::Adopt { core, path }),

@@ -3,8 +3,8 @@
 
 use super::super::{
     MAX_VERSION_LINE_BYTES, TOOLCHAIN_PROBES, VERSION_PROBE_ENV_KEYS, VERSION_TRUNCATION_MARKER,
-    VERSION_UNAVAILABLE, pin_candidate, version_from_stdout, version_probe_environment,
-    version_probe_options, which_in_path, which_in_paths,
+    VERSION_UNAVAILABLE, inventory, inventory_for_core, pin_candidate, version_from_stdout,
+    version_probe_environment, version_probe_options, which_in_path, which_in_paths,
 };
 
 #[test]
@@ -229,4 +229,49 @@ fn version_parser_caps_the_untrusted_display_line() {
 
     assert_eq!(version.len(), MAX_VERSION_LINE_BYTES);
     assert!(version.ends_with(VERSION_TRUNCATION_MARKER));
+}
+
+#[test]
+fn core_inventory_keeps_the_general_tools_and_appends_the_core_tools() {
+    let general = inventory();
+    let app = inventory_for_core("app");
+
+    // The general six rows are preserved, in order, ahead of the core rows.
+    // Sáu hàng chung được giữ nguyên, đúng thứ tự, trước các hàng của core.
+    let general_names: Vec<&str> = general.iter().map(|tool| tool.name).collect();
+    let app_names: Vec<&str> = app.iter().map(|tool| tool.name).collect();
+    assert_eq!(&app_names[..general_names.len()], general_names.as_slice());
+
+    // The app core adds its own tools, each tagged with the core that needs it.
+    // Core app thêm tool riêng, mỗi tool gắn core đang cần nó.
+    for expected in ["flutter", "gradle", "swift"] {
+        let tool = app
+            .iter()
+            .find(|tool| tool.name == expected)
+            .unwrap_or_else(|| panic!("app inventory is missing {expected}"));
+        assert_eq!(tool.required_by_core, Some("app"));
+    }
+}
+
+#[test]
+fn core_inventory_tags_a_shared_tool_without_duplicating_it() {
+    // `node` is both a general row and a requirement of the web core: it must be
+    // tagged in place rather than probed a second time.
+    // `node` vừa là hàng chung vừa là yêu cầu của core web: gắn tag tại chỗ,
+    // không probe lần hai.
+    let web = inventory_for_core("web");
+    let node_rows = web.iter().filter(|tool| tool.name == "node").count();
+
+    assert_eq!(node_rows, 1);
+    let node = web.iter().find(|tool| tool.name == "node").unwrap();
+    assert_eq!(node.required_by_core, Some("web"));
+}
+
+#[test]
+fn core_inventory_without_a_core_requirement_matches_the_general_inventory() {
+    let general = inventory();
+    let hardware = inventory_for_core("hardware");
+
+    assert_eq!(hardware.len(), general.len());
+    assert!(hardware.iter().all(|tool| tool.required_by_core.is_none()));
 }

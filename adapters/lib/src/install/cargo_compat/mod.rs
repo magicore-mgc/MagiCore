@@ -11,7 +11,7 @@ mod projection;
 mod source_checksum;
 mod types;
 
-pub use cargo_compat::{validate_build, validate_build_for_core};
+pub use cargo_compat::{validate_build, validate_build_for_core, verify_managed_source};
 pub(crate) use lock::{refresh_lock, validate_install};
 pub(crate) use source_checksum::{verify_source_checksum, write_source_checksum};
 

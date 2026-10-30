@@ -52,3 +52,23 @@ pub fn unknown_framework_for_core(core: &str, framework: &str, supported: &[&str
         sorted.join(", ")
     )
 }
+
+/// A `create-<core>` request named a framework MagiCore knows but cannot
+/// scaffold yet (no initializer record and no verified scaffold layer).
+///
+/// This is deliberately not the generic unknown-framework error: the name is
+/// real, the roadmap is "not yet", and the user needs to hear that instead of
+/// being told they typed a name that does not exist.
+/// (Yêu cầu `create-<core>` nêu framework MagiCore biết nhưng chưa scaffold
+/// được. Cố ý không phải lỗi unknown-framework chung: tên là thật, trạng thái
+/// là "chưa", và người dùng cần nghe điều đó thay vì bị báo gõ sai tên.)
+pub fn web_framework_not_yet_scaffoldable(framework: &str, supported: &[&str]) -> Error {
+    let mut sorted = supported.to_vec();
+    sorted.sort_unstable();
+    anyhow!(
+        "framework '{framework}' is not yet supported for scaffolding. Scaffoldable 'web' \
+         frameworks ({}): {}. Nothing was created.",
+        sorted.len(),
+        sorted.join(", ")
+    )
+}

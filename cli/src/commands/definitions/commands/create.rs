@@ -47,10 +47,12 @@ pub enum CreateCommands {
         #[arg(value_name = "FRAMEWORK[@VERSION]")]
         framework: String,
         /// Project directory name
-        #[arg(value_name = "PROJECT")]
+        #[arg(value_name = "PROJECT", default_value = "")]
         project_name: String,
         #[command(flatten)]
         source: crate::commands::core::shared::source_flags::SourceFlags,
+        #[command(flatten)]
+        automation: crate::commands::core::create::automation::CreateAutomationFlags,
     },
     #[command(
         name = "create-ai",
@@ -62,12 +64,14 @@ pub enum CreateCommands {
         #[arg(value_name = "FRAMEWORK[@VERSION]")]
         framework: String,
         /// Project directory name
-        #[arg(value_name = "PROJECT")]
+        #[arg(value_name = "PROJECT", default_value = "")]
         project_name: String,
         #[command(flatten)]
         container: crate::commands::core::shared::container_flags::ContainerFlags,
         #[command(flatten)]
         source: crate::commands::core::shared::source_flags::SourceFlags,
+        #[command(flatten)]
+        automation: crate::commands::core::create::automation::CreateAutomationFlags,
     },
     #[command(
         name = "create-clo",
@@ -79,12 +83,14 @@ pub enum CreateCommands {
         #[arg(value_name = "FRAMEWORK[@VERSION]")]
         framework: String,
         /// Project directory name
-        #[arg(value_name = "PROJECT")]
+        #[arg(value_name = "PROJECT", default_value = "")]
         project_name: String,
         #[command(flatten)]
         container: crate::commands::core::shared::container_flags::ContainerFlags,
         #[command(flatten)]
         source: crate::commands::core::shared::source_flags::SourceFlags,
+        #[command(flatten)]
+        automation: crate::commands::core::create::automation::CreateAutomationFlags,
     },
     #[command(
         name = "create-cicd",
@@ -96,10 +102,12 @@ pub enum CreateCommands {
         #[arg(value_name = "FRAMEWORK[@VERSION]")]
         framework: String,
         /// Project directory name
-        #[arg(value_name = "PROJECT")]
+        #[arg(value_name = "PROJECT", default_value = "")]
         project_name: String,
         #[command(flatten)]
         source: crate::commands::core::shared::source_flags::SourceFlags,
+        #[command(flatten)]
+        automation: crate::commands::core::create::automation::CreateAutomationFlags,
     },
     #[command(
         name = "create-iot",
@@ -111,10 +119,12 @@ pub enum CreateCommands {
         #[arg(value_name = "FRAMEWORK[@VERSION]")]
         framework: String,
         /// Project directory name
-        #[arg(value_name = "PROJECT")]
+        #[arg(value_name = "PROJECT", default_value = "")]
         project_name: String,
         #[command(flatten)]
         source: crate::commands::core::shared::source_flags::SourceFlags,
+        #[command(flatten)]
+        automation: crate::commands::core::create::automation::CreateAutomationFlags,
     },
     #[command(
         name = "create-app",
@@ -126,12 +136,14 @@ pub enum CreateCommands {
         #[arg(value_name = "FRAMEWORK[@VERSION]")]
         framework: String,
         /// Project directory name
-        #[arg(value_name = "PROJECT")]
+        #[arg(value_name = "PROJECT", default_value = "")]
         project_name: String,
         #[command(flatten)]
         container: crate::commands::core::shared::container_flags::ContainerFlags,
         #[command(flatten)]
         source: crate::commands::core::shared::source_flags::SourceFlags,
+        #[command(flatten)]
+        automation: crate::commands::core::create::automation::CreateAutomationFlags,
     },
     #[command(
         name = "create-lib",
@@ -143,12 +155,14 @@ pub enum CreateCommands {
         #[arg(value_name = "FRAMEWORK[@VERSION]")]
         framework: String,
         /// Project directory name
-        #[arg(value_name = "PROJECT")]
+        #[arg(value_name = "PROJECT", default_value = "")]
         project_name: String,
         #[command(flatten)]
         container: crate::commands::core::shared::container_flags::ContainerFlags,
         #[command(flatten)]
         source: crate::commands::core::shared::source_flags::SourceFlags,
+        #[command(flatten)]
+        automation: crate::commands::core::create::automation::CreateAutomationFlags,
     },
     #[command(
         name = "create-hardware",
@@ -160,9 +174,11 @@ pub enum CreateCommands {
         #[arg(value_name = "FRAMEWORK[@VERSION]")]
         framework: String,
         /// Project directory name
-        #[arg(value_name = "PROJECT")]
+        #[arg(value_name = "PROJECT", default_value = "")]
         project_name: String,
         #[command(flatten)]
         source: crate::commands::core::shared::source_flags::SourceFlags,
+        #[command(flatten)]
+        automation: crate::commands::core::create::automation::CreateAutomationFlags,
     },
 }

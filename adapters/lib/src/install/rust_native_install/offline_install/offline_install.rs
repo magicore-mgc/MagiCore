@@ -9,9 +9,10 @@ use mgc_types::adapter::{InstallCacheMode, InstallSummary};
 use std::path::Path;
 use std::time::Instant;
 
-use super::super::super::{cargo_compat, entry_from_package};
+use super::super::super::entry_from_package;
 use super::super::artifact_cache::{cargo_archive_path, read_cached_rust_artifact};
 use super::super::error::RustNativeInstallError;
+use super::super::source_readiness::{finalize_source, source_root};
 
 /// Validate the full locked archive set without writing or opening CAS.
 /// Xác minh toàn bộ archive theo lock trước khi ghi hoặc mở CAS.
@@ -56,11 +57,8 @@ pub(crate) fn install_rust_cached(
         protocol.verify(&entry, &bytes)?;
         store.import_bytes(&bytes)?;
         protocol.materialize(&entry, &bytes, cargo_home)?;
-        cargo_compat::write_source_checksum(
-            &cargo_home
-                .join("registry")
-                .join("src")
-                .join(format!("{}-{}", entry.name, entry.version)),
+        finalize_source(
+            &source_root(cargo_home, &entry.name, &entry.version),
             &entry.sha256,
             &bytes,
         )?;

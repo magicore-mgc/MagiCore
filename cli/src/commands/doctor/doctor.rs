@@ -8,7 +8,7 @@ use super::{
 };
 
 pub fn report() -> Result<DoctorReport> {
-    let toolchain = toolchain::inventory();
+    let toolchain = toolchain_inventory()?;
     let store = storage::inspect();
     let registries = registry::statuses();
 
@@ -16,7 +16,7 @@ pub fn report() -> Result<DoctorReport> {
 }
 
 fn report_with_fix() -> Result<(DoctorReport, storage::RemediationOutcome)> {
-    let toolchain = toolchain::inventory();
+    let toolchain = toolchain_inventory()?;
     let store = storage::inspect();
     let registries = registry::statuses();
     let run = storage::initialize_missing(store);
@@ -25,6 +25,24 @@ fn report_with_fix() -> Result<(DoctorReport, storage::RemediationOutcome)> {
         analysis::build(toolchain, run.store, registries),
         run.outcome,
     ))
+}
+
+/// Probe the general tools plus the current project's core tools when detected.
+/// Probe tool chung cộng tool của core hiện tại khi nhận diện được.
+///
+/// Detection is read-only: it reads `.mgc.core`, `mgc.toml` or manifests and
+/// never writes a marker (unlike the identity-claiming resolution path).
+/// Nhận diện chỉ-đọc: đọc `.mgc.core`, `mgc.toml` hoặc manifest, không ghi
+/// marker (khác đường resolve có claim identity).
+fn toolchain_inventory() -> Result<Vec<super::model::Tool>> {
+    let cwd = std::env::current_dir()?;
+    match mgc_config::project::ProjectConfig::detect_core(&cwd) {
+        Ok(Some(core)) => Ok(toolchain::inventory_for_core(&core)),
+        // No core is not a doctor error: the general inventory still runs.
+        // Không có core không phải lỗi doctor: inventory chung vẫn chạy.
+        Ok(None) => Ok(toolchain::inventory()),
+        Err(_) => Ok(toolchain::inventory()),
+    }
 }
 
 pub fn handle(cmd: DoctorCmd) -> Result<()> {

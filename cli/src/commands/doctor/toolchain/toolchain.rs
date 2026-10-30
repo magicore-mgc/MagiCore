@@ -10,6 +10,7 @@ use std::time::Duration;
 use mgc_exec::allowlist::ExecutionScope;
 use mgc_exec::run::{ExecOptions, run};
 
+use super::super::core_toolchain::requirements_for_core;
 use super::super::model::Tool;
 
 const VERSION_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -43,8 +44,42 @@ pub(in crate::commands::doctor) const TOOLCHAIN_PROBES: [(&str, &str, &[&str]); 
 pub(in crate::commands::doctor) fn inventory() -> Vec<Tool> {
     TOOLCHAIN_PROBES
         .iter()
-        .map(|&(name, binary, args)| tool(name, binary, args))
+        .map(|&(name, binary, args)| tool(name, binary, args, None))
         .collect()
+}
+
+/// Probe the general tools plus the core-specific tools when a core is known.
+/// Probe tool chung cộng tool riêng của core khi đã biết core.
+///
+/// Core-only tools are appended after the general inventory and de-duplicated:
+/// a tool already present from the general list gains a `required_by_core` tag
+/// instead of being probed twice. Repeated calls (one per core requirement) are
+/// avoided by keying on the executable basename.
+/// Tool riêng core được nối sau inventory chung và khử trùng: tool đã có từ
+/// danh sách chung được gắn `required_by_core` thay vì probe hai lần. Khử trùng
+/// theo basename executable.
+pub(in crate::commands::doctor) fn inventory_for_core(core: &str) -> Vec<Tool> {
+    let mut tools = inventory();
+    for requirement in requirements_for_core(core) {
+        // Skip a core tool already covered by the general inventory row.
+        // Bỏ tool core đã được hàng inventory chung bao phủ.
+        if let Some(existing) = tools
+            .iter_mut()
+            .find(|tool| tool.name == requirement.binary)
+        {
+            if existing.required_by_core.is_none() {
+                existing.required_by_core = Some(requirement.core);
+            }
+            continue;
+        }
+        tools.push(tool(
+            requirement.binary,
+            requirement.binary,
+            requirement.probe_args,
+            Some(requirement.core),
+        ));
+    }
+    tools
 }
 
 fn which(bin: &str) -> Option<PathBuf> {
@@ -193,7 +228,12 @@ pub(in crate::commands::doctor) fn version_from_stdout(stdout: &str) -> String {
     version
 }
 
-fn tool(name: &'static str, bin: &str, probe_args: &[&str]) -> Tool {
+fn tool(
+    name: &'static str,
+    bin: &str,
+    probe_args: &[&str],
+    required_by_core: Option<&'static str>,
+) -> Tool {
     match which(bin) {
         Some(path) => {
             let version = tool_version(&path, probe_args);
@@ -201,12 +241,14 @@ fn tool(name: &'static str, bin: &str, probe_args: &[&str]) -> Tool {
                 name,
                 path: Some(safe_path_display(&path)),
                 version,
+                required_by_core,
             }
         }
         None => Tool {
             name,
             path: None,
             version: "MISSING".into(),
+            required_by_core,
         },
     }
 }

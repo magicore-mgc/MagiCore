@@ -1,0 +1,5 @@
+# source_readiness
+
+EN: Owns Cargo's directory-source readiness marker (`.cargo-ok`, current payload `{"v":1}`). Cargo only accepts an extracted `registry/src/<name>-<version>` directory when its marker exists; without it Cargo re-extracts the directory and removes the `.cargo-checksum.json` record, which surfaced as "failed to load checksum ... No such file or directory". Also lists the bookkeeping files (`NON_ARCHIVE_SOURCE_FILES`) that source hashing must exclude, and provides the shared `registry/src` path helpers.
+
+VI: Sở hữu marker sẵn sàng của Cargo cho directory source (`.cargo-ok`, nội dung hiện hành `{"v":1}`). Cargo chỉ nhận thư mục `registry/src/<name>-<version>` đã giải nén khi marker tồn tại; thiếu marker Cargo giải nén lại và xoá record `.cargo-checksum.json` — đó là lỗi "failed to load checksum ... No such file or directory". Owner cũng khai danh sách file bookkeeping (`NON_ARCHIVE_SOURCE_FILES`) mà bước hash source phải loại trừ và cung cấp helper đường dẫn `registry/src` dùng chung.

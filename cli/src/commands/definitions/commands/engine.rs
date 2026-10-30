@@ -131,8 +131,9 @@ pub enum EngineCommands {
         /// Artifact cần verify; file `<artifact>.sig` cạnh nó được đọc.
         artifact: String,
         /// Pinned Ed25519 public key (base64) that must have produced the
-        /// signature.
-        /// Public key Ed25519 đã pin (base64) phải là key tạo chữ ký.
+        /// signature; copy it from `mgc trust list` for the key that signed.
+        /// Public key Ed25519 đã pin (base64) phải là key tạo chữ ký; lấy từ
+        /// `mgc trust list` cho đúng khoá đã ký.
         #[arg(long = "trust-key", value_name = "BASE64")]
         trust_key: String,
     },

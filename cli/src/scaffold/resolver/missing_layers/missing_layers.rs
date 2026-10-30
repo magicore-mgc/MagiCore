@@ -39,6 +39,7 @@ impl MissingLayersReport {
     }
 
     /// Format thành error message duy nhất thay vì spam warnings
+    /// Format one actionable error instead of many warnings.
     pub fn format_error(&self, core: &str, template: &str) -> String {
         let mut msg = String::new();
 
@@ -50,9 +51,15 @@ impl MissingLayersReport {
             for layer in &self.required {
                 msg.push_str(&format!("  - {}\n", layer));
             }
+            // Guidance must point at remedies that exist; MagiCore has no
+            // `mgc template` subcommand and every generator-backed core
+            // scaffolds offline. The remedy owner keeps the wording in one place.
+            // (Hướng dẫn phải trỏ tới cách xử lý có thật; MagiCore không có
+            // subcommand `mgc template` và mọi core có generator đều scaffold
+            // offline. Owner remedy giữ wording ở một chỗ.)
             msg.push_str(&format!(
-                "\nRun: mgc template fetch {} {}@latest\n",
-                core, template
+                "\nNext steps for '{core}' (framework '{template}'):\n{}\n",
+                super::super::remedy::missing_layer_next_steps(core)
             ));
         }
 

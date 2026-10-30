@@ -8,6 +8,6 @@ Folder này sở hữu điều phối build Web cùng helper riêng cho target, 
 
 ## Error and test boundaries / Ranh giới lỗi và test
 
-Script-policy, Node-path, entrypoint, native-artifact and managed-source failures have typed local errors with stable English diagnostics. Shared filesystem/compiler/executor errors keep their source chain. Existing tests remain under `cli/src/test/build_test.rs`; no tests were run in S162.
+Script-policy, Node-path, entrypoint, native-artifact and managed-source failures have typed local errors with stable English diagnostics. `cargo_source_repair` repairs legacy Cargo registry sources (missing Cargo readiness marker) before a managed Rust build for `lib`/`iot` and Rust `web` dev. Shared filesystem/compiler/executor errors keep their source chain. Existing tests remain under `cli/src/test/build_test.rs`; no tests were run in S162.
 
 Lỗi policy script, Node path, entrypoint, native artifact và managed source có error typed cục bộ, giữ diagnostic tiếng Anh ổn định. Lỗi filesystem/compiler/executor dùng chung giữ source chain. Test hiện ở `cli/src/test/build_test.rs`; S162 chưa chạy test.
