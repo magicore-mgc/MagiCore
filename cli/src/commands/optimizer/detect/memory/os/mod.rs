@@ -5,7 +5,7 @@ mod macos;
 mod windows;
 
 #[cfg(target_os = "linux")]
-pub(super) use linux::linux_cgroup_memory_limit_bytes;
+pub(in crate::commands::optimizer::implementation::detect) use linux::linux_cgroup_memory_limit_bytes;
 #[cfg(target_os = "macos")]
 pub(super) use macos::macos_total_memory_bytes;
 #[cfg(target_os = "windows")]

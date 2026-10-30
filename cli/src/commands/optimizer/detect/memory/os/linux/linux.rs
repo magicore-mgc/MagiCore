@@ -7,7 +7,12 @@ use std::path::Path;
 /// Prefer the kernel cgroup limit when present, otherwise use host RAM.
 /// (Ưu tiên giới hạn cgroup của kernel; nếu không có thì dùng RAM host.)
 #[cfg(target_os = "linux")]
-pub(super) fn linux_cgroup_memory_limit_bytes() -> Option<u64> {
+// `memory.rs` is two levels above this module, so the reader must be reachable
+// there; `pub(super)` stopped at `os` and failed on Linux with E0603.
+// (`memory.rs` cao hơn module này hai mức nên hàm đọc phải tới được đó;
+// `pub(super)` dừng ở `os` và fail trên Linux với E0603.)
+pub(in crate::commands::optimizer::implementation::detect) fn linux_cgroup_memory_limit_bytes()
+-> Option<u64> {
     let memberships = std::fs::read_to_string("/proc/self/cgroup").unwrap_or_default();
     HardwareInfo::linux_cgroup_memory_limit_bytes_at(Path::new("/sys/fs/cgroup"), &memberships)
 }
