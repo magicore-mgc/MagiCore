@@ -4,14 +4,12 @@
 #[path = "scan_result.rs"]
 mod implementation;
 
+// One export per item: exporting the same name under two `cfg` blocks gave a
+// Windows build two definitions of it.
+// (Mỗi item export đúng một lần: export cùng tên trong hai block `cfg` khiến
+// build Windows thấy hai định nghĩa.)
 #[cfg(windows)]
-pub(in crate::run::implementation) use implementation::{
-    find_forbidden_job_descendant_with_timeout, windows_job_has_active_descendants,
-};
-// The test build reaches the same items as the Windows build, so this hop must
-// not be narrower than the one above it.
-// (Build test cũng chạm các item như build Windows, nên hop này không được hẹp
-// hơn hop phía trên.)
+pub(in crate::run::implementation) use implementation::find_forbidden_job_descendant_with_timeout;
 #[cfg(any(windows, test))]
 pub(in crate::run::implementation) use implementation::{
     windows_job_has_active_descendants, windows_job_scan_from_inspection,

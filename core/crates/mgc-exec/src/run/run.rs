@@ -8,7 +8,7 @@ use anyhow::{Result, bail};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 #[path = "environment/mod.rs"]
-mod environment;
+pub(in crate::run::implementation) mod environment;
 // Consumers of these live in `run::implementation` sub-modules (the Windows job
 // inspection, the spawn paths), so `pub(super)` — which stops at `run` — was too
 // narrow for the Windows branches. macOS never compiled them.
@@ -55,58 +55,58 @@ const POST_KILL_DRAIN_MS: u64 = 200;
 /// Cả hai nền tảng đều dọn được grandchild; walk /proc cũ trên macOS không khớp gì
 /// (không có /proc) và chỉ giết được child trực tiếp.
 #[path = "types/mod.rs"]
-mod types;
+pub(in crate::run::implementation) mod types;
 pub use types::{ExecOptions, ExecReport};
 
 #[path = "project_binary/mod.rs"]
-mod project_binary;
+pub(in crate::run::implementation) mod project_binary;
 pub use project_binary::{
     run_project_binary, run_project_binary_inherited, run_project_binary_inherited_cancellable,
 };
 
 #[path = "process_isolation/mod.rs"]
-mod process_isolation;
+pub(in crate::run::implementation) mod process_isolation;
 #[cfg(not(any(unix, windows)))]
 use process_isolation::process_inspection_unavailable_error;
 pub use process_isolation::process_tree_guard_available;
 use process_isolation::{configure_process_isolation, ensure_process_inspection_available};
 
 #[path = "shutdown/mod.rs"]
-mod shutdown;
+pub(in crate::run::implementation) mod shutdown;
 pub use shutdown::{clear_shutdown, ensure_signal_handlers, request_shutdown, shutdown_requested};
 
 #[path = "spawn/mod.rs"]
-mod spawn;
+pub(in crate::run::implementation) mod spawn;
 use spawn::execute_command;
 
 #[path = "timeout/mod.rs"]
-mod timeout;
+pub(in crate::run::implementation) mod timeout;
 use timeout::execution_timeout;
 
 #[path = "supervision/mod.rs"]
-mod supervision;
+pub(in crate::run::implementation) mod supervision;
 use supervision::{forbidden_child_error, timeout_error, wait_with_timeout};
 
 #[path = "validation/mod.rs"]
-mod validation;
+pub(in crate::run::implementation) mod validation;
 use validation::validate_args_no_traversal;
 
 #[path = "termination/mod.rs"]
 #[cfg(unix)]
-mod termination;
+pub(in crate::run::implementation) mod termination;
 #[cfg(unix)]
 use termination::{process_groups_have_descendants, terminate_process_tree_tracked};
 
 #[path = "output/mod.rs"]
-mod output;
+pub(in crate::run::implementation) mod output;
 use output::{OutputMode, read_stream, tail};
 
 #[path = "windows_job/mod.rs"]
-mod windows_job;
+pub(in crate::run::implementation) mod windows_job;
 use windows_job::ProcessTreeGuard;
 
 #[path = "process_policy/mod.rs"]
-mod process_policy;
+pub(in crate::run::implementation) mod process_policy;
 #[cfg(test)]
 use process_policy::forbidden_process_match;
 #[cfg(test)]
@@ -119,29 +119,29 @@ use process_policy::{
 };
 
 #[path = "invocation_policy/mod.rs"]
-mod invocation_policy;
+pub(in crate::run::implementation) mod invocation_policy;
 pub(crate) use invocation_policy::{
     check_invocation_policy, compat_runner_declared, compat_runner_exempt,
 };
 use invocation_policy::{manifest_exception_allows, self_answered_report};
 
 #[path = "audit_entry/mod.rs"]
-mod audit_entry;
+pub(in crate::run::implementation) mod audit_entry;
 pub(super) use audit_entry::entry_from;
 
 #[path = "dependency_policy/mod.rs"]
-mod dependency_policy;
+pub(in crate::run::implementation) mod dependency_policy;
 #[cfg(test)]
 use dependency_policy::is_go_toolchain_version_probe;
 #[path = "process_scan/mod.rs"]
-mod process_scan;
+pub(in crate::run::implementation) mod process_scan;
 #[cfg(unix)]
 use process_scan::{MonitoredRootNotVisible, find_forbidden_descendant_tracking};
 #[cfg(windows)]
 use process_scan::{WindowsProcessScan, WindowsProcessSnapshot};
 
 #[path = "process_monitor/mod.rs"]
-mod process_monitor;
+pub(in crate::run::implementation) mod process_monitor;
 use process_monitor::{
     CompatAuditContext, NativeAuditContext, ProcessMonitor, audit_compat_process,
 };
@@ -149,14 +149,14 @@ use process_monitor::{
 use process_monitor::{PROCESS_TREE_TRACKING_ENV, process_tree_tracking_token};
 
 #[path = "rustc_child/mod.rs"]
-mod rustc_child;
+pub(in crate::run::implementation) mod rustc_child;
 use rustc_child::{
     is_rustc_compilation_argv, is_rustc_toolchain_child, is_rustc_toolchain_wrapper_argv,
     is_rustc_wrapper_argv, is_rustdoc_test_compilation_argv,
 };
 
 #[path = "runtime_invocation/mod.rs"]
-mod runtime_invocation;
+pub(in crate::run::implementation) mod runtime_invocation;
 use runtime_invocation::{
     argv_text, forbidden_entry_name, process_invocation_program,
     runtime_invocation as parse_runtime_invocation, windows_cmd_invocation,
