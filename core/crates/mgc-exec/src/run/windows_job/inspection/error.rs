@@ -4,7 +4,7 @@
 use std::fmt;
 
 #[derive(Debug)]
-pub(super) enum InspectionError {
+pub(in crate::run::implementation) enum InspectionError {
     MemberInspection(anyhow::Error),
     CommandLineValidation {
         process_id: u32,

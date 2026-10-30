@@ -4,7 +4,7 @@
 use std::{fmt, process::ExitStatus};
 
 #[derive(Debug)]
-pub(super) enum RootExitError {
+pub(in crate::run::implementation) enum RootExitError {
     DescendantInspection(anyhow::Error),
     ActiveMemberEnumeration(anyhow::Error),
     Termination {
