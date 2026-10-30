@@ -44,3 +44,9 @@ pub(in crate::run::implementation) mod windows;
 
 #[cfg(any(windows, test))]
 pub(in crate::run::implementation) use windows::{WindowsProcessScan, WindowsProcessSnapshot};
+// The Windows job scan calls the retry helper through this level, so the
+// facade has to forward it; only the inner `windows` module did.
+// (Scan job Windows gọi helper retry qua cấp này nên facade phải chuyển tiếp;
+// trước chỉ module `windows` bên trong có.)
+#[cfg(windows)]
+pub(in crate::run::implementation) use windows::retry_windows_process_scan;

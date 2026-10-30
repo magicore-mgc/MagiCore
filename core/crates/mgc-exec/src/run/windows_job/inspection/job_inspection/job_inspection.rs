@@ -164,7 +164,11 @@ pub(in crate::run::implementation) fn inspect_windows_job(
             }
             Ok(WindowsJobMemberMetadata::Unavailable)
         },
-        || guard.active_process_ids(),
+        // The guard reports `WindowsJobError`; the inspection helpers take an
+        // `anyhow` closure, so the error is boxed at the call.
+        // (Guard báo `WindowsJobError`; helper inspection nhận closure
+        // `anyhow`, nên lỗi được boxing ngay tại lời gọi.)
+        || guard.active_process_ids().map_err(Into::into),
     )?;
     let captured_job_process_ids = captured_snapshots
         .members

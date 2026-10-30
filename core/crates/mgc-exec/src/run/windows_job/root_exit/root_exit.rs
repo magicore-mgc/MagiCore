@@ -38,7 +38,13 @@ pub(in crate::run::implementation) fn finish_monitored_root_exit(
     if survivors.is_empty() {
         let active_process_ids = guard
             .active_process_ids()
-            .map_err(RootExitError::ActiveMemberEnumeration)?;
+            // The guard reports its own typed error; the root-exit contract
+            // carries `anyhow::Error`, so it is boxed here — this branch only
+            // compiles on Windows, which is why it was never caught.
+            // (Guard báo lỗi có kiểu riêng; contract root-exit mang
+            // `anyhow::Error` nên nó được boxing ở đây — nhánh này chỉ biên
+            // dịch trên Windows, đó là lý do chưa ai bắt được.)
+            .map_err(|source| RootExitError::ActiveMemberEnumeration(source.into()))?;
         if windows_job_has_active_descendants(child.id(), &active_process_ids) {
             let termination = guard.terminate();
             drop(guard);
