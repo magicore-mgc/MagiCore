@@ -25,7 +25,7 @@ impl WindowsProcessSnapshot {
 
 #[cfg(test)]
 #[derive(Default)]
-pub(in crate::run::implementation::process_scan::windows) struct WindowsProcessAncestry {
+pub(in crate::run::implementation) struct WindowsProcessAncestry {
     pub(super) known_descendant_instances: std::collections::HashMap<u32, WindowsProcessIdentity>,
     pub(super) retired_pids: std::collections::HashSet<u32>,
 }

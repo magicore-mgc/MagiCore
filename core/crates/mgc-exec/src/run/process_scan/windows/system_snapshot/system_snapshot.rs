@@ -19,7 +19,7 @@ const WINDOWS_FILETIME_TICKS_PER_SECOND: u64 = 10_000_000;
 const WINDOWS_FILETIME_UNIX_EPOCH_OFFSET_SECONDS: u64 = 11_644_473_600;
 
 #[cfg(all(windows, test))]
-pub(super) fn find_forbidden_descendant_with_timeout(
+pub(in crate::run::implementation) fn find_forbidden_descendant_with_timeout(
     root_pid: u32,
     exempt: &[&str],
     _shadow_dir: &Path,

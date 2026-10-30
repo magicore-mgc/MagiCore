@@ -8,6 +8,6 @@ mod identity;
 #[path = "scan.rs"]
 mod scan;
 #[cfg(test)]
-pub(in crate::run::implementation::process_scan::windows) use identity::WindowsProcessAncestry;
+pub(in crate::run::implementation) use identity::WindowsProcessAncestry;
 #[cfg(test)]
-pub(in crate::run::implementation::process_scan::windows) use scan::scan_windows_process_snapshot;
+pub(in crate::run::implementation) use scan::scan_windows_process_snapshot;

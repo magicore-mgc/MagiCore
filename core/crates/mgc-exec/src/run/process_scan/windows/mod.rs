@@ -3,16 +3,13 @@
 
 #[path = "windows.rs"]
 pub(in crate::run::implementation) mod implementation;
-// The retry helper is consumed one level up (the Windows job inspection
-// re-export), so the facade forwards it at the same scope its item declares.
-// (Helper retry được consumer ở một cấp trên, nên facade chuyển tiếp ở đúng
-// scope mà item khai báo.)
+
+// Only the snapshot tests name the ancestry type; `windows.rs` already forwards
+// it for them, so the facade does not duplicate the import.
+// (Chỉ test snapshot gọi type ancestry; `windows.rs` đã chuyển tiếp cho chúng nên
+// facade không lặp import.)
+#[cfg(windows)]
+pub(in crate::run::implementation) use implementation::retry_windows_process_scan;
 pub(in crate::run::implementation) use implementation::{
     WindowsProcessScan, WindowsProcessSnapshot,
 };
-// The scan-result module imports the retry helper through this facade, so the
-// facade must forward it (E0432 until it did).
-// (Module scan-result import helper retry qua facade này, nên facade phải
-// chuyển tiếp — trước đó là E0432.)
-#[cfg(windows)]
-pub(in crate::run::implementation) use implementation::retry_windows_process_scan;

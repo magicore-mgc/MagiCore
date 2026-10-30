@@ -8,7 +8,7 @@ use super::identity::{WindowsProcessAncestry, current_windows_process_creation_t
 #[cfg(test)]
 use anyhow::{Result, bail};
 #[cfg(test)]
-pub(in crate::run::implementation::process_scan::windows) fn scan_windows_process_snapshot(
+pub(in crate::run::implementation) fn scan_windows_process_snapshot(
     root_pid: u32,
     ancestry: &mut WindowsProcessAncestry,
     processes: &[WindowsProcessSnapshot],

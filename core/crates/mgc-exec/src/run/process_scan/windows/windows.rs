@@ -12,11 +12,15 @@ mod system_snapshot;
 #[path = "types/mod.rs"]
 mod types;
 
+// One export per name: two cfg blocks naming the same item collide on the
+// platform where both apply.
+// (Mỗi tên một export: hai block cfg nêu cùng item sẽ xung đột trên nền tảng
+// mà cả hai đều áp.)
 #[cfg(test)]
-pub(super) use ancestry::{WindowsProcessAncestry, scan_windows_process_snapshot};
+pub(in crate::run::implementation) use ancestry::{
+    WindowsProcessAncestry, scan_windows_process_snapshot,
+};
 pub(in crate::run::implementation) use retry::retry_windows_process_scan;
-#[cfg(all(windows, test))]
-pub(super) use system_snapshot::find_forbidden_descendant_with_timeout;
 pub(in crate::run::implementation) use types::{WindowsProcessScan, WindowsProcessSnapshot};
 
 #[cfg(test)]

@@ -7,7 +7,7 @@ pub(in crate::run) use implementation::{
     EnvironmentError, ShadowPath, guarded_path_env, is_path_env_key,
 };
 #[cfg(unix)]
-pub(in crate::run) use implementation::{
+pub(in crate::run::implementation) use implementation::{
     NPM_VERSION_PROBE_SHIM_CONTENT, is_generated_shadow_directory,
 };
 #[cfg(windows)]
