@@ -149,6 +149,12 @@ jobs:
         with:
           go-version: "1.27.2"
           cache: false
+      - name: Install the components the declared MSRV is checked with
+        # `rustfmt` is not part of a minimal toolchain install, and the
+        # workspace-level rustfmt gate runs on this toolchain too.
+        # (rustfmt không nằm trong bản cài toolchain tối thiểu, còn gate rustfmt
+        # cấp workspace chạy trên chính toolchain này.)
+        run: rustup component add rustfmt clippy
       - name: Check every workspace target at the declared MSRV
         run: cargo check --workspace --all-targets --locked
 
