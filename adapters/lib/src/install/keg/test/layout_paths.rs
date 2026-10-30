@@ -7,7 +7,7 @@ use super::super::layout::{
 use std::path::PathBuf;
 
 #[test]
-fn every_layout_path_lives_under_the_data_root() {
+fn layout_paths_live_under_the_data_root() {
     let layout = KegLayout::with_data_root("/sandbox/data");
     let version = validate_version("1.2.3").unwrap();
     let paths = [

@@ -22,8 +22,15 @@ fn registration_tokens_are_prefixed_and_unique() {
 /// (Prefix phải ổn định qua các lần gọi, nếu không client không nhận ra loại
 /// token của chính mình.)
 #[test]
-fn every_token_carries_the_same_prefix() {
-    for _ in 0..8 {
-        assert!(registration_token().starts_with("mgc_"));
+fn generated_tokens_carry_the_same_prefix() {
+    // Iterate the tokens themselves rather than a bare counter: the source of
+    // truth is the generator, and each value it produces must carry the prefix.
+    // (Lặp trên chính các token thay vì biến đếm trần: nguồn chuẩn là generator,
+    // và mỗi giá trị nó sinh ra phải mang prefix.)
+    let tokens: Vec<String> = (0..8).map(|_| registration_token()).collect();
+    for token in &tokens {
+        assert!(token.starts_with("mgc_"), "{token}");
     }
+    let unique: std::collections::HashSet<&String> = tokens.iter().collect();
+    assert_eq!(unique.len(), tokens.len(), "tokens must all differ");
 }
