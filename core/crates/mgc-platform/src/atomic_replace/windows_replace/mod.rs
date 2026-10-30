@@ -1,14 +1,13 @@
 //! Wires the Windows replacement implementation and its long-path tests.
 //! Nối implementation thay file Windows và test path dài.
 
-// The implementation lives in a file of the same name, so this facade has to
-// declare it as a module: a module and a function cannot share a name in one
-// namespace, which is why the function is reached through the module.
-// (Implementation nằm trong file cùng tên nên facade phải khai nó là module:
-// module và hàm không thể cùng tên trong một namespace, vì vậy hàm được gọi
-// qua module.)
+// The implementation file shares its name with this directory, so the inner
+// module is named for its role instead: two modules cannot both be called
+// `windows_replace` in the same tree.
+// (File implementation trùng tên thư mục này, nên module bên trong được đặt tên
+// theo vai trò: hai module không thể cùng tên `windows_replace` trong cùng cây.)
 #[path = "windows_replace.rs"]
-pub(super) mod windows_replace;
+mod implementation;
 
 #[cfg(windows)]
-pub(super) use windows_replace::windows_replace;
+pub(super) use implementation::windows_replace;
