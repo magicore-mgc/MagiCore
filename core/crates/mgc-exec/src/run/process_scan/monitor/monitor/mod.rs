@@ -35,17 +35,17 @@ use observed_groups::refresh_live_observed_process_groups;
 mod root_exit;
 #[cfg(unix)]
 use root_exit::scan_after_root_exit;
-// The probe module is used on Unix in production and by tests on every
-// platform, so both cfg sets must declare it or a Windows test build imports
-// from a module that does not exist.
-// (Module probe dùng trên Unix ở production và bởi test trên mọi nền tảng, nên
-// cả hai cfg phải khai nó, nếu không build test Windows import từ module không
-// tồn tại.)
-#[cfg(any(unix, test))]
+// The probe module is Unix-only: it reads OsStrExt/OsStringExt and POSIX
+// permissions, so a Windows test build must not pull it in. Its own tests
+// follow the same gate.
+// (Module probe chỉ dành cho Unix: nó đọc OsStrExt/OsStringExt và quyền POSIX,
+// nên build test Windows không được kéo nó vào. Test của chính nó cũng theo
+// gate đó.)
+#[cfg(unix)]
 mod npm_probe;
 #[cfg(unix)]
 use npm_probe::is_allowed_shadow_npm_version_probe;
-#[cfg(test)]
+#[cfg(all(unix, test))]
 use npm_probe::{
     is_generated_shadow_npm_version_probe, is_shadow_npm_version_probe,
     npm_probe_command_line_matches_shim_path,

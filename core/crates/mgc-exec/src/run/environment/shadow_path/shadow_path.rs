@@ -150,7 +150,7 @@ fn set_shadow_directory_mode(dir: &Path, mode: u32) -> std::io::Result<()> {
     Ok(())
 }
 
-pub(in crate::run) fn unique_temp_dir(
+pub(in crate::run::implementation) fn unique_temp_dir(
     prefix: &str,
 ) -> std::result::Result<PathBuf, EnvironmentError> {
     let nanos = std::time::SystemTime::now()
