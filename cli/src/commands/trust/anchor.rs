@@ -16,13 +16,32 @@ pub fn execute(re_attest: bool, rotate: bool, key_id: Option<&str>) -> anyhow::R
     if rotate && key_id.is_some() {
         return Err(crate::error::trust_anchor_rotate_needs_generated_key());
     }
+    // SEC-12/N-02: pin the key *before* attesting, because the attestation
+    // digest covers `mgc.toml` and verification refuses an unpinned project.
+    // The key is written first, then the manifest that already lists it is
+    // signed, which is the only order that leaves a project both pinned and
+    // self-consistent.
+    // (SEC-12/N-02: pin key **trước** khi attest vì digest attestation phủ
+    // `mgc.toml` và verify từ chối project chưa pin. Ghi key trước, rồi ký
+    // đúng manifest đã liệt kê key — thứ tự duy nhất để project vừa có pin vừa
+    // nhất quán.)
+    let public_key = mgc_config::attestation::keyring_public_key(&keyring_path, key_id)
+        .map_err(|error| crate::error::trust_anchor_failed(&error))?;
+    mgc_config::attestation::pin_key_in_manifest(&project_root, &public_key)
+        .map_err(|error| crate::error::trust_anchor_failed(&error))?;
     let attestation = mgc_config::attestation::attest(
         &project_root,
         &marker,
         &keyring_path,
         &globals.identities,
         key_id,
-        re_attest,
+        // Pinning just edited `mgc.toml`, so the attestation must be re-taken
+        // over the pinned manifest; `re_attest` additionally covers a user's
+        // deliberate edit to a project that was already anchored.
+        // (Pin vừa sửa `mgc.toml`, nên attestation phải được tạo lại trên
+        // manifest đã pin; `re_attest` bổ sung cho trường hợp user sửa có chủ
+        // đích trên project đã anchor.)
+        true || re_attest,
         rotate,
     )
     .map_err(|error| crate::error::trust_anchor_failed(&error))?;

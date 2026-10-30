@@ -112,3 +112,94 @@ pub fn attest(
 #[cfg(test)]
 #[path = "test/mod.rs"]
 mod test;
+
+/// Record the attesting key in the project manifest so verification has a root.
+/// Ghi key chứng thực vào manifest để verify có gốc tin cậy.
+///
+/// SEC-12/N-02: the attestation cannot be its own trust root, so `mgc trust
+/// anchor` — the one command whose job is to establish trust — writes the key
+/// into `mgc.toml [trust].keys` and then attests the manifest that already
+/// contains it. Doing it in the other order would make the digest cover a
+/// manifest nobody pinned.
+/// (SEC-12/N-02: attestation không thể tự làm gốc tin cậy, nên
+/// `mgc trust anchor` — lệnh duy nhất có nhiệm vụ thiết lập tin cậy — ghi key
+/// vào `mgc.toml [trust].keys` rồi attest đúng manifest đã chứa key. Làm ngược
+/// thứ tự sẽ khiến digest phủ một manifest chưa ai pin.)
+pub fn pin_key_in_manifest(project_root: &Path, public_key_b64: &str) -> anyhow::Result<()> {
+    let manifest_path = project_root.join("mgc.toml");
+    let text = std::fs::read_to_string(&manifest_path)
+        .map_err(|error| anyhow::anyhow!("cannot read '{}': {error}", manifest_path.display()))?;
+    if text.contains(public_key_b64) {
+        return Ok(());
+    }
+    let mut document: toml::Value = toml::from_str(&text).map_err(|error| {
+        anyhow::anyhow!("'{}' is not valid TOML: {error}", manifest_path.display())
+    })?;
+    let table = document
+        .as_table_mut()
+        .ok_or_else(|| anyhow::anyhow!("'{}' is not a table", manifest_path.display()))?;
+    let trust = table
+        .entry("trust".to_string())
+        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+    let trust = trust.as_table_mut().ok_or_else(|| {
+        anyhow::anyhow!("[trust] in '{}' is not a table", manifest_path.display())
+    })?;
+    let keys = trust
+        .entry("keys".to_string())
+        .or_insert_with(|| toml::Value::Array(Vec::new()));
+    let keys = keys.as_array_mut().ok_or_else(|| {
+        anyhow::anyhow!(
+            "[trust].keys in '{}' is not an array",
+            manifest_path.display()
+        )
+    })?;
+    if !keys.iter().any(|key| key.as_str() == Some(public_key_b64)) {
+        keys.push(toml::Value::String(public_key_b64.to_string()));
+    }
+    let rendered = toml::to_string(&document)
+        .map_err(|error| anyhow::anyhow!("cannot serialise the manifest: {error}"))?;
+    std::fs::write(&manifest_path, rendered)
+        .map_err(|error| anyhow::anyhow!("cannot write '{}': {error}", manifest_path.display()))?;
+    Ok(())
+}
+
+/// Public key (base64) of the key `attest` will sign with.
+/// Public key (base64) của key mà `attest` sẽ dùng để ký.
+///
+/// Loaded through the keyring so a caller can pin the exact key before the
+/// manifest is signed (SEC-12/N-02).
+/// (Đọc qua keyring để caller pin đúng key trước khi manifest được ký —
+/// SEC-12/N-02.)
+pub fn keyring_public_key(keyring_path: &Path, key_id: Option<&str>) -> anyhow::Result<String> {
+    // `trust anchor` on a fresh machine has no keyring yet; the same first-run
+    // creation `attest` uses must happen here, or pinning would fail before the
+    // key it needs exists.
+    // (`trust anchor` trên máy mới chưa có keyring; phải tạo như `attest` làm ở
+    // lần chạy đầu, nếu không việc pin sẽ fail trước khi key tồn tại.)
+    let keyring = if keyring_path.is_file() {
+        mgc_crypto::keyring::Keyring::load(keyring_path)?
+    } else {
+        let mut keyring = mgc_crypto::keyring::Keyring::new();
+        keyring.add_key(mgc_crypto::keyring::KeyPair::generate()?);
+        if let Some(parent) = keyring_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        keyring.save(keyring_path)?;
+        keyring
+    };
+    let pair = match key_id {
+        Some(id) => keyring.keys.iter().find(|key| key.key_id == id),
+        None => keyring.default_key(),
+    }
+    .ok_or_else(|| {
+        anyhow::anyhow!(
+            "no {} key in the keyring; run `mgc trust anchor` to generate one",
+            if key_id.is_some() {
+                "matching"
+            } else {
+                "default"
+            }
+        )
+    })?;
+    Ok(pair.public_key.to_base64())
+}
