@@ -423,7 +423,9 @@ jobs:
           SRV=$!
           trap 'kill $SRV' EXIT
           registry_ready=0
-          for i in $(seq 1 15); do
+          # `_` documents that the loop counter is intentionally unused.
+          # (`_` cho biết biến đếm vòng lặp cố ý không dùng.)
+          for _ in $(seq 1 15); do
             if curl -sf -o /dev/null http://127.0.0.1:4315/v2/; then
               registry_ready=1
               break

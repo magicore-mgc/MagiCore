@@ -145,10 +145,6 @@ ALLOWLIST = {
     ("cli/src/commands/dedupe/dedupe.rs", "run"): (
         {"lock-write"}, "lock merge under writer guard + build-verified rollback",
     ),
-    ("adapters/web/src/bin/bench_matrix/cli/run/run.rs", "run"): (
-        {"lock-write", "manifest-file-write"},
-        "lock+sig import under writer guard + transactional rollback",
-    ),
     # --- staged template publish (locked, convergent, GC-able litter) ---
     ("cli/src/commands/core/game/optimizer_template/optimizer_template.rs", "game_optimizer_template_locked"): (
         {"manifest-file-write"}, "staging publish under gateway guard",

@@ -106,7 +106,7 @@ jobs:
           REQUESTED_RELEASE_VERSION: ${{ inputs.version }}
         run: |
           VERSION="${REQUESTED_RELEASE_VERSION}"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Get artifact name via contract
         id: artifact
@@ -121,7 +121,7 @@ jobs:
           if [[ "${{ matrix.variant }}" == "web" ]]; then CONTRACT_VARIANT="web"; fi
           names=$(./scripts/release/release-artifact-contract.sh "$VERSION" "${{ matrix.os_name }}" "${{ matrix.arch }}" "$CONTRACT_VARIANT")
           ARTIFACT=$(echo "$names" | grep "^ARCHIVE=" | cut -d= -f2)
-          echo "name=$ARTIFACT" >> $GITHUB_OUTPUT
+          echo "name=$ARTIFACT" >> "$GITHUB_OUTPUT"
           echo "Testing artifact: $ARTIFACT"
 
       - name: Extract archive (Unix)

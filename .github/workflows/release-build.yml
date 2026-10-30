@@ -87,7 +87,7 @@ jobs:
           REQUESTED_RELEASE_VERSION: ${{ inputs.version }}
         run: |
           VERSION="${REQUESTED_RELEASE_VERSION}"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Using version: $VERSION"
 
       - name: Set artifact names (via contract)

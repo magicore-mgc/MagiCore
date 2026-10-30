@@ -115,8 +115,14 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$RUNNER_OS" == "Windows" ]]; then MGC="$HOME/.magicore-verify/bin/mgc.exe"; else MGC="$HOME/.magicore-verify/bin/mgc"; fi
-          WORK="$(mktemp -d)"
-          cd "$WORK"
+          # The scratch dir is a cwd, not a value anyone reads by name; keeping
+          # one name across the steps that cd into it avoids shellcheck reading
+          # the earlier `WORK` as dead when only a later step used it.
+          # (Thư mục tạm là cwd chứ không phải giá trị ai đọc theo tên; dùng một
+          # tên thống nhất giữa các bước để shellcheck không coi `WORK` trước là
+          # code chết.)
+          SCRATCH="$(mktemp -d)"
+          cd "$SCRATCH"
           "$MGC" create-web react distweb
           cd distweb
           "$MGC" install
@@ -128,7 +134,9 @@ jobs:
           "$MGC" dev --port 4315 > dev.log 2>&1 &
           DEV_PID=$!
           probe_ok=false
-          for i in $(seq 1 60); do
+          # `_`: the probe loop does not use its counter.
+          # (`_`: vòng lặp probe không dùng biến đếm.)
+          for _ in $(seq 1 60); do
             if curl -sf -o /dev/null "http://127.0.0.1:4315/" || curl -sf -o /dev/null "http://localhost:4315/"; then probe_ok=true; break; fi
             if ! kill -0 $DEV_PID 2>/dev/null; then break; fi
             sleep 2
@@ -150,7 +158,9 @@ jobs:
           "$MGC" run start > run.log 2>&1 &
           RUN_PID=$!
           run_ok=false
-          for i in $(seq 1 60); do
+          # `_`: the probe loop does not use its counter.
+          # (`_`: vòng lặp probe không dùng biến đếm.)
+          for _ in $(seq 1 60); do
             if curl -sf -o /dev/null "http://127.0.0.1:4315/" || curl -sf -o /dev/null "http://localhost:4315/"; then run_ok=true; break; fi
             if ! kill -0 $RUN_PID 2>/dev/null; then break; fi
             sleep 2
@@ -226,8 +236,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          WORK="$(mktemp -d)"
-          cd "$WORK"
+          SCRATCH="$(mktemp -d)"
+          cd "$SCRATCH"
           mgc create-web react brewweb
           cd brewweb
           mgc install
@@ -302,8 +312,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          WORK="$(mktemp -d)"
-          cd "$WORK"
+          SCRATCH="$(mktemp -d)"
+          cd "$SCRATCH"
           mgc create-web react scoopweb
           cd scoopweb
           mgc install

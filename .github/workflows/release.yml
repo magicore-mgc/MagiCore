@@ -61,9 +61,13 @@ jobs:
             exit 1
           fi
 
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "is_tag=$IS_TAG" >> $GITHUB_OUTPUT
-          echo "publish=$PUBLISH" >> $GITHUB_OUTPUT
+          # One grouped redirect instead of three appends (SC2129).
+          # (Một redirect nhóm thay vì ba lần append — SC2129.)
+          {
+            echo "version=$VERSION"
+            echo "is_tag=$IS_TAG"
+            echo "publish=$PUBLISH"
+          } >> "$GITHUB_OUTPUT"
 
           echo "Resolved version: $VERSION"
           echo "Is tag push: $IS_TAG"

@@ -41,7 +41,7 @@ jobs:
           REQUESTED_RELEASE_VERSION: ${{ inputs.version }}
         run: |
           VERSION="${REQUESTED_RELEASE_VERSION}"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Verify all 10 archives present
         # Required pairs: Linux x64/arm64, macOS x64/arm64, Windows x64 × {all, web}.
