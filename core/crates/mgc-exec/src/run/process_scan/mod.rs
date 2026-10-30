@@ -43,4 +43,4 @@ pub(in crate::run::implementation) use macos::{macos_process_snapshot, macos_pro
 mod windows;
 
 #[cfg(any(windows, test))]
-pub(super) use windows::{WindowsProcessScan, WindowsProcessSnapshot};
+pub(in crate::run::implementation) use windows::{WindowsProcessScan, WindowsProcessSnapshot};
