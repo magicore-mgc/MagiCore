@@ -22,9 +22,9 @@ mod scan_result;
 #[cfg(windows)]
 pub(super) use job_inspection::windows_job_descendants;
 #[cfg(windows)]
-pub(super) use scan_result::find_forbidden_job_descendant_with_timeout;
+pub(in crate::run::implementation) use scan_result::find_forbidden_job_descendant_with_timeout;
 #[cfg(any(windows, test))]
-pub(in crate::run::implementation::windows_job) use scan_result::windows_job_has_active_descendants;
+pub(in crate::run::implementation) use scan_result::windows_job_has_active_descendants;
 
 #[cfg(test)]
 use member_capture::capture_windows_job_members;

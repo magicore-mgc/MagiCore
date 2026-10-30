@@ -31,7 +31,7 @@ pub(in crate::run::implementation) fn windows_job_has_active_descendants(
 }
 
 #[cfg(any(windows, test))]
-pub(in crate::run::implementation::windows_job) fn windows_job_scan_from_inspection(
+pub(in crate::run::implementation) fn windows_job_scan_from_inspection(
     inspection: WindowsJobInspection,
 ) -> WindowsProcessScan {
     if let Some(forbidden) = inspection.first_forbidden {

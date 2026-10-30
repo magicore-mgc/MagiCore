@@ -9,11 +9,23 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 #[path = "environment/mod.rs"]
 mod environment;
-pub(super) use environment::{EnvironmentError, ShadowPath, guarded_path_env, is_path_env_key};
+// Consumers of these live in `run::implementation` sub-modules (the Windows job
+// inspection, the spawn paths), so `pub(super)` — which stops at `run` — was too
+// narrow for the Windows branches. macOS never compiled them.
+// (Consumer của các item này nằm trong các sub-module `run::implementation`
+// (Windows job inspection, spawn), nên `pub(super)` — dừng ở `run` — quá hẹp
+// cho nhánh Windows. macOS không biên dịch nhánh đó.)
+pub(in crate::run::implementation) use environment::{
+    EnvironmentError, ShadowPath, guarded_path_env, is_path_env_key,
+};
 #[cfg(unix)]
-pub(super) use environment::{NPM_VERSION_PROBE_SHIM_CONTENT, is_generated_shadow_directory};
+pub(in crate::run::implementation) use environment::{
+    NPM_VERSION_PROBE_SHIM_CONTENT, is_generated_shadow_directory,
+};
 #[cfg(windows)]
-pub(super) use environment::{windows_current_executable_sha256, windows_sha256_file};
+pub(in crate::run::implementation) use environment::{
+    windows_current_executable_sha256, windows_sha256_file,
+};
 
 const WAIT_POLL_INTERVAL_MS: u64 = 20;
 /// Bound Job Object re-enumeration while descendants are changing during inspection.
