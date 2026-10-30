@@ -1,4 +1,13 @@
 //! `mgc create-<ai>` — tách từ core/ai.rs (Phase 7 v5).
+//!
+//! Source order: an explicit `--from-local`, then the adapter's built-in
+//! offline generator, then the framework's own initializer, then the registry
+//! layer. The AI core publishes no registry layer yet, so without the built-in
+//! generator every `create-ai` ended in "no scaffold source".
+//! Thứ tự nguồn: `--from-local` tường minh, rồi generator offline có sẵn của
+//! adapter, rồi initializer của chính framework, rồi registry layer. Core AI
+//! chưa có registry layer, nên thiếu generator có sẵn thì mọi `create-ai` kết
+//! thúc ở "no scaffold source".
 
 use anyhow::Result;
 
@@ -40,13 +49,13 @@ pub async fn run(
     if container.docker && !config.features.iter().any(|feature| feature == "docker") {
         config.features.push("docker".to_string());
     }
-    // The framework's own scaffolder is the first source, exactly as the game,
-    // iot, clo and cicd cores already do. Without it an AI project fell through
-    // to a registry layer that does not exist yet and produced an empty
-    // directory.
-    // (Scaffolder của chính framework là nguồn đầu tiên, giống các core game/
-    // iot/clo/cicd. Thiếu bước này, project AI rơi xuống registry layer chưa có
-    // và chỉ tạo thư mục rỗng.)
+
+    // The template-cache guard runs before any source is chosen: a corrupted
+    // or symlinked cache entry is a tampering signal, and a create must fail
+    // closed instead of quietly generating around it.
+    // (Guard cache template chạy trước khi chọn nguồn: entry cache hỏng hoặc
+    // symlink là dấu hiệu bị can thiệp, create phải fail-closed thay vì lặng
+    // lẽ sinh project vòng qua nó.)
     if config.from_local.is_none() {
         let cache_framework = parsed_framework
             .as_ref()
@@ -54,6 +63,40 @@ pub async fn run(
             .unwrap_or(framework);
         crate::commands::template::ensure_cache_healthy(&format!("ai/{cache_framework}"))?;
     }
+
+    // The built-in generator owns the offline path: it writes a real Python
+    // skeleton (pyproject.toml with a runnable dependency set, package module,
+    // README) without network access and without spawning pip/uv. An explicit
+    // `--from-local` still wins because the user named the source.
+    // (Generator có sẵn sở hữu đường offline: ghi skeleton Python thật, không
+    // mạng, không spawn pip/uv. `--from-local` tường minh vẫn thắng vì user đã
+    // chỉ định nguồn.)
+    if config.from_local.is_none()
+        && let Some(fw) = config.frameworks.first()
+    {
+        let target = std::path::Path::new(project_name);
+        if super::local_generator::try_local_scaffold(
+            &super::local_generator::LocalScaffoldRequest {
+                core: "ai",
+                framework: fw,
+                target,
+                board: None,
+            },
+        )
+        .await?
+        {
+            // The generator already wrote the project files, so write only the
+            // metadata MagiCore owns (mgc.toml + .mgc.core).
+            // (Generator đã ghi file project, nên chỉ ghi metadata MagiCore sở
+            // hữu: mgc.toml + .mgc.core.)
+            super::save_scaffold_metadata(target, &config)?;
+            mgc_ui::success(&format!(
+                "Created ai project '{project_name}' with the built-in '{fw}' generator (offline)."
+            ));
+            return Ok(());
+        }
+    }
+
     if config.from_local.is_none()
         && let Some(framework) = parsed_framework
             .as_ref()

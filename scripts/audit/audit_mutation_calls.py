@@ -325,6 +325,12 @@ ALLOWLIST = {
     ("adapters/cloud/src/scaffold/mod.rs", "scaffold_pulumi"): (
         {"manifest-file-write"}, "creation-only writer",
     ),
+    # Split-combo server half written into a project this create just scaffolded.
+    # (Nửa server combo ghi vào project vừa được create này scaffold.)
+    ("cli/src/commands/core/web/create/configuration/offline_combo/node_backend.rs", "BackendHalf::write"): (
+        {"manifest-file-write"},
+        "creation-only writer: a split combo's server half in the project this create just scaffolded",
+    ),
     # --- atomic new-project staging (exclusive claim + final rename) ---
     ("cli/src/scaffold/processor.rs", "ensure_web_test_runner"): (
         {"manifest-file-write"},

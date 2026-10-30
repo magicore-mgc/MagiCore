@@ -33,7 +33,7 @@ pub(in crate::scaffold::processor) fn fullstack_uses_react_shell(framework: &str
             | "react-trpc"
     )
 }
-pub(in crate::scaffold::processor) fn fullstack_frontend_framework(framework: &str) -> &str {
+pub(in crate::scaffold) fn fullstack_frontend_framework(framework: &str) -> &str {
     match framework {
         "react-fastify" | "react-spring" | "react-express" | "react-hono" | "react-nestjs"
         | "react-trpc" => "react-vite",

@@ -12,4 +12,5 @@ pub use source_readiness::{
 };
 
 #[cfg(test)]
+#[path = "test/materialize.rs"]
 mod source_readiness_test;

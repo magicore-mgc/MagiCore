@@ -27,6 +27,25 @@ impl AiFramework {
             AiFramework::McpServer => "server.py",
         }
     }
+
+    /// One-line description written into the generated project metadata.
+    /// Mô tả một dòng ghi vào metadata project sinh ra.
+    pub fn description(&self) -> &'static str {
+        match self {
+            AiFramework::PythonAgent => "Python agent loop backed by a chat-completions endpoint",
+            AiFramework::McpServer => "Model Context Protocol server over stdio JSON-RPC",
+        }
+    }
+
+    /// Parse a canonical framework id without normalizing unknown strings.
+    /// Parse id framework chuẩn, không chuẩn hóa chuỗi lạ.
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "python-agent" => Some(AiFramework::PythonAgent),
+            "mcp-server" => Some(AiFramework::McpServer),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]

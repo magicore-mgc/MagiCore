@@ -1,8 +1,8 @@
 //! Registry source materialization always leaves a Cargo-usable source tree.
 //! Materialize source registry luôn để lại cây source dùng được với Cargo.
 
-use super::super::materialize::materialize;
-use super::super::source_readiness;
+use super::materialize::materialize;
+use super::source_readiness;
 use crate::protocols::ResolvedEntry;
 use crate::protocols::archive::test_support::tar_gz_entries;
 

@@ -54,6 +54,32 @@ fn cloud_terraform_writes_main_tf_offline() {
     cleanup(&dir);
 }
 
+#[cfg(feature = "ai")]
+#[test]
+fn ai_python_agent_writes_pyproject_and_package_offline() {
+    let dir = target("ai-python-agent");
+    request("ai", "python-agent", &dir, None);
+    assert!(
+        dir.join("pyproject.toml").is_file(),
+        "pyproject.toml missing"
+    );
+    assert!(dir.join("src/agent.py").is_file(), "src/agent.py missing");
+    cleanup(&dir);
+}
+
+#[cfg(feature = "ai")]
+#[test]
+fn ai_mcp_server_writes_stdio_server_offline() {
+    let dir = target("ai-mcp-server");
+    request("ai", "mcp-server", &dir, None);
+    assert!(dir.join("server.py").is_file(), "server.py missing");
+    assert!(
+        dir.join("pyproject.toml").is_file(),
+        "pyproject.toml missing"
+    );
+    cleanup(&dir);
+}
+
 #[test]
 fn unknown_framework_has_no_local_generator() {
     // Fail-closed: a framework the adapter cannot parse returns false so the

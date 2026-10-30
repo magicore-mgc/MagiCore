@@ -16,8 +16,8 @@ use anyhow::Result;
 /// Local-generator inputs resolved at the CLI boundary.
 /// Đầu vào local generator đã phân giải tại biên CLI.
 pub(crate) struct LocalScaffoldRequest<'a> {
-    /// CLI core id (`iot`, `game`, `clo`).
-    /// Core id CLI (`iot`, `game`, `clo`).
+    /// CLI core id (`iot`, `game`, `clo`, `ai`).
+    /// Core id CLI (`iot`, `game`, `clo`, `ai`).
     pub core: &'a str,
     /// Canonical framework/engine/provider name for the core.
     /// Tên framework/engine/provider chuẩn cho core.
@@ -53,6 +53,7 @@ pub(crate) async fn try_local_scaffold(request: &LocalScaffoldRequest<'_>) -> Re
         "iot" => try_scaffold_iot(request).await,
         "game" => try_scaffold_game(request).await,
         "clo" => try_scaffold_cloud(request).await,
+        "ai" => try_scaffold_ai(request).await,
         // Other cores own their own fallbacks; no local generator here.
         // Core khác tự lo fallback riêng; không có local generator ở đây.
         _ => Ok(false),
@@ -109,6 +110,21 @@ async fn try_scaffold_cloud(request: &LocalScaffoldRequest<'_>) -> Result<bool> 
 
 #[cfg(not(feature = "clo"))]
 async fn try_scaffold_cloud(_request: &LocalScaffoldRequest<'_>) -> Result<bool> {
+    Ok(false)
+}
+
+#[cfg(feature = "ai")]
+async fn try_scaffold_ai(request: &LocalScaffoldRequest<'_>) -> Result<bool> {
+    let Some(framework) = mgc_ai_adapter::AiFramework::parse(request.framework) else {
+        return Ok(false);
+    };
+    mgc_ai_adapter::scaffold::scaffold_project(framework, project_name(request), request.target)
+        .await?;
+    Ok(true)
+}
+
+#[cfg(not(feature = "ai"))]
+async fn try_scaffold_ai(_request: &LocalScaffoldRequest<'_>) -> Result<bool> {
     Ok(false)
 }
 
