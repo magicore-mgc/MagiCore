@@ -9,5 +9,9 @@
 #[path = "windows_replace.rs"]
 mod implementation;
 
+// The function is scoped to `atomic_replace`, which is two levels above this
+// facade, so the re-export must grant the same scope.
+// (Hàm scoped tới `atomic_replace`, cao hơn facade này hai cấp, nên re-export
+// phải cấp cùng scope.)
 #[cfg(windows)]
-pub(super) use implementation::windows_replace;
+pub(in crate::atomic_replace) use implementation::windows_replace;
