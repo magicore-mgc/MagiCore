@@ -93,7 +93,33 @@ fn has_parent_path_component(value: &str) -> bool {
 }
 
 fn is_absolute_without_root(value: &str) -> bool {
+    // Windows command-line switches are spelled `/X`, and a lone leading slash
+    // followed by a short token is a switch, not a path. Treating `/D` as an
+    // absolute path rejected a legitimate `cmd.exe /D /S /C` invocation.
+    // (Switch dòng lệnh Windows viết `/X`; một slash đơn lẻ đứng trước token
+    // ngắn là switch, không phải path. Coi `/D` là path tuyệt đối đã từ chối
+    // một lệnh `cmd.exe /D /S /C` hợp lệ.)
+    if is_command_switch(value) {
+        return false;
+    }
     value.starts_with('/') || value.starts_with('\\') || has_windows_drive_prefix(value)
+}
+
+/// Whether a token is a Windows-style command switch (`/D`, `/S`, `/C`).
+/// Token có phải switch dòng lệnh kiểu Windows (`/D`, `/S`, `/C`) không.
+///
+/// Only a leading slash followed by letters/digits with no further separator
+/// qualifies; `/usr/bin` and `\server\share` stay paths.
+/// (Chỉ slash đầu theo sau là chữ/số và không có dấu phân cách nào khác mới
+/// hợp lệ; `/usr/bin` và `\server\share` vẫn là path.)
+fn is_command_switch(value: &str) -> bool {
+    let Some(rest) = value.strip_prefix('/') else {
+        return false;
+    };
+    !rest.is_empty()
+        && rest.len() <= 4
+        && rest.chars().all(|c| c.is_ascii_alphanumeric())
+        && !rest.contains('.')
 }
 
 fn has_windows_drive_prefix(value: &str) -> bool {
