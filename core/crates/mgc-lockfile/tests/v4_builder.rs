@@ -340,10 +340,18 @@ fn builder_emits_canonical_identity() {
     .expect("test operation must succeed");
     assert_eq!(doc.version, mgc_lockfile::v4::LOCKFILE_SCHEMA_V4);
     assert_eq!(doc.sources.len(), 1);
-    assert_eq!(doc.sources[0].id, "src-native");
+    // The source record names the registry that really served the lane;
+    // the old fixed `src-native` wildcard is gone (SEC-LOOP-04).
+    // (Record nguồn nêu registry thật đã phục vụ lane; wildcard cũ đã bỏ.)
+    let source = &doc.sources[0];
+    assert_eq!(source.url, "https://registry.npmjs.org");
+    assert_eq!(source.claims, vec!["registry.npmjs.org".to_string()]);
+    assert!(source.id.starts_with("src-"));
+    assert_ne!(source.id, "src-native");
+    assert!(!source.trusted);
     assert_eq!(doc.packages.len(), 2);
     for package in &doc.packages {
-        assert_eq!(package.key.source_id, "src-native");
+        assert_eq!(package.key.source_id, source.id);
         assert_eq!(package.key.ecosystem, EcosystemTag::Web);
     }
     let keys: Vec<String> = doc

@@ -18,6 +18,12 @@ pub(in crate::adapter::resolution) fn publish(
     profile: &mut ResolveProfile,
     started_at: Instant,
 ) -> MgResult<ResolvedGraph> {
+    // A package a project source claims must be attributable to that source;
+    // otherwise the registry chain served it and the claim is a promise the
+    // install cannot keep (SEC-LOOP-04, dependency confusion).
+    // (Package được source của project tuyên bố phải quy được về source đó;
+    // nếu không, chain đã phục vụ nó và claim là lời hứa install không giữ được.)
+    crate::supply_chain::ensure_project_source_claims(&packages, &adapter.registry_url)?;
     // Preserve the edition-2024 prefetch/cache condition — giữ nguyên điều kiện prefetch/cache edition 2024.
     if resolve_prefetch_enabled()
         && let Some(shared_cache) = adapter.shared_cache.clone()

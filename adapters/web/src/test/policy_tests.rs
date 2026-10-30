@@ -138,11 +138,31 @@ async fn test_age_policy_loader_is_per_project_and_fail_closed() {
         "wrong-typed min_release_age must fail closed"
     );
 
-    // Missing file → Ok(None) (historical no-filtering behavior).
+    // Missing file → the documented default quarantine (SEC-LOOP-05): a
+    // default project must not be able to install a fresh release just
+    // because it never opted in.
+    // (Thiếu file → áp quarantine mặc định: project mặc định không được cài
+    // release mới chỉ vì chưa opt-in.)
     let bare = tempfile::tempdir().unwrap();
+    assert_eq!(
+        crate::WebAdapter::load_age_policy_for(bare.path()).unwrap(),
+        Some(AgePolicy {
+            cutoff_hours: mgc_config::DEFAULT_MIN_RELEASE_AGE_HOURS,
+            allow_missing_time: false
+        })
+    );
+
+    // Explicit `0` is the project's opt-out and must survive.
+    let opted_out = tempfile::tempdir().unwrap();
+    std::fs::write(
+        opted_out.path().join("mgc.toml"),
+        "name = \"o\"\n[security]\nweb = 0\n",
+    )
+    .unwrap();
     assert!(
-        crate::WebAdapter::load_age_policy_for(bare.path())
+        crate::WebAdapter::load_age_policy_for(opted_out.path())
             .unwrap()
-            .is_none()
+            .is_none(),
+        "an explicit 0 disables the gate"
     );
 }

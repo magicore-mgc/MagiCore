@@ -47,16 +47,41 @@ pub(crate) fn write_web_lockfile_v4(
     // (Merge lane trước (parity với app/lib): giữ row v4 khác trên đĩa;
     // row legacy không theo được thì báo, không lặng.)
     let generator = format!("mgc/{}", env!("CARGO_PKG_VERSION"));
-    let lane = mgc_lockfile::v4_graph::build_v4_from_resolved_graph(
+    let (base, had_legacy_rows) = mgc_lockfile::migrate::read_v4_merge_base(lock_path)
+        .map_err(|error| LockfileError::Merge(error.to_string()))?;
+    // Every row of this lane must point at a source that exists in the
+    // document. A configured source that serves the configured registry
+    // adopts the registry-derived id (so rows and the source table agree);
+    // otherwise the lane falls back to its own registry record.
+    // (Mọi row của lane phải trỏ tới source có trong document. Source cấu
+    // hình phục vụ đúng registry thì nhận id suy từ registry.)
+    let sources = crate::supply_chain::project_lockfile_sources(
+        project_root,
+        crate::supply_chain::RegistryOrigin {
+            url: registry_url,
+            ecosystem: "web",
+        },
+    )
+    .map_err(|error| LockfileError::Mutation(error.to_string()))?;
+    let registry_source = sources
+        .iter()
+        .find(|source| same_registry(source.url.as_str(), registry_url))
+        .map(|source| source.id.clone())
+        .unwrap_or_else(|| mgc_lockfile::v4_graph::source_id_for(registry_url.trim()));
+    let mut lane = mgc_lockfile::v4_graph::build_v4_from_resolved_graph_with_source(
         graph,
         registry_url,
+        &registry_source,
         mgc_lockfile::EcosystemTag::Web,
         owner_core,
         &generator,
     )
     .map_err(|error| LockfileError::Graph(error.to_string()))?;
-    let (base, had_legacy_rows) = mgc_lockfile::migrate::read_v4_merge_base(lock_path)
-        .map_err(|error| LockfileError::Merge(error.to_string()))?;
+    // The signed lock records the sources the project actually declared
+    // (`mgc.toml [[sources]]`), each with its real claims/trust — not the
+    // builder's single chain registry dressed as a wildcard (SEC-LOOP-04).
+    // (Lock đã ký ghi đúng source project khai báo, kèm claim/trust thật.)
+    lane.sources = sources;
     let base_material = base.clone();
     let (mut doc, dropped) = mgc_lockfile::v4_graph::merge_v4_lane_packages(
         base,
@@ -89,4 +114,10 @@ pub(crate) fn write_web_lockfile_v4(
     mgc_lockfile::atomic::atomic_write_v4_bytes(lock_path, text.as_bytes())
         .map_err(|error| LockfileError::AtomicWrite(error.to_string()))?;
     Ok(())
+}
+
+/// Compare two registry base URLs ignoring a trailing slash.
+/// So sánh hai base URL registry, bỏ qua slash cuối.
+fn same_registry(declared: &str, configured: &str) -> bool {
+    declared.trim().trim_end_matches('/') == configured.trim().trim_end_matches('/')
 }

@@ -57,6 +57,47 @@ pub(crate) fn environment_test_guard() -> std::sync::MutexGuard<'static, ()> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// Run a test inside its own project directory.
+/// Chạy một test trong thư mục project riêng của nó.
+///
+/// The default release-age quarantine reads the process project
+/// (`current_dir`) on a first resolution, exactly like `mgc install`. A test
+/// that resolves without a project scope would be gated by the default
+/// quarantine against a fixture that has no publish timestamps, so every such
+/// test states its project explicitly instead of relying on the harness cwd.
+/// (Quarantine mặc định đọc project của process khi resolve lần đầu, giống
+/// `mgc install`. Test resolve không có scope project sẽ bị quarantine mặc
+/// định chặn với fixture không có timestamp, nên mỗi test phải nêu rõ
+/// project của nó.)
+#[cfg(test)]
+pub(crate) async fn with_project_dir<T>(
+    root: &std::path::Path,
+    run: impl std::future::Future<Output = T>,
+) -> T {
+    // Serialize cwd changes: the process has exactly one current directory.
+    // An async mutex is required because the guard spans an await point.
+    // (Tuần tự hóa thay đổi cwd: process chỉ có một current directory. Phải
+    // dùng async mutex vì guard được giữ qua điểm await.)
+    static CWD_LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
+    let _guard = CWD_LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await;
+    let previous = std::env::current_dir().expect("test harness has a current directory");
+    std::env::set_current_dir(root).expect("enter the test project directory");
+    use futures_util::FutureExt;
+    let outcome = std::panic::AssertUnwindSafe(run).catch_unwind().await;
+    let restore = std::env::set_current_dir(&previous);
+    assert!(
+        restore.is_ok(),
+        "failed to restore the test current directory"
+    );
+    match outcome {
+        Ok(value) => value,
+        Err(panic) => std::panic::resume_unwind(panic),
+    }
+}
+
 pub use lockfile::{read_web_lockfile, read_web_lockfile_checked};
 pub use manifest::PackageJson;
 pub use prefetch::spawn_tarball_download;

@@ -157,6 +157,28 @@ fn seed_shared_tarball_with_files(root: &Path, pkg: &PackageId, files: &[(&str, 
     sri_sha512(&tarball)
 }
 
+/// Publish times old enough to clear the default 24h quarantine.
+/// Thời điểm publish đủ cũ để qua quarantine mặc định 24h.
+///
+/// The release-age default is fail-closed for a first resolution, so a
+/// fixture that models a normal package must carry timestamps like a real
+/// registry packument does. Tests whose subject IS a young release keep
+/// setting `time` themselves.
+/// (Mặc định tuổi release là fail-closed cho resolve lần đầu, nên fixture mô
+/// phỏng package bình thường phải có timestamp như packument thật.)
+fn seeded_publish_times(versions: &serde_json::Map<String, serde_json::Value>) -> serde_json::Value {
+    let times: serde_json::Map<String, serde_json::Value> = versions
+        .keys()
+        .map(|version| {
+            (
+                version.clone(),
+                serde_json::Value::String("2020-01-01T00:00:00.000Z".to_string()),
+            )
+        })
+        .collect();
+    serde_json::Value::Object(times)
+}
+
 fn seed_shared_metadata(root: &Path, package: &str, payload: serde_json::Value) {
     let path = root
         .join("metadata")

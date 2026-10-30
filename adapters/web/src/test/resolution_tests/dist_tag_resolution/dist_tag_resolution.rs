@@ -47,7 +47,14 @@ async fn web_resolve_keeps_dist_tag_root_and_refreshes_when_registry_tag_moves()
                     }
                 }
             },
-            "dist-tags": { "latest": latest }
+            "dist-tags": { "latest": latest },
+            // Old enough for the default 24h quarantine: this test moves the
+            // dist-tag, it is not about a young release.
+            // (Đủ cũ cho quarantine mặc định: test này đổi dist-tag.)
+            "time": seeded_publish_times(&serde_json::json!({"1.0.0": null, "2.0.0": null})
+                .as_object()
+                .expect("versions object")
+                .clone())
         })
     };
     let manifest = || {
@@ -69,7 +76,9 @@ async fn web_resolve_keeps_dist_tag_root_and_refreshes_when_registry_tag_moves()
             "http://127.0.0.1:9".into(),
             shared.path().to_path_buf(),
         );
-        adapter.resolve(&manifest()).await.unwrap()
+        with_project_dir(shared.path(), adapter.resolve(&manifest()))
+            .await
+            .unwrap()
     };
 
     seed_shared_metadata(shared.path(), "tagged-tool", package_metadata("1.0.0"));

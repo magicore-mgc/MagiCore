@@ -44,8 +44,23 @@ fn configured_store_min_age_at(cwd: &Path) -> Result<AgePolicySettings, SupplyCh
     let layout = Layout::new(project_cache_dir(cwd));
     let store_age_secs = read_store_min_age_secs(&layout.db_path())?;
 
+    // Neither the project nor the store named an age: the documented default
+    // applies, exactly like `mgc versions` already does. Reporting `None` here
+    // made `mgc install` disagree with `mgc versions` AND made the resolver
+    // fetch abbreviated packuments (no `time`) while the guard expected them.
+    // (Không project/store nào đặt tuổi thì áp mặc định, đúng như `mgc versions`.
+    // Trả `None` ở đây khiến `mgc install` lệch `mgc versions` và resolver fetch
+    // abbreviated packument không có `time` trong khi guard cần timestamp.)
+    let min_age_secs = match store_age_secs {
+        Some(seconds) => Some(seconds),
+        None => Some(project_hours_to_seconds(
+            mgc_config::DEFAULT_MIN_RELEASE_AGE_HOURS,
+            &cwd.join("mgc.toml"),
+        )?),
+    };
+
     Ok(AgePolicySettings {
-        min_age_secs: store_age_secs,
+        min_age_secs,
         allow_missing_time,
     })
 }

@@ -26,7 +26,11 @@ async fn test_resolve_populates_tarball_url_and_integrity_from_shared_metadata()
             },
             "dist-tags": {
                 "latest": "18.2.0"
-            }
+            },
+            // Old enough for the default 24h quarantine: this test is about
+            // metadata fields, not a young release.
+            // (Đủ cũ cho quarantine mặc định 24h: test này về field metadata.)
+            "time": { "18.2.0": "2020-01-01T00:00:00.000Z" }
         }),
     );
 
@@ -45,7 +49,9 @@ async fn test_resolve_populates_tarball_url_and_integrity_from_shared_metadata()
         false,
     );
 
-    let graph = adapter.resolve(&manifest).await.unwrap();
+    let graph = with_project_dir(shared.path(), adapter.resolve(&manifest))
+        .await
+        .unwrap();
     assert_eq!(graph.packages.len(), 1);
     assert_eq!(
         graph.packages[0].tarball_url,

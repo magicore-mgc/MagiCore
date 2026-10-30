@@ -37,7 +37,14 @@ async fn test_audit_fix_bumps_vulnerable_packages_and_rewrites_lockfile() {
                     }
                 }
             },
-            "dist-tags": { "latest": "19.0.0" }
+            "dist-tags": { "latest": "19.0.0" },
+            // Old enough for the default 24h quarantine: these tests audit a
+            // patched release, they are not about a young publish.
+            // (Đủ cũ cho quarantine mặc định 24h — test audit bản vá.)
+            "time": {
+                "18.2.0": "2020-01-01T00:00:00.000Z",
+                "19.0.0": "2020-01-01T00:00:00.000Z"
+            }
         }),
     );
 
@@ -117,7 +124,14 @@ async fn audit_fix_accepts_a_range_that_already_admits_the_patch() {
                     }
                 }
             },
-            "dist-tags": { "latest": "19.0.0" }
+            "dist-tags": { "latest": "19.0.0" },
+            // Old enough for the default 24h quarantine: these tests audit a
+            // patched release, they are not about a young publish.
+            // (Đủ cũ cho quarantine mặc định 24h — test audit bản vá.)
+            "time": {
+                "18.2.0": "2020-01-01T00:00:00.000Z",
+                "19.0.0": "2020-01-01T00:00:00.000Z"
+            }
         }),
     );
 

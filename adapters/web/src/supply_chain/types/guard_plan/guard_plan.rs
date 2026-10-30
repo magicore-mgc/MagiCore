@@ -12,6 +12,11 @@ pub(crate) struct GuardPlan {
 }
 
 impl GuardPlan {
+    /// The age guard runs whenever a policy age is present — the default
+    /// quarantine is applied upstream so `min_age_secs` is `Some(24h)` on a
+    /// first resolution. Explicit env flags stay as additional requests.
+    /// (Guard tuổi chạy khi có policy age — quarantine mặc định được áp ở
+    /// tầng trên nên resolve lần đầu có `Some(24h)`.)
     pub(crate) fn from_settings(
         age_policy: super::super::AgePolicySettings,
         explicit_age_block: bool,

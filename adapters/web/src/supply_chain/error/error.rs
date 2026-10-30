@@ -8,7 +8,7 @@ use mgc_types::{MgError, Version};
 /// Guard errors remain local; the coordinator maps their Display text to legacy MgError.
 /// Lỗi guard giữ cục bộ; coordinator ánh xạ Display về MgError tương thích.
 #[derive(Debug, thiserror::Error)]
-pub(in crate::supply_chain) enum SupplyChainError {
+pub(crate) enum SupplyChainError {
     #[error("{message}")]
     PublishAge { message: String },
     #[error("cannot determine project directory for supply-chain policy: {source}")]
@@ -99,6 +99,20 @@ pub(in crate::supply_chain) enum SupplyChainError {
         expected_name: String,
         actual_request_name: String,
         actual_package_name: String,
+    },
+    #[error(
+        "🚨 SECURITY: resolved package '{name}@{version}' is claimed by source '{source_id}' \
+         ({source_url}) in mgc.toml [[sources]], but this install cannot attribute it to that \
+         source — the configured registry is {registry}. Refusing to take a claimed package from \
+         another registry (dependency confusion). Point the source at the registry that serves \
+         it, or remove its claim."
+    )]
+    SourceClaimNotServed {
+        name: String,
+        version: String,
+        source_id: String,
+        source_url: String,
+        registry: String,
     },
     #[error(
         "🚨 SECURITY: Downgrade blocked for '{name}' — previous top-level {previous}, \

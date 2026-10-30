@@ -89,6 +89,33 @@ impl SecurityConfig {
     }
 }
 
+impl SecurityConfig {
+    /// Whether this project explicitly opted OUT of the release-age gate.
+    ///
+    /// Only an explicit `0` disables quarantine: a missing value means "no
+    /// opinion", and the caller (resolver guard / scaffold selector) applies
+    /// `DEFAULT_MIN_RELEASE_AGE_HOURS` for it. Treating "absent" as "off" is
+    /// exactly the bug that let a typosquat install on a default project.
+    /// (Chỉ `0` tường minh mới tắt quarantine. Giá trị thiếu nghĩa là "không ý
+    /// kiến" và caller áp `DEFAULT_MIN_RELEASE_AGE_HOURS`. Coi "thiếu" là "tắt"
+    /// chính là lỗi khiến typosquat cài được trên project mặc định.)
+    pub fn release_age_disabled(&self, ecosystem: &str) -> bool {
+        self.min_age_for_ecosystem(ecosystem) == Some(0)
+    }
+
+    /// The quarantine in hours that actually applies, or `None` when disabled.
+    ///
+    /// Precedence: an explicit per-environment value (including `0`) wins;
+    /// otherwise the documented default applies.
+    /// (Quarantine theo giờ thực sự áp dụng, hoặc `None` khi bị tắt. Giá trị
+    /// tường minh thắng, còn lại áp mặc định.)
+    pub fn effective_release_age_hours(&self, ecosystem: &str) -> Option<u64> {
+        self.min_age_for_ecosystem(ecosystem)
+            .or(Some(crate::project::DEFAULT_MIN_RELEASE_AGE_HOURS))
+            .filter(|hours| *hours > 0)
+    }
+}
+
 /// Load only the `[security]` table from mgc.toml, including minimal configs.
 /// Chỉ nạp bảng `[security]` từ mgc.toml, kể cả config tối giản.
 pub fn load_security_config(project_root: &Path) -> Result<Option<SecurityConfig>, anyhow::Error> {

@@ -3,6 +3,8 @@
 
 mod configured_store_min_age;
 mod env_truthy;
+mod first_resolution;
 
 pub(super) use configured_store_min_age::configured_store_min_age;
 pub(super) use env_truthy::env_truthy;
+pub(super) use first_resolution::has_prior_install_decision;

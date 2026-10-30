@@ -1,6 +1,7 @@
 //! Builds the canonical v4 document, registry source, root table, artifact records and peer-context digest table from a resolved graph.
 //! Dựng lock v4 canonical gồm registry source, root ownership, artifact và bảng digest peer từ graph đã resolve.
 
+use super::lane_source::lane_source;
 use crate::LockfileResult;
 use crate::policy::check_install_sri;
 use crate::root_pin::format_root_pin;
@@ -28,27 +29,62 @@ pub fn build_v4_from_resolved_graph(
     owner_core: &str,
     generator: &str,
 ) -> LockfileResult<crate::canonical::LockfileV4> {
+    // The lane's real registry — id/claim derived from the URL it really
+    // talked to, never a fixed `src-native` wildcard (SEC-LOOP-04).
+    // (Registry thật của lane — id/claim suy từ URL thật đã gọi, không phải
+    // wildcard `src-native` cố định.)
+    let source = lane_source(registry_url, ecosystem);
+    build_v4_with_source(
+        graph,
+        registry_url,
+        ecosystem,
+        owner_core,
+        generator,
+        source,
+    )
+}
+
+/// Same builder with the caller-chosen source id (the source that really
+/// served the lane when the project declared several sources).
+/// (Cùng builder nhưng id source do caller chọn — source thật đã phục vụ lane
+/// khi project khai nhiều source.)
+pub fn build_v4_from_resolved_graph_with_source(
+    graph: &ResolvedGraph,
+    registry_url: &str,
+    source_id: &str,
+    ecosystem: crate::EcosystemTag,
+    owner_core: &str,
+    generator: &str,
+) -> LockfileResult<crate::canonical::LockfileV4> {
+    let mut source = lane_source(registry_url, ecosystem);
+    source.id = source_id.to_string();
+    build_v4_with_source(
+        graph,
+        registry_url,
+        ecosystem,
+        owner_core,
+        generator,
+        source,
+    )
+}
+
+fn build_v4_with_source(
+    graph: &ResolvedGraph,
+    registry_url: &str,
+    ecosystem: crate::EcosystemTag,
+    owner_core: &str,
+    generator: &str,
+    source: crate::v4::SourceRef,
+) -> LockfileResult<crate::canonical::LockfileV4> {
     use crate::canonical::{LockfileV4, LockfileV4Metadata, PackageV4};
     use crate::schema::{ArtifactRef, Provenance, SOURCE_KIND_NATIVE_RESOLVE};
     use crate::v4::{
-        Edge, EdgeKind, EdgeOrigin, PackageKey, SourceRef, VariantKey, canonical_name,
-        canonical_version, peer_context_digest,
+        Edge, EdgeKind, EdgeOrigin, PackageKey, VariantKey, canonical_name, canonical_version,
+        peer_context_digest,
     };
 
-    // One source entry for the lane registry that produced this graph.
-    // (Một entry nguồn cho registry của lane đã cho ra graph này.)
-    let source_id = "src-native".to_string();
-    let sources = vec![SourceRef {
-        id: source_id.clone(),
-        url: registry_url.to_string(),
-        ecosystem,
-        priority: 100,
-        claims: vec!["*".to_string()],
-        trusted: false,
-        allow_hosts: Vec::new(),
-        allow_cidrs: Vec::new(),
-        allow_protocols: vec!["https".to_string()],
-    }];
+    let source_id = source.id.clone();
+    let sources = vec![source];
 
     // Canonical peer table first: every distinct peer set gets one digest.
     // (Bảng peer canonical trước: mỗi tập peer khác nhau một digest.)

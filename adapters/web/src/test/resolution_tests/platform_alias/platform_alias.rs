@@ -56,7 +56,10 @@ async fn npm_optional_platform_alias_resolves_its_prerelease_version() {
             "name": "@openai/codex",
             "description": null,
             "versions": versions,
-            "dist-tags": { "latest": "0.162.0" }
+            "dist-tags": { "latest": "0.162.0" },
+            // Old enough for the default 24h quarantine (platform-alias test).
+            // (Đủ cũ cho quarantine mặc định 24h — test platform alias.)
+            "time": seeded_publish_times(&versions)
         }),
     );
 
@@ -150,7 +153,10 @@ async fn web_graph_keeps_codex_platform_alias_reachable() {
             "name": "@openai/codex",
             "description": null,
             "versions": versions,
-            "dist-tags": { "latest": "0.162.0" }
+            "dist-tags": { "latest": "0.162.0" },
+            // Old enough for the default 24h quarantine (platform-alias test).
+            // (Đủ cũ cho quarantine mặc định 24h — test platform alias.)
+            "time": seeded_publish_times(&versions)
         }),
     );
 
@@ -168,7 +174,9 @@ async fn web_graph_keeps_codex_platform_alias_reachable() {
         false,
         false,
     );
-    let graph = adapter.resolve(&manifest).await.unwrap();
+    let graph = with_project_dir(shared.path(), adapter.resolve(&manifest))
+        .await
+        .unwrap();
     let root = graph
         .packages
         .iter()

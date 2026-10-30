@@ -33,7 +33,11 @@ async fn resolve_prefers_compatible_manifest_root_for_peer_dependency() {
                         "dist": {"tarball": "https://registry.example.test/typescript-7.0.2.tgz", "integrity": "sha512-ts7"}
                     }
                 },
-                "dist-tags": {"latest": "7.0.2"}
+                "dist-tags": {"latest": "7.0.2"},
+                "time": seeded_publish_times(&serde_json::json!({"6.0.3": null, "7.0.2": null})
+                    .as_object()
+                    .expect("versions object")
+                    .clone())
             }),
         );
         seed_shared_metadata(
@@ -59,7 +63,11 @@ async fn resolve_prefers_compatible_manifest_root_for_peer_dependency() {
                         "dist": {"tarball": "https://registry.example.test/vue-tsc-like-1.0.0.tgz", "integrity": "sha512-checker"}
                     }
                 },
-                "dist-tags": {"latest": "1.0.0"}
+                "dist-tags": {"latest": "1.0.0"},
+                "time": seeded_publish_times(&serde_json::json!({"1.0.0": null})
+                    .as_object()
+                    .expect("versions object")
+                    .clone())
             }),
         );
         seed_shared_metadata(
@@ -80,7 +88,11 @@ async fn resolve_prefers_compatible_manifest_root_for_peer_dependency() {
                         "dist": {"tarball": "https://registry.example.test/ts7-consumer-1.0.0.tgz", "integrity": "sha512-consumer"}
                     }
                 },
-                "dist-tags": {"latest": "1.0.0"}
+                "dist-tags": {"latest": "1.0.0"},
+                "time": seeded_publish_times(&serde_json::json!({"1.0.0": null})
+                    .as_object()
+                    .expect("versions object")
+                    .clone())
             }),
         );
         seed_shared_metadata(
@@ -101,7 +113,11 @@ async fn resolve_prefers_compatible_manifest_root_for_peer_dependency() {
                         "dist": {"tarball": "https://registry.example.test/optional-magic-1.0.0.tgz", "integrity": "sha512-optional"}
                     }
                 },
-                "dist-tags": {"latest": "1.0.0"}
+                "dist-tags": {"latest": "1.0.0"},
+                "time": seeded_publish_times(&serde_json::json!({"1.0.0": null})
+                    .as_object()
+                    .expect("versions object")
+                    .clone())
             }),
         );
 
@@ -130,7 +146,9 @@ async fn resolve_prefers_compatible_manifest_root_for_peer_dependency() {
             );
         }
 
-        let graph = adapter.resolve_fresh(&manifest).await.unwrap();
+        let graph = with_project_dir(shared.path(), adapter.resolve_fresh(&manifest))
+            .await
+            .unwrap();
         let checker = graph
             .packages
             .iter()
@@ -201,7 +219,8 @@ async fn resolve_optional_peer_does_not_replace_declared_regular_dependency() {
             shared.path(),
             name,
             serde_json::json!({
-                "name": name, "versions": versions, "dist-tags": {"latest": "1.0.0"}
+                "name": name, "versions": versions, "dist-tags": {"latest": "1.0.0"},
+                "time": seeded_publish_times(versions.as_object().expect("versions object"))
             }),
         );
     }
@@ -221,7 +240,9 @@ async fn resolve_optional_peer_does_not_replace_declared_regular_dependency() {
             false,
         );
     }
-    let graph = adapter.resolve_fresh(&manifest).await.unwrap();
+    let graph = with_project_dir(shared.path(), adapter.resolve_fresh(&manifest))
+        .await
+        .unwrap();
     let consumer = graph
         .packages
         .iter()

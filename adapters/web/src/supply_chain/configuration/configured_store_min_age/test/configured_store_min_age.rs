@@ -126,6 +126,37 @@ fn symlinked_database_is_rejected() {
 }
 
 #[test]
+fn absent_project_and_store_policy_yields_the_documented_default() {
+    let project = tempfile::tempdir().expect("create project directory");
+
+    let policy = configured_store_min_age_at(project.path()).expect("load age policy");
+
+    // No configured value: the 24h default applies here too, so the resolver
+    // fetches full packuments (`time`) instead of abbreviated ones.
+    // (Không giá trị cấu hình: áp mặc định 24h để resolver fetch full packument.)
+    assert_eq!(
+        policy.min_age_secs,
+        Some(24 * 60 * 60),
+        "the default quarantine must reach the resolver guard"
+    );
+    assert!(!policy.allow_missing_time);
+}
+
+#[test]
+fn an_explicit_zero_in_the_project_disables_the_gate() {
+    let project = tempfile::tempdir().expect("create project directory");
+    std::fs::write(
+        project.path().join("mgc.toml"),
+        "name = \"web-age-owner-test\"\n[security]\nweb = 0\n",
+    )
+    .expect("write project security configuration");
+
+    let policy = configured_store_min_age_at(project.path()).expect("load age policy");
+
+    assert_eq!(policy.min_age_secs, Some(0), "an explicit 0 survives");
+}
+
+#[test]
 fn project_age_rejects_values_outside_the_supported_seconds_range() {
     let path = std::path::Path::new("mgc.toml");
 
