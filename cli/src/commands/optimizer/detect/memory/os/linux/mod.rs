@@ -2,7 +2,7 @@
 //! (Owner nguồn cgroup Linux và các kiểm thử đặt gần owner.)
 mod linux;
 #[cfg(target_os = "linux")]
-pub(super) use linux::linux_cgroup_memory_limit_bytes;
+pub(in crate::commands::optimizer::detect::memory) use linux::linux_cgroup_memory_limit_bytes;
 
 #[cfg(test)]
 #[path = "test/linux.rs"]

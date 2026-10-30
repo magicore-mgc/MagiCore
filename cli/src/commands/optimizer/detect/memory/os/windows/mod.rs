@@ -2,4 +2,4 @@
 //! (Owner nguồn bộ nhớ Windows.)
 mod windows;
 #[cfg(target_os = "windows")]
-pub(super) use windows::windows_total_memory_bytes;
+pub(in crate::commands::optimizer::detect::memory) use windows::windows_total_memory_bytes;

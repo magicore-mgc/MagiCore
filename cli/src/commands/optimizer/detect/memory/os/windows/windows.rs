@@ -5,7 +5,7 @@
 /// (Đọc RAM vật lý qua Windows API ngay trong process.)
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
-pub(super) fn windows_total_memory_bytes() -> Option<u64> {
+pub(in crate::commands::optimizer::detect::memory) fn windows_total_memory_bytes() -> Option<u64> {
     use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
 
     let mut status = MEMORYSTATUSEX {

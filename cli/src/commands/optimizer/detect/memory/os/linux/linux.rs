@@ -11,7 +11,7 @@ use std::path::Path;
 // there; `pub(super)` stopped at `os` and failed on Linux with E0603.
 // (`memory.rs` cao hơn module này hai mức nên hàm đọc phải tới được đó;
 // `pub(super)` dừng ở `os` và fail trên Linux với E0603.)
-pub(in crate::commands::optimizer::implementation::detect) fn linux_cgroup_memory_limit_bytes()
+pub(in crate::commands::optimizer::detect::memory) fn linux_cgroup_memory_limit_bytes()
 -> Option<u64> {
     let memberships = std::fs::read_to_string("/proc/self/cgroup").unwrap_or_default();
     HardwareInfo::linux_cgroup_memory_limit_bytes_at(Path::new("/sys/fs/cgroup"), &memberships)
