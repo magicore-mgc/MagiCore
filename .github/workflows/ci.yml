@@ -81,7 +81,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
         with:
-          toolchain: "1.99.0"
+          toolchain: "1.99.1"
           components: rustfmt, clippy
       - name: Setup Python (Unix process-guard regression tests require python3)
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -118,7 +118,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
         with:
-          toolchain: "1.99.0"
+          toolchain: "1.99.1"
       - name: Setup Go (esbuild-rs build script needs go on PATH)
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -136,14 +136,14 @@ jobs:
           fi
 
   minimum-rust-version:
-    name: Minimum supported Rust (1.94)
+    name: Minimum supported Rust (1.99)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install minimum Rust toolchain
         uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
         with:
-          toolchain: 1.94.0
+          toolchain: "1.99.1"
       - name: Setup Go (esbuild-rs build script needs go on PATH)
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -282,7 +282,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
         with:
-          toolchain: "1.99.0"
+          toolchain: "1.99.1"
 
       - name: Setup Node.js (for spawn tests)
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -399,7 +399,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
         with:
-          toolchain: "1.99.0"
+          toolchain: "1.99.1"
       - name: Setup Node.js (global CLI tool E2E)
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -454,7 +454,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
         with:
-          toolchain: "1.99.0"
+          toolchain: "1.99.1"
       - name: Setup Go (esbuild-rs build script needs go on PATH)
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -479,7 +479,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
         with:
-          toolchain: "1.99.0"
+          toolchain: "1.99.1"
 
       - name: Setup Go (esbuild-rs build script needs go on PATH)
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -598,7 +598,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
         with:
-          toolchain: "1.99.0"
+          toolchain: "1.99.1"
 
       - name: Setup Go (esbuild-rs build script needs go on PATH)
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -659,7 +659,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1; toolchain pinned below
         with:
-          toolchain: "1.99.0"
+          toolchain: "1.99.1"
 
       - name: Setup Go (esbuild-rs build script needs go on PATH)
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

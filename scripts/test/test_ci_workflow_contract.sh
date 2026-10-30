@@ -169,9 +169,9 @@ grep -q '82a92a6e8fbeee089604da2575dc567ae9ddeaff' "$ROOT/.github/workflows/ci.y
 grep -q '6323deb102c322ba6fcbdcafc7e3dddab59af2b6' "$ROOT/.github/workflows/ci.yml" || fail "CI rust-cache pin must resolve to v2.9.2 (latest, node24)"
 grep -q '7b1c307e0dcbda6122208f10795a713336a9b35a' "$ROOT/.github/workflows/ci.yml" && fail "CI contains the broken Rust toolchain pin"
 grep -q 'e2a55d2ffb04f378e9626c28d38b36d230d1e12f' "$ROOT/.github/workflows/ci.yml" || fail "CI Rust toolchain action must use the immutable reviewed ref"
-grep -q 'toolchain: "1.99.0"' "$ROOT/.github/workflows/ci.yml" || fail "CI Rust stable lane must use the current pinned stable version"
+grep -q 'toolchain: "1.99.1"' "$ROOT/.github/workflows/ci.yml" || fail "CI Rust stable lane must use the current pinned stable version"
 grep -q 'e2a55d2ffb04f378e9626c28d38b36d230d1e12f' "$ALL_CORE" || fail "delegated-compatibility Rust toolchain action must use the immutable reviewed ref"
-grep -q 'toolchain: "1.99.0"' "$ALL_CORE" || fail "delegated-compatibility Rust lane must use the current pinned stable version"
+grep -q 'toolchain: "1.99.1"' "$ALL_CORE" || fail "delegated-compatibility Rust lane must use the current pinned stable version"
 grep -q 'python3 scripts/test/test_audit_dependency_delegation.py' "$ROOT/.github/workflows/ci.yml" || fail "CI must run dependency ownership audit negative controls"
 grep -q 'python3 scripts/test/test_audit_capability_matrix.py' "$ROOT/.github/workflows/ci.yml" || fail "CI must test audit-matrix source provenance"
 grep -Fq 'uses: ./.github/workflows/release-audit-capability.yml' "$RELEASE" \

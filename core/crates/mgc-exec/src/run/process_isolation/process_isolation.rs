@@ -71,7 +71,13 @@ pub(in crate::run::implementation) fn configure_process_isolation(
     // Source: https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags
     // Nguồn: tài liệu Microsoft mô tả CREATE_SUSPENDED giữ thread chính trước khi chạy.
     command.creation_flags(CREATE_SUSPENDED);
-    ProcessTreeGuard::new()
+    // `ProcessTreeGuard::new` reports the native job-creation error; the caller
+    // of `configure_process_isolation` speaks `anyhow`, so the typed error is
+    // converted here rather than loosening the constructor.
+    // (`ProcessTreeGuard::new` báo lỗi tạo job native; caller của
+    // `configure_process_isolation` dùng `anyhow`, nên lỗi có kiểu được chuyển
+    // ở đây thay vì nới constructor.)
+    Ok(ProcessTreeGuard::new()?)
 }
 
 #[cfg(not(any(unix, windows)))]

@@ -3,5 +3,5 @@
 # (Ghim toolchain local: các lane CI ghim cùng MSRV để build của developer
 # không lệch âm thầm so với gate release.)
 [toolchain]
-channel = "1.94.0"
+channel = "1.99.1"
 profile = "minimal"

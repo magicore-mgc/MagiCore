@@ -73,8 +73,7 @@ pub(in crate::run::implementation) fn find_forbidden_job_descendant_with_timeout
     child_has_exited: impl FnMut() -> Result<bool>,
 ) -> std::result::Result<WindowsProcessScan, InspectionError> {
     retry_windows_process_scan(started, timeout, child_has_exited, || {
-        Ok(windows_job_scan_from_inspection(
-            inspect_windows_job(
+        Ok(windows_job_scan_from_inspection(inspect_windows_job(
                 guard,
                 root_pid,
                 exempt,
@@ -82,8 +81,14 @@ pub(in crate::run::implementation) fn find_forbidden_job_descendant_with_timeout
                 compat_audit,
                 execution_scope,
             )
-            .map_err(anyhow::Error::new)?,
-        ))
+            // `inspect_windows_job` already returns `anyhow::Result`, and the
+            // retry helper is generic over that same type, so no conversion is
+            // needed here — only at the boundary, where the typed error is
+            // boxed once.
+            // (`inspect_windows_job` đã trả `anyhow::Result` và helper retry
+            // cùng kiểu đó, nên ở đây không cần chuyển đổi — chỉ chuyển ở biên,
+            // nơi lỗi có kiểu được boxing một lần.)
+            ?))
     })
     .map_err(InspectionError::RetryScan)
 }

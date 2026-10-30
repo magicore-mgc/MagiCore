@@ -12,7 +12,7 @@ resolver = "2"
 [workspace.package]
 version = "1.2.0"
 edition = "2024"
-rust-version = "1.94"
+rust-version = "1.99"
 license = "MIT"
 repository = "https://github.com/mingd-153/MagiCore"
 authors = ["MagiCore Contributors"]
@@ -56,7 +56,7 @@ bytes = { version = "1.12.1" }
 unicode-ident = "1.0.27"
 
 # Async runtime
-tokio = { version = "1.53.3", features = ["full"] }
+tokio = { version = "1.54.1", features = ["full"] }
 async-trait = "0.1.92"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["fmt", "env-filter"] }
@@ -103,14 +103,16 @@ base64 = "0.23.1"
 thiserror = "2.0.21"
 anyhow = "1.0.104"
 futures-util = "0.3.34"
-# WS test client (Gate 11 runtime evidence, vòng-11): pinned to the SAME
-# 0.29 line tokio-tungstenite already occupies in Cargo.lock (a transitive
-# of axum's ws feature) — the dev test client reuses the locked graph
-# rather than adding a second WS stack.
-# (WS client cho test (bằng chứng runtime Gate 11): ghim cùng dòng 0.29
-# mà tokio-tungstenite đã chiếm trong Cargo.lock (transitive của feature
-# ws của axum) — test client dùng lại graph đã lock thay vì thêm stack
-# WS thứ hai.)
+# WS test client (Gate 11 runtime evidence, vòng-11): held at 0.29 because
+# axum 0.8.9 — the workspace's latest axum — requires `tokio-tungstenite ^0.29`
+# for its ws feature. Declaring 0.30 here would compile two WS stacks and put
+# two incompatible `tungstenite` types in one process. 0.29.0 is the newest
+# release in the line axum accepts; this moves up as soon as axum does.
+# (WS client cho test (bằng chứng runtime Gate 11): giữ 0.29 vì axum 0.8.9 —
+# bản axum mới nhất workspace dùng — yêu cầu `tokio-tungstenite ^0.29` cho
+# feature ws. Khai 0.30 ở đây sẽ biên dịch hai stack WS và đưa hai kiểu
+# `tungstenite` không tương thích vào cùng process. 0.29.0 là bản mới nhất
+# trong dòng mà axum chấp nhận; sẽ nâng ngay khi axum nâng.)
 tokio-tungstenite = { version = "0.29.0", features = ["connect"] }
 regex = "1.13.1"
 libc = "0.2.190"

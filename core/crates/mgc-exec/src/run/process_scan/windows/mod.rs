@@ -2,7 +2,7 @@
 //! Facade quét process Windows — export quét identity và retry.
 
 #[path = "windows.rs"]
-mod implementation;
+pub(in crate::run::implementation) mod implementation;
 // The retry helper is consumed one level up (the Windows job inspection
 // re-export), so the facade forwards it at the same scope its item declares.
 // (Helper retry được consumer ở một cấp trên, nên facade chuyển tiếp ở đúng
