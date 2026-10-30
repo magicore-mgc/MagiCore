@@ -129,3 +129,9 @@ fn parse_linux_process_stat(pid: u32, stat: &str) -> Option<ProcessScanSnapshot>
         is_zombie: matches!(state, "Z" | "X"),
     })
 }
+
+/// The monitor owner, exposed for the Linux snapshot tests that compare
+/// identities through it.
+/// Owner monitor, phơi cho test snapshot Linux so sánh identity qua đó.
+#[cfg(test)]
+pub(in crate::run::implementation::process_scan) use super::super::monitor as monitor_owner;
