@@ -1,5 +1,5 @@
-//! Tests limited-query metadata access through the RAII handle owner.
-//! Kiểm tra truy vấn metadata giới hạn qua RAII handle owner.
+// Tests limited-query metadata access through the RAII handle owner.
+// Kiểm tra truy vấn metadata giới hạn qua RAII handle owner.
 
 use super::WindowsOwnedHandle;
 

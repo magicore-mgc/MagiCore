@@ -1,5 +1,5 @@
-//! Tests the native PID query against an empty private Job Object.
-//! Kiểm tra truy vấn PID native với Job Object riêng đang rỗng.
+// Tests the native PID query against an empty private Job Object.
+// Kiểm tra truy vấn PID native với Job Object riêng đang rỗng.
 
 #[test]
 fn empty_job_process_snapshot_is_empty() {

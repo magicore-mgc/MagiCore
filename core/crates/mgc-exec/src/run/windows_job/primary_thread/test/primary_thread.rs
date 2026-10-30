@@ -1,5 +1,5 @@
-//! Tests the primary-thread suspend-count acceptance boundary.
-//! Kiểm tra ranh giới chấp nhận suspend count của primary thread.
+// Tests the primary-thread suspend-count acceptance boundary.
+// Kiểm tra ranh giới chấp nhận suspend count của primary thread.
 
 use super::validate_primary_suspend_count;
 

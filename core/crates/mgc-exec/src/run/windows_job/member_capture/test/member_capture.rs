@@ -1,5 +1,5 @@
-//! Tests that membership mismatch is rejected for a live external process.
-//! Kiểm tra membership mismatch bị từ chối với process ngoài còn sống.
+// Tests that membership mismatch is rejected for a live external process.
+// Kiểm tra membership mismatch bị từ chối với process ngoài còn sống.
 
 use super::super::super::job_lifecycle::ProcessTreeGuard;
 use super::super::super::super::error::WindowsJobError;
