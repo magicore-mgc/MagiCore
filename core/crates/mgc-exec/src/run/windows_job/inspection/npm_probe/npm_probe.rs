@@ -65,7 +65,7 @@ pub(in crate::run::implementation) fn windows_npm_probe_authentication(
 }
 
 #[cfg(all(test, not(windows)))]
-pub(in crate::run::implementation::windows_job::inspection) fn windows_npm_probe_authentication(
+pub(in crate::run::implementation) fn windows_npm_probe_authentication(
     _process: &WindowsProcessSnapshot,
     _executable_path: Option<&Path>,
     _shadow_path: &ShadowPath,

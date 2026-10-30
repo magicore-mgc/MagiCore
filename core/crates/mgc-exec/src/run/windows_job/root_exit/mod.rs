@@ -6,4 +6,4 @@ mod error;
 #[path = "root_exit.rs"]
 mod implementation;
 
-pub(super) use implementation::finish_monitored_root_exit;
+pub(in crate::run::implementation) use implementation::finish_monitored_root_exit;

@@ -5,4 +5,6 @@
 mod implementation;
 
 #[cfg(windows)]
-pub(super) use implementation::{inspect_windows_job, windows_job_descendants};
+pub(in crate::run::implementation) use implementation::{
+    inspect_windows_job, windows_job_descendants,
+};

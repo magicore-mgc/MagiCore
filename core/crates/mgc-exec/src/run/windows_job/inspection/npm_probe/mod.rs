@@ -7,6 +7,6 @@ mod error;
 mod implementation;
 
 #[cfg(all(windows, test))]
-pub(super) use implementation::is_shadow_windows_npm_version_probe;
+pub(in crate::run::implementation) use implementation::is_shadow_windows_npm_version_probe;
 #[cfg(any(windows, test))]
-pub(super) use implementation::windows_npm_probe_authentication;
+pub(in crate::run::implementation) use implementation::windows_npm_probe_authentication;

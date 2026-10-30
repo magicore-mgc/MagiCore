@@ -13,9 +13,7 @@ use anyhow::{Result, bail};
 /// Capture confirmed Job Object members before metadata refresh and retain their identity evidence.
 /// Chụp thành viên Job Object đã xác nhận trước khi refresh metadata và giữ bằng chứng danh tính.
 #[cfg(test)]
-pub(in crate::run::implementation::windows_job::inspection::implementation) fn capture_windows_job_members<
-    T,
->(
+pub(in crate::run::implementation) fn capture_windows_job_members<T>(
     root_pid: u32,
     job_process_ids: &[u32],
     mut capture_member: impl FnMut(u32) -> Result<T>,
@@ -37,9 +35,7 @@ pub(in crate::run::implementation::windows_job::inspection::implementation) fn c
 /// Capture each Job member and its command-line snapshot as one ordered operation.
 /// Chụp từng thành viên Job và command line thành một thao tác liền nhau.
 #[cfg(any(windows, test))]
-pub(in crate::run::implementation::windows_job::inspection::implementation) fn capture_windows_job_process_snapshots<
-    T,
->(
+pub(in crate::run::implementation) fn capture_windows_job_process_snapshots<T>(
     root_pid: u32,
     job_process_ids: &[u32],
     mut capture_member: impl FnMut(u32) -> Result<WindowsJobMemberCapture<T>>,

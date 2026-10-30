@@ -23,7 +23,7 @@ use std::path::PathBuf;
 /// Inspect snapshots for members confirmed before refresh; do not recheck PID membership afterward.
 /// Kiểm snapshot của thành viên đã xác nhận trước refresh; không kiểm tra lại membership sau đó.
 #[cfg(test)]
-pub(in crate::run::implementation::windows_job::inspection::implementation) fn inspect_windows_job_processes_with_shadow(
+pub(in crate::run::implementation) fn inspect_windows_job_processes_with_shadow(
     root_pid: u32,
     job_process_ids: &[u32],
     processes: &[WindowsProcessSnapshot],
@@ -42,7 +42,7 @@ pub(in crate::run::implementation::windows_job::inspection::implementation) fn i
 }
 
 #[cfg(test)]
-pub(in crate::run::implementation::windows_job::inspection::implementation) fn inspect_windows_job_processes_with_image_paths(
+pub(in crate::run::implementation) fn inspect_windows_job_processes_with_image_paths(
     root_pid: u32,
     job_process_ids: &[u32],
     processes: &[WindowsProcessSnapshot],
@@ -70,7 +70,7 @@ pub(in crate::run::implementation::windows_job::inspection::implementation) fn i
 /// Metadata quan sát của thành viên Job; không dùng môi trường cha làm quyền chạy.
 #[cfg(any(windows, test))]
 #[allow(clippy::too_many_arguments)] // Keep process identity and policy evidence explicit at this boundary.
-pub(in crate::run::implementation::windows_job::inspection::implementation) fn inspect_windows_job_processes_with_policy_metadata(
+pub(in crate::run::implementation) fn inspect_windows_job_processes_with_policy_metadata(
     root_pid: u32,
     job_process_ids: &[u32],
     processes: &[WindowsProcessSnapshot],

@@ -6,9 +6,9 @@
 mod error;
 #[path = "windows_job.rs"]
 mod implementation;
-pub(super) use implementation::ProcessTreeGuard;
+pub(in crate::run::implementation) use implementation::ProcessTreeGuard;
 #[cfg(windows)]
-pub(super) use implementation::take_deferred_handle_close_error;
+pub(in crate::run::implementation) use implementation::take_deferred_handle_close_error;
 
 #[cfg(any(windows, test))]
 mod inspection;
@@ -16,6 +16,6 @@ mod inspection;
 mod root_exit;
 
 #[cfg(windows)]
-pub(super) use inspection::find_forbidden_job_descendant_with_timeout;
+pub(in crate::run::implementation) use inspection::find_forbidden_job_descendant_with_timeout;
 #[cfg(windows)]
-pub(super) use root_exit::finish_monitored_root_exit;
+pub(in crate::run::implementation) use root_exit::finish_monitored_root_exit;

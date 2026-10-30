@@ -5,6 +5,6 @@
 mod implementation;
 
 #[cfg(test)]
-pub(super) use implementation::capture_windows_job_members;
+pub(in crate::run::implementation) use implementation::capture_windows_job_members;
 #[cfg(any(windows, test))]
-pub(super) use implementation::capture_windows_job_process_snapshots;
+pub(in crate::run::implementation) use implementation::capture_windows_job_process_snapshots;
