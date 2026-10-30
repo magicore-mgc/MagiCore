@@ -5,7 +5,7 @@ mod data_dir;
 mod global_paths;
 mod project_paths;
 mod project_root;
-mod shell;
+pub(crate) mod shell;
 
 pub use data_dir::{
     MGC_DATA_DIR_ENV, global_bin_dir, global_tools_dir, mgc_data_dir, project_data_dir,

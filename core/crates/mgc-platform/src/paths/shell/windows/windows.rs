@@ -4,7 +4,7 @@
 use std::path::Path;
 
 #[cfg(windows)]
-pub(super) const USER_PATH_SCRIPT: &str = r#"$ErrorActionPreference = 'Stop'
+pub(in crate::paths::shell) const USER_PATH_SCRIPT: &str = r#"$ErrorActionPreference = 'Stop'
 $bin = [IO.Path]::GetFullPath($env:MGC_TOOL_BIN_PATH)
 $current = [Environment]::GetEnvironmentVariable('Path', 'User')
 $parts = @($current -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
@@ -15,7 +15,7 @@ foreach ($part in $parts) {
 if (-not $found) { [Environment]::SetEnvironmentVariable('Path', (($bin + ';' + $current).Trim(';')), 'User') }
 "#;
 
-pub(super) fn ensure_windows_user_path(bin: &Path) -> anyhow::Result<()> {
+pub(in crate::paths::shell) fn ensure_windows_user_path(bin: &Path) -> anyhow::Result<()> {
     let output = std::process::Command::new("powershell.exe")
         .args([
             "-NoLogo",

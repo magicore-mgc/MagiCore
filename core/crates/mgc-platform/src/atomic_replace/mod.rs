@@ -4,7 +4,7 @@
 mod atomic_replace;
 mod error;
 #[cfg(windows)]
-mod windows_replace;
+pub(super) mod windows_replace;
 
 pub use self::atomic_replace::{atomic_replace_file, atomic_replace_file_with_write_through};
 pub use self::error::AtomicReplaceError;
