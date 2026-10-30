@@ -25,7 +25,7 @@ pub(super) fn is_shadow_windows_npm_version_probe(
 }
 
 #[cfg(windows)]
-pub(super) fn windows_npm_probe_authentication(
+pub(in crate::run::implementation) fn windows_npm_probe_authentication(
     process: &WindowsProcessSnapshot,
     executable_path: Option<&Path>,
     shadow_path: &ShadowPath,

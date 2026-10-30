@@ -29,7 +29,7 @@ use anyhow::Result;
 use std::path::{Path, PathBuf};
 
 #[cfg(windows)]
-pub(in crate::run::implementation::windows_job) fn windows_job_descendants(
+pub(in crate::run::implementation) fn windows_job_descendants(
     guard: &ProcessTreeGuard,
     root_pid: u32,
     exempt: &[&str],

@@ -23,9 +23,7 @@ thread_local! {
 }
 
 #[cfg(windows)]
-pub(in crate::run::implementation::windows_job::implementation) fn record_handle_close_failure(
-    code: u32,
-) {
+pub(in crate::run::implementation) fn record_handle_close_failure(code: u32) {
     DEFERRED_HANDLE_CLOSE_FAILURES.with(|failures| {
         let mut failures = failures.borrow_mut();
         if failures.failures.len() < MAX_DEFERRED_HANDLE_CLOSE_DETAILS {

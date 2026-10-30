@@ -61,7 +61,7 @@ pub(in crate::run::implementation::windows_job) fn windows_job_scan_from_inspect
 /// Inspect native Windows process metadata, without a shell or WMI command.
 /// Kiểm metadata process Windows bằng API native, không shell hoặc lệnh WMI.
 #[cfg(windows)]
-pub(in crate::run::implementation::windows_job) fn find_forbidden_job_descendant_with_timeout(
+pub(in crate::run::implementation) fn find_forbidden_job_descendant_with_timeout(
     guard: &ProcessTreeGuard,
     root_pid: u32,
     exempt: &[&str],

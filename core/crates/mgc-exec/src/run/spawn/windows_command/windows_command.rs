@@ -121,7 +121,7 @@ pub(in crate::run::implementation) fn windows_system_tool_path(
 /// Construct the fixed-interpreter invocation for a validated batch shim.
 /// Tạo lệnh gọi qua interpreter cố định cho shim batch đã được kiểm tra.
 #[cfg(windows)]
-pub(super) fn windows_batch_command(
+pub(in crate::run::implementation) fn windows_batch_command(
     script_path: &str,
     args: &[String],
     cwd: &Path,

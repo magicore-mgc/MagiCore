@@ -15,7 +15,7 @@ use anyhow::{Context, Result};
 use std::time::Duration;
 
 #[cfg(windows)]
-pub(super) fn finish_monitored_root_exit(
+pub(in crate::run::implementation) fn finish_monitored_root_exit(
     child: &mut std::process::Child,
     guard: ProcessTreeGuard,
     exempt: &[&str],
