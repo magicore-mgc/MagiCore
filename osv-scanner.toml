@@ -43,9 +43,17 @@ id = "RUSTSEC-2026-0002"
 reason = "unmaintained: transitive dependency"
 
 [[IgnoredVulns]]
-id = "RUSTSEC-2026-0258"
-reason = "unmaintained: transitive dependency"
-
-[[IgnoredVulns]]
 id = "RUSTSEC-2024-0449"
 reason = "unmaintained only: unsafe-libyaml is transitive via serde_yaml; no patched release exists, so a safe-parser migration requires a separate MSRV and YAML-compatibility review"
+
+# block-buffer 0.10.4 is unreachable in MagiCore's hashing path: SHA-2 resolves
+# through sha2 0.11.1 -> block-buffer 0.12.1, and 0.10.4 arrives only via
+# digest 0.10.7 from sqlx/termwiz. No patched 0.10.x exists. Mirrors the
+# deny.toml bans skip so the two scanners cannot disagree.
+# (block-buffer 0.10.4 không reachable trong đường hash của MagiCore: SHA-2 đi
+# qua sha2 0.11.1 -> block-buffer 0.12.1, còn 0.10.4 chỉ đến từ digest 0.10.7
+# của sqlx/termwiz. Dòng 0.10.x không có bản vá. Khớp với skip trong deny.toml
+# để hai scanner không lệch nhau.)
+[[IgnoredVulns]]
+id = "GHSA-qwgh-2vcv-g2f7"
+reason = "block-buffer 0.10.4 is unreachable: MagiCore hashes via sha2 0.11 -> block-buffer 0.12; no patched 0.10.x exists"

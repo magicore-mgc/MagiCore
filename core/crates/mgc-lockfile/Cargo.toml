@@ -114,3 +114,8 @@ fault-injection = []
 # PID liveness probes for stale-temp cleanup (unix-only)
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
+
+# Windows lock-contention detection reads ERROR_LOCK_VIOLATION from windows-sys.
+# Phát hiện tranh khoá trên Windows đọc ERROR_LOCK_VIOLATION từ windows-sys.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation"] }
