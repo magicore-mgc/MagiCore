@@ -1,14 +1,13 @@
 //! Linux process snapshot tests — PID identity, zombie state, and disappearing proc entries.
 //! (Kiểm tra parser cùng ranh giới bỏ qua race process đã thoát.)
 
-// `#[path]` registers this file inside `linux::test`, so the parser lives one
-// level up and the monitor owner one level above that.
-// (`#[path]` đăng ký file này trong `linux::test`, nên parser ở một cấp trên và
-// owner monitor ở cấp trên nữa.)
-use super::super::{
-    implementation as linux_impl,
-    implementation::{parse_linux_process_stat, parse_linux_process_stat_entry},
-};
+// `#[path]` puts this file in `linux::test`, so its parent is the linux module
+// that owns the parsers; the monitor owner sits one level above that.
+// (`#[path]` đặt file này trong `linux::test`, nên parent là module linux sở
+// hữu các parser; owner monitor nằm trên một cấp nữa.)
+#[cfg(test)]
+use super::parse_linux_process_stat_entry;
+use super::{linux_proc_process_dir_is_gone, parse_linux_process_stat};
 
 #[cfg(target_os = "linux")]
 #[test]
@@ -18,27 +17,27 @@ fn linux_process_stat_keeps_exact_identity_when_pid_is_reused_within_one_second(
             "42 (go (worker) with spaces) S 1 7 7 0 -1 4194304 0 0 0 0 0 0 0 0 20 0 1 0 {ticks}"
         )
     };
-    let original = linux_impl::parse_linux_process_stat(42, &stat(12345))
+    let original = parse_linux_process_stat(42, &stat(12345))
         .expect("parse Linux proc stat with parenthesized comm");
-    let reused = linux_impl::parse_linux_process_stat(42, &stat(12346))
-        .expect("parse Linux proc stat after PID reuse");
+    let reused =
+        parse_linux_process_stat(42, &stat(12346)).expect("parse Linux proc stat after PID reuse");
     assert_eq!(original.parent_pid, Some(1));
     assert_eq!(original.process_group, Some(7));
     assert_eq!(original.process_start_ticks, 12345);
     assert!(!original.is_zombie);
     // The identity helper lives under the monitor owner, one branch over.
     // (Helper identity nằm dưới owner monitor, ở nhánh khác.)
-    assert!(!linux_impl::monitor_owner::process_identity_is_live(
+    assert!(!super::super::monitor::process_identity_is_live(
         original, reused
     ));
 
-    let zombie = linux_impl::parse_linux_process_stat(
+    let zombie = parse_linux_process_stat(
         42,
         "42 (go worker) Z 1 7 7 0 -1 4194304 0 0 0 0 0 0 0 0 20 0 1 0 12347",
     )
     .expect("parse Linux zombie process state");
     assert!(zombie.is_zombie);
-    assert!(linux_impl::parse_linux_process_stat(43, &stat(12345)).is_none());
+    assert!(parse_linux_process_stat(43, &stat(12345)).is_none());
 }
 
 #[cfg(target_os = "linux")]

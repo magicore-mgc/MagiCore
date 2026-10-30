@@ -68,7 +68,8 @@ pub(in crate::run::implementation) fn linux_process_stat_snapshot(
 }
 
 #[cfg(target_os = "linux")]
-fn parse_linux_process_stat_entry(
+#[cfg(test)]
+pub(super) fn parse_linux_process_stat_entry(
     pid: u32,
     stat: &str,
     process_dir: &Path,
@@ -85,7 +86,8 @@ fn parse_linux_process_stat_entry(
 }
 
 #[cfg(target_os = "linux")]
-fn linux_proc_process_dir_is_gone(process_dir: &Path) -> Result<bool> {
+#[cfg(test)]
+pub(super) fn linux_proc_process_dir_is_gone(process_dir: &Path) -> Result<bool> {
     // `/proc/<pid>/stat` may disappear after directory enumeration while the
     // kernel reports a transient read error. Skip only if the PID directory is
     // gone too; a still-present but unreadable process remains fail-closed.
@@ -106,7 +108,8 @@ fn linux_proc_process_dir_is_gone(process_dir: &Path) -> Result<bool> {
 }
 
 #[cfg(target_os = "linux")]
-fn parse_linux_process_stat(pid: u32, stat: &str) -> Option<ProcessScanSnapshot> {
+#[cfg(test)]
+pub(super) fn parse_linux_process_stat(pid: u32, stat: &str) -> Option<ProcessScanSnapshot> {
     // Linux comm is parenthesized and may itself contain spaces or parentheses.
     // (Tên comm của Linux nằm trong ngoặc và có thể chứa khoảng trắng hoặc ngoặc.)
     let open_paren = stat.find('(')?;
@@ -129,9 +132,3 @@ fn parse_linux_process_stat(pid: u32, stat: &str) -> Option<ProcessScanSnapshot>
         is_zombie: matches!(state, "Z" | "X"),
     })
 }
-
-/// The monitor owner, exposed for the Linux snapshot tests that compare
-/// identities through it.
-/// Owner monitor, phơi cho test snapshot Linux so sánh identity qua đó.
-#[cfg(test)]
-pub(in crate::run::implementation::process_scan) use super::super::monitor as monitor_owner;
