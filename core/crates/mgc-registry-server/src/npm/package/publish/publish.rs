@@ -112,7 +112,7 @@ pub(in crate::npm) async fn publish_package(
         }
     }
 
-    let pkg: Package = serde_json::from_value(doc).map_err(|e| {
+    let mut pkg: Package = serde_json::from_value(doc).map_err(|e| {
         warn!("publish {}: body parse fail: {e}", name);
         StatusCode::BAD_REQUEST
     })?;
@@ -120,6 +120,27 @@ pub(in crate::npm) async fn publish_package(
     // Verify name matches
     if pkg.name != name {
         return Err(StatusCode::BAD_REQUEST);
+    }
+
+    // Stamp the release time the client did not send. npm's packument `time`
+    // map is the only evidence a consumer has that a release left its
+    // quarantine window, and a registry that omits it makes every install
+    // fail closed under the default release-age gate.
+    // (Ghi thời điểm release mà client không gửi: map `time` của packument là
+    // bằng chứng duy nhất để consumer biết release đã qua quarantine.)
+    {
+        let published_at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        pkg.time
+            .entry("created".to_string())
+            .or_insert_with(|| published_at.clone());
+        pkg.time
+            .entry("modified".to_string())
+            .or_insert_with(|| published_at.clone());
+        for version in pkg.versions.keys() {
+            pkg.time
+                .entry(version.clone())
+                .or_insert_with(|| published_at.clone());
+        }
     }
 
     if let Some((identity, binding_generation, sigstore_oidc_token)) = trusted_identity {

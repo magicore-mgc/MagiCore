@@ -32,7 +32,17 @@ pub(in crate::cache_metadata) async fn fetch_with_stale_fallback(
             Ok(Arc::new(metadata))
         }
         Err(error) => {
+            // Offline fallback stays available, but under an armed gate it can
+            // only serve an entry that carries `time`: an abbreviated document
+            // would make the version filter refuse a package the user has
+            // already installed successfully before.
+            // (Fallback offline vẫn dùng được, nhưng khi cổng bật chỉ phục vụ
+            // entry có `time`; document abbreviated sẽ khiến filter version
+            // từ chối package user đã cài thành công trước đó.)
+            let gate_can_use_cached = !registry.age_gate_armed()
+                || cached.as_ref().is_some_and(|c| !c.metadata.time.is_empty());
             if let Some(cached) = cached
+                && gate_can_use_cached
                 && metadata_record_is_usable_stale(&cached)
             {
                 if let Some(shared_cache) = shared_cache {

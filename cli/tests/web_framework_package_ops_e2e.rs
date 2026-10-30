@@ -6,6 +6,7 @@ use tempfile::TempDir;
 
 #[path = "common/mod.rs"]
 mod common;
+use common::seeded_publish_times;
 
 struct RegistryFixture {
     _server: mockito::ServerGuard,
@@ -24,7 +25,8 @@ impl RegistryFixture {
         let metadata = serde_json::json!({
             "name": "mgc-fixture",
             "dist-tags": { "latest": latest },
-            "versions": versions_json
+            "versions": versions_json,
+            "time": seeded_publish_times(versions),
         });
         let metadata_mock = server
             .mock("GET", "/mgc-fixture")

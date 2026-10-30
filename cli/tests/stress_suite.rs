@@ -19,6 +19,10 @@ use std::thread;
 use std::time::Duration;
 use tempfile::TempDir;
 
+#[path = "common/mod.rs"]
+mod common;
+use common::seeded_publish_times;
+
 /// SRI digest for a fixture tarball (SEC-01: integrity is mandatory).
 /// (SRI của tarball fixture; SEC-01 bắt buộc integrity.)
 fn sri_of(bytes: &[u8]) -> String {
@@ -560,6 +564,7 @@ impl RegistryFixture {
         let metadata = serde_json::json!({
             "name": "is-odd",
             "dist-tags": { "latest": "3.0.1" },
+            "time": seeded_publish_times(&["3.0.1"]),
             "versions": { "3.0.1": package_metadata(&url, "3.0.1") }
         });
         let metadata_mock = server

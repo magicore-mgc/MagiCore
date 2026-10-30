@@ -10,6 +10,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 
+#[path = "common/mod.rs"]
+mod common;
+use common::seeded_publish_times;
+
 fn find_mgc_binary() -> String {
     std::env::var("CARGO_BIN_EXE_mgc")
         .expect("CARGO_BIN_EXE_mgc not set — run via `cargo test -p mgc`")
@@ -62,6 +66,7 @@ impl NpmFixture {
             let metadata = serde_json::json!({
                 "name": name,
                 "dist-tags": { "latest": version },
+                "time": seeded_publish_times(&[version]),
                 "versions": { version.to_string(): {
                     "name": name,
                     "version": version,

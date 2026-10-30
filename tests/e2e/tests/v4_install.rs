@@ -16,10 +16,18 @@ const WEB_ENV_KEYS: [&str; 3] = [
 ];
 
 fn web_env(url: &str) -> Vec<(&str, &str)> {
+    // This scenario publishes and installs within the same second, so the
+    // release is legitimately still inside the default 24h quarantine window.
+    // The documented escape hatch keeps the subject under test (lock replay)
+    // reachable; every other e2e path still exercises the default gate.
+    // (Kịch bản publish rồi install trong cùng một giây, nên release đúng là
+    // còn trong quarantine mặc định 24h. Escape hatch được tài liệu hóa giữ
+    // chủ đề test (replay lock) chạy được.)
     vec![
         (WEB_ENV_KEYS[0], url),
         (WEB_ENV_KEYS[1], TEST_ADMIN_TOKEN),
         (WEB_ENV_KEYS[2], "1"),
+        ("MAGICORE_ALLOW_UNTRUSTED", "1"),
     ]
 }
 

@@ -9,6 +9,10 @@ use std::process::Command;
 use std::time::Instant;
 use tempfile::TempDir;
 
+#[path = "common/mod.rs"]
+mod common;
+use common::seeded_publish_times;
+
 struct RegistryFixture {
     _server: mockito::ServerGuard,
     _mocks: Vec<mockito::Mock>,
@@ -22,6 +26,7 @@ impl RegistryFixture {
         let metadata = serde_json::json!({
             "name": "lodash",
             "dist-tags": { "latest": "4.17.21" },
+            "time": seeded_publish_times(&["4.17.20", "4.17.21"]),
             "versions": {
                 "4.17.20": package_metadata(&url, "4.17.20"),
                 "4.17.21": package_metadata(&url, "4.17.21")

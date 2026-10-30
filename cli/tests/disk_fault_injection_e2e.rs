@@ -43,6 +43,10 @@ use std::process::Command;
 #[cfg(unix)]
 use tempfile::TempDir;
 
+#[path = "common/mod.rs"]
+mod common;
+use common::seeded_publish_times;
+
 #[cfg(target_os = "macos")]
 const ENOSPC_PROBE_BYTES: usize = 1024 * 1024;
 
@@ -209,6 +213,7 @@ fn enospc_on_the_store_volume_fails_clean_and_recovers() {
     let metadata = serde_json::json!({
         "name": "is-odd",
         "dist-tags": { "latest": "3.0.1" },
+        "time": seeded_publish_times(&["3.0.1"]),
         "versions": { "3.0.1": {
             "name": "is-odd",
             "version": "3.0.1",
@@ -403,6 +408,7 @@ fn readonly_store_dir_blocks_install_cleanly_and_recovers() {
     let metadata = serde_json::json!({
         "name": "is-odd",
         "dist-tags": { "latest": "3.0.1" },
+        "time": seeded_publish_times(&["3.0.1"]),
         "versions": { "3.0.1": {
             "name": "is-odd",
             "version": "3.0.1",
@@ -504,6 +510,7 @@ fn readonly_node_modules_blocks_materialize_cleanly_and_recovers() {
     let metadata = serde_json::json!({
         "name": "is-odd",
         "dist-tags": { "latest": "3.0.1" },
+        "time": seeded_publish_times(&["3.0.1"]),
         "versions": { "3.0.1": {
             "name": "is-odd",
             "version": "3.0.1",

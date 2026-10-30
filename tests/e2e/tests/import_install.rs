@@ -74,6 +74,11 @@ url = "http://127.0.0.1:{port}"
         ("MAGICORE_WEB_REGISTRY_URL", &url),
         ("MAGICORE_WEB_REGISTRY_TOKEN", TEST_ADMIN_TOKEN),
         ("MAGICORE_WEB_ALLOW_INSECURE_LOCALHOST", "1"),
+        // Publish and install happen in the same second here, so the release
+        // is still inside the default 24h quarantine by design.
+        // (Publish và install trong cùng một giây nên release còn trong
+        // quarantine mặc định.)
+        ("MAGICORE_ALLOW_UNTRUSTED", "1"),
     ];
 
     // Bước 1-2: publish + add thật để có resolved/integrity chuẩn từ hệ thống

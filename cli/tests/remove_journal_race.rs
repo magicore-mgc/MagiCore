@@ -15,6 +15,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 
+#[path = "common/mod.rs"]
+mod common;
+use common::seeded_publish_times;
+
 /// SRI digest for a fixture tarball (SEC-01: integrity is mandatory).
 /// (SRI của tarball fixture; SEC-01 bắt buộc integrity.)
 fn sri_of(bytes: &[u8]) -> String {

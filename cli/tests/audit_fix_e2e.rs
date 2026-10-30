@@ -82,10 +82,18 @@ impl AuditFixture {
                 }),
             );
         }
+        // `time` is required by the default 24h quarantine: without it the
+        // resolver cannot prove a release left the window. Keeping the
+        // `dist-tags` member last preserves the existing single-literal
+        // anchor this fixture moves when a scenario edits the tag.
+        // (`time` bắt buộc cho quarantine mặc định 24h: thiếu nó resolver
+        // không chứng minh được release đã qua cửa sổ. `dist-tags` để cuối giữ
+        // nguyên mốc literal mà các scenario sửa tag.)
         let metadata = serde_json::json!({
             "name": "mgc-audit-vuln",
-            "dist-tags": { "latest": "1.0.1" },
             "versions": versions,
+            "time": {"1.0.0": "2020-01-01T00:00:00.000Z", "1.0.1": "2020-01-01T00:00:00.000Z"},
+            "dist-tags": { "latest": "1.0.1" }
         });
         mocks.push(
             server

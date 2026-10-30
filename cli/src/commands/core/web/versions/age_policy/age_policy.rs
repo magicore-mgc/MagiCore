@@ -9,16 +9,20 @@ use std::path::Path;
 /// Lấy age policy Web đang dùng lúc install.
 #[cfg(feature = "web")]
 pub(crate) fn scaffold_age_policy(project_root: &Path) -> Result<Option<ScaffoldAgePolicy>> {
+    // The documented escape hatch is checked before anything is parsed, so it
+    // also covers a malformed project file — an operator overriding the gate
+    // must not be blocked by the file they are overriding from.
+    // (Escape hatch tài liệu hóa kiểm trước khi parse, để cũng phủ file hỏng.)
+    if env_truthy("MAGICORE_ALLOW_UNTRUSTED") {
+        warn_untrusted_override_once();
+        return Ok(None);
+    }
     let security = mgc_config::project::load_security_config(project_root)
         .map_err(|error| error::web_scaffold_security_config_unreadable(project_root, &error))?;
     let allow_missing_time = security
         .as_ref()
         .and_then(|config| config.allow_missing_time)
         .unwrap_or(false);
-    if env_truthy("MAGICORE_ALLOW_UNTRUSTED") {
-        warn_untrusted_override_once();
-        return Ok(None);
-    }
     if let Some(cutoff_hours) = security
         .as_ref()
         .and_then(|config| config.min_age_for_ecosystem("web"))
@@ -40,7 +44,15 @@ pub(crate) fn scaffold_age_policy(project_root: &Path) -> Result<Option<Scaffold
             allow_missing_time,
         }));
     }
-    Ok(None)
+    // No explicit policy: the documented default applies, so `mgc versions`
+    // keeps selecting exactly what `mgc install` will accept. An explicit
+    // `0` in the project already returned above as disabled.
+    // (Không policy tường minh: áp mặc định để `mgc versions` chọn đúng thứ
+    // `mgc install` chấp nhận. Opt-out `0` tường minh đã trả ở trên.)
+    Ok(Some(ScaffoldAgePolicy {
+        cutoff_hours: mgc_config::DEFAULT_MIN_RELEASE_AGE_HOURS,
+        allow_missing_time,
+    }))
 }
 
 /// Keep optional-Web builds independent of the Web adapter dependency.

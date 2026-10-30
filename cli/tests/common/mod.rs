@@ -929,3 +929,32 @@ pub fn assert_help_excludes(unexpected: &str) {
 
 /// Default dev port
 pub const DEV_PORT: &str = "4315";
+
+/// Publish times for an e2e registry fixture that models a settled package.
+///
+/// The default 24h release-age quarantine is fail-closed, so a mocked
+/// packument must say when each version appeared — exactly like a real
+/// registry does. Without this map the resolver cannot prove a release left
+/// quarantine and refuses the fixture, which would make every install e2e
+/// fail for a reason unrelated to what it tests.
+/// (Timestamp publish cho fixture registry e2e mô phỏng package đã ổn định.
+/// Quarantine mặc định 24h fail-closed nên packument mock phải có map `time`
+/// như registry thật; thiếu nó resolver không chứng minh được release đã qua
+/// quarantine và từ chối fixture.)
+///
+/// `versions` must name every version the fixture serves: one old timestamp
+/// is written per entry.
+/// (`versions` phải nêu đủ mọi version fixture phục vụ.)
+#[allow(dead_code)] // Each e2e binary includes this module and uses only what it needs.
+pub fn seeded_publish_times(versions: &[&str]) -> serde_json::Value {
+    let times: serde_json::Map<String, serde_json::Value> = versions
+        .iter()
+        .map(|version| {
+            (
+                (*version).to_string(),
+                serde_json::Value::String("2020-01-01T00:00:00.000Z".to_string()),
+            )
+        })
+        .collect();
+    serde_json::Value::Object(times)
+}

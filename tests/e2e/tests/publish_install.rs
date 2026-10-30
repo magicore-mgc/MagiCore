@@ -94,6 +94,12 @@ url = "http://127.0.0.1:{port}"
             ("MAGICORE_WEB_REGISTRY_URL", &url),
             ("MAGICORE_WEB_REGISTRY_TOKEN", TEST_ADMIN_TOKEN),
             ("MAGICORE_WEB_ALLOW_INSECURE_LOCALHOST", "1"),
+            // Published seconds ago in this same test: the default 24h
+            // quarantine is working correctly, so this lane states the
+            // documented opt-out.
+            // (Vừa publish trong chính test này: quarantine mặc định 24h đang
+            // hoạt động đúng, nên lane này nêu opt-out đã tài liệu hóa.)
+            ("MAGICORE_ALLOW_UNTRUSTED", "1"),
         ],
     );
     assert!(

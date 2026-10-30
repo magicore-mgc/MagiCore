@@ -1,10 +1,15 @@
 #![allow(clippy::unwrap_used)]
 
+#[path = "common/mod.rs"]
+mod common;
+
 #[cfg(any(unix, windows))]
 mod platform {
     use std::path::Path;
     use std::process::Command;
     use tempfile::TempDir;
+
+    use crate::common::seeded_publish_times;
 
     /// SRI digest for a fixture tarball (SEC-01: integrity is mandatory).
     /// (SRI của tarball fixture; SEC-01 bắt buộc integrity.)
@@ -45,7 +50,8 @@ mod platform {
                 let metadata = serde_json::json!({
                     "name": package,
                     "dist-tags": { "latest": versions.last().unwrap() },
-                    "versions": versions_json
+                    "versions": versions_json,
+                    "time": seeded_publish_times(versions),
                 });
                 mocks.push(
                     server

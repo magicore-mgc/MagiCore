@@ -47,6 +47,10 @@ use std::thread;
 
 use tempfile::TempDir;
 
+#[path = "common/mod.rs"]
+mod common;
+use common::seeded_publish_times;
+
 // Default process counts (RULE §12 — env overrides, not inline magic).
 // (Số process mặc định (RULE §12 — env override, không literal ẩn).)
 const DEFAULT_SHARED_N: usize = 64;
@@ -118,7 +122,8 @@ impl RegistryFixture {
         let metadata = serde_json::json!({
             "name": "is-odd",
             "dist-tags": { "latest": "3.0.1" },
-            "versions": { "3.0.1": package_metadata(&url, "3.0.1") }
+            "versions": { "3.0.1": package_metadata(&url, "3.0.1") },
+            "time": seeded_publish_times(&["3.0.1"]),
         });
         let metadata_mock = server
             .mock("GET", "/is-odd")
