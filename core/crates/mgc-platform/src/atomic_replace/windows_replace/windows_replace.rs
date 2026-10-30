@@ -28,7 +28,7 @@ fn extended_path(path: &Path) -> std::io::Result<PathBuf> {
 }
 
 #[allow(unsafe_code)]
-pub(super) fn windows_replace(
+pub(in crate::atomic_replace::implementation) fn windows_replace(
     staging: &Path,
     destination: &Path,
     write_through: bool,
