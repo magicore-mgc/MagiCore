@@ -5,9 +5,9 @@
 // parsers are direct siblings and the monitor owner is one level up.
 // (include! giữ test trong module implementation của linux, nên các parser là
 // sibling trực tiếp và owner monitor ở trên một cấp.)
-#[cfg(test)]
-use super::parse_linux_process_stat_entry;
-use super::{linux_proc_process_dir_is_gone, parse_linux_process_stat};
+use super::{
+    linux_proc_process_dir_is_gone, parse_linux_process_stat, parse_linux_process_stat_entry,
+};
 
 #[cfg(target_os = "linux")]
 #[test]
@@ -25,9 +25,11 @@ fn linux_process_stat_keeps_exact_identity_when_pid_is_reused_within_one_second(
     assert_eq!(original.process_group, Some(7));
     assert_eq!(original.process_start_ticks, 12345);
     assert!(!original.is_zombie);
-    // The identity helper lives under the monitor owner, one branch over.
-    // (Helper identity nằm dưới owner monitor, ở nhánh khác.)
-    assert!(!super::super::monitor::process_identity_is_live(
+    // Layout: process_scan::{linux, monitor}; this file sits inside
+    // linux::implementation, so the monitor owner is three levels up.
+    // (Bố cục: process_scan::{linux, monitor}; file này nằm trong
+    // linux::implementation, nên owner monitor ở ba cấp trên.)
+    assert!(!super::super::super::monitor::process_identity_is_live(
         original, reused
     ));
 
@@ -52,7 +54,7 @@ fn linux_process_scan_skips_only_an_entry_with_missing_pid_directory() {
             .expect("inspect still-present proc entry")
     );
     assert!(
-        linux_impl::parse_linux_process_stat_entry(4242, "malformed stat", &process_dir).is_err()
+        parse_linux_process_stat_entry(4242, "malformed stat", &process_dir).is_err()
     );
 
     std::fs::remove_dir(&process_dir).expect("remove simulated exited process");
@@ -61,7 +63,7 @@ fn linux_process_scan_skips_only_an_entry_with_missing_pid_directory() {
             .expect("recognize process disappearance")
     );
     assert!(
-        linux_impl::parse_linux_process_stat_entry(4242, "malformed stat", &process_dir)
+        parse_linux_process_stat_entry(4242, "malformed stat", &process_dir)
             .expect("skip a process that exited during stat parsing")
             .is_none()
     );
