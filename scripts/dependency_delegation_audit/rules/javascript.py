@@ -14,7 +14,7 @@ JS_PROCESS_APIS = {"exec", "execFile", "execFileSync", "execSync", "fork", "spaw
 # giới DUY NHẤT cố ý chạy binary nền tảng đã resolve.)
 JS_PROCESS_REVIEWS = {
     "npm/cli/bin/mgc.js": {
-        ("child_process.spawnSync", "b5398ee482f7d2b18e07b8330644e60bbccbb17250eed106021054281c5e3c27"): (
+        ("child_process.spawnSync", "37a0188b58e07a7852b094f6fe5a94798b7229d49467e9ded0cb0ef4de5cd906"): (
             2,
             "Executes the user's own mgc argv via the @magicore/cli-<os>-<arch> "
             "optional dependency resolved from node_modules; no shell, no "

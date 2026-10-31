@@ -44,7 +44,7 @@ case $choice in
     echo "   git push origin v${VERSION}"
     echo ""
     echo "3. Monitor workflow at:"
-    echo "   https://github.com/mingd-153/MagiCore/actions"
+    echo "   https://github.com/magicore-mgc/MagiCore/actions"
     echo ""
     echo "4. Workflow will:"
     echo "   - Build for Linux/macOS x64+ARM64 and Windows x64 (5 variants)"

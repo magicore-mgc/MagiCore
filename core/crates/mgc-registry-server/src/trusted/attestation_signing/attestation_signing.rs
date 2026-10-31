@@ -5,7 +5,7 @@ use super::super::prelude::*;
 use super::super::*;
 
 pub const TRUSTED_PUBLISH_PREDICATE_TYPE: &str =
-    "https://github.com/mingd-153/MagiCore/attestations/trusted-publish/v1";
+    "https://github.com/magicore-mgc/MagiCore/attestations/trusted-publish/v1";
 
 const MAX_SIGSTORE_BUNDLE_BYTES: usize = 1024 * 1024;
 

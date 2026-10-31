@@ -2,7 +2,7 @@
   <img src="assets/logo-full.svg" alt="MagiCore" width="full" />
   <h1>MagiCore</h1>
   <p><strong>A Rust CLI for project and dependency workflows across multiple cores</strong></p>
-  <p><a href="https://github.com/mingd-153/MagiCore/actions/workflows/ci.yml">CI</a> · <a href="https://github.com/mingd-153/MagiCore/pulls">Pull requests</a> · <a href="LICENSE">MIT license</a></p>
+  <p><a href="https://github.com/magicore-mgc/MagiCore/actions/workflows/ci.yml">CI</a> · <a href="https://github.com/magicore-mgc/MagiCore/pulls">Pull requests</a> · <a href="LICENSE">MIT license</a></p>
 </div>
 
 ---
@@ -47,7 +47,7 @@ The release-binary macOS fixture E2Es currently pass for persistent tools (4/4) 
 
 ## Core support and CI evidence
 
-The latest inspected hosted results are for base SHA `8ce61f227b9d32cb1ced3db4fa1804992daac17b`. The [lifecycle capability matrix](https://github.com/mingd-153/MagiCore/actions/runs/38380589722), [native dependency lifecycle matrix](https://github.com/mingd-153/MagiCore/actions/runs/38380589784), and [release archive E2E](https://github.com/mingd-153/MagiCore/actions/runs/38380589931) passed on their configured OS runners. The [CI run](https://github.com/mingd-153/MagiCore/actions/runs/38380589750) failed on a Linux process-escape regression; the [stress run](https://github.com/mingd-153/MagiCore/actions/runs/38380589772) failed on the Windows AI model-path audit and reported 1,615 universal-support evidence/ownership gaps. The dirty working tree includes local fixes and new release-binary E2Es, but it has no exact-SHA hosted run yet. Passing scaffold or CLI contract checks do not prove complete lifecycle support for every framework.
+The latest inspected hosted results are for base SHA `8ce61f227b9d32cb1ced3db4fa1804992daac17b`. The [lifecycle capability matrix](https://github.com/magicore-mgc/MagiCore/actions/runs/38380589722), [native dependency lifecycle matrix](https://github.com/magicore-mgc/MagiCore/actions/runs/38380589784), and [release archive E2E](https://github.com/magicore-mgc/MagiCore/actions/runs/38380589931) passed on their configured OS runners. The [CI run](https://github.com/magicore-mgc/MagiCore/actions/runs/38380589750) failed on a Linux process-escape regression; the [stress run](https://github.com/magicore-mgc/MagiCore/actions/runs/38380589772) failed on the Windows AI model-path audit and reported 1,615 universal-support evidence/ownership gaps. The dirty working tree includes local fixes and new release-binary E2Es, but it has no exact-SHA hosted run yet. Passing scaffold or CLI contract checks do not prove complete lifecycle support for every framework.
 
 | Core | Current evidence and limits |
 |---|---|
@@ -70,7 +70,7 @@ Native Python install can materialize compatible prebuilt wheels without invokin
 Requirements: Rust 1.99 or newer.
 
 ~~~bash
-git clone https://github.com/mingd-153/MagiCore.git
+git clone https://github.com/magicore-mgc/MagiCore.git
 cd MagiCore
 cargo build --release --bin mgc --locked
 ./target/release/mgc --version
@@ -81,7 +81,7 @@ Add <code>target/release</code> to your PATH or install the binary using your pl
 
 ## Install a published release
 
-Release archives exist only for versions listed on the [GitHub Releases page](https://github.com/mingd-153/MagiCore/releases). The installer and current target matrix are documented in [`packaging/README.md`](packaging/README.md). The installer checks an archive against its SHA-256 sidecar; it does not verify the signed release manifest. See [`SECURITY.md`](SECURITY.md) for the trust model and limitations.
+Release archives exist only for versions listed on the [GitHub Releases page](https://github.com/magicore-mgc/MagiCore/releases). The installer and current target matrix are documented in [`packaging/README.md`](packaging/README.md). The installer checks an archive against its SHA-256 sidecar; it does not verify the signed release manifest. See [`SECURITY.md`](SECURITY.md) for the trust model and limitations.
 
 ## Quick start
 

@@ -242,7 +242,7 @@ SHELL_DEPENDENCY_COMMAND_REVIEWS = {
 # can be cleared. Hash nguồn đầy đủ; chỉ các dòng được liệt kê mới được duyệt.
 SHELL_SOURCE_DYNAMIC_COMMAND_REVIEWS = {
     "scripts/test/test_npm_packages.sh": {
-        "source_sha256": "1138eef28e29081f89286e653a9a8634fbe4ba6a709ca669f2f2f8ef5cb792ec",
+        "source_sha256": "89b23fba3f77852f59974c414f4572e3be86ce253d03d0ddc186bcd0765c5c62",
         "lines": {
             33: "npm package name literal in a bash array (EXPECTED_OPTIONAL), not a command.",
             34: "npm package name literal in a bash array, not a command.",

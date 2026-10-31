@@ -99,7 +99,7 @@ fn rendered_templates_verify_checksum_fail_closed() {
             "pipeline must verify checksums"
         );
         assert!(
-            !rendered.contains("raw.githubusercontent.com/mingd-153/MagiCore/main/"),
+            !rendered.contains("raw.githubusercontent.com/magicore-mgc/MagiCore/main/"),
             "generated pipeline must never fetch from mutable main"
         );
     }

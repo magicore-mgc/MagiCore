@@ -294,7 +294,7 @@ test(web): add integration test for monorepo install with catalogs
 
 ## Reporting Bugs
 
-Please open a [GitHub Issue](https://github.com/mingd-153/MagiCore/issues) with:
+Please open a [GitHub Issue](https://github.com/magicore-mgc/MagiCore/issues) with:
 - MagiCore version (`mgc --version`)
 - OS and architecture
 - Exact command that failed
@@ -305,7 +305,7 @@ Please open a [GitHub Issue](https://github.com/mingd-153/MagiCore/issues) with:
 
 ## Questions?
 
-- Open a [GitHub Discussion](https://github.com/mingd-153/MagiCore/discussions)
-- Check [existing issues](https://github.com/mingd-153/MagiCore/issues)
+- Open a [GitHub Discussion](https://github.com/magicore-mgc/MagiCore/discussions)
+- Check [existing issues](https://github.com/magicore-mgc/MagiCore/issues)
 
 Thank you for helping make MagiCore better! 🚀

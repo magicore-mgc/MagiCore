@@ -14,8 +14,8 @@ const _: &str = DEFAULT_WORKFLOW_IDENTITY_PREFIX;
 fn default_identity_accepts_only_this_repository_release_workflows() {
     let none: Vec<String> = Vec::new();
     for allowed in [
-        "https://github.com/mingd-153/MagiCore/.github/workflows/release.yml",
-        "https://github.com/mingd-153/MagiCore/.github/workflows/release-publish-github.yml",
+        "https://github.com/magicore-mgc/MagiCore/.github/workflows/release.yml",
+        "https://github.com/magicore-mgc/MagiCore/.github/workflows/release-publish-github.yml",
     ] {
         assert!(
             workflow_identity_allowed(allowed, &none),
@@ -25,8 +25,8 @@ fn default_identity_accepts_only_this_repository_release_workflows() {
     for denied in [
         "https://github.com/attacker/MagiCore/.github/workflows/release.yml",
         "https://github.com/mingd-153/other/.github/workflows/release.yml",
-        "https://github.com/mingd-153/MagiCore/.github/workflows/ci.yml",
-        "https://gitlab.com/mingd-153/MagiCore/.github/workflows/release.yml",
+        "https://github.com/magicore-mgc/MagiCore/.github/workflows/ci.yml",
+        "https://gitlab.com/magicore-mgc/MagiCore/.github/workflows/release.yml",
     ] {
         assert!(
             !workflow_identity_allowed(denied, &none),
@@ -45,7 +45,7 @@ fn explicit_allowlist_overrides_the_default() {
         vec!["https://github.com/fork-owner/MagiCore/.github/workflows/release.yml".to_string()];
     assert!(workflow_identity_allowed(&allow[0], &allow));
     assert!(!workflow_identity_allowed(
-        "https://github.com/mingd-153/MagiCore/.github/workflows/release.yml",
+        "https://github.com/magicore-mgc/MagiCore/.github/workflows/release.yml",
         &allow
     ));
 }

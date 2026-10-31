@@ -1,12 +1,12 @@
 {
     "version": "1.2.0",
     "description": "MagiCore single-core web package manager/runtime",
-    "homepage": "https://github.com/mingd-153/MagiCore",
+    "homepage": "https://github.com/magicore-mgc/MagiCore",
     "license": "MIT",
     "notes": "RELEASE GATE E: sha256 is a DO-NOT-PUBLISH placeholder — the v1.2.0 archives do not exist yet. Rerun scripts/release/update-release-hashes.sh after the release assets are published; scripts/release/verify_release_manifests.py must exit 0 before publishing. Windows arm64 archive is not part of this release.",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/mingd-153/MagiCore/releases/download/v1.2.0/magicore-web-1.2.0-windows-x64.zip",
+            "url": "https://github.com/magicore-mgc/MagiCore/releases/download/v1.2.0/magicore-web-1.2.0-windows-x64.zip",
             "hash": "PENDING_1_2_0_SHA256_DO_NOT_PUBLISH",
             "bin": "mgc.exe"
         }
@@ -15,7 +15,7 @@
     "autoupdate": {
         "architecture": {
             "64bit": {
-                "url": "https://github.com/mingd-153/MagiCore/releases/download/v$version/magicore-web-$version-windows-x64.zip"
+                "url": "https://github.com/magicore-mgc/MagiCore/releases/download/v$version/magicore-web-$version-windows-x64.zip"
             }
         }
     }

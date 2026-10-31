@@ -14,7 +14,7 @@ fn available_status_uses_the_trusted_driver_name() {
     assert_eq!(driver.name, "mgc-audit");
     assert_eq!(
         driver.information_uri,
-        "https://github.com/mingd-153/MagiCore"
+        "https://github.com/magicore-mgc/MagiCore"
     );
     assert_eq!(driver.version, env!("CARGO_PKG_VERSION"));
 }

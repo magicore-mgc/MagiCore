@@ -14,7 +14,7 @@ version = "1.2.0"
 edition = "2024"
 rust-version = "1.99"
 license = "MIT"
-repository = "https://github.com/mingd-153/MagiCore"
+repository = "https://github.com/magicore-mgc/MagiCore"
 authors = ["MagiCore Contributors"]
 
 [workspace.dependencies]

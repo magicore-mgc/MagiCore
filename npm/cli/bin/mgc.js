@@ -61,7 +61,7 @@ function resolveBinary() {
       [
         `Supported platforms: ${SUPPORTED.map((name) => name.replace('@magicore/cli-', '')).join(', ')}.`,
         'Use the standalone installer instead:',
-        '  https://github.com/mingd-153/MagiCore#installation',
+        '  https://github.com/magicore-mgc/MagiCore#installation',
         'On Windows ARM64, run the x64 build through Prism emulation:',
         '  npm install --force --cpu=x64 --os=win32 -g @magicore/cli',
       ],

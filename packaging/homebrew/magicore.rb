@@ -1,6 +1,6 @@
 class Magicore < Formula
   desc "Multi-language package manager and lifecycle orchestrator"
-  homepage "https://github.com/mingd-153/MagiCore"
+  homepage "https://github.com/magicore-mgc/MagiCore"
   version "1.2.0"
   # RELEASE GATE E (P0-3, 2026-09-16): the SHA256 values below are
   # DO-NOT-PUBLISH placeholders — the v1.2.0 archives do not exist
@@ -18,24 +18,24 @@ class Magicore < Formula
   # scripts/release/verify_release_manifests.py` exit 0 — script FAIL (exit 1)
   # khi còn bất kỳ placeholder PENDING_/UNAVAILABLE_ nào.)
   license "MIT"
-  head "https://github.com/mingd-153/MagiCore.git", branch: "main"
+  head "https://github.com/magicore-mgc/MagiCore.git", branch: "main"
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/mingd-153/MagiCore/releases/download/v#{version}/magicore-#{version}-macos-arm64.tar.gz"
+      url "https://github.com/magicore-mgc/MagiCore/releases/download/v#{version}/magicore-#{version}-macos-arm64.tar.gz"
       sha256 "PENDING_1_2_0_SHA256_DO_NOT_PUBLISH"
     else
-      url "https://github.com/mingd-153/MagiCore/releases/download/v#{version}/magicore-#{version}-macos-x64.tar.gz"
+      url "https://github.com/magicore-mgc/MagiCore/releases/download/v#{version}/magicore-#{version}-macos-x64.tar.gz"
       sha256 "PENDING_1_2_0_SHA256_DO_NOT_PUBLISH"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm? && Hardware::CPU.is_64_bit?
-      url "https://github.com/mingd-153/MagiCore/releases/download/v#{version}/magicore-#{version}-linux-arm64.tar.gz"
+      url "https://github.com/magicore-mgc/MagiCore/releases/download/v#{version}/magicore-#{version}-linux-arm64.tar.gz"
       sha256 "PENDING_1_2_0_SHA256_DO_NOT_PUBLISH"
     else
-      url "https://github.com/mingd-153/MagiCore/releases/download/v#{version}/magicore-#{version}-linux-x64.tar.gz"
+      url "https://github.com/magicore-mgc/MagiCore/releases/download/v#{version}/magicore-#{version}-linux-x64.tar.gz"
       sha256 "PENDING_1_2_0_SHA256_DO_NOT_PUBLISH"
     end
   end

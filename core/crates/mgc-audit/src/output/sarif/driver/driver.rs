@@ -15,6 +15,6 @@ pub(in crate::output::sarif) fn build_driver(report: &AuditReport) -> SarifDrive
     SarifDriver {
         name,
         version: env!("CARGO_PKG_VERSION").to_string(),
-        information_uri: "https://github.com/mingd-153/MagiCore".to_string(),
+        information_uri: "https://github.com/magicore-mgc/MagiCore".to_string(),
     }
 }

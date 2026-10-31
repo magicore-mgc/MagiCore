@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Install mgc binary from GitHub release.
-# Usage: curl -fsSL https://raw.githubusercontent.com/mingd-153/MagiCore/main/scripts/install/install-from-gh.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/magicore-mgc/MagiCore/main/scripts/install/install-from-gh.sh | bash
 # Or:  ./scripts/install/install-from-gh.sh [--package magicore|magicore-web] [--version v0.1.0] [--dir /usr/local/bin]
 # Local test: ./scripts/install/install-from-gh.sh --archive dist/magicore-web-1.1.0-rc.10-macos-arm64.tar.gz --dir /tmp/mgc-bin
 set -euo pipefail
 
-REPO="mingd-153/MagiCore"
+REPO="magicore-mgc/MagiCore"
 PKG="magicore"
 VERSION="latest"
 INSTALL_DIR="/usr/local/bin"

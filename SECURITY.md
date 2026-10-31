@@ -41,7 +41,7 @@ For commands whose scripts MagiCore parses, only supported grammar and command f
 
 ## Reporting a vulnerability
 
-Use the repository's **Security → Report a vulnerability** flow to send a private report. Private vulnerability reporting is enabled for `mingd-153/MagiCore` as of 2026-10-08. Do not post unpatched vulnerability details in a public issue. Include the affected MagiCore version, affected command/core, reproduction steps, and impact; avoid sending credentials or unrelated private data.
+Use the repository's **Security → Report a vulnerability** flow to send a private report. Private vulnerability reporting is enabled for `magicore-mgc/MagiCore` as of 2026-10-08. Do not post unpatched vulnerability details in a public issue. Include the affected MagiCore version, affected command/core, reproduction steps, and impact; avoid sending credentials or unrelated private data.
 
 ## Maintainer release checks
 

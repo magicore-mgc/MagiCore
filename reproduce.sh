@@ -1,6 +1,6 @@
 #!/bin/bash
 # reproduce.sh — Reproduce MagiCore benchmarks
-# Usage: curl -fsSL https://raw.githubusercontent.com/mingd-153/MagiCore/main/reproduce.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/magicore-mgc/MagiCore/main/reproduce.sh | bash
 # Or: ./reproduce.sh (if repo already cloned)
 
 set -e
@@ -67,7 +67,7 @@ if [ -d "MagiCore/benchmark" ]; then
   cd MagiCore
 else
   echo "📥 Cloning MagiCore repo..."
-  git clone --depth 1 https://github.com/mingd-153/MagiCore.git || {
+  git clone --depth 1 https://github.com/magicore-mgc/MagiCore.git || {
     echo "❌ Failed to clone repo. Check internet connection."
     exit 1
   }
@@ -167,13 +167,13 @@ echo ""
 echo "✅ Reproducibility test complete!"
 echo ""
 echo "📤 Share your results with the community:"
-echo "   https://github.com/mingd-153/MagiCore/discussions/new?category=benchmarks"
+echo "   https://github.com/magicore-mgc/MagiCore/discussions/new?category=benchmarks"
 echo ""
 echo "🐛 Found issues? Report here:"
-echo "   https://github.com/mingd-153/MagiCore/issues/new"
+echo "   https://github.com/magicore-mgc/MagiCore/issues/new"
 echo ""
 echo "📖 Full benchmark methodology:"
-echo "   https://github.com/mingd-153/MagiCore/blob/main/docs/BENCHMARK.md"
+echo "   https://github.com/magicore-mgc/MagiCore/blob/main/docs/BENCHMARK.md"
 echo ""
 echo "Thank you for testing MagiCore! 🚀"
 echo ""

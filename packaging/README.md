@@ -15,11 +15,11 @@ The nine package manifests under `packaging/packages/` also let `mgc-dist` build
 
 ## Install a published binary
 
-Use a version shown on the [GitHub Releases page](https://github.com/mingd-153/MagiCore/releases). Replace `<published-version>` below with the version without its leading `v`:
+Use a version shown on the [GitHub Releases page](https://github.com/magicore-mgc/MagiCore/releases). Replace `<published-version>` below with the version without its leading `v`:
 
 ```bash
 curl -fsSLo /tmp/mgc-install-from-gh.sh \
-  https://raw.githubusercontent.com/mingd-153/MagiCore/main/scripts/install/install-from-gh.sh
+  https://raw.githubusercontent.com/magicore-mgc/MagiCore/main/scripts/install/install-from-gh.sh
 VERSION="<published-version>" # replace with a version listed on GitHub Releases
 bash /tmp/mgc-install-from-gh.sh \
   --package magicore \
@@ -34,7 +34,7 @@ For Windows x64 in PowerShell, download and verify the ZIP before extracting it:
 ```powershell
 $Version = "<published-version>" # replace with a version listed on GitHub Releases
 $Archive = "magicore-$Version-windows-x64.zip"
-$Url = "https://github.com/mingd-153/MagiCore/releases/download/v$Version/$Archive"
+$Url = "https://github.com/magicore-mgc/MagiCore/releases/download/v$Version/$Archive"
 Invoke-WebRequest $Url -OutFile $Archive
 Invoke-WebRequest "$Url.sha256" -OutFile "$Archive.sha256"
 $Expected = (Get-Content -Raw "$Archive.sha256").Trim().Split()[0].ToLowerInvariant()

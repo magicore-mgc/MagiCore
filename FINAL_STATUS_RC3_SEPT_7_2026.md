@@ -279,7 +279,7 @@
 
 ## 🔗 REFERENCES
 
-- **Branch:** https://github.com/mingd-153/MagiCore/tree/fix/p0-p1-blockers-v1.1.0-rc
+- **Branch:** https://github.com/magicore-mgc/MagiCore/tree/fix/p0-p1-blockers-v1.1.0-rc
 - **Commits:** cdc96681, 90180bc7, dbdf139b
 - **Tech Lead Audit:** HONEST_STATUS_SEPT_7_2026.md
 - **Changelog:** docs/specs/magiCoreChangeLog.md

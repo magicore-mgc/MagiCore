@@ -13,7 +13,7 @@ const TRUST_ROOT_TIMEOUT_SECS: u64 = 60;
 /// Release workflows allowed to attest artifacts.
 /// Workflow release được phép chứng thực artifact.
 pub(crate) const DEFAULT_WORKFLOW_IDENTITY_PREFIX: &str =
-    "https://github.com/mingd-153/MagiCore/.github/workflows/";
+    "https://github.com/magicore-mgc/MagiCore/.github/workflows/";
 
 /// Whether a workflow identity may attest a MagiCore artefact.
 /// Workflow identity có được chứng thực artefact MagiCore không.

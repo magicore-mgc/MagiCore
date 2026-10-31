@@ -168,8 +168,8 @@ if wrapper is not None:
     expect(name, wrapper.get("publishConfig") == {"access": "public", "provenance": True},
            "publishConfig must be {access: public, provenance: true}")
     expect(name, wrapper.get("license") == "MIT", "license must be MIT")
-    expect(name, wrapper.get("repository", {}).get("url") == "https://github.com/mingd-153/MagiCore",
-           "repository.url must be https://github.com/mingd-153/MagiCore")
+    expect(name, wrapper.get("repository", {}).get("url") == "https://github.com/magicore-mgc/MagiCore",
+           "repository.url must be https://github.com/magicore-mgc/MagiCore")
     expect(name, "dependencies" not in wrapper,
            "the wrapper must have no runtime dependencies (a dependency would slow every startup)")
     expect(name, "type" not in wrapper or wrapper.get("type") == "commonjs",

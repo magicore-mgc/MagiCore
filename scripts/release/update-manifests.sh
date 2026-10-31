@@ -164,30 +164,30 @@ mkdir -p "$homebrew_dir" "$scoop_dir"
   cat > "$homebrew_dir/magicore.rb" <<EOF
 class Magicore < Formula
   desc "Universal package manager with multi-core runtime"
-  homepage "https://github.com/mingd-153/MagiCore"
+  homepage "https://github.com/magicore-mgc/MagiCore"
   version "$version"
   license "MIT"
-  head "https://github.com/mingd-153/MagiCore.git", branch: "main"
+  head "https://github.com/magicore-mgc/MagiCore.git", branch: "main"
 
   depends_on "rust" => :build
 
   on_macos do
     on_arm do
-      url "https://github.com/mingd-153/MagiCore/releases/download/v${version}/${magicore_macos_arm64}"
+      url "https://github.com/magicore-mgc/MagiCore/releases/download/v${version}/${magicore_macos_arm64}"
       sha256 "$hash_macos_arm64"
     end
     on_intel do
-      url "https://github.com/mingd-153/MagiCore/releases/download/v${version}/${magicore_macos_x64}"
+      url "https://github.com/magicore-mgc/MagiCore/releases/download/v${version}/${magicore_macos_x64}"
       sha256 "$hash_macos_x64"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
-      url "https://github.com/mingd-153/MagiCore/releases/download/v${version}/${magicore_linux_arm64}"
+      url "https://github.com/magicore-mgc/MagiCore/releases/download/v${version}/${magicore_linux_arm64}"
       sha256 "$hash_linux_arm64"
     else
-      url "https://github.com/mingd-153/MagiCore/releases/download/v${version}/${magicore_linux_x64}"
+      url "https://github.com/magicore-mgc/MagiCore/releases/download/v${version}/${magicore_linux_x64}"
       sha256 "$hash_linux_x64"
     end
   end
@@ -208,27 +208,27 @@ echo "✓ Updated magicore.rb"
 cat > "$homebrew_dir/magicore-web.rb" <<EOF
 class MagicoreWeb < Formula
   desc "MagiCore package manager - web-only build"
-  homepage "https://github.com/mingd-153/MagiCore"
+  homepage "https://github.com/magicore-mgc/MagiCore"
   version "$version"
   license "MIT"
 
   on_macos do
     on_arm do
-      url "https://github.com/mingd-153/MagiCore/releases/download/v${version}/${magicore_web_macos_arm64}"
+      url "https://github.com/magicore-mgc/MagiCore/releases/download/v${version}/${magicore_web_macos_arm64}"
       sha256 "$hash_web_macos_arm64"
     end
     on_intel do
-      url "https://github.com/mingd-153/MagiCore/releases/download/v${version}/${magicore_web_macos_x64}"
+      url "https://github.com/magicore-mgc/MagiCore/releases/download/v${version}/${magicore_web_macos_x64}"
       sha256 "$hash_web_macos_x64"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
-      url "https://github.com/mingd-153/MagiCore/releases/download/v${version}/${magicore_web_linux_arm64}"
+      url "https://github.com/magicore-mgc/MagiCore/releases/download/v${version}/${magicore_web_linux_arm64}"
       sha256 "$hash_web_linux_arm64"
     else
-      url "https://github.com/mingd-153/MagiCore/releases/download/v${version}/${magicore_web_linux_x64}"
+      url "https://github.com/magicore-mgc/MagiCore/releases/download/v${version}/${magicore_web_linux_x64}"
       sha256 "$hash_web_linux_x64"
     end
   end
@@ -250,22 +250,22 @@ cat > "$scoop_dir/magicore.json" <<EOF
 {
   "version": "$version",
   "description": "Universal package manager with multi-core runtime",
-  "homepage": "https://github.com/mingd-153/MagiCore",
+  "homepage": "https://github.com/magicore-mgc/MagiCore",
   "license": "MIT",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/mingd-153/MagiCore/releases/download/v${version}/${magicore_windows_x64}",
+      "url": "https://github.com/magicore-mgc/MagiCore/releases/download/v${version}/${magicore_windows_x64}",
       "hash": "$hash_windows_x64"
     }
   },
   "bin": "mgc.exe",
   "checkver": {
-    "github": "https://github.com/mingd-153/MagiCore"
+    "github": "https://github.com/magicore-mgc/MagiCore"
   },
   "autoupdate": {
     "architecture": {
       "64bit": {
-        "url": "https://github.com/mingd-153/MagiCore/releases/download/v\$version/magicore-\$version-windows-x64.zip"
+        "url": "https://github.com/magicore-mgc/MagiCore/releases/download/v\$version/magicore-\$version-windows-x64.zip"
       }
     }
   }
@@ -278,22 +278,22 @@ cat > "$scoop_dir/magicore-web.json" <<EOF
 {
   "version": "$version",
   "description": "MagiCore package manager - web-only build",
-  "homepage": "https://github.com/mingd-153/MagiCore",
+  "homepage": "https://github.com/magicore-mgc/MagiCore",
   "license": "MIT",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/mingd-153/MagiCore/releases/download/v${version}/${magicore_web_windows_x64}",
+      "url": "https://github.com/magicore-mgc/MagiCore/releases/download/v${version}/${magicore_web_windows_x64}",
       "hash": "$hash_web_windows_x64"
     }
   },
   "bin": "mgc.exe",
   "checkver": {
-    "github": "https://github.com/mingd-153/MagiCore"
+    "github": "https://github.com/magicore-mgc/MagiCore"
   },
   "autoupdate": {
     "architecture": {
       "64bit": {
-        "url": "https://github.com/mingd-153/MagiCore/releases/download/v\$version/magicore-web-\$version-windows-x64.zip"
+        "url": "https://github.com/magicore-mgc/MagiCore/releases/download/v\$version/magicore-web-\$version-windows-x64.zip"
       }
     }
   }

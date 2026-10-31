@@ -5,7 +5,7 @@ use crate::commands::self_update::error::SelfUpdateError;
 use anyhow::Result;
 
 /// GitHub repo hosting the release artifacts.
-pub(in crate::commands) const RELEASE_REPO: &str = "mingd-153/MagiCore";
+pub(in crate::commands) const RELEASE_REPO: &str = "magicore-mgc/MagiCore";
 
 /// Resolve the target version: explicit `--version` (with or without a
 /// leading `v`), or `latest` via the releases/latest redirect (no JSON

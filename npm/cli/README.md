@@ -1,6 +1,6 @@
 # @magicore/cli
 
-The [MagiCore](https://github.com/mingd-153/MagiCore) command-line tool (`mgc`) —
+The [MagiCore](https://github.com/magicore-mgc/MagiCore) command-line tool (`mgc`) —
 scaffold, install, build, dev and test projects across the `web`, `ai`, `app`
 and `lib` core families.
 
@@ -36,7 +36,7 @@ Requires Node.js 18 or newer.
 | Windows x64 | `@magicore/cli-win32-x64` |
 
 Alpine/musl and Windows arm64 are not published. Use the standalone installer
-described in the [installation docs](https://github.com/mingd-153/MagiCore#installation)
+described in the [installation docs](https://github.com/magicore-mgc/MagiCore#installation)
 for those, or run the Windows x64 build under Prism emulation with
 `npm install --force --cpu=x64 --os=win32 -g @magicore/cli`.
 
@@ -68,4 +68,4 @@ See *Supported platforms* above.
 ## Licence
 
 MIT — see [LICENSE](./LICENSE) or the
-[repository LICENSE](https://github.com/mingd-153/MagiCore/blob/main/LICENSE).
+[repository LICENSE](https://github.com/magicore-mgc/MagiCore/blob/main/LICENSE).
