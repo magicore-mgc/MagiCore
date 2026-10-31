@@ -3,5 +3,6 @@
 
 mod serialize_v3;
 
-pub(in crate::writer) use self::serialize_v3::write_lockfile_unchecked;
-pub use self::serialize_v3::{serialize_lockfile, write_lockfile};
+pub use self::serialize_v3::{
+    recompute_lockfile_hash, serialize_lockfile, with_lockfile_hash, write_lockfile,
+};

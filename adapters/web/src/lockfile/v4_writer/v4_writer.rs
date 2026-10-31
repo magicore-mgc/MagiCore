@@ -108,7 +108,11 @@ pub(crate) fn write_web_lockfile_v4(
     {
         return Ok(());
     }
-    doc.metadata.generated_at = chrono::Utc::now().to_rfc3339();
+    // Deterministic stamp: the digest is the integrity record, so a wall
+    // clock here only broke byte reproducibility (P0).
+    // (Stamp tất định: digest là bản ghi toàn vẹn, đồng hồ ở đây chỉ phá
+    // tái lập byte (P0).)
+    doc.metadata.generated_at = mgc_lockfile::writer::deterministic_generated_at();
     let text = mgc_lockfile::writer::finalize_v4_document(&mut doc)
         .map_err(|error| LockfileError::Serialization(error.to_string()))?;
     mgc_lockfile::atomic::atomic_write_v4_bytes(lock_path, text.as_bytes())

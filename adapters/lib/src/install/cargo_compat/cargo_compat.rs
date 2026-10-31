@@ -5,18 +5,39 @@ use mgc_types::MgResult;
 use std::path::{Path, PathBuf};
 
 /// Validate both lock projections and return MGC's directory source for a Rust build.
-/// Xác minh hai lock projection và trả directory source của MGC cho bước build Rust.
+///
+/// Preflights the managed store because the legacy callers are offline build
+/// lanes: without network there is no other source for a crate.
+/// Xác minh hai lock projection và trả directory source của MGC cho bước build
+/// Rust. Preflight store managed vì caller cũ là lane build offline — không mạng
+/// thì không còn nguồn khác cho crate.
 pub fn validate_build(project_root: &Path) -> MgResult<Option<PathBuf>> {
     validate_build_for_core(project_root, "lib")
 }
 
 /// Validate a Cargo build owned by the requested MagiCore core.
-/// Xác minh Cargo build thuộc core MagiCore được yêu cầu.
+///
+/// Offline semantics: every locked crate must already be verified in the store.
+/// Ngữ nghĩa offline: mọi crate trong lock phải đã được xác minh trong store.
 pub fn validate_build_for_core(
     project_root: &Path,
     expected_core: &str,
 ) -> MgResult<Option<PathBuf>> {
-    super::validate_build_for_core_impl(project_root, expected_core)
+    validate_build_for_core_with_fetch(project_root, expected_core, true)
+}
+
+/// Validate a Cargo build for an explicit dependency-fetch mode.
+///
+/// `offline = false` skips the store preflight because Cargo can fetch; the
+/// lock projection and core ownership checks still run.
+/// Xác minh Cargo build theo chế độ lấy dependency tường minh. `offline = false`
+/// bỏ preflight store vì Cargo tự tải được; vẫn kiểm lock projection và core.
+pub fn validate_build_for_core_with_fetch(
+    project_root: &Path,
+    expected_core: &str,
+    offline: bool,
+) -> MgResult<Option<PathBuf>> {
+    super::validate_build_for_core_impl(project_root, expected_core, offline)
 }
 
 /// Re-verify a managed Cargo registry source against its verified archive.

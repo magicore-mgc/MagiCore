@@ -37,7 +37,11 @@ pub(in crate::commands::build::implementation) async fn build_iot(
         let optimizer_envs =
             crate::commands::optimizer::env_loader::load_optimizer_env(root, &runtime)?;
         let store_source =
-            mgc_lib_adapter::install::cargo_compat::validate_build_for_core(root, "iot")?;
+            mgc_lib_adapter::install::cargo_compat::validate_build_for_core_with_fetch(
+                root,
+                "iot",
+                fetch.is_offline(),
+            )?;
         match store_source {
             Some(source) => finish_managed_rust_build(root, optimizer_envs, &source, fetch)?,
             None => build_rust_with_env(root, optimizer_envs, fetch)?,

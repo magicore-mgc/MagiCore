@@ -78,12 +78,33 @@ impl PackageJson {
     }
 
     /// Serialize and atomically write only when bytes changed.
-    /// Serialize và ghi atomic chỉ khi nội dung thay đổi.
+    ///
+    /// The document always ends with exactly one `\n`: npm, editors and
+    /// `git diff` treat a missing final newline as a "\ No newline at end of
+    /// file" change, and `mgc update` used to strip the newline a project
+    /// already had. Trailing blank lines collapse to that single newline so
+    /// repeated writes stay byte-stable.
+    /// (Luôn kết thúc đúng một `\n`: npm/editor/git diff coi thiếu newline
+    /// cuối file là thay đổi "\ No newline at end of file", và `mgc update`
+    /// từng xoá newline có sẵn. Dòng trống cuối gộp về đúng một newline để
+    /// ghi lặp lại giữ nguyên byte.)
     pub fn save(&self, path: &Path) -> Result<(), anyhow::Error> {
-        let content = serde_json::to_string_pretty(self)?;
+        let content = serialize_package_json(self)?;
         atomic_write_if_changed(path, content.as_bytes())?;
         Ok(())
     }
+}
+
+/// Pretty JSON with exactly one trailing newline — JSON đẹp với đúng một
+/// newline cuối.
+pub(in crate::manifest) fn serialize_package_json(
+    package: &PackageJson,
+) -> Result<String, serde_json::Error> {
+    let mut content = serde_json::to_string_pretty(package)?;
+    let trimmed_len = content.trim_end_matches(['\n', '\r']).len();
+    content.truncate(trimmed_len);
+    content.push('\n');
+    Ok(content)
 }
 
 /// Open once, enforce the size limit on that handle, and deserialize JSON.

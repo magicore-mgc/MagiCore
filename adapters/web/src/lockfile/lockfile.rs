@@ -135,6 +135,16 @@ pub fn write_web_lockfile_with_state(
     );
     lockfile.version = LOCKFILE_SCHEMA_VERSION.to_string();
 
+    // Deterministic self-hash: v3 must never ship with an empty
+    // `lockfile_hash`. The digest covers the document with that line
+    // blanked, so two resolves of the same graph produce byte-identical
+    // files (P0: `generated_at` used to differ on every run).
+    // (Tự-hash tất định: v3 không được ghi `lockfile_hash` rỗng. Digest phủ
+    // tài liệu khi dòng đó trống nên hai lần resolve cùng graph cho byte y
+    // hệt (P0: trước đây `generated_at` khác nhau mỗi lần chạy).)
+    let lockfile = mgc_lockfile::writer::with_lockfile_hash(&lockfile)
+        .map_err(|e| LockfileError::Serialization(format!("lockfile hash failed: {}", e)))?;
+
     // Write lockfile — CANONICAL TOML v2 (một format duy nhất cho mọi đường ghi;
     // reader vẫn đọc được JSON-flavoured cũ từ các bản trước)
     // (Write CANONICAL TOML v2 — single format across all writers)

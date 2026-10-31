@@ -20,6 +20,7 @@ pub(in crate::verifier) fn verify_legacy_lockfile(
                     "lockfile declares a signer but its signature sidecar is missing".to_string(),
                 ));
             }
+            warn_on_digest_mismatch(lockfile_path, &lockfile);
             return Ok(VerificationStatus::Unsigned);
         }
         Err(error) => return Err(error.into()),
@@ -45,6 +46,35 @@ pub(in crate::verifier) fn verify_legacy_lockfile(
             Ok(VerificationStatus::InvalidSignature(message))
         }
         Err(error) => Err(error),
+    }
+}
+
+/// Self-hash check for unsigned v3 locks: a recorded `lockfile_hash` must
+/// recompute from the document itself. Locks written before the digest was
+/// populated carry `""` (legacy, accepted silently — they stay `Unsigned`).
+/// A non-empty digest that does not match is a real integrity failure, so it
+/// is surfaced loudly instead of passing as a clean unsigned lock.
+/// (Tự-kiểm hash cho lock v3 không ký: `lockfile_hash` đã ghi phải tính lại
+/// được từ chính tài liệu. Lock cũ ghi `""` vẫn hợp lệ (giữ `Unsigned`).
+/// Digest khác rỗng mà không khớp là lỗi toàn vẹn thật → cảnh báo rõ.)
+fn warn_on_digest_mismatch(lockfile_path: &Path, lockfile: &crate::Lockfile) {
+    if lockfile.metadata.lockfile_hash.is_empty() {
+        return;
+    }
+    let Ok(bytes) = crate::parser::read_lockfile_bytes(lockfile_path) else {
+        return;
+    };
+    let Ok(text) = std::str::from_utf8(&bytes) else {
+        return;
+    };
+    match crate::writer::recompute_lockfile_hash(text) {
+        Ok(recomputed) if recomputed != lockfile.metadata.lockfile_hash => eprintln!(
+            "WARNING: mgc.lock lockfile_hash does not match its content \
+             (recorded {}, recomputed {recomputed}); the document was modified after it was written",
+            lockfile.metadata.lockfile_hash
+        ),
+        Ok(_) => {}
+        Err(error) => eprintln!("WARNING: mgc.lock self-hash could not be verified: {error}"),
     }
 }
 

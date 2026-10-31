@@ -126,6 +126,10 @@ pub(crate) fn write_canonical_lock_with_roots(
         .map_err(|error| MgError::Other(error.to_string()))?;
     lockfile.metadata.generated_at = chrono::Utc::now().to_rfc3339();
     lockfile.metadata.generator = format!("mgc/{}", env!("CARGO_PKG_VERSION"));
+    // v3 integrity is self-checkable, never an empty digest.
+    // (Toàn vẹn v3 tự kiểm được, không bao giờ digest rỗng.)
+    let lockfile = mgc_lockfile::writer::with_lockfile_hash(&lockfile)
+        .map_err(|e| MgError::Other(format!("lockfile hashing failed: {e}")))?;
     let toml = mgc_lockfile::writer::serialize_lockfile(&lockfile)
         .map_err(|e| MgError::Other(format!("lockfile serialization failed: {e}")))?;
     atomic_write_canonical_lock(&lock_path, toml.as_bytes())

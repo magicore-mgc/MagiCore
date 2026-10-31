@@ -17,7 +17,12 @@ pub(in crate::commands::build::implementation) async fn build_lib(
         crate::commands::optimizer::env_loader::load_optimizer_env(root, &runtime)?;
     if project_manifest_present(root, "Cargo.toml")? {
         crate::commands::freshness::check_lib_cargo_freshness(root)?;
-        let store_source = mgc_lib_adapter::install::cargo_compat::validate_build(root)?;
+        let store_source =
+            mgc_lib_adapter::install::cargo_compat::validate_build_for_core_with_fetch(
+                root,
+                "lib",
+                fetch.is_offline(),
+            )?;
         match store_source {
             Some(source) => finish_managed_rust_build(root, optimizer_envs, &source, fetch)?,
             None => build_rust_with_env(root, optimizer_envs, fetch)?,

@@ -93,6 +93,16 @@ pub(in crate::install::lockfile) fn write_v3_lane(
     })?;
     lockfile.metadata.generated_at = chrono::Utc::now().to_rfc3339();
     lockfile.metadata.generator = format!("mgc/{}", env!("CARGO_PKG_VERSION"));
+    // v3 integrity is self-checkable, never an empty digest.
+    // (Toàn vẹn v3 tự kiểm được, không bao giờ digest rỗng.)
+    let lockfile = mgc_lockfile::writer::with_lockfile_hash(&lockfile).map_err(|error| {
+        AppLockfileError::caused(
+            "MGC_APP_LOCK_V3_HASH",
+            "hash v3 lock",
+            format!("lockfile hashing failed: {error}"),
+            error,
+        )
+    })?;
     let toml = mgc_lockfile::writer::serialize_lockfile(&lockfile).map_err(|error| {
         AppLockfileError::caused(
             "MGC_APP_LOCK_V3_SERIALIZE",

@@ -75,6 +75,9 @@ pub async fn run(args: DedupeArgs) -> Result<()> {
         // unreferenced store runs ONLY after the commit verifies — a
         // failed merge never deletes materialization it might need back.
         // (Commit nguyên tử → verify → mới GC; fail thì rollback nguyên tử.)
+        // Re-seal the mutated lock: the digest must describe THIS body.
+        // (Đóng dấu lại lock đã sửa: digest phải mô tả đúng body này.)
+        let new_lock = mgc_lockfile::writer::with_lockfile_hash(&new_lock)?;
         let new_toml = mgc_lockfile::writer::serialize_lockfile(&new_lock)?;
         mgc_lockfile::ensure_lockfile_mutation_allowed(&mgc_lock)?;
         mgc_lockfile::atomic::atomic_write_locked(

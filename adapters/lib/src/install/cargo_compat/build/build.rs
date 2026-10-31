@@ -6,9 +6,18 @@ use std::path::{Path, PathBuf};
 
 /// Validate a Cargo build owned by the requested MagiCore core.
 /// Xác minh Cargo build thuộc core MagiCore được yêu cầu.
+///
+/// `offline` selects who owns dependency acquisition. An online build lets
+/// Cargo fetch a crate the store does not hold, so a missing managed source is
+/// not a defect; an offline build has no other source, so the store must hold
+/// and re-verify every crate before Cargo starts.
+/// (`offline` quyết định ai chịu trách nhiệm lấy dependency: build online để
+/// Cargo tự tải crate chưa có nên thiếu source managed không phải lỗi; build
+/// offline không còn nguồn khác nên store phải có và reverify mọi crate.)
 pub(in crate::install) fn validate_build_for_core_impl(
     project_root: &Path,
     expected_core: &str,
+    offline: bool,
 ) -> MgResult<Option<PathBuf>> {
     if !matches!(expected_core, "lib" | "iot" | "web") {
         return Err(MgError::Other(format!(
@@ -55,6 +64,16 @@ pub(in crate::install) fn validate_build_for_core_impl(
         .map_err(|error| MgError::Other(format!("cannot resolve MGC store: {error}")))?
         .store;
     let source_root = store.join("cargo").join("registry").join("src");
+    // Online: Cargo can fetch every crate itself, so the store is only a cache.
+    // Report it only when it already holds a directory; a missing store is not
+    // an error and must not replace a resolvable crate with a hard failure.
+    // (Online: Cargo tự tải được mọi crate nên store chỉ là cache. Chỉ trả về
+    // khi store đã có thư mục; store thiếu không phải lỗi và không được biến
+    // crate resolve được thành lỗi cứng.)
+    if !offline {
+        return Ok(source_root.is_dir().then_some(source_root));
+    }
+
     for package in &rust_packages {
         let source_dir = source_root.join(format!("{}-{}", package.name, package.version));
         let metadata = std::fs::symlink_metadata(&source_dir).map_err(|error| {

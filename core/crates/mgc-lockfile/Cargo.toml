@@ -66,6 +66,14 @@ path = "tests/v4_builder.rs"
 name = "v4_stress"
 path = "tests/v4_stress.rs"
 
+[[test]]
+name = "v3_reproducibility"
+path = "tests/v3_reproducibility.rs"
+
+[[test]]
+name = "lockfile_byte_proof"
+path = "tests/lockfile_byte_proof.rs"
+
 [dependencies]
 # Crypto primitives (local crate)
 mgc-crypto = { path = "../mgc-crypto" }

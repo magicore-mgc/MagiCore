@@ -3,4 +3,8 @@
 
 mod exec;
 
+#[cfg(test)]
+#[path = "test/exec.rs"]
+mod tests;
+
 pub use exec::*;

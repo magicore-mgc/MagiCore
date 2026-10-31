@@ -6,6 +6,10 @@ use mgc_ui::info;
 
 use crate::commands::build::implementation::DependencyFetch;
 
+/// Name Cargo uses for the MagiCore-managed directory source.
+/// Tên Cargo dùng cho directory source do MagiCore quản lý.
+pub(crate) const MANAGED_SOURCE_NAME: &str = "mgc-managed";
+
 /// Build Rust with the complete optimizer environment — build Rust với toàn bộ env optimizer.
 ///
 /// `fetch` decides whether Cargo may reach the network. The default is online:
@@ -41,12 +45,18 @@ pub(crate) fn build_rust_with_env(
     Ok(())
 }
 
-/// Build a library Rust project using only Cargo sources materialized by MGC.
+/// Build a Rust library project against the MagiCore-managed crate source.
 ///
-/// A managed source is a local directory replacement, so no network is
-/// involved regardless of `fetch`; `--locked` keeps the lock authoritative.
-/// (Build Rust thư viện bằng source MGC đã materialize; source là thư mục cục
-/// bộ nên không cần mạng.)
+/// The managed store is a fallback, never the only source. Offline replaces
+/// crates-io with the directory source and fails closed on a crate it lacks;
+/// online only *adds* the directory as a named source and leaves crates-io
+/// primary, because a directory source cannot fetch and replacing crates-io
+/// made every online build unable to resolve a crate the store did not hold.
+/// `--locked` stays in both modes.
+/// (Store managed là fallback, không phải nguồn duy nhất. Offline thay thế
+/// crates-io bằng directory source và fail-closed khi thiếu crate; online chỉ
+/// THÊM directory source, giữ crates-io làm nguồn chính vì directory source
+/// không tải được. `--locked` giữ ở cả hai chế độ.)
 pub(crate) fn build_rust_with_managed_source(
     root: &Path,
     optimizer_envs: std::collections::HashMap<String, String>,
@@ -54,21 +64,14 @@ pub(crate) fn build_rust_with_managed_source(
     fetch: DependencyFetch,
 ) -> Result<()> {
     let start = Instant::now();
-    info("Detected Rust library — building from the MagiCore-managed offline source...");
+    info("Detected Rust library — building against the MagiCore-managed crate source...");
     if let Some(rustflags) = optimizer_envs.get("RUSTFLAGS") {
         mgc_ui::info(&format!("Applying RUSTFLAGS: {rustflags}"));
     }
     let source_path = source_root.to_str().ok_or_else(|| {
         anyhow::Error::new(super::error::RustBuildError::ManagedSourcePathNotUtf8)
     })?;
-    let directory_value = toml::Value::String(source_path.to_string()).to_string();
-    let source_config = format!("source.mgc-managed.directory={directory_value}");
-    let base = [
-        "--config".to_string(),
-        "source.crates-io.replace-with=\"mgc-managed\"".to_string(),
-        "--config".to_string(),
-        source_config,
-    ];
+    let base = managed_source_config(fetch, source_path);
     let args = cargo_build_args(fetch, &base);
     let opts = mgc_exec::prelude::ExecOptions {
         cwd: Some(root.to_path_buf()),
@@ -84,6 +87,32 @@ pub(crate) fn build_rust_with_managed_source(
         start.elapsed()
     ));
     Ok(())
+}
+
+/// Build the `--config` prefix that wires the managed directory source.
+///
+/// Offline: `source.crates-io.replace-with` points crates-io at the managed
+/// directory, so Cargo cannot reach the network and a missing crate fails.
+/// Online: only `source.mgc-managed.directory` is declared — crates-io keeps
+/// its real registry and stays able to download.
+/// (Offline: `replace-with` trỏ crates-io vào thư mục managed nên Cargo không ra
+/// mạng và crate thiếu sẽ fail. Online: chỉ khai báo directory của source managed
+/// — crates-io giữ registry thật và vẫn tải được.)
+pub(crate) fn managed_source_config(fetch: DependencyFetch, source_path: &str) -> Vec<String> {
+    let source_config = format!(
+        "source.{MANAGED_SOURCE_NAME}.directory={}",
+        toml::Value::String(source_path.to_string())
+    );
+    let mut config = Vec::new();
+    if fetch.is_offline() {
+        config.push("--config".to_string());
+        config.push(format!(
+            "source.crates-io.replace-with=\"{MANAGED_SOURCE_NAME}\""
+        ));
+    }
+    config.push("--config".to_string());
+    config.push(source_config);
+    config
 }
 
 /// Assemble `cargo build` arguments for the selected dependency-fetch mode.

@@ -43,7 +43,16 @@ pub fn run(
     let opts = mgc_exec::prelude::ExecOptions {
         cwd: Some(project_root.to_path_buf()),
         log_path: Some(project_root.join(".magicore").join("exec.log")),
-        clean_env: true,
+        // A tool started through `mgc exec` is an application process, so it must
+        // see the caller's PORT/NODE_ENV/DATABASE_URL and API keys exactly as the
+        // same tool would when started directly. `clean_env` scrubbed them and the
+        // child saw `undefined`; MagiCore's own variables stay layered on top via
+        // `env` below, and the allowlist plus process monitor are unaffected.
+        // (Tool chạy qua `mgc exec` là tiến trình ứng dụng nên phải thấy
+        // PORT/NODE_ENV/DATABASE_URL và API key của caller như khi chạy trực tiếp.
+        // `clean_env` đã xóa chúng khiến child thấy `undefined`; biến của MagiCore
+        // vẫn xếp trên qua `env` bên dưới, allowlist và monitor không đổi.)
+        clean_env: false,
         // Explicit project execution must not inherit the installation scope.
         // Lệnh exec của project dùng scope script, không mượn quyền install.
         execution_scope: Some(mgc_exec::allowlist::ExecutionScope::ScriptRunner),

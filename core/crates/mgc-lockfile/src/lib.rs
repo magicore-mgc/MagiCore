@@ -61,8 +61,8 @@ pub use verifier::{
     verify_ownership_completeness,
 };
 pub use writer::{
-    ensure_lockfile_mutation_allowed, serialize_lockfile, sign_and_write_lockfile,
-    sign_lockfile_with_default_key, write_lockfile,
+    ensure_lockfile_mutation_allowed, recompute_lockfile_hash, serialize_lockfile,
+    sign_and_write_lockfile, sign_lockfile_with_default_key, with_lockfile_hash, write_lockfile,
 };
 
 // Issue #4: Lockfile V2 - Temporary stub, replace with proper v2 implementation

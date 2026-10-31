@@ -156,13 +156,6 @@ fn push_workspace(out: &mut String, payload: &LockfilePayload) {
 fn push_packages(out: &mut String, payload: &LockfilePayload) {
     let mut packages: Vec<&PackageV4> = payload.packages.iter().collect();
     packages.sort_by_cached_key(|package| crate::canonical::sort_key::package_sort_key(package));
-    eprintln!(
-        "DBG order {:?}",
-        packages
-            .iter()
-            .map(|p| p.key.name.clone())
-            .collect::<Vec<_>>()
-    );
     if packages.is_empty() {
         return;
     }

@@ -94,7 +94,11 @@ pub(in crate::install::lockfile) fn write_v4_lane(
             )
         })?;
     }
-    doc.metadata.generated_at = chrono::Utc::now().to_rfc3339();
+    // Deterministic stamp: the digest is the integrity record, so a wall
+    // clock here only broke byte reproducibility (P0).
+    // (Stamp tất định: digest là bản ghi toàn vẹn, đồng hồ ở đây chỉ phá
+    // tái lập byte (P0).)
+    doc.metadata.generated_at = mgc_lockfile::writer::deterministic_generated_at();
     let text = finalize_v4_document(&mut doc).map_err(|error| {
         AppLockfileError::caused(
             "MGC_APP_LOCK_V4_FINALIZE",

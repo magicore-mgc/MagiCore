@@ -31,8 +31,17 @@ pub(in crate::commands::core::web::implementation::dev::native_launch) fn infer_
 
 #[cfg(any(feature = "lib", feature = "web-backend-runtime"))]
 fn native_cargo_run_args(project_root: &Path) -> Result<Vec<OsString>> {
-    let source_root =
-        mgc_lib_adapter::install::cargo_compat::validate_build_for_core(project_root, "web")?;
+    // `mgc dev` launches a long-running server, so it stays offline: the run
+    // must not start a download behind the developer. Offline keeps the managed
+    // directory replacement and the fail-closed preflight for every crate.
+    // (`mgc dev` chạy server dài hạn nên giữ offline: lệnh run không được âm
+    // thầm tải về. Offline giữ replacement directory managed và preflight
+    // fail-closed cho mọi crate.)
+    let source_root = mgc_lib_adapter::install::cargo_compat::validate_build_for_core_with_fetch(
+        project_root,
+        "web",
+        true,
+    )?;
     // `mgc dev` on a Rust web backend reads the same managed `registry/src` as
     // `mgc build`, so a legacy store must be repaired here too.
     // (`mgc dev` với backend Rust đọc cùng `registry/src` managed như `mgc build`,

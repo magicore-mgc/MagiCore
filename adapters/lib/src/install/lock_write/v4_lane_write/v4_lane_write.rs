@@ -79,7 +79,11 @@ pub(in crate::install::lock_write) fn write_canonical_lock_v4(
         mgc_lockfile::atomic::ensure_v4_unsigned_for_rewrite(base_doc)
             .map_err(|error| MgError::Other(error.to_string()))?;
     }
-    doc.metadata.generated_at = chrono::Utc::now().to_rfc3339();
+    // Deterministic stamp: the digest is the integrity record, so a wall
+    // clock here only broke byte reproducibility (P0).
+    // (Stamp tất định: digest là bản ghi toàn vẹn, đồng hồ ở đây chỉ phá
+    // tái lập byte (P0).)
+    doc.metadata.generated_at = mgc_lockfile::writer::deterministic_generated_at();
     let text = finalize_v4_document(&mut doc).map_err(|error| MgError::Other(error.to_string()))?;
     mgc_lockfile::atomic::atomic_write_v4_bytes(lock_path, text.as_bytes())
         .map_err(|error| MgError::Other(error.to_string()))?;

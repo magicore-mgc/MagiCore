@@ -2,6 +2,15 @@
 
 from .support import *
 
+
+def function_body(source, signature):
+    """Return the body text of the first function starting at `signature`."""
+    # Helper holds no assertion; callers assert on the returned slice.
+    # (Helper không assert; caller assert trên đoạn code trả về.)
+    start = source.index(signature)
+    return source[start:source.index("\n}\n", start) + 2]
+
+
 class RepoLedgerContractPart1(unittest.TestCase):
     def test_global_tool_self_install_route_is_fixed_and_scoped(self):
         repo_root = REPO_ROOT
@@ -166,26 +175,41 @@ class RepoLedgerContractPart1(unittest.TestCase):
         ):
             self.assertIn(token, function_body)
 
-    def test_managed_rust_build_has_reviewed_offline_executor_boundary(self):
+    def test_managed_rust_build_has_reviewed_executor_boundary(self):
         # Bind the reviewed route to its source/preflight invariants.
         # Khóa route đã review với source và preflight hiện hành.
+        #
+        # The managed store is a fallback: only the offline mode may replace
+        # crates-io with the directory source, otherwise Cargo can never fetch.
+        # (Store managed là fallback: chỉ chế độ offline được thay crates-io bằng
+        # directory source, nếu không Cargo không bao giờ tải được.)
         repo_root = REPO_ROOT
         rel = "cli/src/commands/build/web_engine/rust_build/rust_build.rs"
         with open(os.path.join(repo_root, rel), encoding="utf-8") as handle:
             source = handle.read()
-        start = source.index("pub(crate) fn build_rust_with_managed_source(")
-        body = source[start:source.index("\n}\n", start) + 2]
-        for token in ('"--locked"', '"--offline"', 'source.crates-io.replace-with=',
-                      'source.mgc-managed.directory=', 'ExecutionScope::BuildRunner',
+        body = function_body(source, "pub(crate) fn build_rust_with_managed_source(")
+        for token in ("managed_source_config(fetch, source_path)",
+                      "cargo_build_args(fetch, &base)", 'ExecutionScope::BuildRunner',
                       'mgc_exec::prelude::run("cargo", &args, &opts)'):
             self.assertIn(token, body)
+        for token in ('"--locked"', '"--offline"'):
+            self.assertIn(token, function_body(source, "pub(crate) fn cargo_build_args("))
+        config = function_body(source, "pub(crate) fn managed_source_config(")
+        self.assertIn('"source.{MANAGED_SOURCE_NAME}.directory={}"', config)
+        self.assertIn("if fetch.is_offline() {", config)
+        self.assertIn('source.crates-io.replace-with=', config)
+        config_start = config.index("if fetch.is_offline() {")
+        self.assertLess(
+            config_start,
+            config.index("source.crates-io.replace-with="),
+            "the crates-io replacement must stay inside the offline branch",
+        )
         with open(os.path.join(repo_root, "cli/src/commands/build/build/lib/lib.rs"), encoding="utf-8") as handle:
             caller = handle.read()
-        start = caller.index("async fn build_lib(")
-        caller = caller[start:caller.index("\n}\n", start) + 2]
+        caller = function_body(caller, "async fn build_lib(")
         freshness = caller.index("check_lib_cargo_freshness(root)?")
-        verify = caller.index("cargo_compat::validate_build(root)?")
-        launch = caller.index("build_rust_with_managed_source(root,")
+        verify = caller.index("cargo_compat::validate_build_for_core_with_fetch(")
+        launch = caller.index("finish_managed_rust_build(root,")
         self.assertLess(freshness, verify)
         self.assertLess(verify, launch)
         findings = [row for row in gate.scan_file(rel, os.path.join(repo_root, rel))

@@ -24,16 +24,27 @@ pub fn sign_and_write_lockfile(
         public_key: signer.public_key().to_base64(),
         signed_at: chrono::Utc::now().to_rfc3339(),
     });
-    lockfile.metadata.lockfile_hash = String::new();
 
-    crate::writer::write_lockfile_unchecked(lockfile, lockfile_path)?;
+    // A signed lock is still a v3 lock: seal the self-hash first, then hash
+    // the exact bytes on disk for the sidecar. Leaving `lockfile_hash` empty
+    // (the old behaviour) made a signed lock fail its own self-check and
+    // refused every later re-seal, because the sidecar cannot cover a field
+    // it would have to contain.
+    // (Lock đã ký vẫn là lock v3: seal tự-hash trước, rồi băm đúng byte trên
+    // đĩa cho sidecar. Để `lockfile_hash` rỗng (hành vi cũ) khiến lock đã ký
+    // trượt tự-kiểm và chặn mọi lần seal lại sau đó.)
+    crate::writer::write_lockfile(lockfile, lockfile_path)?;
 
     let lockfile_bytes = std::fs::read(lockfile_path)?;
     let lockfile_hash = Blake3Hasher::hash_bytes(&lockfile_bytes);
     let lockfile_hash_str = format!("blake3-{}", lockfile_hash.to_base64());
     let signature = signer.sign(lockfile_hash.0.as_ref());
     let signature_str = format!("ed25519-{}", signature.to_base64());
-    lockfile.metadata.lockfile_hash = lockfile_hash_str.clone();
+    // The caller sees the document exactly as written (sealed self-hash);
+    // the sidecar digest is a separate artifact over the whole file.
+    // (Caller thấy tài liệu đúng như đã ghi (tự-hash đã seal); digest
+    // sidecar là artifact riêng trên toàn file.)
+    *lockfile = crate::parser::load_lockfile(lockfile_path)?;
 
     let signature_file =
         SignatureFile::new(lockfile_hash_str, signature_str, key_pair.key_id.clone());

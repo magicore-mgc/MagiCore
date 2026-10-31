@@ -34,6 +34,16 @@ pub(in crate::audit) fn build_findings_for_advisory(
     // âm thầm — sẽ giấu finding thật sau range rác.
     validate_semver_range(&record.vulnerable_versions)?;
 
+    // Resolve the identifier ONCE per advisory: a real CVE when the record
+    // carries `cves`, else the GHSA id from `cves` or `url`, else the npm
+    // numeric id (rendered as `Advisory`). The old code always used the
+    // numeric id, so `CVE-2021-23337` was never shown.
+    // (Chỉ resolve định danh MỘT lần cho mỗi advisory: CVE thật nếu record
+    // có `cves`, không thì GHSA trong `cves`/`url`, cuối cùng là id số npm
+    // (in nhãn `Advisory`). Code cũ luôn dùng id số nên không bao giờ hiện
+    // `CVE-2021-23337`.)
+    let identifier = record.primary_identifier();
+
     let mut findings = Vec::new();
     for (_pin_name, pin_version) in pins.iter().filter(|(n, _)| n == pkg_name) {
         let installed = Version::parse(pin_version)
@@ -50,11 +60,10 @@ pub(in crate::audit) fn build_findings_for_advisory(
                 ),
                 title: record.title.clone(),
                 severity: record.severity.clone(),
-                // The registry numeric `id` is the advisory identifier (same
-                // thing npm audit prints); there is no CVE array on this API.
-                // `id` số của registry chính là định danh advisory (npm audit
-                // cũng in vậy); API này không có mảng CVE.
-                cve: record.id.to_string(),
+                // Real CVE > GHSA > registry numeric id (see
+                // `AdvisoryRecord::primary_identifier`).
+                // (CVE thật > GHSA > id số registry.)
+                cve: identifier.clone(),
                 severity_level: VulnerabilitySeverity::from_str(&record.severity),
                 patched_versions: Some(record.vulnerable_versions.clone()),
                 url: Some(record.url.clone()),

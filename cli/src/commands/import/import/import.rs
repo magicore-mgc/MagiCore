@@ -133,7 +133,11 @@ pub async fn run(project_dir: Option<PathBuf>, allow_unsigned: bool) -> Result<(
                 "EXPLICIT --allow-unsigned: writing UNSIGNED mgc.lock (no default signing key) — run `mgc trust sign` after generating a key",
             );
             lockfile.metadata.signer = None;
-            lockfile.metadata.lockfile_hash.clear();
+            // Deterministic self-hash replaces the cleared digest: v3 must
+            // never persist with an empty `lockfile_hash`.
+            // (Tự-hash tất định thay digest đã xóa: v3 không bao giờ lưu
+            // `lockfile_hash` rỗng.)
+            let lockfile = mgc_lockfile::writer::with_lockfile_hash(&lockfile)?;
             mgc_lockfile::atomic::atomic_write_locked(
                 &_guard,
                 &lock_path,

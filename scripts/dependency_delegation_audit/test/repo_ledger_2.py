@@ -30,7 +30,7 @@ class RepoLedgerContractPart2(unittest.TestCase):
                 "cli/src/commands/build/web_engine/rust_build/rust_build.rs",
                 "build_rust_with_env",
                 "cargo",
-                ("ExecutionScope::BuildRunner", '"--locked"', '"--offline"'),
+                ("ExecutionScope::BuildRunner", "cargo_build_args(fetch, &[])"),
             ),
             (
                 "cli/src/commands/core/dev/app/ios_simulator/ios_simulator.rs",
