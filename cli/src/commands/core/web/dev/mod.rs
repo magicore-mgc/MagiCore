@@ -18,6 +18,9 @@ use local_binary::prepend_path;
 pub use dev::dev_at_root;
 pub(in crate::commands::core::web::implementation) use dev_scan::scan_sources as scan_dev_sources;
 
+pub(in crate::commands::core::web::implementation) use backend_script::{
+    BackendScript, is_backend_half, resolve_backend_script,
+};
 pub(in crate::commands::core::web::implementation) use endpoint_args::append_dev_endpoint_args;
 #[cfg(test)]
 pub(in crate::commands::core::web::implementation) use native_launch::cargo_run_args_from_managed_source;
@@ -31,6 +34,8 @@ pub(in crate::commands::core::web::implementation) use script_lookup::{
 };
 pub(in crate::commands::core::web::implementation) use types::{DevLaunch, DevTarget};
 
+#[path = "backend_script/mod.rs"]
+mod backend_script;
 #[path = "local_binary/mod.rs"]
 mod local_binary;
 #[path = "native_environment/mod.rs"]

@@ -9,6 +9,7 @@ use super::IotBuildError;
 pub(in crate::commands::build::implementation) async fn build_iot(
     root: &Path,
     allow_output_warnings: bool,
+    fetch: DependencyFetch,
 ) -> Result<()> {
     if project_manifest_present(root, "platformio.ini")? {
         return Err(IotBuildError::Unsupported {
@@ -38,8 +39,8 @@ pub(in crate::commands::build::implementation) async fn build_iot(
         let store_source =
             mgc_lib_adapter::install::cargo_compat::validate_build_for_core(root, "iot")?;
         match store_source {
-            Some(source) => finish_managed_rust_build(root, optimizer_envs, &source)?,
-            None => build_rust_with_env(root, optimizer_envs)?,
+            Some(source) => finish_managed_rust_build(root, optimizer_envs, &source, fetch)?,
+            None => build_rust_with_env(root, optimizer_envs, fetch)?,
         }
         return crate::commands::build::post_build::run_for_core(
             root,

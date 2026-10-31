@@ -34,9 +34,9 @@ pub use audit::run;
 pub(crate) use audit::run_strict;
 pub(super) use audit::{finish_and_print, run_adapter_audit};
 pub(crate) use output_format::OutputFormat;
-#[cfg(test)]
-pub(crate) use report::finding_table_labels;
 pub(crate) use report::print_audit_report;
+#[cfg(test)]
+pub(crate) use report::{advisory_id_label, finding_table_labels, is_cve_id};
 pub(crate) use strict_mode::{StrictMode, enforce_audit_exit};
 
 #[cfg(test)]

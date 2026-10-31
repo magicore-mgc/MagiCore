@@ -4,5 +4,6 @@
 mod dev;
 mod forwarded_flags;
 
+pub(crate) use dev::DEFAULT_DEV_HOST;
 pub use dev::run;
 pub use forwarded_flags::validate_forwarded_runtime_flags;

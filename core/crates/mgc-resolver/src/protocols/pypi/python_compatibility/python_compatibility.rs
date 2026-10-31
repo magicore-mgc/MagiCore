@@ -1,3 +1,6 @@
+//! ABI, interpreter-flavor and `requires_python` compatibility predicates.
+//! Predicate tương thích ABI, flavor interpreter và `requires_python`.
+
 /// Consumer Python from `MGC_PYTHON_VERSION` (`3.9`, `3.9.6`, `39` …).
 /// `None` = unknown (historical lenient behavior + warning).
 /// (Python consumer từ env `MGC_PYTHON_VERSION`.)
@@ -29,15 +32,39 @@ pub(in crate::protocols::pypi) fn consumer_python() -> Option<(u64, u64)> {
     }
 }
 
-/// ABI compatibility of one wheel's `(py, abi)` tags against consumer
-/// `(major, minor)`: universal, exact cpXY, or abi3 at/above its floor
-/// (`cp37-abi3` runs on 3.7+).
-/// (Tương thích ABI của wheel với Python consumer.)
-pub(in crate::protocols::pypi) fn abi_compatible(
+/// Interpreter ABI flavor used for binary-wheel selection.
+///
+/// `GIL` is the only flavor a build can prove here. Free-threaded CPython
+/// (`cp314t`) needs its own `t`-suffixed ABI and cannot load abi3/GIL
+/// binaries, so the flavor is never inferred from the version alone: an
+/// unknown runtime falls back to `GIL`, the historical behavior.
+/// (Flavor ABI dùng để chọn wheel binary. Chỉ `GIL` là chứng minh được ở đây;
+/// free-threaded cần ABI `t` riêng nên không suy ra từ version.)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum InterpreterAbiFlavor {
+    Gil,
+    FreeThreaded,
+}
+
+impl InterpreterAbiFlavor {
+    /// Tag suffix appended to the `cp<major><minor>` ABI tag.
+    /// (Hậu tố gắn vào tag ABI `cp<major><minor>`.)
+    fn abi_suffix(self) -> &'static str {
+        match self {
+            Self::Gil => "",
+            Self::FreeThreaded => "t",
+        }
+    }
+}
+
+/// Flavor-aware ABI compatibility; `flavor` is the running interpreter's ABI.
+/// (Tương thích ABI có xét flavor của interpreter.)
+pub(crate) fn abi_compatible_for_interpreter(
     py: &str,
     abi: &str,
     major: u64,
     minor: u64,
+    flavor: InterpreterAbiFlavor,
 ) -> bool {
     if abi == "none" {
         // `py3-none-any` universal, or versioned pure-python (`cp39-none-any`).
@@ -46,8 +73,13 @@ pub(in crate::protocols::pypi) fn abi_compatible(
         });
     }
     if abi == "abi3" {
-        // Stable ABI: `cp37-abi3` needs consumer >= 3.7.
-        // (ABI ổn định: chạy trên mọi bản >= floor.)
+        // Stable ABI: `cp37-abi3` needs consumer >= 3.7. abi3 is a GIL-ABI
+        // contract, so a free-threaded interpreter cannot load it.
+        // (ABI ổn định: chạy trên mọi bản >= floor; abi3 thuộc ABI GIL nên
+        // interpreter free-threaded không nạp được.)
+        if flavor == InterpreterAbiFlavor::FreeThreaded {
+            return false;
+        }
         for tag in py.split('.') {
             if let Some(rest) = tag.strip_prefix("cp") {
                 let floor: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
@@ -66,13 +98,13 @@ pub(in crate::protocols::pypi) fn abi_compatible(
         }
         return false;
     }
-    // Versioned ABI (`cp39`, `pp39`): exact match only.
-    // (ABI theo version: khớp chính xác.)
-    let want = format!("cp{major}{minor}");
-    py.split('.').any(|tag| {
-        let base = tag.split('_').next().unwrap_or(tag);
-        base == want
-    }) && abi == want
+    // Versioned ABI (`cp39`, `cp314t`, `pp39`): exact match only, including
+    // the free-threaded `t` suffix. A `t`-suffixed interpreter tag is binary
+    // incompatible with the GIL build of the same micro version.
+    // (ABI theo version: khớp chính xác, kể cả hậu tố `t`; bản `t` không thể
+    // nạp binary của bản GIL cùng version.)
+    let want = format!("cp{major}{minor}{}", flavor.abi_suffix());
+    py.split('.').any(|tag| tag == want) && abi == want
 }
 
 /// Does a `requires_python` specifier allow consumer `(major, minor)`?

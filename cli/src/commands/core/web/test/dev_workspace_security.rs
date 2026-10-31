@@ -198,6 +198,50 @@ fn monorepo_install_rejects_external_package_manager_fallbacks() {
 }
 
 #[test]
+fn startable_server_half_is_skipped_but_a_bare_manifest_is_not() {
+    // The install lane skips a half `mgc dev` starts itself. The predicate must
+    // require the entry file, so the fail-closed cases below stay untouched.
+    // (Lane install bỏ qua nửa do `mgc dev` tự chạy. Predicate phải đòi file
+    // entry, để các ca fail-closed bên dưới giữ nguyên.)
+    use super::is_startable_server_half;
+    for (manifest, entry) in [
+        ("Cargo.toml", "src/main.rs"),
+        ("go.mod", "main.go"),
+        ("pyproject.toml", "main.py"),
+        ("pyproject.toml", "app.py"),
+        ("pyproject.toml", "manage.py"),
+    ] {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join(manifest), "fixture").unwrap();
+        let entry_path = project.path().join(entry);
+        std::fs::create_dir_all(entry_path.parent().unwrap()).unwrap();
+        std::fs::write(entry_path, "fixture").unwrap();
+        assert!(
+            is_startable_server_half(project.path()),
+            "{manifest} + {entry} is a startable half"
+        );
+    }
+
+    // A manifest with nothing to run keeps failing closed.
+    // (Manifest không có gì để chạy vẫn fail-closed.)
+    for manifest in ["Cargo.toml", "go.mod", "pyproject.toml", "requirements.txt"] {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join(manifest), "fixture").unwrap();
+        assert!(
+            !is_startable_server_half(project.path()),
+            "{manifest} alone must not be skipped"
+        );
+    }
+
+    // A JS project is never a native half, even with an entry-looking file.
+    // (Project JS không bao giờ là nửa native, kể cả có file giống entry.)
+    let js = tempfile::tempdir().unwrap();
+    std::fs::write(js.path().join("package.json"), "{}").unwrap();
+    std::fs::write(js.path().join("main.py"), "print('x')").unwrap();
+    assert!(!is_startable_server_half(js.path()));
+}
+
+#[test]
 fn compat_decision_rejects_every_external_package_manager() {
     // No opt-in may authorize an external package-manager install.
     // Không cờ opt-in nào được cấp quyền cài bằng package manager ngoài.

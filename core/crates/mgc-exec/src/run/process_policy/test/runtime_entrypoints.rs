@@ -144,6 +144,11 @@ fn runtime_monitor_matches_structured_manager_invocations_without_scanning_code_
             args(&["cargo", "build", "--locked", "--offline"]),
             None,
         ),
+        // Online is the product default now; `--locked` is the only mandatory
+        // pin, so a networked `cargo build --locked` must not be denied as if
+        // it were resolving dependencies behind MagiCore's back.
+        // (`--locked` là pin bắt buộc duy nhất; build online không bị chặn.)
+        ("cargo", args(&["cargo", "build", "--locked"]), None),
         ("flutter", args(&["flutter", "run", "--no-pub"]), None),
         ("gradle", args(&["gradle", "build", "--offline"]), None),
         ("mvn", args(&["mvn", "test", "-o"]), None),

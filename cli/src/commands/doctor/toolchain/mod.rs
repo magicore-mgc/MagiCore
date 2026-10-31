@@ -3,7 +3,10 @@
 
 mod toolchain;
 
-pub(super) use toolchain::{TOOLCHAIN_PROBES, inventory, inventory_for_core};
+pub(super) use toolchain::{TOOLCHAIN_PROBES, inventory, inventory_for_project};
+
+#[cfg(test)]
+pub(super) use toolchain::inventory_for_core;
 
 #[cfg(test)]
 pub(super) use toolchain::{

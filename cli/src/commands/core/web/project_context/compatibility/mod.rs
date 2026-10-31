@@ -5,6 +5,7 @@ use super::*;
 mod implementation;
 pub use implementation::check_dev_freshness;
 pub(in crate::commands::core::web::implementation) use implementation::compat_install_target;
+pub(in crate::commands::core::web::implementation) use implementation::is_startable_server_half;
 #[cfg(test)]
 pub(in crate::commands::core::web::implementation) use implementation::{
     compat_gate_decision, non_native_member_ecosystem,

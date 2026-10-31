@@ -505,3 +505,102 @@ async fn deps_route_escapes_unusual_package_names_in_javascript_errors() {
     server.abort();
     server.await.ok();
 }
+
+/// P0 blank-screen regression (2026-10-31): the scaffolded `main.tsx`
+/// imports `react-dom/client`, so the deps route MUST serve
+/// `/@magicore/deps/react-dom/client` while `react-dom` 17 ships only a
+/// root-level `client.js` (no `exports` entry for it). The route used to
+/// 404 here, blanking every React app.
+/// (Regression P0 màn hình trắng: `main.tsx` scaffold import
+/// `react-dom/client`, nên route deps PHẢI phục vụ
+/// `/@magicore/deps/react-dom/client` khi `react-dom` 17 chỉ có
+/// `client.js` ở package root (không có `exports` cho nó). Trước đây
+/// route trả 404, làm mọi app React trắng màn hình.)
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn deps_route_serves_subpath_without_file_extension() {
+    let site = AdversarialSite::new();
+    let pkg_dir = site.root.join("node_modules/react-dom");
+    std::fs::create_dir_all(&pkg_dir).unwrap();
+    std::fs::write(
+        pkg_dir.join("package.json"),
+        r#"{ "name": "react-dom", "version": "17.0.2", "main": "index.js" }"#,
+    )
+    .unwrap();
+    std::fs::write(pkg_dir.join("index.js"), "module.exports = {};").unwrap();
+    std::fs::write(
+        pkg_dir.join("client.js"),
+        "export const mgcDomClient = 'react-dom-client-entry';",
+    )
+    .unwrap();
+
+    let port = free_port();
+    let server_root = site.root.clone();
+    let server = tokio::spawn(async move {
+        let config = DevServerConfig {
+            root: server_root,
+            entry: "src/main.ts".into(),
+            host: "localhost".to_string(),
+            port,
+        };
+        MgDevServer::new(config).serve().await
+    });
+    wait_ready(port).await;
+
+    let response = reqwest::get(format!(
+        "http://127.0.0.1:{port}/@magicore/deps/react-dom/client"
+    ))
+    .await
+    .unwrap();
+    let status = response.status();
+    let body = response.text().await.unwrap();
+    assert_eq!(
+        status,
+        reqwest::StatusCode::OK,
+        "react-dom/client must be served, not 404 (P0 blank screen), body: {body:?}"
+    );
+    assert!(
+        body.contains("react-dom-client-entry"),
+        "react-dom/client must carry client.js code, body: {body:?}"
+    );
+
+    server.abort();
+    server.await.ok();
+}
+
+/// A subpath that does not exist anywhere in the package stays a 404.
+/// (Subpath không tồn tại ở bất kỳ đâu trong package vẫn là 404.)
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn deps_route_404s_genuinely_absent_subpath() {
+    let site = AdversarialSite::new();
+    let pkg_dir = site.root.join("node_modules/react-dom");
+    std::fs::create_dir_all(&pkg_dir).unwrap();
+    std::fs::write(
+        pkg_dir.join("package.json"),
+        r#"{ "name": "react-dom", "main": "index.js", "exports": { ".": "./index.js" } }"#,
+    )
+    .unwrap();
+    std::fs::write(pkg_dir.join("index.js"), "module.exports = {};").unwrap();
+
+    let port = free_port();
+    let server_root = site.root.clone();
+    let server = tokio::spawn(async move {
+        let config = DevServerConfig {
+            root: server_root,
+            entry: "src/main.ts".into(),
+            host: "localhost".to_string(),
+            port,
+        };
+        MgDevServer::new(config).serve().await
+    });
+    wait_ready(port).await;
+
+    let response = reqwest::get(format!(
+        "http://127.0.0.1:{port}/@magicore/deps/react-dom/absent"
+    ))
+    .await
+    .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);
+
+    server.abort();
+    server.await.ok();
+}

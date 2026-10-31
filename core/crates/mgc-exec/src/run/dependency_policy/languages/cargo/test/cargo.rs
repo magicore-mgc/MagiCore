@@ -18,15 +18,46 @@ fn cargo_mutation_and_registry_commands_are_denied() {
         "generate-lockfile",
         "upgrade",
     ] {
-        assert!(denial_reason(&[], command).is_some(), "cargo {command} must be denied");
+        assert!(
+            denial_reason(&[], command).is_some(),
+            "cargo {command} must be denied"
+        );
     }
 }
 
 #[test]
-fn cargo_build_requires_both_locked_and_offline() {
+fn cargo_build_requires_locked() {
     assert!(denial_reason(&[], "build").is_some());
     assert!(denial_reason(&["--offline".into()], "build").is_some());
+    assert!(denial_reason(&["--locked".into()], "build").is_none());
+}
+
+#[test]
+fn cargo_offline_stays_an_explicit_choice() {
+    // `--offline` was mandatory, so `cargo build` could never fetch a crate the
+    // local registry did not hold and `mgc build` had no way to opt in to a
+    // network fetch. The locked/offline pair must both still be accepted.
+    // (`--offline` từng bắt buộc nên build không bao giờ tải được crate còn
+    // thiếu; cặp locked/offline vẫn phải được chấp nhận.)
     assert!(denial_reason(&["--locked".into(), "--offline".into()], "build").is_none());
+    for command in ["test", "check", "run", "clippy"] {
+        assert!(
+            denial_reason(&["--locked".into()], command).is_none(),
+            "cargo {command} --locked must be allowed online"
+        );
+        assert!(
+            denial_reason(&["--locked".into(), "--offline".into()], command).is_none(),
+            "cargo {command} --locked --offline must stay allowed"
+        );
+    }
+}
+
+#[test]
+fn cargo_metadata_is_a_read_only_query() {
+    // `cargo metadata` reads the graph; it neither builds nor fetches deps.
+    // (`cargo metadata` chỉ đọc graph, không build hay tải dependency.)
+    assert!(denial_reason(&[], "metadata").is_none());
+    assert!(denial_reason(&["--locked".into(), "--offline".into()], "metadata").is_none());
 }
 
 #[test]

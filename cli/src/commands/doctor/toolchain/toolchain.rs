@@ -10,7 +10,9 @@ use std::time::Duration;
 use mgc_exec::allowlist::ExecutionScope;
 use mgc_exec::run::{ExecOptions, run};
 
+#[cfg(test)]
 use super::super::core_toolchain::requirements_for_core;
+use super::super::core_toolchain::{CoreToolRequirement, requirements_for_project};
 use super::super::model::Tool;
 
 const VERSION_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -58,28 +60,48 @@ pub(in crate::commands::doctor) fn inventory() -> Vec<Tool> {
 /// Tool riêng core được nối sau inventory chung và khử trùng: tool đã có từ
 /// danh sách chung được gắn `required_by_core` thay vì probe hai lần. Khử trùng
 /// theo basename executable.
+#[cfg(test)]
 pub(in crate::commands::doctor) fn inventory_for_core(core: &str) -> Vec<Tool> {
     let mut tools = inventory();
     for requirement in requirements_for_core(core) {
-        // Skip a core tool already covered by the general inventory row.
-        // Bỏ tool core đã được hàng inventory chung bao phủ.
-        if let Some(existing) = tools
-            .iter_mut()
-            .find(|tool| tool.name == requirement.binary)
-        {
-            if existing.required_by_core.is_none() {
-                existing.required_by_core = Some(requirement.core);
-            }
-            continue;
-        }
-        tools.push(tool(
-            requirement.binary,
-            requirement.binary,
-            requirement.probe_args,
-            Some(requirement.core),
-        ));
+        push_requirement(&mut tools, requirement);
     }
     tools
+}
+
+/// Probe the core row plus the split server half's own runner.
+/// Probe hàng core cộng runner riêng của nửa server tách rời.
+pub(in crate::commands::doctor) fn inventory_for_project(
+    core: &str,
+    project_root: &std::path::Path,
+) -> Vec<Tool> {
+    let mut tools = inventory();
+    for requirement in requirements_for_project(core, project_root) {
+        push_requirement(&mut tools, requirement);
+    }
+    tools
+}
+
+/// Add one requirement to an inventory, tagging a shared row instead of repeating it.
+/// Thêm một requirement vào inventory, gắn tag cho hàng dùng chung thay vì lặp lại.
+fn push_requirement(tools: &mut Vec<Tool>, requirement: CoreToolRequirement) {
+    // Skip a core tool already covered by the general inventory row.
+    // Bỏ tool core đã được hàng inventory chung bao phủ.
+    if let Some(existing) = tools
+        .iter_mut()
+        .find(|tool| tool.name == requirement.binary)
+    {
+        if existing.required_by_core.is_none() {
+            existing.required_by_core = Some(requirement.core);
+        }
+        return;
+    }
+    tools.push(tool(
+        requirement.binary,
+        requirement.binary,
+        requirement.probe_args,
+        Some(requirement.core),
+    ));
 }
 
 fn which(bin: &str) -> Option<PathBuf> {

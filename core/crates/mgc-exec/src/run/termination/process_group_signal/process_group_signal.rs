@@ -5,6 +5,21 @@ use super::super::error::{TerminationFailures, TerminationPhase};
 use super::super::process_group_probe::{process_group_id, process_group_is_live};
 use super::super::process_signal_plan::process_signal_plan;
 
+/// Signal errors that mean "there is nothing left to stop".
+/// Lỗi signal nghĩa là "không còn gì để dừng".
+///
+/// `ESRCH`: the PID/PGID no longer exists (already exited, reaped, or relocated).
+/// `EPERM`: the kernel accepted the PID but refuses delivery — the documented
+/// signature of an already-exited child that the runner spawned and still owns.
+/// Retrying either one only repeats the same error until the grace window ends.
+/// (`ESRCH`: PID/PGID không còn tồn tại. `EPERM`: kernel thấy PID nhưng từ chối
+/// gửi — dấu hiệu đặc trưng của child đã thoát mà runner vẫn sở hữu. Thử lại chỉ
+/// lặp lại cùng lỗi cho tới hết grace window.)
+#[cfg(unix)]
+fn target_already_stopped(source: &std::io::Error) -> bool {
+    matches!(source.raw_os_error(), Some(libc::ESRCH) | Some(libc::EPERM))
+}
+
 #[cfg(unix)]
 pub(in crate::run::implementation::termination) fn signal_process_groups(
     root_pid: u32,
@@ -60,7 +75,7 @@ pub(in crate::run::implementation::termination) fn signal_process_groups(
                 Ok(root_pid) => {
                     if libc::kill(root_pid, signal) != 0 {
                         let source = std::io::Error::last_os_error();
-                        if source.raw_os_error() != Some(libc::ESRCH) {
+                        if !target_already_stopped(&source) {
                             failures.root_signal(root_pid as u32, signal, source);
                         }
                     }
@@ -115,7 +130,7 @@ pub(in crate::run::implementation::termination) fn signal_process_group_ids(
             }
             if libc::kill(-process_group, signal) != 0 {
                 let source = std::io::Error::last_os_error();
-                if source.raw_os_error() != Some(libc::ESRCH) {
+                if !target_already_stopped(&source) {
                     failures.process_group_signal(*group, signal, source);
                 }
             }

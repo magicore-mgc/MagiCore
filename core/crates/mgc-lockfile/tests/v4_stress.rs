@@ -116,6 +116,41 @@ fn random_graph(rng: &mut Lcg, lane: usize, size: usize) -> ResolvedGraph {
     ResolvedGraph { packages }
 }
 
+/// Compare content, ignoring collection order the writer sorts.
+///
+/// The writer emits packages/edges in a canonical order and the reader
+/// re-sorts package items, so an ordered comparison rejects a faithful
+/// round trip. Every field is still compared after normalization.
+/// (So nội dung, bỏ qua thứ tự collection mà writer sắp xếp. Writer xuất
+/// thứ tự canonical và reader sắp lại item package nên so theo thứ tự sẽ
+/// từ chối round-trip trung thực. Mọi field vẫn được so sau chuẩn hóa.)
+fn assert_same_document(back: &LockfileV4, doc: &LockfileV4, round: usize) {
+    let mut left = back.clone();
+    let mut right = doc.clone();
+    for item in [&mut left, &mut right] {
+        item.packages.sort_by(|a, b| {
+            (
+                a.key.name.clone(),
+                a.key.version.clone(),
+                a.key.source_id.clone(),
+                format!("{:?}", a.key.variant),
+            )
+                .cmp(&(
+                    b.key.name.clone(),
+                    b.key.version.clone(),
+                    b.key.source_id.clone(),
+                    format!("{:?}", b.key.variant),
+                ))
+        });
+        for package in &mut item.packages {
+            package
+                .edges
+                .sort_by(|a, b| format!("{a:?}").cmp(&format!("{b:?}")));
+        }
+    }
+    assert_eq!(left, right, "round {round}: round-trip drift");
+}
+
 #[test]
 fn v4_stress_200_rounds() {
     let mut rng = Lcg(0xC0FFEE);
@@ -135,7 +170,7 @@ fn v4_stress_200_rounds() {
             .unwrap_or_else(|e| panic!("round {round}: serialize failed: {e}"));
         let back = mgc_lockfile::canonical::parse_v4_document(&text)
             .unwrap_or_else(|e| panic!("round {round}: parse failed: {e}"));
-        assert_eq!(back, doc, "round {round}: round-trip drift");
+        assert_same_document(&back, &doc, round);
         let report = mgc_lockfile::policy::verify_v4_math(&back)
             .unwrap_or_else(|e| panic!("round {round}: verify failed: {e}"));
         assert!(report.digest_ok, "round {round}: digest mismatch");

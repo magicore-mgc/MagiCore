@@ -1,21 +1,30 @@
-//! Cargo dependency-management and locked/offline command rules.
-//! Rule command Cargo quản lý dependency và build locked/offline.
+//! Cargo dependency-management and locked/opt-in-offline command rules.
+//! Rule command Cargo quản lý dependency và build locked/offline opt-in.
 
 pub(in crate::run::implementation::dependency_policy::implementation::languages) fn denial_reason(
     args: &[String],
     first: &str,
 ) -> Option<&'static str> {
     let has = |flag: &str| args.iter().any(|arg| arg == flag);
+    // Cargo has no "download-only-if-needed" switch: `--locked` pins the
+    // lockfile, while `--offline` both forbids downloads AND requires every
+    // crate to be present in the local registry cache. Requiring it here made
+    // `mgc build` fail with Cargo's `no matching package named …` for any crate
+    // the managed store did not hold yet, even with network available.
+    // (Cargo không có cờ "chỉ tải khi cần": `--locked` ghim lockfile, còn
+    // `--offline` vừa cấm tải vừa đòi crate đã có trong cache cục bộ. Bắt buộc
+    // `--offline` khiến `mgc build` fail với crate chưa có dù có mạng.)
     match first {
         "add" | "remove" | "update" | "fetch" | "install" | "vendor" | "generate-lockfile" => {
             Some("Cargo dependency-management subcommands are not allowed through mgc-exec")
         }
         "package" | "publish" | "search" | "login" | "logout" | "owner" | "yank" | "tree"
         | "info" => Some("Cargo registry/package subcommands are not allowed through mgc-exec"),
-        "build" | "test" | "check" | "run" | "clippy" | "metadata"
-            if !(has("--locked") && has("--offline")) =>
-        {
-            Some("Cargo compile/test commands must include --locked --offline")
+        // `metadata` is a read-only query; it resolves the manifest/lock graph
+        // and needs no offline switch (Cargo materializes nothing).
+        // (`metadata` là truy vấn chỉ đọc; không cần cờ offline.)
+        "build" | "test" | "check" | "run" | "clippy" if !has("--locked") => {
+            Some("Cargo compile/test commands must include --locked")
         }
         "build" | "test" | "check" | "run" | "clippy" | "metadata" => None,
         // `new`/`init` create a project skeleton from the local template, they

@@ -92,6 +92,7 @@ pub enum CommonCommand {
         compat_runner: Option<String>,
         engine: Option<String>,
         allow_output_warnings: bool,
+        offline: bool,
     },
     Flash {
         board: Option<String>,

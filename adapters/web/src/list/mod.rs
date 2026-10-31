@@ -3,4 +3,8 @@
 
 mod list;
 
+#[cfg(test)]
+#[path = "test/mod.rs"]
+mod test;
+
 pub use list::run_list;

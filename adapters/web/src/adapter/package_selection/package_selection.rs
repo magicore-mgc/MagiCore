@@ -111,17 +111,34 @@ impl WebAdapter {
             let registry = native::npm_registry::NpmRegistry::new(&self.registry_url);
             let latest = self.latest_version_string(name, &registry).await?;
             let selected = Version::parse(&latest).ok();
-            // `update` calls `prepare_add` with no range. An installed pin such
-            // as `^1.0.0` must stay authoritative: saving `^{latest}` widened it
-            // (recorded `^1.1.0` while `mgc.lock` still held 1.0.0) and made the
-            // package silently follow `latest` on every later install.
-            // (`update` gọi `prepare_add` không kèm range. Pin đã cài như
-            // `^1.0.0` phải giữ quyền quyết định: lưu `^{latest}` nới rộng pin
-            // (manifest ghi `^1.1.0` trong khi `mgc.lock` vẫn 1.0.0) và khiến
-            // package âm thầm đi theo `latest` ở mọi lần cài sau.)
+            // No explicit range (this is how `update` calls us): target
+            // `latest` and keep the range STYLE the project already declares.
+            // Returning the existing range verbatim was a P0 defect: `update`
+            // resolved 6.0.2 → 6.0.2, reported "Updated N package(s)" and
+            // wrote no version change at all (`typescript` stayed `~6.0.2`).
+            // `add` never reaches this branch with an existing declaration —
+            // it either passes a range or re-adds the name — so retargeting is
+            // the update semantic, not a wider `add`.
+            // (Không có range tường minh (đây là cách `update` gọi): nhắm
+            // `latest` và GIỮ KIỂU range project đã khai. Trả nguyên range cũ
+            // là lỗi P0: `update` resolve 6.0.2 → 6.0.2, báo "Updated N" nhưng
+            // không ghi thay đổi nào (`typescript` vẫn `~6.0.2`). `add` không
+            // vào nhánh này khi đã khai range, nên giữ hướng này là đúng nghĩa
+            // update, không nới rộng `add`.)
             let existing = self.existing_declared_range(project_root, name).await?;
             let saved = match existing.as_deref() {
-                Some(raw) if !raw.trim().is_empty() => raw.trim().to_string(),
+                Some(raw) if !raw.trim().is_empty() => {
+                    if selected.is_some() {
+                        crate::update::preferred_saved_range(
+                            &VersionRange::parse(raw.trim())?,
+                            &latest,
+                        )?
+                        .as_str()
+                        .to_string()
+                    } else {
+                        raw.trim().to_string()
+                    }
+                }
                 _ => {
                     if exact {
                         latest

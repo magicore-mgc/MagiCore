@@ -60,3 +60,33 @@ pub(in crate::commands::core::web::implementation) fn compat_install_target(
 ) -> Result<()> {
     compat_gate_decision(project_root).map(|_| ())
 }
+
+/// Whether an install target is a server half MagiCore starts itself.
+/// Target install có phải nửa server MagiCore tự khởi động hay không.
+///
+/// `mgc dev` starts such a half with its own runner, so there is no package graph
+/// for this installer to resolve. The predicate is deliberately narrower than
+/// "has a dependency manifest": it requires the entry file the runner executes,
+/// which keeps the fail-closed decision for a manifest-only member intact.
+/// `mgc dev` khởi động nửa đó bằng runner riêng nên installer này không có graph
+/// package để resolve. Predicate cố tình hẹp hơn "có dependency manifest": nó đòi
+/// đúng file entry mà runner chạy, giữ nguyên quyết định fail-closed cho member chỉ
+/// có manifest.
+pub(in crate::commands::core::web::implementation) fn is_startable_server_half(
+    project_root: &Path,
+) -> bool {
+    // RULE §12: the entry list is data, not inline literals scattered in logic.
+    // (RULE §12: danh sách entry là dữ liệu, không rải literal trong logic.)
+    const SERVER_ENTRY_FILES: &[&str] = &[
+        "main.go",
+        "src/main.rs",
+        "main.py",
+        "app.py",
+        "manage.py",
+        "src/main.py",
+    ];
+    !project_root.join("package.json").is_file()
+        && SERVER_ENTRY_FILES
+            .iter()
+            .any(|entry| project_root.join(entry).is_file())
+}

@@ -31,6 +31,7 @@ pub(crate) async fn build(
     compat_runner: Option<String>,
     engine: Option<String>,
     allow_output_warnings: bool,
+    offline: bool,
 ) -> Result<()> {
     commands::build::run(
         core,
@@ -39,6 +40,7 @@ pub(crate) async fn build(
         compat_runner.as_deref(),
         engine.as_deref(),
         allow_output_warnings,
+        offline,
     )
     .await
 }

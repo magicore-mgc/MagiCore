@@ -6,6 +6,7 @@ use super::AiBuildError;
 pub(in crate::commands::build::implementation) async fn build_ai(
     root: &Path,
     allow_output_warnings: bool,
+    fetch: DependencyFetch,
 ) -> Result<()> {
     use crate::commands::optimizer::runtime_detect::DetectedRuntime;
 
@@ -54,7 +55,7 @@ pub(in crate::commands::build::implementation) async fn build_ai(
                 }
                 .into());
             }
-            build_rust_with_env(root, optimizer_envs)?;
+            build_rust_with_env(root, optimizer_envs, fetch)?;
         }
         DetectedRuntime::GoTensorFlow => {
             if tool_unavailable("go") {

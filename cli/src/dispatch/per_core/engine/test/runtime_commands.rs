@@ -81,13 +81,14 @@ fn maps_test_arguments_and_compatibility_options() {
 }
 
 #[test]
-fn maps_build_target_and_compatibility_options() {
+fn maps_build_target_compatibility_options_and_offline_request() {
     match mapped(EngineCommands::Build {
         target: Some("browser".to_owned()),
         compat_runtime: Some("deno".to_owned()),
         compat_runner: Some("pnpm".to_owned()),
         engine: Some("magi".to_owned()),
         allow_output_warnings: true,
+        offline: true,
     }) {
         CommonCommand::Build {
             target,
@@ -95,12 +96,17 @@ fn maps_build_target_and_compatibility_options() {
             compat_runner,
             engine,
             allow_output_warnings,
+            offline,
         } => {
             assert_eq!(target.as_deref(), Some("browser"));
             assert_eq!(compat_runtime.as_deref(), Some("deno"));
             assert_eq!(compat_runner.as_deref(), Some("pnpm"));
             assert_eq!(engine.as_deref(), Some("magi"));
             assert!(allow_output_warnings);
+            // The explicit `--offline` request must survive dispatch: dropping it
+            // silently would make the flag a no-op.
+            // (Yêu cầu `--offline` phải đi qua dispatch, không được mất âm thầm.)
+            assert!(offline);
         }
         _ => panic!("build command mapped to a different variant"),
     }

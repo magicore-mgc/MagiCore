@@ -15,3 +15,5 @@ mod package_manager_policy;
 mod process_tree_guard;
 #[path = "project_child_lookup/mod.rs"]
 mod project_child_lookup;
+#[path = "shutdown_tolerance/mod.rs"]
+mod shutdown_tolerance;

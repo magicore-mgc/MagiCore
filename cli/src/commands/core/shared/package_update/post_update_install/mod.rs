@@ -5,3 +5,6 @@
 mod implementation;
 
 pub(crate) use implementation::finish_update;
+
+#[cfg(test)]
+pub(crate) use implementation::update_summary;

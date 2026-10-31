@@ -63,3 +63,7 @@ mod importable_tests;
 #[cfg(test)]
 #[path = "test/markers.rs"]
 mod marker_tests;
+
+#[cfg(test)]
+#[path = "test/support.rs"]
+mod test_support;

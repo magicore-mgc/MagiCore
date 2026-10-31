@@ -3,6 +3,7 @@
 
 use super::{resolve_mgc_toml_script, resolve_package_json_script};
 
+mod environment_inheritance;
 mod execution_policy;
 mod fixture_writer;
 mod lifecycle;

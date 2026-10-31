@@ -34,3 +34,24 @@ fn current_process_group_identity_is_readable_and_live() -> Result<(), Box<dyn s
     assert!(super::super::process_group_is_live(group)?);
     Ok(())
 }
+
+#[cfg(unix)]
+#[test]
+fn process_group_without_a_live_member_is_reported_as_gone() {
+    // A root that has already exited must read as "gone", not as an error, so the
+    // shutdown sweep stops instead of cascading failures.
+    // (Root đã thoát phải được đọc là "đã mất", không phải lỗi, để lượt quét tắt
+    // process dừng lại thay vì dồn lỗi.)
+    let mut exited = std::process::Command::new("/bin/sleep")
+        .arg("0")
+        .spawn()
+        .expect("spawn a short-lived process");
+    let pid = exited.id();
+    let _ = exited.wait();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+
+    let live = super::super::process_group_is_live(pid)
+        .expect("probing a gone process group must not fail");
+
+    assert!(!live, "a reaped process group must not be reported as live");
+}

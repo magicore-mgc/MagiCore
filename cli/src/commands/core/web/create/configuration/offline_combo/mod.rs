@@ -17,13 +17,20 @@
 //!
 //! Only stacks whose backend publishes a starter MagiCore can invoke through an
 //! official initializer are composable offline (Node.js statements that ship a
-//! CLI). Other halves fail closed with a message naming both halves.
+//! CLI). Backends MagiCore can describe completely from data — FastAPI, Flask,
+//! Django, Axum and Gin — are written by `native_backend` without running any
+//! framework tool. Other halves fail closed with a message naming both halves.
 //! Chỉ stack có backend phát hành starter mà MagiCore gọi được qua initializer
-//! chính thức mới ghép offline được (backend Node có CLI). Nửa khác fail-closed
+//! chính thức mới ghép offline được (backend Node có CLI). Backend mà MagiCore mô
+//! tả trọn vẹn từ dữ liệu — FastAPI, Flask, Django, Axum và Gin — do
+//! `native_backend` ghi mà không chạy công cụ framework nào. Nửa khác fail-closed
 //! kèm thông điệp nêu rõ cả hai nửa.
 
 #[path = "compose.rs"]
 mod compose;
+#[path = "native_backend.rs"]
+#[cfg_attr(test, allow(unused_imports))]
+mod native_backend;
 #[path = "node_backend.rs"]
 mod node_backend;
 

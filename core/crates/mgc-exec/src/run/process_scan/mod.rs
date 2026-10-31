@@ -14,6 +14,8 @@ mod types;
 // visibility mà các item monitor dùng. Trên macOS field-level access vẫn biên
 // dịch được, nên chỉ build Linux mới bắt được.)
 pub(in crate::run::implementation) use types::ProcessScanSnapshot;
+#[cfg(unix)]
+pub(in crate::run::implementation) use types::RootExitScan;
 
 // The Linux snapshot tests read an identity helper through this module, so it is
 // visible at the same scope its users are.
@@ -22,9 +24,7 @@ pub(in crate::run::implementation) use types::ProcessScanSnapshot;
 #[cfg(any(unix, test))]
 pub(in crate::run::implementation) mod monitor;
 #[cfg(unix)]
-pub(in crate::run::implementation) use monitor::{
-    MonitoredRootNotVisible, find_forbidden_descendant_tracking,
-};
+pub(in crate::run::implementation) use monitor::find_forbidden_descendant_tracking;
 
 #[cfg(target_os = "linux")]
 #[path = "linux/mod.rs"]

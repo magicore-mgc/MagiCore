@@ -70,6 +70,29 @@ pub(in crate::commands::core::web::implementation) fn build_web_config(
         .or_else(|| fullstack_backend_framework(&frontend.normalized))
         .map(str::to_string);
 
+    // A split combo must keep its own name to be classified as `fullstack`:
+    // `infer_web_create_config` normalizes `react-fastapi` to the shared
+    // `react-vite` leaf, which classifies the project as frontend-only. Building
+    // from the raw combo name preserves the fullstack row of the catalog, and
+    // the composer still writes the frontend half from `react-vite` itself.
+    // (Combo tách rời phải giữ tên riêng mới được xếp `fullstack`:
+    // `infer_web_create_config` chuẩn hoá `react-fastapi` thành leaf `react-vite`
+    // dùng chung, khiến project bị xếp là frontend-only. Dựng từ tên combo gốc
+    // giữ đúng hàng fullstack của catalog, còn composer vẫn ghi nửa frontend từ
+    // chính `react-vite`.)
+    if let Some(backend) = raw_backend.as_deref().map(parse_framework_request) {
+        return Ok(crate::wizard::engine::ScaffoldConfig {
+            core: "web".to_string(),
+            sub_type: "fullstack".to_string(),
+            frameworks: vec![frontend.normalized.clone(), backend.normalized],
+            project_name: project_name.to_string(),
+            features: web_features(flags),
+            template_dir: std::path::PathBuf::new(),
+            from_local: flags.source.from_local.clone(),
+            no_local: flags.source.no_local,
+        });
+    }
+
     let mut config = if flags.monorepo {
         match detect_backend_framework(flags).or(raw_backend) {
             Some(be) => {

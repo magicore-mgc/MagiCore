@@ -1,37 +1,61 @@
 use crate::protocols::pypi::{
-    PypiFile, PypiProtocol, abi_compatible, consumer_python, host_platform_version,
-    platform_matches_host, platform_tag_matches_target, requires_python_allows,
+    InterpreterAbiFlavor, PypiFile, PypiProtocol, abi_compatible_for_interpreter, consumer_python,
+    host_platform_version, platform_matches_host, platform_tag_matches_target,
+    requires_python_allows,
 };
-use mgc_types::MgResult;
+use mgc_types::{MgError, MgResult};
 
 impl PypiProtocol {
-    /// Whether an artifact can be materialized by the current native
-    /// Python runtime (pure-Python wheel only; no build backend or ABI
-    /// loader is implemented yet).
-    /// (Artifact có thể materialize bởi runtime Python native hiện tại.)
+    /// Whether an artifact is a pure-Python wheel (no compiled ABI payload).
+    /// (Artifact có phải wheel thuần Python — không có payload biên dịch.)
     pub fn is_importable_pure_wheel(artifact_url: &str) -> MgResult<bool> {
         let filename = Self::artifact_filename(artifact_url)?;
         Ok(Self::is_pure_wheel_filename(&filename))
     }
 
     /// Whether a wheel can be loaded by the declared Python runtime on this
-    /// host. Compiled wheels require an explicit consumer version so resolver,
-    /// installer, and runner cannot silently disagree about the ABI.
-    /// (Wheel có thể nạp trên host và Python runtime đã khai báo hay không.)
+    /// host. Pure wheels are always importable; a compiled wheel needs an
+    /// explicit consumer version, otherwise the call fails closed naming the
+    /// artifact instead of returning a bare "not importable".
+    /// (Wheel có thể nạp trên host và Python runtime đã khai báo hay không.
+    /// Wheel thuần luôn nạp được; wheel biên dịch phải có consumer rõ ràng.)
     pub fn is_importable_runtime_wheel(artifact_url: &str) -> MgResult<bool> {
         let filename = Self::artifact_filename(artifact_url)?;
-        if Self::is_pure_wheel_filename(&filename) {
-            return Ok(true);
-        }
         let Some(consumer) = consumer_python() else {
-            return Ok(false);
+            // Pure wheels never need an ABI, so an unset consumer only
+            // rejects ABI-specific artifacts — and says which one.
+            // (Wheel thuần không cần ABI; thiếu consumer chỉ từ chối wheel ABI
+            // và nêu rõ artifact nào.)
+            if Self::is_pure_wheel_filename(&filename) {
+                return Ok(true);
+            }
+            return Err(Self::missing_consumer_python_error(&filename));
         };
+        Self::is_importable_wheel_for_resolution(&filename, consumer)
+    }
+
+    /// Filename-level check used by resolution with an already-known consumer.
+    /// (Kiểm theo tên file với consumer đã biết — dùng trong resolve.)
+    pub(in crate::protocols::pypi) fn is_importable_wheel_for_resolution(
+        filename: &str,
+        consumer: (u64, u64),
+    ) -> MgResult<bool> {
         Ok(Self::is_importable_wheel_for_target(
-            &filename,
+            filename,
             std::env::consts::OS,
             std::env::consts::ARCH,
             Some(consumer),
             host_platform_version(),
+        ))
+    }
+
+    /// Fail-closed error for an ABI-specific artifact whose consumer Python is
+    /// unset. Name the artifact so the message never blames a pure wheel, and
+    /// point at the variable that fixes it.
+    /// (Lỗi fail-closed khi thiếu consumer cho artifact ABI; nêu tên artifact.)
+    fn missing_consumer_python_error(filename: &str) -> MgError {
+        MgError::Other(format!(
+            "native Python install cannot materialize '{filename}': compiled wheels need the running interpreter's Python version; set MGC_PYTHON_VERSION to the exact Python minor used by `mgc run`/`mgc dev`"
         ))
     }
 
@@ -53,7 +77,7 @@ impl PypiProtocol {
         };
         let (py, abi, plat) = wheel_tags(filename);
         platform_tag_matches_target(&plat, os, arch, platform_version)
-            && abi_compatible(&py, &abi, major, minor)
+            && abi_compatible_for_interpreter(&py, &abi, major, minor, InterpreterAbiFlavor::Gil)
     }
 
     /// Pure-python wheel tags: `{py}-none-any` with a py2/py3 interpreter
@@ -64,9 +88,8 @@ impl PypiProtocol {
         let platform = parts.next().unwrap_or("");
         let abi = parts.next().unwrap_or("");
         let py = parts.next().unwrap_or("");
-        platform == "any"
-            && abi == "none"
-            && (py == "py" || py.starts_with("py2") || py.starts_with("py3"))
+        let generic_interpreter = py.split('.').any(|tag| tag == "py3");
+        platform == "any" && abi == "none" && generic_interpreter
     }
 }
 
@@ -88,10 +111,20 @@ pub(in crate::protocols::pypi) fn select_file(
     {
         return Some(f);
     }
+    // With a declared consumer, prefer only a wheel the interpreter can load;
+    // otherwise the old platform-only probe is kept (a recorded ABI warning
+    // covers that historical path). Without this filter a `cp314` package
+    // whose `cp314` wheel exists could still be handed a mismatched binary.
+    // (Khi biết consumer, chỉ nhận wheel đúng ABI để loader nạp được; không
+    // biết thì giữ probe theo platform cũ.)
+    let host_wheel = |f: &&PypiFile| match consumer {
+        Some(_) => is_importable_wheel_for_consumer(f, consumer),
+        None => wheel_platform_matches_host(&f.filename),
+    };
     if let Some(f) = files
         .iter()
         .filter(compatible)
-        .find(|f| f.packagetype == "bdist_wheel" && wheel_platform_matches_host(&f.filename))
+        .find(|f| f.packagetype == "bdist_wheel" && host_wheel(f))
     {
         return Some(f);
     }
@@ -143,6 +176,21 @@ pub(in crate::protocols::pypi) fn wheel_tags(filename: &str) -> (String, String,
     }
 }
 
+/// ABI-specific wheel whose platform and `(py, abi)` tags fit the consumer.
+/// (Wheel ABI khớp cả platform lẫn consumer.)
+fn is_importable_wheel_for_consumer(file: &PypiFile, consumer: Option<(u64, u64)>) -> bool {
+    let Some((major, minor)) = consumer else {
+        return false;
+    };
+    let (py, abi, plat) = wheel_tags(&file.filename);
+    platform_tag_matches_target(
+        &plat,
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        host_platform_version(),
+    ) && abi_compatible_for_interpreter(&py, &abi, major, minor, InterpreterAbiFlavor::Gil)
+}
+
 pub(in crate::protocols::pypi) fn wheel_platform_matches_host(filename: &str) -> bool {
     let (py, abi, plat) = wheel_tags(filename);
     if !platform_matches_host(&plat) {
@@ -159,5 +207,5 @@ pub(in crate::protocols::pypi) fn wheel_platform_matches_host(filename: &str) ->
     let Some((major, minor)) = consumer_python() else {
         return true;
     };
-    abi_compatible(&py, &abi, major, minor)
+    abi_compatible_for_interpreter(&py, &abi, major, minor, InterpreterAbiFlavor::Gil)
 }

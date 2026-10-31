@@ -113,13 +113,17 @@ fn catalog(backend: &str) -> Option<BackendHalf> {
     }
 }
 
-/// Refuse a combo whose server half has no offline generator, before any write.
-/// Từ chối combo không có generator offline cho nửa server, trước mọi lần ghi.
-pub(super) fn ensure_available(backend: &str, combo: &str) -> Result<()> {
-    match catalog(backend) {
-        Some(_) => Ok(()),
-        None => Err(no_half(combo, backend)),
-    }
+/// Whether MagiCore ships an offline starter for `backend`.
+/// MagiCore có sẵn starter offline cho `backend` hay không.
+///
+/// The composer asks this before writing anything; the refusal message for a
+/// backend nobody handles belongs to the composer, so exactly one message names
+/// both halves.
+/// Composer hỏi điều này trước khi ghi bất cứ gì; thông điệp từ chối cho backend
+/// không owner nào xử lý thuộc composer, nên chỉ có đúng một thông điệp nêu rõ
+/// cả hai nửa.
+pub(super) fn has_half(backend: &str) -> bool {
+    catalog(backend).is_some()
 }
 
 /// Create the server half of `combo` (embedded backend `backend`) in `<root>/server`.

@@ -136,7 +136,10 @@ use dependency_policy::is_go_toolchain_version_probe;
 #[path = "process_scan/mod.rs"]
 pub(in crate::run::implementation) mod process_scan;
 #[cfg(unix)]
-use process_scan::{MonitoredRootNotVisible, find_forbidden_descendant_tracking};
+#[cfg(unix)]
+pub(in crate::run::implementation) use process_scan::RootExitScan;
+#[cfg(unix)]
+use process_scan::find_forbidden_descendant_tracking;
 #[cfg(windows)]
 use process_scan::{WindowsProcessScan, WindowsProcessSnapshot};
 

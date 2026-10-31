@@ -36,17 +36,24 @@ pub(in crate::commands::run::task_execution) fn execute_task_with_bin(
 
     info(&format!("$ {}", full_cmd));
 
+    // Start from the inherited PATH, then prepend the resolved project binary so
+    // the caller's entries survive and the project shim wins. The executor re-adds
+    // this caller PATH behind its deny shims when it builds the child command.
+    // (Bắt đầu từ PATH kế thừa rồi chèn binary của project resolve được lên đầu;
+    // mục của caller được giữ và shim của project thắng. Executor ghép PATH này
+    // sau deny shim khi dựng child command.)
     let mut paths: Vec<PathBuf> = std::env::var_os("PATH")
         .map(|value| std::env::split_paths(&value).collect())
         .unwrap_or_default();
-    // let-chain edition 2024 — gộp điều kiện theo clippy 1.98.
-    if let Some(bin) = &bin_path
-        && bin.exists()
-    {
-        paths.insert(0, bin.clone());
+    if let Some(binary) = &project_binary {
+        paths.insert(0, binary.clone());
     }
     let path_env = std::env::join_paths(paths)?;
 
+    // MagiCore vars layer on top of the inherited environment; the caller's own
+    // PORT/NODE_ENV/DATABASE_URL/API keys are never listed here, so they survive.
+    // (Biến MagiCore xếp lên trên environment kế thừa; PORT/NODE_ENV/DATABASE_URL/
+    // API key của caller không nằm trong danh sách này nên luôn được giữ.)
     let mut env = vec![
         ("PATH".to_string(), path_env.to_string_lossy().to_string()),
         ("MGC_LIFECYCLE_EVENT".to_string(), script_name.to_string()),
@@ -77,7 +84,13 @@ pub(in crate::commands::run::task_execution) fn execute_task_with_bin(
         timeout: Some(run_script_timeout()),
         log_path: Some(cwd.join(".magicore").join("exec.log")),
         env,
-        clean_env: true,
+        // Application scripts must see the caller's PORT/NODE_ENV/DATABASE_URL and
+        // API keys; `clean_env` would drop them. MagiCore's own variables are still
+        // layered on top by the executor, so nothing MagiCore needs is lost.
+        // (Script ứng dụng phải thấy PORT/NODE_ENV/DATABASE_URL và API key của
+        // caller; `clean_env` sẽ xóa chúng. Biến của MagiCore vẫn được executor xếp
+        // lên trên nên không mất gì MagiCore cần.)
+        clean_env: false,
         compat_runtime,
         compat_runner: compat_runner.map(str::to_string),
         policy_manifest,

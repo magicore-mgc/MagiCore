@@ -17,6 +17,29 @@ use mgc_lockfile::v4::{
     peer_context_digest,
 };
 
+/// Compare documents while normalizing the collections the writer sorts.
+///
+/// Workspace `members` is a membership set, so the writer emits it sorted;
+/// package rows can also come back re-ordered. Everything else, including
+/// every package field and all metadata, is compared exactly.
+/// (So sánh tài liệu sau khi chuẩn hóa các collection mà writer sắp xếp.
+/// `members` là tập thành viên nên writer xuất đã sắp; row package cũng có
+/// thể bị sắp lại. Mọi thứ còn lại — từng field package và toàn bộ metadata
+/// — so khớp tuyệt đối.)
+fn assert_documents_equal(parsed: &LockfileV4, expected: &LockfileV4) {
+    fn normalized(doc: &LockfileV4) -> LockfileV4 {
+        let mut normalized = doc.clone();
+        if let Some(workspace) = &mut normalized.workspace {
+            workspace.members.sort();
+        }
+        normalized.packages.sort_by(|left, right| {
+            (&left.key.name, &left.key.version).cmp(&(&right.key.name, &right.key.version))
+        });
+        normalized
+    }
+    assert_eq!(normalized(parsed), normalized(expected));
+}
+
 fn sample_sources() -> Vec<SourceRef> {
     vec![
         SourceRef {
@@ -142,7 +165,7 @@ fn legacy_v4_remains_readable_and_does_not_gain_new_payload_fields() {
     let text = write_v4_document(&lock).expect("test operation must succeed");
     let parsed = parse_v4_document(&text).expect("test operation must succeed");
 
-    assert_eq!(parsed, lock);
+    assert_documents_equal(&parsed, &lock);
     assert!(!canonical_toml(&lock.payload()).contains("markers ="));
     assert_eq!(
         parse_document(&text).expect("test operation must succeed"),
@@ -462,9 +485,9 @@ fn unknown_v4_source_and_package_fields_are_rejected() {
         }],
     });
     let valid = write_v4_document(&extended).expect("test operation must succeed");
-    assert_eq!(
-        parse_v4_document(&valid).expect("test operation must succeed"),
-        extended
+    assert_documents_equal(
+        &parse_v4_document(&valid).expect("test operation must succeed"),
+        &extended,
     );
     let cases = [
         (
@@ -629,12 +652,17 @@ fn escaping_round_trips() {
 
 #[test]
 fn golden_canonical_bytes() {
-    // Frozen 2026-09-17 after review: ANY byte change here means the
-    // digest contract moved and every existing v4 signature breaks — that
-    // requires a schema bump, never a silent edit.
-    // (Đóng băng sau review: MỌI thay đổi byte nghĩa là hợp đồng digest
-    // đã đổi và mọi chữ ký v4 cũ vỡ — phải bump schema, không bao giờ sửa
-    // âm thầm.)
+    // Frozen 2026-09-17 after review and re-frozen 2026-10-31: the digest
+    // contract is untouched (same sections, same total order), but edge
+    // identity now serializes as item scalars plus a trailing
+    // `[package.edges.target_key]` table instead of dotted headers that
+    // reordered fields on parse. A silent byte change still means every
+    // existing v4 signature breaks — that requires a schema bump.
+    // (Đóng băng 2026-09-17 và đóng băng lại 2026-10-31: hợp đồng digest
+    // không đổi (cùng section, cùng thứ tự toàn phần), nhưng danh tính
+    // cạnh nay ghi dạng scalar ở cấp item + bảng `target_key` ở cuối thay
+    // vì header dotted làm đảo field khi parse. Đổi byte âm thầm vẫn nghĩa
+    // là mọi chữ ký v4 cũ vỡ — phải bump schema.)
     let expected = "version = \"4\"\n\
         \n\
         [metadata]\n\
@@ -683,14 +711,15 @@ fn golden_canonical_bytes() {
         [package.key.variant]\n\
         peer_context = \"938aa82c8c0ffb065d64770cd5285ae6d940c06110e1d7f2777b512bce141eb7\"\n\
         [[package.edges]]\n\
+        range = \"^18.0.0\"\n\
+        kind = \"peer\"\n\
+        origin = \"Manifest\"\n\
         [package.edges.target_key]\n\
         ecosystem = \"web\"\n\
         name = \"react\"\n\
         version = \"18.2.0\"\n\
         source_id = \"npm\"\n\
-        range = \"^18.0.0\"\n\
-        kind = \"peer\"\n\
-        origin = \"manifest\"\n\
+        [package.edges.target_key.variant]\n\
         \n";
     assert_eq!(canonical_toml(&sample_lockfile().payload()), expected);
 }

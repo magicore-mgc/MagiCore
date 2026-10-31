@@ -31,7 +31,11 @@ pub fn finalize_migrated_v4(
     let round_trip = crate::canonical::parse_v4_document(&text).map_err(|_| LossyMigration {
         warnings: vec!["v4 round-trip parse failed".to_string()],
     })?;
-    if round_trip != v4 {
+    // The reader re-sorts set-like collections, so compare content, not the
+    // `Vec` order the writer chose. Any lost value still fails closed.
+    // (Reader sắp lại collection dạng tập nên so nội dung, không so thứ
+    // tự Vec mà writer chọn. Giá trị bị mất vẫn fail-closed.)
+    if !crate::writer::same_v4_content(&round_trip, &v4) {
         return Err(LossyMigration {
             warnings: vec!["v4 serializer drift".to_string()],
         });

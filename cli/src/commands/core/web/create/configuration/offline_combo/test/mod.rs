@@ -3,3 +3,7 @@
 
 #[path = "compose.rs"]
 mod compose;
+
+#[cfg(not(windows))]
+#[path = "native_backend.rs"]
+mod native_backend;

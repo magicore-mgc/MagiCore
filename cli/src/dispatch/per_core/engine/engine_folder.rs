@@ -45,12 +45,14 @@ pub(in crate::dispatch) fn engine_to_common(command: EngineCommands) -> Option<C
             compat_runner,
             engine,
             allow_output_warnings,
+            offline,
         } => Some(CommonCommand::Build {
             target,
             compat_runtime,
             compat_runner,
             engine,
             allow_output_warnings,
+            offline,
         }),
         EngineCommands::Flash { board, skip_build } => {
             Some(CommonCommand::Flash { board, skip_build })

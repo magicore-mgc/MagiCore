@@ -29,7 +29,7 @@ pub(in crate::commands::dedupe) async fn verify_with_build(
             project_root: project_root.display().to_string(),
         });
     }
-    crate::commands::build::run(None, None, None, None, None, false)
+    crate::commands::build::run(None, None, None, None, None, false, false)
         .await
         .map_err(DedupeBuildVerificationError::BuildFailed)
 }

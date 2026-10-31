@@ -27,6 +27,7 @@ pub(in crate::canonical) use workspace::deserialize_v4_workspace;
 
 pub use canonical::canonical_toml;
 pub use document_io::{parse_v4_document, write_v4_document};
+pub(crate) use package_table::push_package_key as package_key_table;
 pub use payload_digest::payload_digest;
 pub(crate) use revision_validation::validate_v4_revision;
 pub use types::{LockfilePayload, LockfileV4, LockfileV4Metadata, PackageV4};

@@ -6,6 +6,7 @@ use super::GameBuildError;
 pub(in crate::commands::build::implementation) async fn build_game(
     root: &Path,
     allow_output_warnings: bool,
+    fetch: DependencyFetch,
 ) -> Result<()> {
     let engine = mgc_game_adapter::detect_engine(root);
     match engine {
@@ -14,7 +15,7 @@ pub(in crate::commands::build::implementation) async fn build_game(
             let runtime = crate::commands::optimizer::runtime_detect::DetectedRuntime::RustLib;
             let optimizer_envs =
                 crate::commands::optimizer::env_loader::load_optimizer_env(root, &runtime)?;
-            build_rust_with_env(root, optimizer_envs)?;
+            build_rust_with_env(root, optimizer_envs, fetch)?;
             // PAR-05: the caller's warning policy applies here exactly as it
             // does for `lib`; hardcoding `false` ignored `--allow-output-warnings`.
             // (PAR-05: chính sách cảnh báo của caller áp ở đây đúng như với

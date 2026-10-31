@@ -10,17 +10,19 @@ fn option_values_do_not_become_the_command() {
         "Cargo.toml".into(),
         "build".into(),
     ];
-    assert_eq!(dependency_resolution_deny_reason("cargo", &args, &[]), Some(
-        "Cargo compile/test commands must include --locked --offline".into()
-    ));
+    assert_eq!(
+        dependency_resolution_deny_reason("cargo", &args, &[]),
+        Some("Cargo compile/test commands must include --locked".into())
+    );
 }
 
 #[test]
-fn arguments_after_separator_do_not_satisfy_offline_policy() {
-    let args = vec!["build".into(), "--".into(), "--locked".into(), "--offline".into()];
-    assert_eq!(dependency_resolution_deny_reason("cargo", &args, &[]), Some(
-        "Cargo compile/test commands must include --locked --offline".into()
-    ));
+fn arguments_after_separator_do_not_satisfy_the_locked_policy() {
+    let args = vec!["build".into(), "--".into(), "--locked".into()];
+    assert_eq!(
+        dependency_resolution_deny_reason("cargo", &args, &[]),
+        Some("Cargo compile/test commands must include --locked".into())
+    );
 }
 
 #[test]
@@ -34,14 +36,20 @@ fn go_environment_uses_the_last_case_insensitive_value() {
         ("GOPROXY".into(), "off".into()),
         ("GOPROXY".into(), "https://proxy.example".into()),
     ];
-    assert_eq!(dependency_resolution_deny_reason("go", &args, &allowed_env), None);
+    assert_eq!(
+        dependency_resolution_deny_reason("go", &args, &allowed_env),
+        None
+    );
     assert!(dependency_resolution_deny_reason("go", &args, &denied_env).is_some());
 }
 
 #[test]
 fn rustc_preserves_case_for_the_exact_read_only_host_probe() {
     let allowed = vec!["-vV".into()];
-    assert_eq!(dependency_resolution_deny_reason("rustc", &allowed, &[]), None);
+    assert_eq!(
+        dependency_resolution_deny_reason("rustc", &allowed, &[]),
+        None
+    );
 
     for args in [
         vec!["-vv".into()],

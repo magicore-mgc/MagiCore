@@ -5,7 +5,7 @@ use super::super::super::implementation::WaitSession;
 use super::super::super::process_scan::ProcessScan;
 use crate::run::implementation::supervision::implementation::error::SupervisionError;
 use crate::run::implementation::{
-    MonitoredRootNotVisible, POST_KILL_DRAIN_MS, find_forbidden_descendant_tracking,
+    POST_KILL_DRAIN_MS, RootExitScan, find_forbidden_descendant_tracking,
     process_groups_have_descendants,
 };
 use anyhow::Result;
@@ -31,9 +31,11 @@ impl WaitSession<'_> {
     fn refresh_unix_exit_scan(&mut self, process_scan: ProcessScan) -> ProcessScan {
         // Re-scan after root reap to close the detached-child exit race.
         // Quét lại sau khi reap root để khép race child tách process group.
-        let needs_exit_refresh = matches!(&process_scan, Ok(None))
-            || matches!(&process_scan, Err(error) if error.downcast_ref::<MonitoredRootNotVisible>().is_some());
-        if !needs_exit_refresh {
+        // A scan that already observed the exited root is authoritative; only a
+        // running-tree snapshot or an inspection error needs the exit re-scan.
+        // (Scan đã thấy root thoát là kết quả chuẩn; chỉ snapshot cây còn chạy
+        // hoặc lỗi inspection mới cần quét lại sau exit.)
+        if matches!(process_scan, Ok(RootExitScan::Exited)) {
             return process_scan;
         }
         find_forbidden_descendant_tracking(
@@ -52,9 +54,12 @@ impl WaitSession<'_> {
 
     fn reject_unix_exit_scan(&mut self, process_scan: ProcessScan) -> Result<()> {
         match process_scan {
-            Ok(Some(found)) => Err(self.fail_forbidden_process(&found, true)),
-            Err(error) if error.downcast_ref::<MonitoredRootNotVisible>().is_some() => Ok(()),
-            Ok(None) => Ok(()),
+            Ok(RootExitScan::Forbidden(found)) => Err(self.fail_forbidden_process(&found, true)),
+            // `Exited` with no tracked survivor is exactly a clean shutdown, so it
+            // must not surface as an inspection failure.
+            // (`Exited` không còn descendant là đúng một lần tắt sạch, nên không
+            // được nổi lên như lỗi inspection.)
+            Ok(RootExitScan::Exited) | Ok(RootExitScan::Running) => Ok(()),
             Err(error) => Err(self.fail_process_inspection(
                 error,
                 "after command exit",

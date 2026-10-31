@@ -96,6 +96,129 @@ fn add_dep_moves_dependency_between_groups() {
     assert_eq!(m.dev_dependencies.len(), 1);
 }
 
+// P0 regression: `update` retargeted ranges by calling `add_dep` with the
+// target's flags, which relocated `devDependencies` into `dependencies`.
+// (`Hồi quy P0: `update` đổi range qua `add_dep` kèm cờ, làm dời
+// `devDependencies` sang `dependencies`.)
+
+fn spec(name: &str, range: &str, dev: bool, optional: bool, peer: bool) -> DependencySpec {
+    DependencySpec {
+        name: PackageName::new(name).unwrap(),
+        range: VersionRange::parse(range).unwrap(),
+        dev,
+        optional,
+        peer,
+        features: vec!["extra".to_string()],
+        default_features: false,
+    }
+}
+
+#[test]
+fn retarget_dep_keeps_dev_dependencies_in_dev() {
+    let mut m = Manifest::new("test", Ecosystem::Web);
+    m.add_dep(
+        spec("typescript", "~6.0.2", true, false, false),
+        true,
+        false,
+        false,
+    );
+
+    assert!(m.retarget_dep("typescript", VersionRange::parse("~6.1.0").unwrap()));
+
+    assert!(
+        m.dependencies.is_empty(),
+        "devDependency must not leak into dependencies"
+    );
+    assert_eq!(m.dev_dependencies.len(), 1);
+    assert_eq!(m.dev_dependencies[0].range.as_str(), "~6.1.0");
+}
+
+#[test]
+fn retarget_dep_never_merges_sections() {
+    let mut m = Manifest::new("test", Ecosystem::Web);
+    m.add_dep(
+        spec("runtime", "^1.0.0", false, false, false),
+        false,
+        false,
+        false,
+    );
+    m.add_dep(
+        spec("build", "^1.0.0", true, false, false),
+        true,
+        false,
+        false,
+    );
+    m.add_dep(
+        spec("native", "^1.0.0", false, true, false),
+        false,
+        true,
+        false,
+    );
+    m.add_dep(
+        spec("host", "^1.0.0", false, false, true),
+        false,
+        false,
+        true,
+    );
+
+    for name in ["runtime", "build", "native", "host"] {
+        assert!(m.retarget_dep(name, VersionRange::parse("^2.0.0").unwrap()));
+    }
+
+    assert_eq!(m.dependencies.len(), 1);
+    assert_eq!(m.dev_dependencies.len(), 1);
+    assert_eq!(m.optional_dependencies.len(), 1);
+    assert_eq!(m.peer_dependencies.len(), 1);
+    // Each entry stays in the section it was declared in.
+    // (Mỗi entry ở đúng section đã khai.)
+    assert_eq!(m.dependencies[0].name.as_str(), "runtime");
+    assert_eq!(m.dev_dependencies[0].name.as_str(), "build");
+    assert_eq!(m.optional_dependencies[0].name.as_str(), "native");
+    assert_eq!(m.peer_dependencies[0].name.as_str(), "host");
+}
+
+#[test]
+fn retarget_dep_preserves_extra_fields() {
+    let mut m = Manifest::new("test", Ecosystem::Web);
+    m.add_dep(
+        spec("typescript", "~6.0.2", true, false, false),
+        true,
+        false,
+        false,
+    );
+
+    assert!(m.retarget_dep("typescript", VersionRange::parse("~6.1.0").unwrap()));
+
+    let entry = &m.dev_dependencies[0];
+    assert!(entry.dev);
+    assert_eq!(entry.features, vec!["extra".to_string()]);
+    assert!(!entry.default_features);
+}
+
+#[test]
+fn retarget_dep_reports_no_change_for_same_range() {
+    let mut m = Manifest::new("test", Ecosystem::Web);
+    m.add_dep(
+        spec("typescript", "~6.0.2", true, false, false),
+        true,
+        false,
+        false,
+    );
+
+    assert!(
+        !m.retarget_dep("typescript", VersionRange::parse("~6.0.2").unwrap()),
+        "an unchanged range must not be counted as an update"
+    );
+    assert_eq!(m.dev_dependencies.len(), 1);
+}
+
+#[test]
+fn retarget_dep_reports_false_for_unknown_name() {
+    let mut m = Manifest::new("test", Ecosystem::Web);
+    assert!(!m.retarget_dep("missing", VersionRange::parse("^1.0.0").unwrap()));
+    assert_eq!(m.all_dependencies().count(), 0);
+}
+
 #[test]
 fn remove_dep_removes_from_all_groups() {
     let mut m = Manifest::new("test", Ecosystem::Lib);

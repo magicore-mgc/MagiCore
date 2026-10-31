@@ -5,10 +5,9 @@ use super::super::super::super::super::termination::process_group_id;
 use super::super::super::super::super::{
     CompatAuditContext, PROCESS_TREE_TRACKING_ENV, audit_compat_process,
 };
-use super::super::super::error::MonitoredRootNotVisible;
 use super::super::{forbidden_process_entry, is_allowed_shadow_npm_version_probe};
 use crate::allowlist::ExecutionScope;
-use crate::run::implementation::ForbiddenProcess;
+use crate::run::implementation::RootExitScan;
 use anyhow::Result;
 use std::ffi::OsString;
 use std::path::Path;
@@ -23,7 +22,7 @@ pub(in crate::run::implementation::process_scan::monitor::implementation) fn sca
     exempt: &[&str],
     shadow_dir: &Path,
     execution_scope: ExecutionScope,
-) -> Result<Option<ForbiddenProcess>> {
+) -> Result<RootExitScan> {
     let mut exit_system = sysinfo::System::new();
     exit_system.refresh_processes_specifics(
         ProcessesToUpdate::All,
@@ -80,10 +79,16 @@ pub(in crate::run::implementation::process_scan::monitor::implementation) fn sca
         }
     }
     if let Some(found) = first_forbidden {
-        return Ok(Some(found));
+        return Ok(RootExitScan::Forbidden(found));
     }
     if live_descendant_found {
-        return Ok(None);
+        return Ok(RootExitScan::Running);
     }
-    Err(anyhow::Error::new(MonitoredRootNotVisible(root_pid)))
+    // A root that already exited and left no descendant is a completed run, not
+    // a scan failure. Reporting this as an error turned every normal shutdown
+    // into `TermSweep: process table did not contain monitored root PID`.
+    // (Root đã thoát và không còn descendant là lượt chạy hoàn tất, không phải lỗi
+    // scan. Báo lỗi ở đây biến mọi lần tắt bình thường thành
+    // `TermSweep: process table did not contain monitored root PID`.)
+    Ok(RootExitScan::Exited)
 }

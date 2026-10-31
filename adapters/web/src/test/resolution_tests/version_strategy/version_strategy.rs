@@ -48,6 +48,43 @@ fn test_preferred_saved_range_preserves_strategy() {
 }
 
 #[test]
+fn test_preferred_saved_range_moves_the_range_not_just_the_prefix() {
+    // P0 regression: `update` called `prepare_add` with NO range and got the
+    // project's existing range back verbatim, so `typescript: ~6.0.2` stayed
+    // `~6.0.2` while "Updated N package(s)" was printed. Retargeting must move
+    // the version while keeping the declared style.
+    // (Hồi quy P0: `update` gọi `prepare_add` không kèm range và nhận lại
+    // nguyên range cũ, nên `typescript: ~6.0.2` vẫn `~6.0.2` dù in "Updated N".
+    // Đổi đích phải nâng version và giữ kiểu range đã khai.)
+    for (current, latest) in [("~6.0.2", "6.0.3"), ("^3.0.0", "3.1.0"), ("6.0.2", "6.1.0")] {
+        let declared = VersionRange::parse(current).unwrap();
+        let retargeted = WebAdapter::preferred_saved_range(&declared, latest).unwrap();
+        assert_ne!(
+            retargeted.as_str(),
+            current,
+            "{current} must move to {latest}, not stay put"
+        );
+        assert!(
+            retargeted.matches(&mgc_types::Version::parse(latest).unwrap()),
+            "'{}' must accept the resolved version {latest}",
+            retargeted.as_str()
+        );
+    }
+}
+
+#[test]
+fn test_preferred_saved_range_keeps_the_tilde_style_on_a_major_jump() {
+    // A `~` pin cannot express a MAJOR jump; retargeting still keeps the `~`
+    // style so the recorded range is what the user asked for, and the caller
+    // separately reports that the jump was not expressible.
+    // (Pin `~` không biểu diễn được nhảy MAJOR; đổi đích vẫn giữ kiểu `~` để
+    // range ghi lại đúng ý người dùng, còn bước gọi tự báo là không biểu diễn được.)
+    let declared = VersionRange::parse("~6.0.2").unwrap();
+    let saved = WebAdapter::preferred_saved_range(&declared, "7.0.2").unwrap();
+    assert_eq!(saved.as_str(), "~7.0.2");
+}
+
+#[test]
 fn test_preferred_registry_version_prefers_stable_over_prerelease() {
     let metadata = native::npm_registry::PackageMetadata {
         name: "demo".into(),

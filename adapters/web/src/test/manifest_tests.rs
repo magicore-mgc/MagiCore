@@ -205,28 +205,43 @@ async fn test_list_uses_materialized_version_not_lock_pin_as_installed_state() {
     assert_eq!(installed[0].integrity, None);
 }
 
+// An entry whose materialized `package.json` carries no valid version is
+// NOT reported as installed, and it must not abort the whole listing: a
+// single unverifiable directory used to fail `mgc list` and hide every
+// other declared dependency. The verified neighbours stay listed.
+// (Mục không có version hợp lệ KHÔNG được báo là đã cài và không được làm
+// hỏng cả lần liệt kê: một thư mục không xác minh từng làm `mgc list` lỗi
+// và che mọi dependency khác. Các mục xác minh được vẫn được liệt kê.)
 #[tokio::test]
-async fn test_list_fails_closed_when_installed_version_is_unknown() {
+async fn test_list_skips_entries_whose_installed_version_is_unknown() {
     let dir = tempdir_real().unwrap();
     std::fs::write(
         dir.path().join("package.json"),
-        serde_json::json!({"name":"demo","version":"0.1.0","dependencies":{"mystery":"^1.0.0"}})
-            .to_string(),
+        serde_json::json!({
+            "name":"demo",
+            "version":"0.1.0",
+            "dependencies":{"mystery":"^1.0.0","tailwindcss":"^4.3.0"}
+        })
+        .to_string(),
     )
     .unwrap();
     let package_dir = dir.path().join("node_modules/mystery");
     std::fs::create_dir_all(&package_dir).unwrap();
     std::fs::write(package_dir.join("package.json"), r#"{"name":"mystery"}"#).unwrap();
+    let verified_dir = dir.path().join("node_modules/tailwindcss");
+    std::fs::create_dir_all(&verified_dir).unwrap();
+    std::fs::write(
+        verified_dir.join("package.json"),
+        r#"{"name":"tailwindcss","version":"4.3.3"}"#,
+    )
+    .unwrap();
 
-    let error = WebAdapter::new()
-        .unwrap()
-        .list(dir.path())
-        .await
-        .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("cannot verify the installed version")
+    let installed = WebAdapter::new().unwrap().list(dir.path()).await.unwrap();
+    let names: Vec<&str> = installed.iter().map(|pkg| pkg.id.name_str()).collect();
+    assert_eq!(
+        names,
+        ["tailwindcss"],
+        "the unverifiable entry is omitted, the verified one is reported"
     );
 }
 
@@ -251,12 +266,15 @@ async fn test_list_does_not_guess_installed_version_from_lockfile() {
         }).to_string(),
     ).unwrap();
 
-    let error = WebAdapter::new()
-        .unwrap()
-        .list(dir.path())
-        .await
-        .unwrap_err();
-    assert!(error.to_string().contains("a lock pin alone is not proof"));
+    // The lock pin says 1.2.3, but nothing was verifiably installed, so the
+    // listing stays empty instead of trusting the pin.
+    // (Lock ghi 1.2.3 nhưng không có gì cài xác minh được, nên danh sách
+    // rỗng thay vì tin pin.)
+    let installed = WebAdapter::new().unwrap().list(dir.path()).await.unwrap();
+    assert!(
+        installed.is_empty(),
+        "a lock pin alone is not proof of installed state, got {installed:?}"
+    );
 }
 
 #[test]

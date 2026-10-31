@@ -116,10 +116,11 @@ fn audit_fix_machine_output_defers_only_when_mutation_will_run() {
 fn finding_table_labels_never_masquerade_as_cve() {
     use crate::commands::audit::finding_table_labels;
     use mgc_types::adapter::FindingClass;
-    assert_eq!(
-        finding_table_labels(FindingClass::Vulnerability),
-        ("", "CVE")
-    );
+    // Vulnerability rows label the id through `advisory_id_label`, never a
+    // blanket "CVE" (see the npm-numeric case below).
+    // (Dòng vulnerability ghi nhãn id qua `advisory_id_label`, không dùng
+    // mặc định "CVE".)
+    assert_eq!(finding_table_labels(FindingClass::Vulnerability), ("", ""));
     assert_eq!(
         finding_table_labels(FindingClass::Policy),
         (" [policy]", "Policy rule")
@@ -132,4 +133,69 @@ fn finding_table_labels_never_masquerade_as_cve() {
         finding_table_labels(FindingClass::Artifact),
         (" [artifact]", "Artifact check")
     );
+}
+
+/// The lodash advisory shipped `1106913`, an internal npm advisory id, and
+/// the table labelled it `CVE:` — a CVE that does not exist. Real CVEs must
+/// still be labelled `CVE`, GHSA ids `GHSA`, everything else `Advisory`.
+/// (Advisory lodash có `1106913` — id nội bộ của npm — nhưng bảng ghi
+/// `CVE:` là một CVE không tồn tại. CVE thật vẫn phải là `CVE`, GHSA là
+/// `GHSA`, còn lại là `Advisory`.)
+#[test]
+fn advisory_id_label_distinguishes_npm_ids_from_real_cves() {
+    use crate::commands::audit::advisory_id_label;
+    assert_eq!(advisory_id_label("1106913"), "Advisory");
+    assert_eq!(advisory_id_label("CVE-2021-23337"), "CVE");
+    assert_eq!(advisory_id_label("GHSA-jf85-cpcp-j695"), "GHSA");
+    assert_eq!(advisory_id_label("OSV-2021-999"), "Advisory");
+    assert_eq!(advisory_id_label(""), "Advisory");
+}
+
+/// Only well-formed CVE identifiers are treated as CVEs.
+/// (Chỉ id CVE đúng định dạng mới được coi là CVE.)
+#[test]
+fn cve_pattern_requires_year_and_number() {
+    use crate::commands::audit::is_cve_id;
+    for valid in ["CVE-2021-23337", "CVE-1999-0001", "cve-2021-23337"] {
+        assert!(is_cve_id(valid), "{valid} must be recognised as a CVE id");
+    }
+    for invalid in [
+        "1106913",
+        "CVE-2021",
+        "CVE-21-23337",
+        "CVE-2021-",
+        "CVE-2021-abc",
+        "CVE--23337",
+        "GHSA-xxxx-xxxx-xxxx",
+        "CVE_2021_23337",
+    ] {
+        assert!(!is_cve_id(invalid), "{invalid} must not be labelled a CVE");
+    }
+}
+
+/// End-to-end table rendering: the printed id line must use the id's real
+/// class. This is the line that showed `CVE: 1106913` for the lodash
+/// advisory (an npm registry id, real CVE is CVE-2021-23337).
+/// (Render bảng end-to-end: dòng id in ra phải đúng loại thật của id. Đây
+/// chính là dòng từng in `CVE: 1106913` cho advisory lodash.)
+#[test]
+fn printed_id_line_never_labels_a_registry_id_as_cve() {
+    use crate::commands::audit::finding_table_labels;
+    use mgc_types::adapter::FindingClass;
+
+    // The renderer's label decision, exercised exactly as `print_report`
+    // does it (the row's own id decides the label for vulnerabilities).
+    // (Quyết định nhãn của renderer, chạy đúng như `print_report` làm.)
+    let label_for = |cve: &str| {
+        let (class_marker, class_label) = finding_table_labels(FindingClass::Vulnerability);
+        assert!(class_marker.is_empty());
+        let _ = class_label;
+        crate::commands::audit::advisory_id_label(cve)
+    };
+    assert_eq!(label_for("1106913"), "Advisory");
+    assert_eq!(label_for("CVE-2021-23337"), "CVE");
+    assert_eq!(label_for("GHSA-jf85-cpcp-j695"), "GHSA");
+    // Non-vulnerability rows keep their fixed label even with a numeric id.
+    // (Dòng phi vulnerability giữ nhãn cố định kể cả với id số.)
+    assert_eq!(finding_table_labels(FindingClass::Policy).1, "Policy rule");
 }

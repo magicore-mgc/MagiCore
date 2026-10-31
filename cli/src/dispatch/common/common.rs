@@ -49,6 +49,7 @@ pub async fn dispatch_common(
             compat_runner,
             engine,
             allow_output_warnings,
+            offline,
         } => {
             super::dev_route::build(
                 core,
@@ -57,6 +58,7 @@ pub async fn dispatch_common(
                 compat_runner,
                 engine,
                 allow_output_warnings,
+                offline,
             )
             .await
         }

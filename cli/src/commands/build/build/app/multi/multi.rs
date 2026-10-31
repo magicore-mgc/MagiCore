@@ -1,10 +1,11 @@
 use super::super::super::super::*;
+use crate::commands::build::implementation::DependencyFetch;
 use crate::commands::build::implementation::run_allowlisted_tool;
 use anyhow::Result;
 use std::path::Path;
 
 #[cfg(feature = "app")]
-pub(crate) fn build_multi_app(root: &Path, v: &toml::Value) -> Result<()> {
+pub(crate) fn build_multi_app(root: &Path, v: &toml::Value, fetch: DependencyFetch) -> Result<()> {
     // Validate every configured target before invoking any toolchain.
     // Kiểm tra toàn bộ target trước khi gọi bất kỳ toolchain nào.
     let platforms = resolve_multi_platforms(v)?;
@@ -23,7 +24,12 @@ pub(crate) fn build_multi_app(root: &Path, v: &toml::Value) -> Result<()> {
                     skipped.push("android (gradle not found)".to_string());
                     continue;
                 }
-                run_allowlisted_tool(&dir, "gradle", &["build", "--offline"])?;
+                let gradle_args: &[&str] = if fetch.is_offline() {
+                    &["build", "--offline"]
+                } else {
+                    &["build"]
+                };
+                run_allowlisted_tool(&dir, "gradle", gradle_args)?;
                 built += 1;
             }
             "ios" => {

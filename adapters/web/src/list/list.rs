@@ -26,22 +26,36 @@ pub async fn run_list(project_root: &Path) -> MgResult<Vec<InstalledPackage>> {
     let node_modules = project_root.join("node_modules");
     let mut packages = Vec::new();
 
+    // Every declared section is listed, not just `dependencies`: a package
+    // present only under `devDependencies`, `optionalDependencies` or
+    // `peerDependencies` is still an installed direct dependency and must
+    // not silently disappear from `mgc list`.
+    // (Liệt kê MỌI section đã khai, không chỉ `dependencies`: package chỉ có
+    // trong `devDependencies`/`optionalDependencies`/`peerDependencies` vẫn
+    // là dependency trực tiếp đã cài và không được biến mất khỏi `mgc list`.)
     for (label, deps) in manifest.dep_groups() {
         let is_dev = label == "devDependencies";
         for dep in deps {
-            let path = node_modules.join(dep.name.as_str());
+            let path = installed_package_dir(&node_modules, dep.name.as_str());
             if !path.exists() {
                 continue;
             }
 
-            let version = installed_package_version(&path).ok_or_else(|| MgError::Unsupported {
-                core: "web",
-                capability: "list installed package version",
-                guidance: format!(
-                    "cannot verify the installed version of '{}': its materialized package.json has no valid version; a lock pin alone is not proof of installed state",
-                    dep.name.as_str()
-                ),
-            })?;
+            // A directory without a readable `package.json` is not an
+            // installed package (interrupted install, empty placeholder, or
+            // a scoped directory that only holds its children). Reporting
+            // it either as installed or as a hard error would hide EVERY
+            // other declared dependency — the reported "mgc list omits
+            // deps" symptom. The lock pin alone is still never treated as
+            // proof of installed state.
+            // (Thư mục không có `package.json` đọc được thì không phải
+            // package đã cài (install gián đoạn, placeholder rỗng, hoặc thư
+            // mục scope chỉ chứa con). Báo nó là đã cài hoặc báo lỗi cứng
+            // đều che MỌI dependency khác — đúng triệu chứng "mgc list thiếu
+            // dep". Pin trong lock vẫn không bao giờ được coi là bằng chứng.)
+            let Some(version) = installed_package_version(&path) else {
+                continue;
+            };
 
             let integrity = v4_graph
                 .as_ref()
@@ -87,9 +101,17 @@ pub async fn run_list(project_root: &Path) -> MgResult<Vec<InstalledPackage>> {
                 integrity,
                 is_direct,
                 is_dev,
+                section: Some(label.to_string()),
             });
         }
     }
 
     Ok(packages)
+}
+
+/// Materialized directory for a package name, including scoped names
+/// (`@scope/name` lives at `node_modules/@scope/name`).
+/// (Thư mục đã materialize cho tên package, kể cả tên scoped.)
+fn installed_package_dir(node_modules: &Path, name: &str) -> std::path::PathBuf {
+    node_modules.join(name)
 }

@@ -1,7 +1,10 @@
 //! Runs one Web dev target through the established lifecycle.
 //! Chạy một target Web dev theo lifecycle hiện hành.
 use super::super::super::{DevTarget, build_dev_launch};
-use super::super::{run_dev_hook, run_dev_launch_with_guard, wait_for_dev_stop};
+use super::super::{
+    BACKEND_ROLE, backend_starting_line, build_backend_launch, readiness_line, run_dev_hook,
+    run_dev_launch_with_guard, wait_for_dev_stop,
+};
 use anyhow::Result;
 use mgc_ui::info;
 use std::sync::Arc;
@@ -11,14 +14,36 @@ pub(in crate::commands::core::web::implementation) async fn run_single_dev_targe
     compat: &crate::commands::compat::CompatMode,
     compat_runner: Option<&str>,
 ) -> Result<()> {
-    let launch = build_dev_launch(
-        &target.dir,
-        target.script_name,
-        target.host.clone(),
-        target.port,
-        compat,
-        compat_runner,
-    )?;
+    // A lone backend target still resolves through the backend owner: the server
+    // half is described by its own manifest, not by a Node script name.
+    // (Target backend đơn lẻ vẫn resolve qua owner backend: nửa server được mô tả
+    // bằng manifest riêng, không bằng tên script Node.)
+    let launch = if target.role == BACKEND_ROLE {
+        build_backend_launch(&target.dir, compat, compat_runner)?
+    } else {
+        build_dev_launch(
+            &target.dir,
+            target.script_name,
+            target.host.clone(),
+            target.port,
+            compat,
+            compat_runner,
+        )?
+    };
+
+    if let Some(port) = target.port {
+        let host = target
+            .host
+            .as_deref()
+            .unwrap_or(crate::commands::dev::DEFAULT_DEV_HOST);
+        info(&readiness_line(target.role, host, port));
+    }
+    if target.role == BACKEND_ROLE && !launch.program.to_string_lossy().ends_with("vite") {
+        info(&backend_starting_line(
+            target.role,
+            &launch.program.to_string_lossy(),
+        ));
+    }
 
     if launch.program.to_string_lossy().ends_with("vite") {
         info(&format!(
@@ -53,7 +78,7 @@ pub(in crate::commands::core::web::implementation) async fn run_single_dev_targe
             host: target
                 .host
                 .clone()
-                .unwrap_or_else(|| "localhost".to_string()),
+                .unwrap_or_else(|| crate::commands::dev::DEFAULT_DEV_HOST.to_string()),
             port: target
                 .port
                 .unwrap_or(crate::commands::core::dev_port::PORT_WEB_FE),

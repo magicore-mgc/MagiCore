@@ -29,7 +29,7 @@ pub(in crate::protocols::pypi) use platform_compatibility::{
 };
 pub use pypi::PypiProtocol;
 pub(in crate::protocols::pypi) use python_compatibility::{
-    abi_compatible, consumer_python, requires_python_allows,
+    InterpreterAbiFlavor, abi_compatible_for_interpreter, consumer_python, requires_python_allows,
 };
 pub(in crate::protocols::pypi) use wheel_identity::verify_wheel_identity;
 pub(in crate::protocols::pypi) use wheel_selection::{select_file, wheel_tags};

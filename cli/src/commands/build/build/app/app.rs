@@ -8,6 +8,7 @@ use super::multi::build_multi_app;
 pub(in crate::commands::build::implementation) async fn build_app(
     root: &Path,
     allow_output_warnings: bool,
+    fetch: DependencyFetch,
 ) -> Result<()> {
     let config = read_app_build_config(root)?;
     let language = resolve_app_language_from_config(root, config.as_ref())?;
@@ -16,7 +17,7 @@ pub(in crate::commands::build::implementation) async fn build_app(
     if language == "multi"
         && let Some(v) = config.as_ref()
     {
-        return build_multi_app(root, v);
+        return build_multi_app(root, v, fetch);
     }
 
     // Load optimizer env for app runtime
@@ -26,8 +27,9 @@ pub(in crate::commands::build::implementation) async fn build_app(
     let env: Vec<(String, String)> = optimizer_envs.into_iter().collect();
     let env_opt = if env.is_empty() { None } else { Some(env) };
 
+    let gradle_args: Vec<&str> = gradle_build_args(fetch);
     let (tool, args): (&str, &[&str]) = match language {
-        "kotlin" => ("gradle", &["build", "--offline"]),
+        "kotlin" => ("gradle", gradle_args.as_slice()),
         "swift" => (
             "swift",
             &["build", "--skip-update", "--disable-automatic-resolution"],
@@ -47,6 +49,20 @@ pub(in crate::commands::build::implementation) async fn build_app(
     post_build_app(root, allow_output_warnings)?;
     mgc_ui::success(&format!("App build completed ({language})"));
     Ok(())
+}
+
+/// Gradle build arguments for the selected dependency-fetch mode.
+///
+/// Gradle refuses to download a dependency without `--offline`, so online mode
+/// omits it and offline mode keeps the fail-closed behavior.
+/// (Tham số `gradle build` theo chế độ; online bỏ `--offline` để tải được
+/// dependency còn thiếu, offline giữ fail-closed.)
+fn gradle_build_args(fetch: DependencyFetch) -> Vec<&'static str> {
+    if fetch.is_offline() {
+        vec!["build", "--offline"]
+    } else {
+        vec!["build"]
+    }
 }
 
 /// Describe the artefact a framework app build produced.

@@ -105,26 +105,62 @@ fn react_express_composes_frontend_and_server_halves() {
 
 #[test]
 fn combo_without_a_server_half_fails_closed_before_writing() {
-    // `react-fastapi` is advertised, but MagiCore owns no offline generator for
-    // its FastAPI half. The lane must refuse before scaffolding the frontend,
+    // `react-spring` is advertised, but MagiCore owns no offline generator for
+    // its Spring Boot half. The lane must refuse before scaffolding the frontend,
     // otherwise a frontend-only directory would look like a finished combo.
-    // (`react-fastapi` được quảng bá nhưng MagiCore không có generator offline
-    // cho nửa FastAPI. Lane phải từ chối trước khi scaffold frontend, nếu không
+    // (`react-spring` được quảng bá nhưng MagiCore không có generator offline cho
+    // nửa Spring Boot. Lane phải từ chối trước khi scaffold frontend, nếu không
     // thư mục chỉ có frontend sẽ trông như combo hoàn chỉnh.)
     let dir = workspace("no-half");
     let project = dir.join("api");
     let flags = ScaffoldFlags::default();
 
-    let outcome = runtime().block_on(compose_offline(
-        "react-fastapi",
-        &path_str(&project),
-        &flags,
-    ));
+    let outcome = runtime().block_on(compose_offline("react-spring", &path_str(&project), &flags));
     let error = outcome.expect_err("a combo without a server half must fail");
     let message = error.to_string();
-    assert!(message.contains("react-fastapi"), "{message}");
-    assert!(message.contains("'fastapi' server half"), "{message}");
+    assert!(message.contains("react-spring"), "{message}");
+    assert!(message.contains("'spring-boot' server half"), "{message}");
     assert!(message.contains("mgc create-web"), "{message}");
+    assert!(!project.exists(), "nothing may be written");
+    cleanup(&dir);
+}
+
+#[test]
+fn native_backend_combos_accept_their_offline_half() {
+    // Every backend the composer owns a native half for must answer the
+    // pre-write check even with no network: the refusal path is gone for these
+    // combos, so the only remaining failure is a name conflict.
+    // (Mọi backend mà composer có nửa native phải qua bước kiểm trước khi ghi kể
+    // cả không có mạng: các combo này không còn nhánh từ chối, nên lỗi còn lại
+    // chỉ là tên đã tồn tại.)
+    let dir = workspace("native-half");
+    let project = dir.join("api");
+    let flags = ScaffoldFlags::default();
+    for combo in [
+        "react-fastapi",
+        "vue-fastapi",
+        "svelte-fastapi",
+        "react-flask",
+        "vue-flask",
+        "react-django",
+        "vue-django",
+        "react-axum",
+        "vue-axum",
+        "svelte-axum",
+        "react-gin",
+        "vue-gin",
+        "svelte-gin",
+    ] {
+        assert!(is_combo(combo), "{combo} must be a split combo");
+        let error = runtime()
+            .block_on(compose_offline(combo, &path_str(&project), &flags))
+            .expect_err("the project directory already exists, so composition stops there");
+        let message = error.to_string();
+        assert!(
+            !message.contains("no offline generator"),
+            "{combo} must not be refused for a missing server half: {message}"
+        );
+    }
     assert!(!project.exists(), "nothing may be written");
     cleanup(&dir);
 }

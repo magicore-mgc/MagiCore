@@ -116,14 +116,64 @@ fn materialize_importable_unpacks_pure_wheel() {
 /// Wheel biên dịch không được giải nén theo policy ABI; kết quả là None.
 #[test]
 fn materialize_importable_skips_compiled_wheel() {
+    // Serialized against the tests that rewrite the process-wide variable.
+    // (Tuần tự với các test thay đổi env toàn process.)
+    let _guard = super::test_support::python_version_env_serial();
+    let previous = std::env::var_os("MGC_PYTHON_VERSION");
+    // SAFETY/AN TOÀN: the compatibility check must reach the ABI verdict, so
+    // declare an explicit consumer for the duration of this test.
+    #[allow(unsafe_code)]
+    unsafe {
+        std::env::set_var("MGC_PYTHON_VERSION", "3.9");
+    }
     let wheel = stored_zip(&[("x.so", b"fake")]);
     let dir = tempfile::tempdir().expect("test operation must succeed");
-    let site = PypiProtocol::new("https://pypi.org")
-        .materialize_importable(
-            &entry_for("https://files.pythonhosted.org/x/x-1.0-cp39-cp39-manylinux1_x86_64.whl"),
-            &wheel,
-            dir.path(),
-        )
-        .expect("test operation must succeed");
+    let site = PypiProtocol::new("https://pypi.org").materialize_importable(
+        &entry_for("https://files.pythonhosted.org/x/x-1.0-cp39-cp39-manylinux1_x86_64.whl"),
+        &wheel,
+        dir.path(),
+    );
+    // SAFETY/AN TOÀN: restore the process environment captured above.
+    #[allow(unsafe_code)]
+    unsafe {
+        match &previous {
+            Some(value) => std::env::set_var("MGC_PYTHON_VERSION", value),
+            None => std::env::remove_var("MGC_PYTHON_VERSION"),
+        }
+    }
+    let site = site.expect("test operation must succeed");
     assert!(site.is_none(), "compiled wheel must not unpack");
+}
+
+/// A compiled wheel without `MGC_PYTHON_VERSION` must name the artifact it
+/// refused, so the user learns which dependency needs the interpreter minor
+/// instead of a bare "cannot materialize".
+/// (Wheel biên dịch thiếu `MGC_PYTHON_VERSION` phải nêu tên artifact bị từ chối.)
+#[test]
+fn compiled_wheel_without_declared_python_names_the_artifact() {
+    // Serialized against the tests that rewrite the process-wide variable.
+    // (Tuần tự với các test thay đổi env toàn process.)
+    let _guard = super::test_support::python_version_env_serial();
+    let previous = std::env::var_os("MGC_PYTHON_VERSION");
+    // SAFETY: test-only env mutation, serialized and restored below.
+    // AN TOÀN: chỉ test đổi env, tuần tự và phục hồi bên dưới.
+    #[allow(unsafe_code)]
+    unsafe {
+        std::env::remove_var("MGC_PYTHON_VERSION");
+    }
+    let error = PypiProtocol::is_importable_runtime_wheel(
+        "https://files.pythonhosted.org/j/jiter/jiter-0.18.0-cp314-cp314-macosx_11_0_arm64.whl",
+    )
+    .expect_err("a compiled wheel without a declared runtime must fail closed");
+    // SAFETY/AN TOÀN: restore the process environment captured above.
+    #[allow(unsafe_code)]
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("MGC_PYTHON_VERSION", value),
+            None => std::env::remove_var("MGC_PYTHON_VERSION"),
+        }
+    }
+    let rendered = error.to_string();
+    assert!(rendered.contains("jiter-0.18.0-cp314"), "{rendered}");
+    assert!(rendered.contains("MGC_PYTHON_VERSION"), "{rendered}");
 }

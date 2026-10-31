@@ -32,7 +32,16 @@ pub async fn run_create_with_options(
         project_name, fe_framework
     ));
 
-    let mut config = build_web_config(&fe_framework, project_name, &flags)?;
+    // The raw spec name carries the combo suffix the normalized frontend leaf
+    // drops: `react-fastapi` becomes `react-vite`, which would classify the
+    // project as a frontend-only project and skip the server half entirely.
+    // `build_web_config` normalizes internally, so passing the raw name keeps
+    // single-framework behaviour identical and lets a combo stay `fullstack`.
+    // (Tên spec gốc giữ hậu tố combo mà leaf frontend đã chuẩn hoá làm mất:
+    // `react-fastapi` thành `react-vite`, khiến project bị xếp là frontend-only
+    // và bỏ hẳn nửa server. `build_web_config` tự chuẩn hoá bên trong, nên truyền
+    // tên gốc giữ hành vi một framework y nguyên và để combo ở `fullstack`.)
+    let mut config = build_web_config(&spec.name, project_name, &flags)?;
 
     // A split fullstack combo is two halves, and its combined name has no leaf
     // layer of its own unless that layer was published. Compose it from the

@@ -92,11 +92,23 @@ pub(crate) async fn native_update_locked(
         info("No dependencies to update.");
         return Ok(());
     }
-    let updated =
+    let resolution =
         super::package_resolution::resolve_update_targets(adapter, root, &mut manifest, &targets)
             .await?;
+    let unchanged = resolution.unchanged;
+    let updated = resolution.updated;
+    // Nothing moved: report honestly and stop. Writing the manifest and the
+    // journal here would claim a mutation that does not exist.
+    // (Không có gì đổi: báo trung thực và dừng — ghi manifest/journal lúc này
+    // là báo một mutation không tồn tại.)
     if updated.is_empty() {
-        info("All packages are up to date");
+        if unchanged > 0 {
+            info(&format!(
+                "{unchanged} package(s) already at latest; nothing to update"
+            ));
+        } else {
+            info("All packages are up to date");
+        }
         return Ok(());
     }
     super::manifest_commit::commit_update_manifest(
@@ -112,6 +124,7 @@ pub(crate) async fn native_update_locked(
         adapter,
         root,
         updated,
+        unchanged,
         install,
         &update_snapshot,
         write_lock,
@@ -137,3 +150,7 @@ pub async fn update(
     // (Update native cho adapter sở hữu lane.)
     native_update_locked(adapter, root, packages, install, &write_lock).await
 }
+
+#[cfg(test)]
+#[path = "test/mod.rs"]
+mod tests;

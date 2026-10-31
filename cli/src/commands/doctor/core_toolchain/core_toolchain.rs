@@ -101,14 +101,71 @@ pub(in crate::commands::doctor) fn requirements_for_core(core: &str) -> Vec<Core
     else {
         return Vec::new();
     };
-    row.tools
+    requirements_from_binaries(core_name(canonical.as_str()), row.tools)
+}
+
+/// Build requirements for an explicit binary list under one canonical core.
+/// Dựng requirement cho danh sách binary tường minh dưới một core chuẩn.
+///
+/// Shared by the core table and the project-aware variant so a tool's probe
+/// arguments never come from two places.
+/// Dùng chung cho bảng core và biến thể theo project để đối số probe của một tool
+/// không đến từ hai nơi.
+fn requirements_from_binaries(
+    core: &'static str,
+    binaries: &[&'static str],
+) -> Vec<CoreToolRequirement> {
+    binaries
         .iter()
         .map(|binary| CoreToolRequirement {
-            core: core_name(canonical.as_str()),
+            core,
             binary,
             probe_args: probe_args_for(binary),
         })
         .collect()
+}
+
+/// Required toolchain for a core plus the project's own split server half.
+/// Toolchain bắt buộc cho core cộng nửa server tách rời của chính project.
+///
+/// A `web` project whose `server/` half runs on Python/Rust/Go must probe that
+/// runner too; every other core keeps exactly its table row.
+/// Project `web` có nửa `server/` chạy bằng Python/Rust/Go phải probe cả runner đó;
+/// core khác giữ đúng hàng của bảng.
+pub(in crate::commands::doctor) fn requirements_for_project(
+    core: &str,
+    project_root: &std::path::Path,
+) -> Vec<CoreToolRequirement> {
+    let mut requirements = requirements_for_core(core);
+    if Ecosystem::canonical_core_name(core) != "web" {
+        return requirements;
+    }
+    let Some(core_name) = requirements
+        .first()
+        .map(|requirement| requirement.core)
+        .or_else(|| {
+            CORE_REQUIRED_TOOLCHAINS
+                .iter()
+                .map(|row| row.core)
+                .find(|name| *name == "web")
+        })
+    else {
+        return requirements;
+    };
+    for binary in super::split_server_half_tools(project_root) {
+        if requirements
+            .iter()
+            .any(|requirement| requirement.binary == *binary)
+        {
+            continue;
+        }
+        requirements.push(CoreToolRequirement {
+            core: core_name,
+            binary,
+            probe_args: probe_args_for(binary),
+        });
+    }
+    requirements
 }
 
 /// Pin a canonical core string to the static table lifetime for display.

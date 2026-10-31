@@ -110,21 +110,62 @@ fn print_table_report(core: &str, report: &AuditReport) -> Result<()> {
     Ok(())
 }
 
-/// Machine-path rendering: print the structured payload only (the
-/// Human-table labels per finding class (R4/F2): policy, provenance,
-/// and artifact rows must never masquerade as CVEs — the id line is
-/// labeled by what the row actually is.
-/// Nhãn bảng theo class: dòng phi-CVE không được giả dạng CVE.
+/// Human-table label for a finding's identifier (R4/F2): policy,
+/// provenance, and artifact rows must never masquerade as CVEs — the id
+/// line is labeled by what the row actually is.
+/// (Nhãn bảng theo class: dòng phi-CVE không được giả dạng CVE.)
 pub(crate) fn finding_table_labels(
     class: mgc_types::adapter::FindingClass,
 ) -> (&'static str, &'static str) {
     use mgc_types::adapter::FindingClass;
     match class {
-        FindingClass::Vulnerability => ("", "CVE"),
+        // Vulnerability rows carry their own id label (see `id_label`).
+        // (Dòng vulnerability tự ghi nhãn id của nó.)
+        FindingClass::Vulnerability => ("", ""),
         FindingClass::Policy => (" [policy]", "Policy rule"),
         FindingClass::Provenance => (" [provenance]", "Provenance check"),
         FindingClass::Artifact => (" [artifact]", "Artifact check"),
     }
+}
+
+/// Label an advisory identifier by what it actually IS.
+///
+/// npm's bulk advisory `id` is a registry number (e.g. `1106913`), GitHub
+/// advisories are `GHSA-xxxx`, and only `CVE-<year>-<number>` ids are
+/// CVEs. Mislabelling an internal id as `CVE:` sends triage to a CVE that
+/// does not exist.
+/// (Gán nhãn id advisory theo đúng bản chất. `id` của npm bulk advisory là
+/// số registry, GHSA là `GHSA-xxxx`, chỉ id `CVE-<năm>-<số>` mới là CVE.
+/// Gắn nhãn `CVE:` cho id nội bộ sẽ đẩy người dò sang một CVE không tồn tại.)
+pub(crate) fn advisory_id_label(id: &str) -> &'static str {
+    if is_cve_id(id) {
+        "CVE"
+    } else if id.starts_with("GHSA-") {
+        "GHSA"
+    } else {
+        "Advisory"
+    }
+}
+
+/// True only for a well-formed `CVE-<4 digits>-<number>` identifier. The
+/// prefix match is case-insensitive because feeds vary, and the year must
+/// be exactly four digits.
+/// (Đúng chỉ với id `CVE-<4 chữ số>-<số>` hợp lệ. Prefix so khớp không
+/// phân biệt hoa thường vì nguồn feed khác nhau, và năm phải đủ 4 chữ số.)
+pub(crate) fn is_cve_id(id: &str) -> bool {
+    let Some((prefix, rest)) = id.split_at_checked(4) else {
+        return false;
+    };
+    if !prefix.eq_ignore_ascii_case("CVE-") {
+        return false;
+    }
+    let Some((year, number)) = rest.split_once('-') else {
+        return false;
+    };
+    year.len() == 4
+        && year.bytes().all(|byte| byte.is_ascii_digit())
+        && !number.is_empty()
+        && number.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 /// Render the typed report — shared across cores so every ecosystem gets
@@ -149,7 +190,7 @@ pub(crate) fn print_report(report: &AuditReport) {
             _ => vuln.severity.normal(),
         };
         mgc_ui::blank_line();
-        let (class_marker, id_label) = finding_table_labels(vuln.finding_class);
+        let (class_marker, class_label) = finding_table_labels(vuln.finding_class);
         println!(
             "{}{} {} in {}",
             severity,
@@ -158,6 +199,14 @@ pub(crate) fn print_report(report: &AuditReport) {
             vuln.package
         );
         if !vuln.cve.is_empty() {
+            // Vulnerability rows take the id label from the id itself; other
+            // classes keep their fixed label.
+            // (Dòng vulnerability lấy nhãn id từ chính id; class khác giữ
+            // nhãn cố định.)
+            let id_label = match vuln.finding_class {
+                mgc_types::adapter::FindingClass::Vulnerability => advisory_id_label(&vuln.cve),
+                _ => class_label,
+            };
             println!("  {id_label}: {}", vuln.cve);
         }
         if let Some(patched) = &vuln.patched_versions {

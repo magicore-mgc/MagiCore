@@ -3,13 +3,13 @@
 
 use super::super::implementation::WaitSession;
 use super::super::termination::{kill_child, termination_failure};
-use crate::run::implementation::ForbiddenProcess;
+use crate::run::implementation::{ForbiddenProcess, RootExitScan};
 use crate::run::implementation::{POST_KILL_DRAIN_MS, forbidden_child_error};
 use anyhow::Result;
 use std::time::Duration;
 
 pub(in crate::run::implementation::supervision::implementation::wait_session) type ProcessScan =
-    Result<Option<ForbiddenProcess>>;
+    Result<RootExitScan>;
 
 impl WaitSession<'_> {
     pub(in crate::run::implementation::supervision::implementation::wait_session) fn fail_forbidden_process(

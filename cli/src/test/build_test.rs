@@ -345,7 +345,7 @@ fn build_multi_fails_when_no_platform_artifact_is_created() {
     std::fs::write(tmp.join("mgc.toml"), "[app]\nlanguage=\"multi\"\n").unwrap();
     let v: toml::Value =
         toml::from_str(&std::fs::read_to_string(tmp.join("mgc.toml")).unwrap()).unwrap();
-    assert!(super::build_multi_app(&tmp, &v).is_err());
+    assert!(super::build_multi_app(&tmp, &v, DependencyFetch::Online).is_err());
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
@@ -577,7 +577,10 @@ fn game_build_fails_when_engine_is_not_implemented() {
     std::fs::write(tmp.join("mgc.toml"), "ecosystem = \"game\"\n").unwrap();
     std::fs::write(tmp.join("project.godot"), "[application]\n").unwrap();
     let rt = tokio::runtime::Runtime::new().unwrap();
-    assert!(rt.block_on(super::build_game(&tmp, false)).is_err());
+    assert!(
+        rt.block_on(super::build_game(&tmp, false, DependencyFetch::Online))
+            .is_err()
+    );
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
@@ -592,7 +595,11 @@ fn iot_build_refuses_platformio_without_native_backend() {
     .unwrap();
     let rt = tokio::runtime::Runtime::new().unwrap();
     let error = rt
-        .block_on(super::build_iot(project.path(), false))
+        .block_on(super::build_iot(
+            project.path(),
+            false,
+            DependencyFetch::Online,
+        ))
         .expect_err("PlatformIO must not be invoked as a build backend");
     assert!(
         error
@@ -634,7 +641,10 @@ fn lib_ts_build_fails_when_tsc_missing() {
     )
     .unwrap();
     let rt = tokio::runtime::Runtime::new().unwrap();
-    assert!(rt.block_on(super::build_lib(&tmp, false)).is_err());
+    assert!(
+        rt.block_on(super::build_lib(&tmp, false, DependencyFetch::Online))
+            .is_err()
+    );
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
@@ -650,7 +660,7 @@ fn lib_java_maven_build_does_not_fall_through_to_typescript() {
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let error = rt
-        .block_on(super::build_lib(tmp.path(), false))
+        .block_on(super::build_lib(tmp.path(), false, DependencyFetch::Online))
         .expect_err("Java Maven build must not be mistaken for TypeScript");
     let message = error.to_string();
     assert!(

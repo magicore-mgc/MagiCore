@@ -7,8 +7,10 @@ pub async fn run(
     compat_runner: Option<&str>,
     engine: Option<&str>,
     allow_output_warnings: bool,
+    offline: bool,
 ) -> Result<()> {
     let build_engine_preference = crate::commands::build::engine_from_flag(engine)?;
+    let fetch = DependencyFetch::from_flag(offline);
     // Reject legacy rival-runtime flags before project discovery for every core.
     // (Từ chối cờ runtime đối thủ trước khi dò project, áp dụng đồng nhất mọi core.)
     let compat = crate::commands::compat::CompatMode::from_flag(compat_runtime)?;
@@ -30,7 +32,7 @@ pub async fn run(
         let runtime = crate::commands::optimizer::runtime_detect::DetectedRuntime::RustLib;
         let optimizer_envs =
             crate::commands::optimizer::env_loader::load_optimizer_env(&root, &runtime)?;
-        build_rust_with_env(&root, optimizer_envs)?;
+        build_rust_with_env(&root, optimizer_envs, fetch)?;
         // A standalone Rust project takes this shorter path, so the post-build
         // steps live here as well — otherwise the artefact that most Rust users
         // produce would be the one with no inventory.
@@ -93,7 +95,7 @@ pub async fn run(
         #[cfg(not(feature = "web"))]
         "web" => Err(crate::error::core_not_in_build("web")),
         #[cfg(feature = "app")]
-        "app" => build_app(&root, allow_output_warnings).await,
+        "app" => build_app(&root, allow_output_warnings, fetch).await,
         #[cfg(not(feature = "app"))]
         "app" => Err(crate::error::core_not_in_build("app")),
         #[cfg(feature = "clo")]
@@ -101,15 +103,15 @@ pub async fn run(
         #[cfg(not(feature = "clo"))]
         "cloud" => Err(crate::error::core_not_in_build("clo")),
         #[cfg(feature = "game")]
-        "game" => build_game(&root, allow_output_warnings).await,
+        "game" => build_game(&root, allow_output_warnings, fetch).await,
         #[cfg(not(feature = "game"))]
         "game" => Err(crate::error::core_not_in_build("game")),
         #[cfg(feature = "iot")]
-        "iot" => build_iot(&root, allow_output_warnings).await,
+        "iot" => build_iot(&root, allow_output_warnings, fetch).await,
         #[cfg(not(feature = "iot"))]
         "iot" => Err(crate::error::core_not_in_build("iot")),
         #[cfg(feature = "lib")]
-        "lib" => build_lib(&root, allow_output_warnings).await,
+        "lib" => build_lib(&root, allow_output_warnings, fetch).await,
         #[cfg(not(feature = "lib"))]
         "lib" => Err(crate::error::core_not_in_build("lib")),
         #[cfg(feature = "hardware")]
@@ -117,7 +119,7 @@ pub async fn run(
         #[cfg(not(feature = "hardware"))]
         "hardware" => Err(crate::error::core_not_in_build("hardware")),
         #[cfg(feature = "ai")]
-        "ai" => build_ai(&root, allow_output_warnings).await,
+        "ai" => build_ai(&root, allow_output_warnings, fetch).await,
         #[cfg(not(feature = "ai"))]
         "ai" => Err(crate::error::core_not_in_build("ai")),
         // A CI/CD project generates pipeline configuration; it has no build

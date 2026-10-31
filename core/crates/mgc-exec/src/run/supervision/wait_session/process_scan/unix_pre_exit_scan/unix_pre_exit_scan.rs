@@ -4,7 +4,9 @@
 use super::super::super::implementation::WaitSession;
 use super::super::super::termination::termination_failure;
 use super::super::ProcessScan;
-use crate::run::implementation::{POST_KILL_DRAIN_MS, find_forbidden_descendant_tracking};
+use crate::run::implementation::{
+    POST_KILL_DRAIN_MS, RootExitScan, find_forbidden_descendant_tracking,
+};
 use anyhow::Result;
 use std::time::Duration;
 
@@ -26,7 +28,7 @@ impl WaitSession<'_> {
                 self.process_monitor.execution_scope,
             )
         } else {
-            Ok(None)
+            Ok(RootExitScan::Running)
         }
     }
 
@@ -34,7 +36,7 @@ impl WaitSession<'_> {
         &mut self,
         process_scan: &ProcessScan,
     ) -> Result<()> {
-        let Ok(Some(found)) = process_scan else {
+        let Ok(RootExitScan::Forbidden(found)) = process_scan else {
             return Ok(());
         };
         let termination_error = self.terminate_tree();

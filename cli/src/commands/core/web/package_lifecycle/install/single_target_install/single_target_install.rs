@@ -8,13 +8,23 @@ use super::super::options::WebInstallOptions;
 use super::super::plan::WebInstallPlan;
 use crate::commands::core::shared;
 use crate::commands::core::shared::should_use_legacy_flat_layout;
+use crate::commands::core::web::implementation::project_context::is_startable_server_half;
 
 pub(in crate::commands::core::web::implementation::package_lifecycle::install) async fn run(
     plan: &WebInstallPlan,
     options: &WebInstallOptions,
 ) -> Result<()> {
     for target in &plan.targets {
-        if target.join("package.json").exists() {
+        if is_startable_server_half(target) {
+            // Same predicate the plan used: a server half MagiCore starts itself
+            // is not installed here, and saying so is better than a silent skip.
+            // (Cùng predicate mà plan đã dùng: nửa server MagiCore tự chạy không
+            // cài ở đây, và nói ra tốt hơn bỏ qua im lặng.)
+            mgc_ui::info(&format!(
+                "skipping {}: started by its own native runner in `mgc dev`",
+                target.display()
+            ));
+        } else if target.join("package.json").exists() {
             shared::install_with_adapter(
                 plan.adapter.as_ref(),
                 target,

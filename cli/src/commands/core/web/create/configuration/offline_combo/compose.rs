@@ -35,6 +35,35 @@ pub(in crate::commands::core::web::implementation) fn is_combo(combo: &str) -> b
         && !crate::scaffold::processor::is_all_in_one_fullstack(combo)
 }
 
+/// Server half of a combo, whichever owner can write it.
+/// Nửa server của combo, do owner nào ghi được.
+///
+/// Node backends delegate to their starter catalog (a real framework
+/// initializer); the rest are written from data by the native owner. Giving the
+/// native owner precedence keeps each backend in exactly one catalog.
+/// Backend Node giao cho catalog starter của nó (initializer framework thật);
+/// phần còn lại do owner native ghi từ dữ liệu. Ưu tiên owner native bảo đảm
+/// mỗi backend chỉ nằm trong đúng một catalog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ServerHalf {
+    /// Node.js starter — starter Node.js.
+    Node,
+    /// Native half written by `native_backend` — nửa native do `native_backend` ghi.
+    Native,
+}
+
+/// Resolve who writes the server half of `backend`.
+/// Xác định ai ghi nửa server của `backend`.
+fn server_half(backend: &str) -> Option<ServerHalf> {
+    if super::native_backend::has_half(backend) {
+        Some(ServerHalf::Native)
+    } else if super::node_backend::has_half(backend) {
+        Some(ServerHalf::Node)
+    } else {
+        None
+    }
+}
+
 /// Backend framework embedded in a split combo name.
 /// Framework backend nằm trong tên combo tách rời.
 fn backend_framework(combo: &str) -> Option<&'static str> {
@@ -59,9 +88,9 @@ fn frontend_half_framework<'a>(backend: &str, combo: &'a str) -> &'a str {
 }
 
 /// Compose `combo` offline: the frontend half's own initializer writes the
-/// frontend, then [`node_backend::write`] layers the server half in `server/`.
-/// Ghép `combo` offline: initializer của nửa frontend ghi frontend, rồi
-/// [`node_backend::write`] đặt nửa server trong `server/`.
+/// frontend, then the server half is written into `server/`.
+/// Ghép `combo` offline: initializer của nửa frontend ghi frontend, rồi nửa
+/// server được ghi vào `server/`.
 ///
 /// The frontend half always runs its framework's published initializer, so the
 /// combo never contains framework source written by MagiCore. When that
@@ -71,6 +100,12 @@ fn frontend_half_framework<'a>(backend: &str, combo: &'a str) -> &'a str {
 /// giờ chứa source framework do MagiCore viết. Khi initializer không chạy được
 /// (registry offline, không có initializer), lỗi nêu rõ cả hai nửa thay vì leaf
 /// combo mà không ai tiếp cận được.
+///
+/// The server half is refused before the frontend is scaffolded whenever no
+/// owner can produce it, so a failure never leaves a frontend-only directory
+/// that would look finished.
+/// Nửa server bị từ chối trước khi scaffold frontend nếu không owner nào tạo
+/// được, nên lỗi không bao giờ để lại thư mục chỉ có frontend trông như xong.
 pub(in crate::commands::core::web::implementation) async fn compose_offline(
     combo: &str,
     project_name: &str,
@@ -83,7 +118,7 @@ pub(in crate::commands::core::web::implementation) async fn compose_offline(
     // (Cả hai nửa được kiểm trước khi ghi bất cứ byte nào: combo không tạo được
     // nửa server không được để lại thư mục chỉ có frontend, vì nó trông như
     // project hoàn chỉnh.)
-    super::node_backend::ensure_available(backend, combo)?;
+    let half = server_half(backend).ok_or_else(|| no_server_half(combo, backend))?;
     let frontend_framework = frontend_half_framework(backend, combo);
     let initializer = lookup(Mode::Frontend, frontend_framework)
         .ok_or_else(|| no_frontend_half(combo, frontend_framework))?;
@@ -121,9 +156,15 @@ pub(in crate::commands::core::web::implementation) async fn compose_offline(
     config.template_dir = std::path::PathBuf::new();
     drop(workspace);
 
-    if let Err(error) =
-        super::node_backend::write(&project_dir, backend, frontend_framework, flags.ts)
-    {
+    let server_half_result = match half {
+        // A Node starter needs its dependency ranges locked before it can start.
+        // (Starter Node cần range dependency được lock trước khi chạy được.)
+        ServerHalf::Node => {
+            super::node_backend::write(&project_dir, backend, frontend_framework, flags.ts)
+        }
+        ServerHalf::Native => super::native_backend::write(&project_dir, backend, combo),
+    };
+    if let Err(error) = server_half_result {
         // Never leave a half-composed combo: the frontend half alone would read
         // as a finished project and hide the missing server.
         // (Không để combo ghép dở: chỉ nửa frontend sẽ trông như project hoàn
@@ -140,6 +181,23 @@ pub(in crate::commands::core::web::implementation) async fn compose_offline(
         ],
         frontend_framework: frontend_framework.to_string(),
     })
+}
+
+/// Error for a combo whose server half has no offline generator.
+/// Lỗi cho combo không có generator offline cho nửa server.
+///
+/// The message names both possible sources — a native half MagiCore writes, and
+/// the Node starters it can invoke — because the user has to choose which one
+/// they wanted.
+/// Thông điệp nêu cả hai nguồn khả dĩ — nửa native MagiCore tự ghi, và starter
+/// Node MagiCore gọi được — vì người dùng phải chọn điều họ muốn.
+fn no_server_half(combo: &str, backend: &str) -> anyhow::Error {
+    anyhow::anyhow!(
+        "the '{combo}' combo needs both halves and MagiCore has no offline generator for its \
+         '{backend}' server half. Scaffold each half with `mgc create-web <frontend> <name>` and \
+         `mgc create-web {backend} <name>`, or supply the combo through the registry layer / \
+         `--from-local <path>`. Nothing was created."
+    )
 }
 
 /// Error when the frontend half cannot be produced.
@@ -171,8 +229,13 @@ fn no_frontend_half(combo: &str, frontend: &str) -> anyhow::Error {
     )
 }
 
-/// Error for a name this composer does not handle.
-/// Lỗi cho tên composer này không xử lý.
+/// Error for a combination this composer does not handle.
+/// Lỗi cho tổ hợp composer này không xử lý.
+///
+/// It never substitutes for a missing server half: the caller checks that first,
+/// so the user always learns which half is missing.
+/// Lỗi này không bao giờ thay cho nửa server còn thiếu: caller đã kiểm trước, nên
+/// người dùng luôn biết thiếu nửa nào.
 fn not_a_combo(combo: &str) -> anyhow::Error {
     anyhow::anyhow!("'{combo}' is not a split fullstack combo")
 }

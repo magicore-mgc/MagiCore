@@ -44,6 +44,38 @@ impl Manifest {
         *self != before
     }
 
+    /// Change a dependency's range WITHOUT moving it between sections.
+    ///
+    /// `add_dep` is an ADD contract: it removes the name from every group first
+    /// so one package lives in one group. Reusing it to retarget an existing
+    /// dependency silently relocated `devDependencies` entries into
+    /// `dependencies` — `update` then claimed N updates while the sections were
+    /// rewritten. This keeps the entry's position, section and extra fields
+    /// (features, default_features) and only swaps the range.
+    /// Returns `true` when the range actually changed; `false` when the name is
+    /// absent or already carries that range (callers report that honestly).
+    /// (Đổi range mà KHÔNG dời section. `add_dep` là contract ADD: xoá tên khỏi
+    /// mọi group trước, nên dùng nó để đổi range sẽ âm thầm dời `devDependencies`
+    /// sang `dependencies`. Hàm này giữ nguyên vị trí, section và field phụ, chỉ
+    /// thay range. Trả `true` khi range thật sự đổi.)
+    pub fn retarget_dep(&mut self, name: &str, range: crate::package::VersionRange) -> bool {
+        for deps in [
+            &mut self.dependencies,
+            &mut self.dev_dependencies,
+            &mut self.peer_dependencies,
+            &mut self.optional_dependencies,
+        ] {
+            if let Some(dependency) = deps.iter_mut().find(|dep| dep.name.as_str() == name) {
+                if dependency.range == range {
+                    return false;
+                }
+                dependency.range = range;
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn remove_dep(&mut self, name: &str) -> bool {
         let mut changed = false;
         for deps in [

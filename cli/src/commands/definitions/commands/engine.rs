@@ -124,6 +124,13 @@ pub enum EngineCommands {
             help = "Do not fail the build when the output scan reports a blocking finding"
         )]
         allow_output_warnings: bool,
+        /// Keep native dependency builds off the network.
+        /// Giữ build dependency native không dùng mạng.
+        #[arg(
+            long,
+            help = "Build native dependencies (cargo, gradle) without network access; the build fails if a dependency is not already installed"
+        )]
+        offline: bool,
     },
     #[command(about = "Verify an SBOM signature written by `mgc build` (fail-closed)")]
     VerifySbom {

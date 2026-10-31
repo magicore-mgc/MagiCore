@@ -7,3 +7,5 @@ mod implementation;
 
 #[cfg(any(unix, test))]
 pub(in crate::run::implementation) use implementation::ProcessScanSnapshot;
+#[cfg(unix)]
+pub(in crate::run::implementation) use implementation::RootExitScan;

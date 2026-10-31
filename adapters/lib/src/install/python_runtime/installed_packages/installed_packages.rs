@@ -38,15 +38,22 @@ pub(super) fn list_native_python_installed_packages(
         .map(|(package, path)| {
             let name = mgc_types::PackageName::new(&package.name)?;
             let version = mgc_types::Version::parse(&package.version)?;
-            let is_direct = manifest
-                .all_dependencies()
-                .any(|dependency| dependency.name == name);
+            // Attribute the declared section so `list` can show where the
+            // dependency lives; an undeclared pin keeps `None`.
+            // (Gán section đã khai để `list` hiện vị trí dependency; pin
+            // không được khai giữ `None`.)
+            let section = manifest
+                .dep_groups()
+                .iter()
+                .find(|(_, deps)| deps.iter().any(|dependency| dependency.name == name))
+                .map(|(label, _)| (*label).to_string());
             Ok(mgc_types::adapter::InstalledPackage {
                 id: mgc_types::PackageId::new(name, version),
                 path,
                 integrity: (!package.integrity.is_empty()).then(|| package.integrity.clone()),
-                is_direct,
-                is_dev: false,
+                is_direct: section.is_some(),
+                is_dev: section.as_deref() == Some("devDependencies"),
+                section,
             })
         })
         .collect()

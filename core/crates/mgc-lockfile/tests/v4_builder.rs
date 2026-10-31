@@ -11,6 +11,61 @@ use mgc_lockfile::canonical::{LockfileV4, payload_digest};
 use mgc_lockfile::v4_graph::build_v4_from_resolved_graph;
 use mgc_types::{PackageId, ResolvedGraph, ResolvedPackage};
 
+/// Compare two parsed documents disregarding collection order.
+///
+/// The writer emits packages and edges in a canonical order and the reader
+/// re-sorts package items, so an ordered comparison would reject documents
+/// that carry identical content. Sources, roots and metadata are compared
+/// exactly; only set-like collections are normalized.
+/// (So sánh hai document bỏ qua thứ tự collection: writer xuất thứ tự
+/// canonical còn reader sắp lại item package. Source/root/metadata so khớp
+/// tuyệt đối; chỉ collection dạng tập được chuẩn hóa.)
+fn assert_same_document(left: &LockfileV4, right: &LockfileV4) {
+    fn ordered(doc: &LockfileV4) -> Vec<String> {
+        let mut rows: Vec<String> = doc
+            .packages
+            .iter()
+            .map(|package| {
+                let key = format!(
+                    "{:?}|{}|{}|{}|{:?}",
+                    package.key.ecosystem.as_str(),
+                    package.key.name,
+                    package.key.version,
+                    package.key.source_id,
+                    package.key.variant
+                );
+                let mut edges: Vec<String> = package
+                    .edges
+                    .iter()
+                    .map(|edge| format!("{edge:?}"))
+                    .collect();
+                edges.sort();
+                format!("{key}#{edges:?}")
+            })
+            .collect();
+        rows.sort();
+        rows
+    }
+    assert_eq!(ordered(left), ordered(right), "package content differs");
+    assert_eq!(left.sources, right.sources, "sources differ");
+    assert_eq!(left.peer_contexts, right.peer_contexts, "peer sets differ");
+    assert_eq!(
+        left.root_dependencies, right.root_dependencies,
+        "root pins differ"
+    );
+    assert_eq!(
+        left.root_dependencies_by_owner, right.root_dependencies_by_owner,
+        "owner roots differ"
+    );
+    assert_eq!(left.workspace, right.workspace, "workspace differs");
+    assert_eq!(
+        left.optimizer_profile, right.optimizer_profile,
+        "optimizer profile differs"
+    );
+    assert_eq!(left.metadata, right.metadata, "metadata differs");
+    assert_eq!(left.version, right.version, "schema version differs");
+}
+
 #[test]
 fn material_equality_ignores_serialization_order_but_preserves_artifact_changes() {
     let first = shared_owner_document();
@@ -530,7 +585,7 @@ fn merge_keeps_sibling_lanes_and_replaces_own() {
         mgc_lockfile::canonical::write_v4_document(&merged).expect("test operation must succeed");
     let back =
         mgc_lockfile::canonical::parse_v4_document(&text).expect("test operation must succeed");
-    assert_eq!(back, merged);
+    assert_same_document(&back, &merged);
     assert!(
         mgc_lockfile::policy::verify_v4_math(&back)
             .expect("test operation must succeed")
@@ -686,7 +741,7 @@ fn peer_duplicate_instances_document_but_replay_refuses() {
         mgc_lockfile::canonical::write_v4_document(&doc).expect("test operation must succeed");
     let back =
         mgc_lockfile::canonical::parse_v4_document(&text).expect("test operation must succeed");
-    assert_eq!(back, doc);
+    assert_same_document(&back, &doc);
     // The root pin `react@18.2.0` is now ambiguous across the two variants,
     // so even digest-level verification refuses before replay is attempted:
     // no layer silently picks one twin.

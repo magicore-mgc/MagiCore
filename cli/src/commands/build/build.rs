@@ -55,7 +55,11 @@ pub use dispatch::run;
 /// visibility cho owner dev; mọi kiểm tra vẫn nằm trong `build_lib`.)
 #[cfg(feature = "lib")]
 pub(in crate::commands) async fn build_lib_for_dev(root: &std::path::Path) -> anyhow::Result<()> {
-    build_lib(root, false).await
+    // A watch rebuild reuses what the last build fetched, so it stays online
+    // like the product build; only `mgc build --offline` forces offline.
+    // (Rebuild của watch dùng lại thành quả lần trước nên vẫn online như build
+    // sản phẩm; chỉ `mgc build --offline` mới ép offline.)
+    build_lib(root, false, DependencyFetch::Online).await
 }
 pub(crate) use shared::{python_cmd, tool_unavailable};
 
@@ -78,7 +82,7 @@ use iot::build_iot;
 #[cfg(feature = "lib")]
 use lib::build_lib;
 use shared::{
-    ensure_native_build_mode, find_root, go_offline_env, project_manifest_present,
+    DependencyFetch, ensure_native_build_mode, find_root, go_offline_env, project_manifest_present,
     should_use_legacy_rust_build,
 };
 #[cfg(feature = "web")]
@@ -124,7 +128,8 @@ pub(in crate::commands) fn finish_managed_rust_build(
     root: &Path,
     optimizer_envs: std::collections::HashMap<String, String>,
     source_root: &Path,
+    fetch: DependencyFetch,
 ) -> Result<()> {
     repair_managed_sources(source_root)?;
-    build_rust_with_managed_source(root, optimizer_envs, source_root)
+    build_rust_with_managed_source(root, optimizer_envs, source_root, fetch)
 }

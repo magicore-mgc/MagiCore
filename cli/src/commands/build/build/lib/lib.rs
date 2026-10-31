@@ -8,6 +8,7 @@ use super::manifest::{find_local_csproj, has_java_build_manifest};
 pub(in crate::commands::build::implementation) async fn build_lib(
     root: &Path,
     allow_output_warnings: bool,
+    fetch: DependencyFetch,
 ) -> Result<()> {
     // Load optimizer env for lib runtime
     // Tải env optimizer cho runtime thư viện
@@ -18,8 +19,8 @@ pub(in crate::commands::build::implementation) async fn build_lib(
         crate::commands::freshness::check_lib_cargo_freshness(root)?;
         let store_source = mgc_lib_adapter::install::cargo_compat::validate_build(root)?;
         match store_source {
-            Some(source) => finish_managed_rust_build(root, optimizer_envs, &source)?,
-            None => build_rust_with_env(root, optimizer_envs)?,
+            Some(source) => finish_managed_rust_build(root, optimizer_envs, &source, fetch)?,
+            None => build_rust_with_env(root, optimizer_envs, fetch)?,
         }
         return post_build_lib(root, allow_output_warnings);
     }

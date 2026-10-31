@@ -3,7 +3,12 @@
 
 use crate::canonical::toml_fields::{push_str_field, push_string_array};
 use crate::v4::PackageKey;
-pub(in crate::canonical) fn push_package_key(out: &mut String, key: &PackageKey) {
+/// Writes the `[package.key]` table plus its variant table; kept public
+/// inside `canonical` so the document writer reuses the exact identity bytes
+/// the payload digest covers.
+/// (Ghi bảng `[package.key]` kèm variant; public trong `canonical` để writer
+/// tài liệu dùng lại đúng byte danh tính mà digest payload phủ.)
+pub(crate) fn push_package_key(out: &mut String, key: &PackageKey) {
     out.push_str("[package.key]\n");
     push_str_field(out, "ecosystem", key.ecosystem.as_str());
     push_str_field(out, "name", &key.name);
@@ -12,11 +17,7 @@ pub(in crate::canonical) fn push_package_key(out: &mut String, key: &PackageKey)
     push_variant(out, "package.key.variant", &key.variant);
 }
 
-pub(in crate::canonical) fn push_variant(
-    out: &mut String,
-    table: &str,
-    variant: &crate::v4::VariantKey,
-) {
+pub(crate) fn push_variant(out: &mut String, table: &str, variant: &crate::v4::VariantKey) {
     if variant.peer_context.is_some() || variant.feature_set.is_some() || variant.target.is_some() {
         out.push('[');
         out.push_str(table);

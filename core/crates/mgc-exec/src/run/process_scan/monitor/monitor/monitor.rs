@@ -1,8 +1,10 @@
 //! `monitor.rs` — ordered Unix process scan orchestration.
 //! điều phối các bước scan process Unix theo thứ tự
 
+#[cfg(all(unix, test))]
+use super::super::super::super::ForbiddenProcess;
 #[cfg(unix)]
-use super::super::super::super::{CompatAuditContext, ForbiddenProcess};
+use super::super::super::super::{CompatAuditContext, RootExitScan};
 #[cfg(not(any(unix, windows)))]
 use super::super::super::super::{ForbiddenProcess, ensure_process_inspection_available};
 #[cfg(unix)]
@@ -45,6 +47,7 @@ pub(in crate::run::implementation::process_scan::monitor::implementation) fn fin
         false,
         execution_scope,
     )
+    .map(RootExitScan::into_forbidden)
 }
 
 /// Keep scan policy separate from mutable OS state so every stage exposes its security inputs.
@@ -62,7 +65,7 @@ pub(in crate::run::implementation) fn find_forbidden_descendant_tracking(
     compat_audit: Option<&CompatAuditContext<'_>>,
     root_reaped: bool,
     execution_scope: ExecutionScope,
-) -> Result<Option<ForbiddenProcess>> {
+) -> Result<RootExitScan> {
     let process_snapshots = collect_process_snapshots(system)?;
     refresh_live_observed_process_groups(observed_process_groups)?;
     let root_snapshot = process_snapshots.get(&root_pid).copied();
@@ -87,17 +90,22 @@ pub(in crate::run::implementation) fn find_forbidden_descendant_tracking(
         observed_process_groups,
     )?
     else {
-        return Ok(None);
+        return Ok(RootExitScan::Running);
     };
     let live_descendant_pids =
         refresh_go_processes(live_descendant_pids, &descendant_identities, system)?;
-    find_first_forbidden(
-        &live_descendant_pids,
-        system,
-        exempt,
-        shadow_dir,
-        compat_audit,
-        execution_scope,
+    Ok(
+        match find_first_forbidden(
+            &live_descendant_pids,
+            system,
+            exempt,
+            shadow_dir,
+            compat_audit,
+            execution_scope,
+        )? {
+            Some(found) => RootExitScan::Forbidden(found),
+            None => RootExitScan::Running,
+        },
     )
 }
 

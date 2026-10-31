@@ -5,6 +5,17 @@ use mgc_ui::info;
 
 use crate::context::ProjectContext;
 
+/// Host every dev server binds to when `--host` is absent.
+/// Host mà mọi dev server bind khi không truyền `--host`.
+///
+/// Centralized so the shared coordinator, the frontend bundler and both halves of
+/// a split project state the same default; a per-owner literal let the printed
+/// URL drift from the bound address.
+/// Tập trung để coordinator dùng chung, bundler frontend và cả hai nửa của
+/// project tách rời cùng một mặc định; literal riêng từng owner làm URL in ra
+/// lệch địa chỉ đã bind.
+pub(crate) const DEFAULT_DEV_HOST: &str = "localhost";
+
 #[path = "dispatch/mod.rs"]
 mod dispatch;
 
@@ -55,7 +66,7 @@ pub async fn run(
 }
 
 fn default_host(host: Option<String>) -> String {
-    host.unwrap_or_else(|| "localhost".to_string())
+    host.unwrap_or_else(|| DEFAULT_DEV_HOST.to_string())
 }
 
 #[cfg(test)]

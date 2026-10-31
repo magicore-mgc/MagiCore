@@ -3,4 +3,4 @@
 
 mod package_table;
 
-pub(super) use package_table::{push_package_key, push_variant};
+pub(crate) use package_table::push_package_key;

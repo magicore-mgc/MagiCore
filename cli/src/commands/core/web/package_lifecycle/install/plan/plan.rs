@@ -11,6 +11,7 @@ use super::super::options::WebInstallOptions;
 use crate::commands::compat::CompatMode;
 use crate::commands::core::shared;
 use crate::commands::core::web::implementation::project_context::adapter_selection::web_adapter;
+use crate::commands::core::web::implementation::project_context::is_startable_server_half;
 
 /// State computed once and consumed by exactly one execution lane.
 /// Trạng thái được tính một lần rồi dùng bởi đúng một lane thực thi.
@@ -49,10 +50,17 @@ pub(in crate::commands::core::web::implementation::package_lifecycle::install) a
 
     // Reject unsupported mixed-stack members before any frontend manifest,
     // lockfile, or shared-store mutation.
+    // A startable server half is started by its own runner, so this installer
+    // has nothing to resolve for it and skips it explicitly. Anything else
+    // without a JS manifest still fails closed.
+    // (Nửa server khởi động được do runner riêng chạy nên installer này không có
+    // gì để resolve và bỏ qua tường minh. Thư mục khác thiếu manifest JS vẫn
+    // fail-closed.)
     for target in &targets {
-        if !target.join("package.json").exists() {
-            compat_install_target(target, &compat)?;
+        if target.join("package.json").exists() || is_startable_server_half(target) {
+            continue;
         }
+        compat_install_target(target, &compat)?;
     }
 
     // Dedupe is opt-in from CLI or mgc.toml [dedupe].

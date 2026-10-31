@@ -37,7 +37,11 @@ fn report_with_fix() -> Result<(DoctorReport, storage::RemediationOutcome)> {
 fn toolchain_inventory() -> Result<Vec<super::model::Tool>> {
     let cwd = std::env::current_dir()?;
     match mgc_config::project::ProjectConfig::detect_core(&cwd) {
-        Ok(Some(core)) => Ok(toolchain::inventory_for_core(&core)),
+        // A split fullstack project's server half runs on its own toolchain, so
+        // readiness must cover that runner too, not just the core's row.
+        // (Nửa server của project fullstack tách rời chạy bằng toolchain riêng, nên
+        // readiness phải bao phủ runner đó, không chỉ hàng của core.)
+        Ok(Some(core)) => Ok(toolchain::inventory_for_project(&core, &cwd)),
         // No core is not a doctor error: the general inventory still runs.
         // Không có core không phải lỗi doctor: inventory chung vẫn chạy.
         Ok(None) => Ok(toolchain::inventory()),
