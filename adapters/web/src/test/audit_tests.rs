@@ -231,7 +231,7 @@ fn test_audit_parse_builds_findings_from_vulnerable_versions() {
         "only the vulnerable installed version yields a finding"
     );
     assert_eq!(vulns[0].package.version().to_string(), "4.17.12");
-    assert_eq!(vulns[0].cve, "1102260");
+    assert_eq!(vulns[0].cve, "GHSA-35jh-8xhr-j9wr");
     assert_eq!(
         vulns[0].severity_level,
         mgc_types::adapter::VulnerabilitySeverity::High

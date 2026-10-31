@@ -26,9 +26,13 @@ fn cargo_mutation_and_registry_commands_are_denied() {
 }
 
 #[test]
-fn cargo_build_requires_locked() {
-    assert!(denial_reason(&[], "build").is_some());
-    assert!(denial_reason(&["--offline".into()], "build").is_some());
+fn cargo_build_allows_missing_lock_for_first_build() {
+    // A freshly scaffolded project has no Cargo.lock; the CLI adds --locked
+    // only when a lock exists, so the policy must not require it here.
+    // (Project vừa scaffold chưa có Cargo.lock; CLI chỉ thêm --locked khi đã có
+    // lock, nên policy không được bắt buộc ở đây.)
+    assert!(denial_reason(&[], "build").is_none());
+    assert!(denial_reason(&["--offline".into()], "build").is_none());
     assert!(denial_reason(&["--locked".into()], "build").is_none());
 }
 

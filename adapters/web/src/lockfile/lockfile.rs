@@ -100,7 +100,11 @@ pub fn write_web_lockfile_with_state(
                 version: pkg.id.version().to_string(),
                 resolved: pkg.tarball_url.clone(),
                 integrity,
-                dependencies: pkg.deps.iter().map(ToString::to_string).collect(),
+                dependencies: {
+                    let mut deps: Vec<String> = pkg.deps.iter().map(ToString::to_string).collect();
+                    deps.sort();
+                    deps
+                },
                 peers: (!pkg.peer_deps.is_empty())
                     .then(|| pkg.peer_deps.iter().map(ToString::to_string).collect()),
                 ecosystem: mgc_lockfile::EcosystemTag::Web,
@@ -121,12 +125,13 @@ pub fn write_web_lockfile_with_state(
             || (legacy_v2 && package.ecosystem == mgc_lockfile::EcosystemTag::Other))
     });
     lockfile.packages.extend(next_web_packages);
-    let direct_roots: Vec<String> = graph
+    let mut direct_roots: Vec<String> = graph
         .packages
         .iter()
         .filter(|package| package.direct)
         .map(|package| package.id.to_string())
         .collect();
+    direct_roots.sort();
     mgc_lockfile::update_owner_root_pins(
         &mut lockfile,
         &owner_core,

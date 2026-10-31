@@ -14,14 +14,14 @@ fn default_build_does_not_force_offline() {
     // with network available, and no CLI flag could change it.
     // (Lỗi gốc: build hardcode `--offline` khiến crate chưa có trong store fail
     // dù có mạng.)
-    let args = cargo_build_args(DependencyFetch::Online, &[]);
+    let args = cargo_build_args(DependencyFetch::Online, &[], true);
     assert_eq!(args, ["build", "--locked"]);
     assert!(!args.iter().any(|arg| arg == "--offline"));
 }
 
 #[test]
 fn offline_flag_keeps_the_fail_closed_offline_build() {
-    let args = cargo_build_args(DependencyFetch::Offline, &[]);
+    let args = cargo_build_args(DependencyFetch::Offline, &[], true);
     assert_eq!(args, ["build", "--locked", "--offline"]);
 }
 
@@ -37,6 +37,7 @@ fn online_build_never_replaces_crates_io_with_the_directory_source() {
     let args = cargo_build_args(
         DependencyFetch::Online,
         &managed_source_config(DependencyFetch::Online, "/store/cargo/registry/src"),
+        true,
     );
     assert!(
         !args.iter().any(|arg| arg == REPLACE_WITH),
@@ -61,6 +62,7 @@ fn offline_build_replaces_crates_io_with_the_managed_directory() {
     let args = cargo_build_args(
         DependencyFetch::Offline,
         &managed_source_config(DependencyFetch::Offline, "/store/cargo/registry/src"),
+        true,
     );
     assert_eq!(
         args,
@@ -86,10 +88,12 @@ fn cargo_argv_differs_between_fetch_modes() {
     let online = cargo_build_args(
         DependencyFetch::Online,
         &managed_source_config(DependencyFetch::Online, "/store/cargo/registry/src"),
+        true,
     );
     let offline = cargo_build_args(
         DependencyFetch::Offline,
         &managed_source_config(DependencyFetch::Offline, "/store/cargo/registry/src"),
+        true,
     );
     assert_ne!(online, offline);
     for args in [&online, &offline] {
@@ -108,11 +112,11 @@ fn managed_source_options_keep_their_order_before_the_verb() {
     // (Cargo chỉ nhận `--config` trước subcommand nên prefix phải giữ nguyên.)
     let prefix = vec!["--config".to_string(), REPLACE_WITH.to_string()];
     assert_eq!(
-        cargo_build_args(DependencyFetch::Online, &prefix),
+        cargo_build_args(DependencyFetch::Online, &prefix, true),
         ["--config", REPLACE_WITH, "build", "--locked"]
     );
     assert_eq!(
-        cargo_build_args(DependencyFetch::Offline, &prefix),
+        cargo_build_args(DependencyFetch::Offline, &prefix, true),
         ["--config", REPLACE_WITH, "build", "--locked", "--offline"]
     );
 }

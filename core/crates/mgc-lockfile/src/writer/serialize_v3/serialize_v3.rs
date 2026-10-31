@@ -37,7 +37,19 @@ const SELF_HASH_STAMP_SENTINEL: &str = "0000-00-00T00:00:00.000000+00:00";
 /// ghi suy ra từ digest — dạng RFC 3339, giống nhau trên mọi máy.)
 pub fn serialize_lockfile(lockfile: &Lockfile) -> LockfileResult<String> {
     crate::verifier::verify_ownership_completeness(lockfile)?;
-    let sealed = seal_self_hash(lockfile)?;
+    // Sort packages deterministically before sealing so the emitted bytes do
+    // not depend on the order packages happened to be collected in.
+    // Sắp package tất định trước khi seal để byte phát ra không phụ thuộc thứ
+    // tự thu thập package.
+    let mut ordered = lockfile.clone();
+    ordered.packages.sort_by(|a, b| {
+        a.ecosystem
+            .as_str()
+            .cmp(b.ecosystem.as_str())
+            .then_with(|| a.name.cmp(&b.name))
+            .then_with(|| a.version.cmp(&b.version))
+    });
+    let sealed = seal_self_hash(&ordered)?;
     Ok(toml::to_string_pretty(&sealed)?)
 }
 

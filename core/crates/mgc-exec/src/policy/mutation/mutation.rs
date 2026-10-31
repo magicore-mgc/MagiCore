@@ -23,6 +23,29 @@ pub fn is_mutation_invocation(program: &str, args: &[String], env: &[(String, St
     // Forbidden managers: verb precision for the exception path.
     // (Manager bị cấm: chính xác verb cho đường exception.)
     let tool = tool_basename(program);
+    // Cargo build/test/check/run/clippy write build artefacts (target/) even
+    // when the dependency policy now permits them without --locked, so they
+    // remain mutations for the write-audit regardless of the lock rule.
+    // (Cargo build/test/check/run/clippy ghi artefact (target/) dù policy
+    // dependency nay cho phép thiếu --locked, nên vẫn là mutation cho audit ghi.)
+    if tool == "cargo" {
+        let has = |flag: &str| args.iter().any(|arg| arg == flag);
+        // A build pinned by `--locked` AND `--offline` is a reproducible build
+        // from an existing lock + local store, so it does not change the
+        // dependency state (the write-audit treats it as non-mutating). Any
+        // other cargo build/test/check/run, or a dependency verb, is a mutation.
+        // (Build có cả `--locked` và `--offline` là build tái lập từ lock + store
+        // cục bộ nên không đổi trạng thái dependency; còn lại là mutation.)
+        return match parse_first_subcommand(args).as_deref() {
+            Some("build" | "test" | "check" | "run" | "clippy") => {
+                !(has("--locked") && has("--offline"))
+            }
+            Some(
+                "add" | "remove" | "update" | "fetch" | "install" | "vendor" | "generate-lockfile",
+            ) => true,
+            _ => false,
+        };
+    }
     if !FORBIDDEN_TOOLS.contains(&tool.as_str()) {
         return false;
     }

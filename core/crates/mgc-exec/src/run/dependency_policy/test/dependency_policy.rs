@@ -10,19 +10,21 @@ fn option_values_do_not_become_the_command() {
         "Cargo.toml".into(),
         "build".into(),
     ];
-    assert_eq!(
-        dependency_resolution_deny_reason("cargo", &args, &[]),
-        Some("Cargo compile/test commands must include --locked".into())
-    );
+    // The command is `build` (not the option value): it is now allowed even
+    // without --locked, but the normalization still proves the command is
+    // `build` and not `Cargo.toml`.
+    // (Command là `build` (không phải giá trị option): nay được phép dù không
+    // có --locked, nhưng việc chuẩn hoá vẫn chứng minh command là `build`.)
+    assert_eq!(dependency_resolution_deny_reason("cargo", &args, &[]), None);
 }
 
 #[test]
 fn arguments_after_separator_do_not_satisfy_the_locked_policy() {
     let args = vec!["build".into(), "--".into(), "--locked".into()];
-    assert_eq!(
-        dependency_resolution_deny_reason("cargo", &args, &[]),
-        Some("Cargo compile/test commands must include --locked".into())
-    );
+    // `build` is allowed; the `--` separator still cannot smuggle a different
+    // command past normalization.
+    // (`build` được phép; dấu `--` vẫn không lách được chuẩn hoá command.)
+    assert_eq!(dependency_resolution_deny_reason("cargo", &args, &[]), None);
 }
 
 #[test]

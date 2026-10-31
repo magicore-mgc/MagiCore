@@ -2,10 +2,9 @@
 //! Rule command Cargo quản lý dependency và build locked/offline opt-in.
 
 pub(in crate::run::implementation::dependency_policy::implementation::languages) fn denial_reason(
-    args: &[String],
+    _args: &[String],
     first: &str,
 ) -> Option<&'static str> {
-    let has = |flag: &str| args.iter().any(|arg| arg == flag);
     // Cargo has no "download-only-if-needed" switch: `--locked` pins the
     // lockfile, while `--offline` both forbids downloads AND requires every
     // crate to be present in the local registry cache. Requiring it here made
@@ -23,9 +22,13 @@ pub(in crate::run::implementation::dependency_policy::implementation::languages)
         // `metadata` is a read-only query; it resolves the manifest/lock graph
         // and needs no offline switch (Cargo materializes nothing).
         // (`metadata` là truy vấn chỉ đọc; không cần cờ offline.)
-        "build" | "test" | "check" | "run" | "clippy" if !has("--locked") => {
-            Some("Cargo compile/test commands must include --locked")
-        }
+        // A freshly scaffolded Rust project has no Cargo.lock yet; `--locked`
+        // would make cargo refuse to create one, so the build could never run.
+        // The CLI adds `--locked` itself whenever a lock exists, so the
+        // lock-drift guarantee is preserved without blocking first builds.
+        // (Project Rust vừa scaffold chưa có Cargo.lock; `--locked` sẽ khiến
+        // cargo từ chối tạo lock nên build không chạy được. CLI tự thêm
+        // `--locked` khi đã có lock, nên vẫn giữ bảo đảm chống drift.)
         "build" | "test" | "check" | "run" | "clippy" | "metadata" => None,
         // `new`/`init` create a project skeleton from the local template, they
         // never touch a registry or lockfile; the framework initializers need

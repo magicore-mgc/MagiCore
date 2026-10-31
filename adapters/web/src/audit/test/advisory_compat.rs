@@ -42,7 +42,9 @@ fn lane_npm_2_vulnerable_version_matches_range() {
     let vulns = parse_advisory_bulk_response(&payload, &pins(&[("lodash", "4.17.12")])).unwrap();
     assert_eq!(vulns.len(), 1);
     assert_eq!(vulns[0].package.version().to_string(), "4.17.12");
-    assert_eq!(vulns[0].cve, "1102260");
+    // GHSA in the url is preferred over the internal numeric id.
+    // GHSA trong url được ưu tiên hơn id số nội bộ.
+    assert_eq!(vulns[0].cve, "GHSA-test");
     assert_eq!(vulns[0].severity, "high");
     assert_eq!(vulns[0].scanner.as_deref(), Some("npm-bulk-advisory"));
     assert_eq!(vulns[0].ecosystem.as_deref(), Some("web/javascript"));

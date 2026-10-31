@@ -91,6 +91,24 @@ impl Resolver {
                 }
             }
         }
-        merged.into_values().collect()
+        // Sort by package identity so downstream serializers (esp. the v3
+        // lockfile writer) emit a deterministic order; an unsorted HashMap
+        // drain makes the lockfile non-reproducible across runs.
+        // Sắp theo danh tính package để serializer phía sau (nhất là writer v3)
+        // phát ra thứ tự tất định; drain HashMap không sort làm lockfile không
+        // tái lập được giữa các lần chạy.
+        let mut packages: Vec<_> = merged.into_values().collect();
+        packages.sort_by(|a, b| {
+            a.package_id
+                .name_str()
+                .cmp(b.package_id.name_str())
+                .then_with(|| {
+                    a.package_id
+                        .version()
+                        .to_string()
+                        .cmp(&b.package_id.version().to_string())
+                })
+        });
+        packages
     }
 }

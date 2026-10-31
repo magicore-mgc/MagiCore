@@ -38,7 +38,11 @@ pub(crate) fn build_rust_with_env(
         execution_scope: Some(mgc_exec::allowlist::ExecutionScope::BuildRunner),
         ..Default::default()
     };
-    mgc_exec::prelude::run("cargo", &cargo_build_args(fetch, &[]), &opts)?;
+    mgc_exec::prelude::run(
+        "cargo",
+        &cargo_build_args(fetch, &[], has_lock(root)),
+        &opts,
+    )?;
 
     let elapsed = start.elapsed();
     mgc_ui::success(&format!("Rust build completed in {:?}", elapsed));
@@ -72,7 +76,7 @@ pub(crate) fn build_rust_with_managed_source(
         anyhow::Error::new(super::error::RustBuildError::ManagedSourcePathNotUtf8)
     })?;
     let base = managed_source_config(fetch, source_path);
-    let args = cargo_build_args(fetch, &base);
+    let args = cargo_build_args(fetch, &base, has_lock(root));
     let opts = mgc_exec::prelude::ExecOptions {
         cwd: Some(root.to_path_buf()),
         log_path: Some(root.join(".magicore").join("exec.log")),
@@ -122,14 +126,31 @@ pub(crate) fn managed_source_config(fetch: DependencyFetch, source_path: &str) -
 /// crate the store does not hold yet.
 /// (Ghép tham số `cargo build`; `--locked` luôn có, `--offline` chỉ khi được
 /// yêu cầu để build mặc định tải được crate chưa có.)
-pub(crate) fn cargo_build_args(fetch: DependencyFetch, prefix: &[String]) -> Vec<String> {
+pub(crate) fn cargo_build_args(
+    fetch: DependencyFetch,
+    prefix: &[String],
+    has_lock: bool,
+) -> Vec<String> {
     let mut args = prefix.to_vec();
     args.push("build".to_string());
-    args.push("--locked".to_string());
+    // `--locked` only when a Cargo.lock exists: a freshly scaffolded Rust
+    // project has none, and passing --locked would make cargo refuse to
+    // create it, so the build could never run.
+    // Chỉ dùng `--locked` khi đã có Cargo.lock: project Rust vừa scaffold chưa
+    // có, thêm --locked sẽ khiến cargo từ chối tạo lock và build không chạy được.
+    if has_lock {
+        args.push("--locked".to_string());
+    }
     if fetch.is_offline() {
         args.push("--offline".to_string());
     }
     args
+}
+
+/// Whether the project root already has a Cargo.lock.
+/// Project root đã có Cargo.lock chưa.
+fn has_lock(root: &std::path::Path) -> bool {
+    root.join("Cargo.lock").is_file()
 }
 
 #[cfg(test)]
