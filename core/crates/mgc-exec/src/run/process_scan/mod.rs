@@ -1,10 +1,12 @@
 //! Process-scan facade for shared types, Unix monitoring and OS snapshot adapters.
 //! Facade process-scan cho type dùng chung, monitor Unix và adapter snapshot theo OS.
 
-#[cfg(any(unix, test))]
+// Compiled on every platform: RootExitScan is part of the shared supervision
+// result type, so its module cannot be Unix-only.
+// (Biên dịch trên mọi nền tảng: RootExitScan thuộc type kết quả supervision
+// dùng chung, nên module của nó không thể chỉ Unix.)
 #[path = "types/mod.rs"]
 mod types;
-#[cfg(any(unix, test))]
 // Consumers live under `run::implementation::process_scan::monitor`, one level
 // below this module, so the re-export must reach `run::implementation` — the
 // same visibility the monitor items use. On macOS the field-level access below
@@ -13,6 +15,7 @@ mod types;
 // module này một mức, nên re-export phải tới `run::implementation` — đúng
 // visibility mà các item monitor dùng. Trên macOS field-level access vẫn biên
 // dịch được, nên chỉ build Linux mới bắt được.)
+#[cfg(any(unix, test))]
 pub(in crate::run::implementation) use types::ProcessScanSnapshot;
 pub(in crate::run::implementation) use types::RootExitScan;
 
