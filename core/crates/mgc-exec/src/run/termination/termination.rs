@@ -1,11 +1,13 @@
 //! Coordinate bounded Unix TERM/KILL sweeps over observed child process groups.
 //! Điều phối các lượt TERM/KILL Unix có giới hạn trên process group đã quan sát.
 
+#[cfg(unix)]
 use super::super::find_forbidden_descendant_tracking;
 use super::error::{TerminationFailures, TerminationPhase};
 use super::process_group_probe::process_groups_have_descendants;
 use super::process_group_signal::{signal_process_group_ids, signal_process_groups};
 use crate::allowlist::ExecutionScope;
+#[cfg(unix)]
 use crate::run::implementation::RootExitScan;
 use std::path::Path;
 use std::time::{Duration, Instant};

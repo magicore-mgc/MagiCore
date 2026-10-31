@@ -101,20 +101,33 @@ pub(crate) fn repair_package(
     if !checksum_path.is_file() {
         return Ok(RepairOutcome::Ready);
     }
-    let expected_sha256 = archive_digest(archive);
-    mgc_lib_adapter::install::cargo_compat::verify_managed_source(
-        package_root,
-        &expected_sha256,
-        archive,
-    )
-    .map_err(|error| {
-        anyhow::anyhow!(
-            "managed Cargo source for '{name}'@{version} failed re-verification: {error}; \
-                 run `mgc install` to rebuild it"
+    // The managed-source verifier lives in the optional lib adapter; without
+    // the shared-language-adapter feature this repair path is compiled out, so
+    // leave the directory untouched (the build gate still refuses it).
+    // (Bộ xác minh nằm trong lib adapter tuỳ chọn; khi tắt feature thì bỏ qua,
+    // cổng build vẫn từ chối thư mục đó.)
+    #[cfg(feature = "shared-language-adapter")]
+    {
+        let expected_sha256 = archive_digest(archive);
+        mgc_lib_adapter::install::cargo_compat::verify_managed_source(
+            package_root,
+            &expected_sha256,
+            archive,
         )
-    })?;
-    mgc_resolver::protocols::write_cargo_source_marker(package_root)?;
-    Ok(RepairOutcome::Repaired)
+        .map_err(|error| {
+            anyhow::anyhow!(
+                "managed Cargo source for '{name}'@{version} failed re-verification: {error}; \
+                 run `mgc install` to rebuild it"
+            )
+        })?;
+        mgc_resolver::protocols::write_cargo_source_marker(package_root)?;
+        Ok(RepairOutcome::Repaired)
+    }
+    #[cfg(not(feature = "shared-language-adapter"))]
+    {
+        let _ = (name, version, archive);
+        Ok(RepairOutcome::Ready)
+    }
 }
 
 /// SHA-256 of a cached archive; the directory source must match this digest.
