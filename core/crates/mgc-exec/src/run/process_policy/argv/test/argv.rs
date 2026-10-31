@@ -24,6 +24,38 @@ fn inline_node_source_remains_unclassified() {
 }
 
 #[test]
+fn xcrun_read_only_sdk_queries_are_not_device_control_in_a_build() {
+    use crate::allowlist::ExecutionScope;
+    // Cargo/rustc query the Apple SDK through xcrun during a build; that is a
+    // read-only SDK lookup, not device control, so it must not be killed.
+    // (Cargo/rustc truy vấn SDK Apple qua xcrun khi build; chỉ đọc, không phải
+    // điều khiển thiết bị, nên không bị kill.)
+    for query in ["--show-sdk-version", "--show-sdk-path", "--find"] {
+        let argv = [OsString::from("xcrun"), OsString::from(query), OsString::from("clang")];
+        let blocked = forbidden_process_match_argv_with_scope(
+            "xcrun",
+            &argv,
+            &[],
+            &[],
+            ExecutionScope::BuildRunner,
+        );
+        assert_eq!(blocked, None, "xcrun {query} must be allowed during a build");
+    }
+    // A real device-control invocation (simctl) is still blocked outside
+    // DeviceControl scope.
+    // (Lệnh điều khiển thiết bị thật (simctl) vẫn bị chặn ngoài DeviceControl.)
+    let simctl = [OsString::from("xcrun"), OsString::from("simctl"), OsString::from("list")];
+    let blocked = forbidden_process_match_argv_with_scope(
+        "xcrun",
+        &simctl,
+        &[],
+        &[],
+        ExecutionScope::BuildRunner,
+    );
+    assert!(blocked.is_some(), "xcrun simctl must stay blocked");
+}
+
+#[test]
 fn device_control_descendants_follow_the_root_execution_scope() {
     use crate::allowlist::ExecutionScope;
 

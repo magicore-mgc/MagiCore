@@ -91,6 +91,43 @@ fn is_go_build_self_reexec(
     module_modes.len() == 1 && module_modes[0].as_ref() == "-mod=readonly"
 }
 
+/// Whether `go build|test` is a cargo build-script codegen step.
+///
+/// Only under a `build-script-*` parent, only in BuildRunner, and only for the
+/// read-only `build`/`test` verbs. `go get`/`go mod download`/`go install`
+/// (dependency mutations) stay blocked.
+/// (Chỉ khi cha là build-script, scope BuildRunner, và verb build/test;
+/// `go get|mod download|install` vẫn bị chặn.)
+fn is_go_build_from_build_script(
+    image_name: &str,
+    argv: &[OsString],
+    parent_image: Option<&str>,
+    execution_scope: ExecutionScope,
+) -> bool {
+    if execution_scope != ExecutionScope::BuildRunner
+        || process_basename(image_name) != "go"
+        // The build script spawns `go`, which may re-exec `go`; both the
+        // build-script parent and a nested `go` parent are legitimate here.
+        // (Build script gọi `go`, `go` có thể re-exec; cả cha build-script và
+        // cha `go` lồng nhau đều hợp lệ.)
+        || parent_image.is_none_or(|parent| {
+            let name = process_basename(parent);
+            !(name.starts_with("build-script") || name == "go")
+        })
+    {
+        return false;
+    }
+    let args = argv
+        .iter()
+        .map(|argument| argument.to_string_lossy())
+        .collect::<Vec<_>>();
+    args.first()
+        .is_some_and(|first| process_basename(first) == "go")
+        && args
+            .get(1)
+            .is_some_and(|verb| matches!(verb.as_ref(), "build" | "test"))
+}
+
 fn is_xcrun_tool_name(name: &str) -> bool {
     !name.is_empty()
         && name.chars().all(|character| {
@@ -137,6 +174,21 @@ pub(in crate::run::implementation::process_scan::monitor::implementation) fn for
     // SwiftPM hỏi metadata SDK và đường dẫn tool Swift qua xcrun khi chạy app
     // CLI. Chỉ cho phép các dạng chỉ đọc chính xác này; simctl vẫn bị chặn.
     if is_swift_toolchain_build_probe(&image_name, process.cmd(), execution_scope) {
+        return None;
+    }
+    // A crate build script may run `go build ...` as a compile-time codegen
+    // step (e.g. bundling a Go helper into a vendored library). That is not
+    // MagiCore delegating dependency resolution to a package manager: the root
+    // command is Cargo, the scope is BuildRunner, and `go build` only compiles
+    // local source. Allow exactly that shape so release builds are not killed.
+    // (Build script của crate có thể chạy `go build` để sinh mã lúc biên dịch,
+    // không phải MagiCore uỷ thác dependency; cho phép đúng dạng đó.)
+    if is_go_build_from_build_script(
+        &image_name,
+        process.cmd(),
+        parent_image.as_deref(),
+        execution_scope,
+    ) {
         return None;
     }
     // Go may re-exec itself to apply its build environment. On macOS, process

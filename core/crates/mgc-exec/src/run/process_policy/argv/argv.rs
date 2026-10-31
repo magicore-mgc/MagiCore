@@ -115,6 +115,7 @@ pub(in crate::run::implementation) fn forbidden_process_match_argv_with_scope(
         if let Some(tool) = normalize_script_token(image)
             .as_deref()
             .and_then(device_control_only_tool)
+            && !is_xcrun_read_only_sdk_query(tool, argv)
         {
             return Some((tool.to_string(), "device-control scope", None, None));
         }
@@ -124,6 +125,7 @@ pub(in crate::run::implementation) fn forbidden_process_match_argv_with_scope(
             .and_then(|argument| normalize_script_token(&argument.to_string_lossy()))
             .as_deref()
             .and_then(device_control_only_tool)
+            && !is_xcrun_read_only_sdk_query(tool, argv)
         {
             return Some((
                 tool.to_string(),
@@ -135,6 +137,33 @@ pub(in crate::run::implementation) fn forbidden_process_match_argv_with_scope(
     }
 
     forbidden_process_match_argv_with_env(image, argv, exempt, policy_env)
+}
+
+/// Whether an `xcrun` invocation is a read-only SDK discovery query.
+///
+/// The Apple toolchain shells out to `xcrun --show-sdk-version` /
+/// `--show-sdk-path` / `--find <tool>` while linking a Rust binary. These only
+/// read the SDK layout; they never touch a device or simulator, so they must
+/// not be treated as device-control calls that get killed during a build.
+/// (`xcrun --show-sdk-version/--show-sdk-path/--find` chỉ đọc bố cục SDK mà
+/// toolchain Apple gọi khi link, không chạm thiết bị, nên không phải
+/// device-control trong lúc build.)
+fn is_xcrun_read_only_sdk_query(tool: &str, argv: &[OsString]) -> bool {
+    if tool != "xcrun" {
+        return false;
+    }
+    const READ_ONLY_SDK_QUERIES: &[&str] = &[
+        "--show-sdk-version",
+        "--show-sdk-path",
+        "--show-sdk-build-version",
+        "--show-sdk-platform-path",
+        "--show-sdk-platform-version",
+        "--find",
+        "--sdk",
+        "-sdk",
+    ];
+    argv.iter()
+        .any(|argument| READ_ONLY_SDK_QUERIES.contains(&argument.to_string_lossy().as_ref()))
 }
 
 fn is_exact_framework_initializer_pm_probe(image: &str, argv: &[OsString]) -> bool {
