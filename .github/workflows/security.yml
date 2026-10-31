@@ -341,6 +341,10 @@ jobs:
           cd "$WORK"
           "$MGCBIN" create-lib rust lib-rs >/dev/null
           cd lib-rs
+          # Give the project a real dependency so the audit scans a package
+          # graph instead of reporting UNVERIFIED on an empty project.
+          # (Thêm dependency thật để audit quét graph thay vì UNVERIFIED.)
+          "$MGCBIN" add serde@1 >/dev/null
           "$MGCBIN" install
           export MGC_AUDIT_STRICT=1
           set +e

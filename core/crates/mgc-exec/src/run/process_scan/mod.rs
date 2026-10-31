@@ -14,7 +14,6 @@ mod types;
 // visibility mà các item monitor dùng. Trên macOS field-level access vẫn biên
 // dịch được, nên chỉ build Linux mới bắt được.)
 pub(in crate::run::implementation) use types::ProcessScanSnapshot;
-#[cfg(unix)]
 pub(in crate::run::implementation) use types::RootExitScan;
 
 // The Linux snapshot tests read an identity helper through this module, so it is

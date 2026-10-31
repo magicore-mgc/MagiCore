@@ -22,8 +22,12 @@ pub(in crate::run::implementation) struct ProcessScanSnapshot {
 }
 
 /// Outcome of one tracked scan while the monitored root may be absent.
+///
+/// Declared on every platform because the shared supervision result type and
+/// its importers compile everywhere; only the Unix scan that produces it is
+/// cfg(unix). — Khai báo trên mọi nền tảng vì type kết quả dùng chung và các
+/// importer biên dịch ở mọi nơi; chỉ hàm scan tạo ra nó là cfg(unix).
 /// Kết quả một lượt scan có tracking khi root được giám sát có thể đã biến mất.
-#[cfg(unix)]
 #[derive(Debug)]
 pub(in crate::run::implementation) enum RootExitScan {
     /// A policy violation still runs somewhere in the tracked tree.
