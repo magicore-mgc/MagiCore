@@ -10,7 +10,7 @@ fn chip_resolves_from_registry() {
 fn flash_target_override_cannot_bypass_board_registry() {
     assert_eq!(
         resolve_target("esp32-rust", "esp32c3", None).unwrap(),
-        "riscv32imac-unknown-none-elf"
+        "riscv32imc-unknown-none-elf"
     );
     assert_eq!(
         resolve_target("esp32-rust", "esp32c3", Some("custom-target")).unwrap(),

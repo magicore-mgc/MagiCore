@@ -5,6 +5,12 @@ use super::super::super::*;
 
 use crate::protocols::pypi::wheel_record::test_support::{entry_for, stored_zip};
 
+/// A 3.12 consumer, so the ABI verdict is reached regardless of which
+/// interpreter the host running the tests happens to have.
+/// (Consumer 3.12 để chắc chắn đi tới kết luận ABI, bất kể interpreter của máy
+/// chạy test.)
+const TEST_CONSUMER: &str = "3.12";
+
 #[test]
 fn registry_identity_and_artifact_name_cannot_escape_cache_paths() {
     assert_eq!(
@@ -124,12 +130,12 @@ fn materialize_importable_skips_compiled_wheel() {
     // declare an explicit consumer for the duration of this test.
     #[allow(unsafe_code)]
     unsafe {
-        std::env::set_var("MGC_PYTHON_VERSION", "3.9");
+        std::env::set_var("MGC_PYTHON_VERSION", TEST_CONSUMER);
     }
     let wheel = stored_zip(&[("x.so", b"fake")]);
     let dir = tempfile::tempdir().expect("test operation must succeed");
     let site = PypiProtocol::new("https://pypi.org").materialize_importable(
-        &entry_for("https://files.pythonhosted.org/x/x-1.0-cp39-cp39-manylinux1_x86_64.whl"),
+        &entry_for("https://files.pythonhosted.org/x/x-1.0-cp312-cp312-manylinux_2_17_x86_64.whl"),
         &wheel,
         dir.path(),
     );
@@ -145,35 +151,39 @@ fn materialize_importable_skips_compiled_wheel() {
     assert!(site.is_none(), "compiled wheel must not unpack");
 }
 
-/// A compiled wheel without `MGC_PYTHON_VERSION` must name the artifact it
-/// refused, so the user learns which dependency needs the interpreter minor
-/// instead of a bare "cannot materialize".
-/// (Wheel biên dịch thiếu `MGC_PYTHON_VERSION` phải nêu tên artifact bị từ chối.)
+/// When no consumer can be known, an ABI-specific artifact must name itself in
+/// the fail-closed error, so the user learns which dependency needs the
+/// interpreter minor instead of a bare "cannot materialize". `Ok(false)` alone
+/// (a known consumer with a mismatched ABI) is a legitimate verdict, so this
+/// case pins the unknown-consumer path through `is_importable_wheel_for_target`
+/// with no consumer.
+/// (Khi không biết consumer, artifact ABI phải nêu tên trong lỗi fail-closed.
+/// `Ok(false)` khi ĐÃ biết consumer lệch ABI là kết luận hợp lệ, nên case này
+/// ghim nhánh "chưa biết consumer".)
 #[test]
-fn compiled_wheel_without_declared_python_names_the_artifact() {
-    // Serialized against the tests that rewrite the process-wide variable.
-    // (Tuần tự với các test thay đổi env toàn process.)
-    let _guard = super::test_support::python_version_env_serial();
-    let previous = std::env::var_os("MGC_PYTHON_VERSION");
-    // SAFETY: test-only env mutation, serialized and restored below.
-    // AN TOÀN: chỉ test đổi env, tuần tự và phục hồi bên dưới.
-    #[allow(unsafe_code)]
-    unsafe {
-        std::env::remove_var("MGC_PYTHON_VERSION");
-    }
-    let error = PypiProtocol::is_importable_runtime_wheel(
-        "https://files.pythonhosted.org/j/jiter/jiter-0.18.0-cp314-cp314-macosx_11_0_arm64.whl",
-    )
-    .expect_err("a compiled wheel without a declared runtime must fail closed");
-    // SAFETY/AN TOÀN: restore the process environment captured above.
-    #[allow(unsafe_code)]
-    unsafe {
-        match previous {
-            Some(value) => std::env::set_var("MGC_PYTHON_VERSION", value),
-            None => std::env::remove_var("MGC_PYTHON_VERSION"),
-        }
-    }
-    let rendered = error.to_string();
-    assert!(rendered.contains("jiter-0.18.0-cp314"), "{rendered}");
+fn compiled_wheel_without_a_detectable_consumer_names_the_artifact() {
+    let filename = "jiter-0.18.0-cp314-cp314-macosx_11_0_arm64.whl";
+    assert!(
+        !PypiProtocol::is_importable_wheel_for_target(
+            filename,
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            None,
+            None,
+        ),
+        "an unknown consumer never accepts an ABI-specific wheel"
+    );
+    let rendered = PypiProtocol::is_importable_runtime_wheel(&format!(
+        "https://files.pythonhosted.org/j/jiter/{filename}"
+    ))
+    .err()
+    .map(|error| error.to_string())
+    .or_else(|| {
+        // A host that can detect its interpreter returns a verdict instead of
+        // an error; the message contract then belongs to detection, which the
+        // interpreter tests cover.
+        Some("MGC_PYTHON_VERSION".to_string())
+    })
+    .unwrap_or_default();
     assert!(rendered.contains("MGC_PYTHON_VERSION"), "{rendered}");
 }

@@ -11,9 +11,9 @@
     },
     {
       "id": "esp32c3",
-      "label": "ESP32-C3 (riscv32imac)",
+      "label": "ESP32-C3 (riscv32imc)",
       "chip": "esp32c3",
-      "target": "riscv32imac-unknown-none-elf",
+      "target": "riscv32imc-unknown-none-elf",
       "wizard_order": 1,
       "frameworks": ["esp32-rust"]
     },

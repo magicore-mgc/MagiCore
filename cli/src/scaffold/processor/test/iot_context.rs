@@ -58,7 +58,7 @@ fn test_iot_templates_materialize_all_frameworks() {
         assert!(mgc.contains(board), "{framework} board");
         if framework == "esp32-rust" {
             assert!(
-                mgc.contains("riscv32imac-unknown-none-elf"),
+                mgc.contains("riscv32imc-unknown-none-elf"),
                 "{framework} target"
             );
         }

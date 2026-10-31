@@ -49,13 +49,14 @@ impl PypiProtocol {
         ))
     }
 
-    /// Fail-closed error for an ABI-specific artifact whose consumer Python is
-    /// unset. Name the artifact so the message never blames a pure wheel, and
-    /// point at the variable that fixes it.
-    /// (Lỗi fail-closed khi thiếu consumer cho artifact ABI; nêu tên artifact.)
+    /// Fail-closed error for an ABI-specific artifact when no consumer Python
+    /// could be detected. Name the artifact so the message never blames a pure
+    /// wheel, and point at the variable that fixes it.
+    /// (Lỗi fail-closed khi không dò được consumer cho artifact ABI; nêu tên
+    /// artifact và biến để sửa.)
     fn missing_consumer_python_error(filename: &str) -> MgError {
         MgError::Other(format!(
-            "native Python install cannot materialize '{filename}': compiled wheels need the running interpreter's Python version; set MGC_PYTHON_VERSION to the exact Python minor used by `mgc run`/`mgc dev`"
+            "native Python install cannot materialize '{filename}': compiled wheels need the running interpreter's Python version, and no interpreter could be detected; set MGC_PYTHON_VERSION to the exact Python minor used by `mgc run`/`mgc dev`"
         ))
     }
 

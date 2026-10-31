@@ -11,7 +11,8 @@ pub(super) mod legacy_board_map;
 pub(super) mod manifest_metadata;
 
 pub use board_queries::{
-    board_target, board_target_for_framework, boards_for_framework, known_boards,
+    board_chip_for_framework, board_target, board_target_for_framework, boards_for_framework,
+    known_boards,
 };
 pub use board_types::BoardInfo;
 pub(in crate::framework) use framework::canonical_framework;

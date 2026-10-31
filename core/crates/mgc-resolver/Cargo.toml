@@ -25,6 +25,11 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 quick-xml = { workspace = true }
 mgc-http = { workspace = true }
+# Consumer Python for wheel ABI: the override and the running-interpreter probe
+# run through the allowlisted executor, exactly like `mgc run`/`mgc dev`.
+# (Consumer Python cho wheel ABI: env ghi đè và probe interpreter chạy qua
+# executor allowlist, giống hệt `mgc run`/`mgc dev`.)
+mgc-exec = { workspace = true }
 url = { workspace = true }
 semver = { workspace = true }
 blake3 = { workspace = true }

@@ -24,7 +24,13 @@ pub(in crate::install) fn validate_python_importable_graph(
             let filename = PypiProtocol::artifact_filename_for_url(&package.tarball_url)
                 .map_err(PythonRuntimeCompatibilityError::Resolver)?;
             let guidance = if filename.ends_with(".whl") {
-                "compiled wheels need a host-compatible Python ABI; set MGC_PYTHON_VERSION to the exact Python minor used by `mgc run`/`mgc dev`"
+                // The consumer is the running interpreter unless the override
+                // is set, so a refusal means the ABI really differs (or no
+                // interpreter could be detected) — say both, never imply the
+                // whole thing is unconfigured.
+                // (Consumer mặc định là interpreter đang chạy, nên từ chối
+                // nghĩa là ABI thực sự lệch hoặc không dò được interpreter.)
+                "this compiled wheel's Python ABI does not match the interpreter `mgc run`/`mgc dev` will use; install a wheel built for that Python, or set MGC_PYTHON_VERSION to the exact minor it runs"
             } else {
                 "source distributions are not built by the native Python installer; use a compatible wheel"
             };

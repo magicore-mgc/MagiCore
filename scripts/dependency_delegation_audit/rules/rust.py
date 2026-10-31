@@ -76,6 +76,10 @@ AUDITED_EXECUTOR_ROUTES = {
 ('cli/src/commands/core/install/library/install_lib/install_lib.rs', 'version_of', '<dynamic:binary>'): 'explicit `mgc install-lib-binary <target>` probe: the executable is the '
                                                                                                     'user-supplied target of that command, run through mgc-exec (execution '
                                                                                                     'scope + allowlist + timeout), and only `--version` is requested',
+('core/crates/mgc-resolver/src/protocols/pypi/python_compatibility/python_compatibility.rs', 'probe_interpreter', '<dynamic:program>'): 'wheel-ABI consumer probe: the program is a `PYTHON_LAUNCHERS` constant '
+                                                                                                    '(`python`/`python3`, the launchers `mgc run`/`mgc dev` use) run '
+                                                                                                    'through mgc-exec TestRunner scope + allowlist + fixed 10s timeout, '
+                                                                                                    'requesting only `-c` version output; no user input selects it',
 ('cli/src/commands/exec/exec.rs', 'run', '<dynamic:command>'): 'mgc exec runs the user command through the mgc-exec allowlist with '
                                                                                  'ExecutionScope::ScriptRunner; the allowlist and exec audit '
                                                                                  'gate every spawn before it happens',

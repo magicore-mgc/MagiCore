@@ -12,13 +12,13 @@ fn manifest_identity_and_target_are_read_from_mgc_toml() {
     let temp = TempDir::new().unwrap();
     std::fs::write(
         temp.path().join("mgc.toml"),
-        "ecosystem = 'iot'\n[iot]\ntarget = 'riscv32imac-unknown-none-elf'\n",
+        "ecosystem = 'iot'\n[iot]\ntarget = 'riscv32imc-unknown-none-elf'\n",
     )
     .unwrap();
     assert!(manifest_is_iot(temp.path()));
     assert_eq!(
         target_from_manifest(temp.path()).as_deref(),
-        Some("riscv32imac-unknown-none-elf")
+        Some("riscv32imc-unknown-none-elf")
     );
 }
 

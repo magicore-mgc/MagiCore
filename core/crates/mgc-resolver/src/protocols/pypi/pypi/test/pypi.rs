@@ -275,8 +275,16 @@ fn consumer_python_reads_env() {
         assert_eq!(consumer_python(), Some((3, 10)));
         std::env::set_var("MGC_PYTHON_VERSION", "39");
         assert_eq!(consumer_python(), Some((3, 9)));
+        // Unset now falls back to the interpreter that actually runs (this
+        // test binary's host Python), never to a guessed ABI. The override
+        // stays authoritative whenever it is set, asserted above.
+        // (Bỏ env thì fallback về interpreter đang chạy, không đoán ABI. Env
+        // ghi đè vẫn thắng mỗi khi được đặt, đã kiểm phía trên.)
         std::env::remove_var("MGC_PYTHON_VERSION");
-        assert_eq!(consumer_python(), None);
+        assert_eq!(
+            consumer_python(),
+            detected_interpreter_python().ok().flatten()
+        );
         if let Some(v) = old {
             std::env::set_var("MGC_PYTHON_VERSION", v);
         }

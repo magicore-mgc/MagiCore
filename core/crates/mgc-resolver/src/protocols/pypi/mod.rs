@@ -31,5 +31,10 @@ pub use pypi::PypiProtocol;
 pub(in crate::protocols::pypi) use python_compatibility::{
     InterpreterAbiFlavor, abi_compatible_for_interpreter, consumer_python, requires_python_allows,
 };
+// Tests assert the fallback and the detection error through this view; the
+// production path is `consumer_python` above.
+// (Test kiểm fallback và lỗi dò qua view này; production dùng `consumer_python`.)
+#[cfg(test)]
+pub(in crate::protocols::pypi) use python_compatibility::detected_interpreter_python;
 pub(in crate::protocols::pypi) use wheel_identity::verify_wheel_identity;
 pub(in crate::protocols::pypi) use wheel_selection::{select_file, wheel_tags};

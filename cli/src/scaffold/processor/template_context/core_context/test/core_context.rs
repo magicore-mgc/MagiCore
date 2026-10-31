@@ -54,10 +54,9 @@ fn iot_template_context_uses_registered_board_target() {
 
     let context = CoreTemplateContext::try_new(&config, "firmware", "esp32-rust")
         .expect("registered board should resolve");
-    assert_eq!(
-        context.value("target"),
-        Some("riscv32imac-unknown-none-elf")
-    );
+    // esp32c3 is RISC-V IMAC-less: its registered target is riscv32imc.
+    // esp32c3 không có atomics: target đã đăng ký là riscv32imc.
+    assert_eq!(context.value("target"), Some("riscv32imc-unknown-none-elf"));
 }
 #[test]
 fn non_iot_template_context_retains_legacy_target_value() {
@@ -74,6 +73,8 @@ fn non_iot_template_context_retains_legacy_target_value() {
 
     let context = CoreTemplateContext::try_new(&config, "agent", "python-agent")
         .expect("non-IoT template context remains available");
+    // Non-IoT context with an unrecognised board keeps the legacy default.
+    // Ngữ cảnh non-IoT với board không nhận dạng giữ mặc định legacy.
     assert_eq!(
         context.value("target"),
         Some("riscv32imac-unknown-none-elf")

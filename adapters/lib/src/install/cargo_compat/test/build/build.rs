@@ -70,6 +70,34 @@ fn empty_cargo_projection_is_accepted_only_when_already_current() {
     );
 }
 
+/// The empty-graph refusal must say what an empty graph means, because the
+/// common cause is a feature-gated dependency with no feature enabled — the
+/// generated ESP32 starter that shipped `esp-hal = "1.2"` (no chip feature).
+/// (Lỗi từ chối graph rỗng phải nói ý nghĩa của graph rỗng, vì nguyên nhân
+/// thường gặp là dependency sau feature không bật feature nào — starter ESP32
+/// từng ghi `esp-hal = "1.2"` thiếu chip feature.)
+#[test]
+fn empty_graph_refusal_names_the_feature_gated_cause() {
+    let project = tempfile::tempdir().unwrap();
+    std::fs::write(
+        project.path().join("Cargo.toml"),
+        "[package]\nname = \"firmware\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\nesp-hal = \"1.2\"\n",
+    )
+    .unwrap();
+    let error = crate::install::prepare_empty_cargo_lock(project.path(), &[]).unwrap_err();
+    let rendered = error.to_string();
+    assert!(
+        rendered.contains("refusing to write an empty Cargo.lock"),
+        "{rendered}"
+    );
+    assert!(rendered.contains("esp-hal"), "{rendered}");
+    assert!(rendered.contains("feature"), "{rendered}");
+    assert!(
+        !project.path().join("Cargo.lock").exists(),
+        "no lock may be written for an unresolved declaration"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn managed_store_preflight_blocks_only_the_offline_build() {

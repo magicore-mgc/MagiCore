@@ -80,6 +80,11 @@ pub(in crate::scaffold::processor) fn legacy_template_target(board: &str) -> Str
         "esp32" => "xtensa-esp32-none-elf".to_string(),
         "esp32s3" => "xtensa-esp32s3-none-elf".to_string(),
         "nrf52dk_nrf52832" | "stm32f4_disc" => "thumbv7em-none-eabihf".to_string(),
+        // ESP32-C2/C3 are RISC-V IMAC-less (single-core, no atomics); C6/H2 have
+        // atomics. Espressif's Rust book uses imc for C2/C3 and imac for C6/H2.
+        // (C2/C3 là RISC-V không có atomics; C6/H2 có atomics.)
+        "esp32c2" | "esp32c3" => "riscv32imc-unknown-none-elf".to_string(),
+        "esp32c6" | "esp32h2" => "riscv32imac-unknown-none-elf".to_string(),
         _ => "riscv32imac-unknown-none-elf".to_string(),
     }
 }

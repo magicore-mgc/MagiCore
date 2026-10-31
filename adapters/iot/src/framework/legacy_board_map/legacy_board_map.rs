@@ -5,7 +5,7 @@
 /// Bộ ba board tĩnh giữ lại cho caller dùng API cũ.
 pub const KNOWN_BOARDS: &[(&str, &str, &str)] = &[
     ("esp32", "esp32", "xtensa-esp32-none-elf"),
-    ("esp32c3", "esp32c3", "riscv32imac-unknown-none-elf"),
+    ("esp32c3", "esp32c3", "riscv32imc-unknown-none-elf"),
     ("esp32s3", "esp32s3", "xtensa-esp32s3-none-elf"),
     ("esp32dev", "esp32", "xtensa-esp32-none-elf"),
     ("nodemcu-32s", "esp32", "xtensa-esp32-none-elf"),

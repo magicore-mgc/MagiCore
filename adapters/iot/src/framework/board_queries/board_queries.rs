@@ -50,6 +50,16 @@ pub fn board_target_for_framework(framework: &str, board: &str) -> Option<String
         .map(|entry| entry.target)
 }
 
+/// Resolve the chip name (the `esp-hal` feature id) only when the board
+/// belongs to the selected framework.
+/// Chỉ lấy tên chip (id feature `esp-hal`) nếu board thuộc framework đã chọn.
+pub fn board_chip_for_framework(framework: &str, board: &str) -> Option<String> {
+    boards_for_framework(framework)
+        .into_iter()
+        .find(|entry| entry.id == board)
+        .map(|entry| entry.chip)
+}
+
 #[cfg(test)]
 #[path = "test/mod.rs"]
 mod tests;
