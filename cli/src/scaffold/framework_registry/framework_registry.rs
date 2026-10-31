@@ -20,7 +20,23 @@ pub const CLOUD: &[&str] = &[
     "lambda",
     "pulumi",
 ];
-pub const CICD: &[&str] = &["argocd", "aws", "cloudflare", "gcp", "github-actions"];
+/// CI/CD providers `ci-generate` can really emit a pipeline for.
+///
+/// The list mirrors the emitter, not the detector: `aws`, `gcp` and `cloudflare`
+/// are detectable, but no pipeline template exists for them, so accepting the
+/// name here would offer a `create-cicd` that cannot produce a project.
+/// (Danh sách khớp với emitter, không khớp với detector: `aws`, `gcp`,
+/// `cloudflare` nhận diện được nhưng chưa có template pipeline, nên nhận tên ở
+/// đây sẽ mời gọi một `create-cicd` không sinh được project.)
+pub const CICD: &[&str] = &[
+    "github-actions",
+    "gitlab",
+    "circleci",
+    "jenkins",
+    "azure-pipelines",
+    "bitbucket-pipelines",
+    "argocd",
+];
 pub const IOT: &[&str] = &[
     "platformio",
     "firmware",

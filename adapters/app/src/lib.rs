@@ -11,6 +11,7 @@ pub mod cache;
 pub mod install;
 pub mod manifest;
 pub mod native;
+pub mod scaffold;
 
 pub use adapter::{AppAdapter, adapter_for};
 pub use language::{AppLanguage, detect_language};

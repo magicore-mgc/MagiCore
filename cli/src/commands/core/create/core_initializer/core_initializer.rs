@@ -19,7 +19,6 @@ use std::path::Path;
 
 use anyhow::Result;
 
-#[cfg(test)]
 use crate::scaffold::core_initializers::CoreInitializer;
 use crate::scaffold::core_initializers::{RECORDS, run_host_tool};
 
@@ -49,7 +48,11 @@ pub(crate) fn try_run(ecosystem: &str, framework: &str, target: &Path) -> Result
 
 /// The registered initializer for a pair, if any.
 /// Initializer đã đăng ký cho một cặp, nếu có.
-#[cfg(test)]
+///
+/// Used by `create-app` to decide whether the framework's own CLI is installed
+/// before invoking it; a registered program is the only thing that can run.
+/// (`create-app` dùng để quyết định CLI của framework đã cài trước khi chạy;
+/// chỉ chương trình đã đăng ký mới chạy được.)
 pub(crate) fn record_for(ecosystem: &str, framework: &str) -> Option<&'static CoreInitializer> {
     RECORDS
         .iter()

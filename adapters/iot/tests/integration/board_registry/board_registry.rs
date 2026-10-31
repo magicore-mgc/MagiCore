@@ -33,7 +33,7 @@ pub fn board_registry_filters_choices_by_framework_and_rejects_cross_framework_t
 
     assert_eq!(
         board_target_for_framework("esp32-rust", "esp32c3").as_deref(),
-        Some("riscv32imac-unknown-none-elf")
+        Some("riscv32imc-unknown-none-elf")
     );
     assert_eq!(
         board_target_for_framework("esp32-rust", "nrf52dk_nrf52832"),

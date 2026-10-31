@@ -2,12 +2,13 @@
 //! Thử generator adapter có sẵn của từng core, ghi file offline.
 //!
 //! This is the LOCAL GENERATOR path: it writes project files from the adapter's
-//! own templates and never starts west/pio/godot/terraform. Callers invoke it
-//! before the framework's host-tool initializer and before the registry layer,
-//! so an offline machine still gets a project.
+//! own templates and never starts west/pio/godot/terraform or a CI provider CLI.
+//! Callers invoke it before the framework's host-tool initializer and before the
+//! registry layer, so an offline machine still gets a project.
 //! Đây là đường LOCAL GENERATOR: ghi file project từ template của adapter và
-//! KHÔNG chạy west/pio/godot/terraform. Caller gọi TRƯỚC initializer host-tool
-//! của framework và trước registry layer, để máy offline vẫn có project.
+//! KHÔNG chạy west/pio/godot/terraform hay CLI của provider CI. Caller gọi TRƯỚC
+//! initializer host-tool của framework và trước registry layer, để máy offline
+//! vẫn có project.
 
 use std::path::Path;
 
@@ -16,8 +17,8 @@ use anyhow::Result;
 /// Local-generator inputs resolved at the CLI boundary.
 /// Đầu vào local generator đã phân giải tại biên CLI.
 pub(crate) struct LocalScaffoldRequest<'a> {
-    /// CLI core id (`iot`, `game`, `clo`, `ai`).
-    /// Core id CLI (`iot`, `game`, `clo`, `ai`).
+    /// CLI core id (`iot`, `game`, `clo`, `ai`, `cicd`, `app`).
+    /// Core id CLI (`iot`, `game`, `clo`, `ai`, `cicd`, `app`).
     pub core: &'a str,
     /// Canonical framework/engine/provider name for the core.
     /// Tên framework/engine/provider chuẩn cho core.
@@ -54,6 +55,8 @@ pub(crate) async fn try_local_scaffold(request: &LocalScaffoldRequest<'_>) -> Re
         "game" => try_scaffold_game(request).await,
         "clo" => try_scaffold_cloud(request).await,
         "ai" => try_scaffold_ai(request).await,
+        "cicd" => try_scaffold_cicd(request).await,
+        "app" => try_scaffold_flutter(request).await,
         // Other cores own their own fallbacks; no local generator here.
         // Core khác tự lo fallback riêng; không có local generator ở đây.
         _ => Ok(false),
@@ -125,6 +128,50 @@ async fn try_scaffold_ai(request: &LocalScaffoldRequest<'_>) -> Result<bool> {
 
 #[cfg(not(feature = "ai"))]
 async fn try_scaffold_ai(_request: &LocalScaffoldRequest<'_>) -> Result<bool> {
+    Ok(false)
+}
+
+#[cfg(feature = "cicd")]
+async fn try_scaffold_cicd(request: &LocalScaffoldRequest<'_>) -> Result<bool> {
+    // The provider id is the framework name `create-cicd` already parses; an
+    // unknown or template-less provider returns false so the caller keeps its
+    // registry/fail-closed path instead of writing an empty project.
+    // (Id provider chính là tên framework mà `create-cicd` đã parse; provider lạ
+    // hoặc chưa có template trả false để caller giữ đường registry/fail-closed
+    // thay vì ghi project rỗng.)
+    let Some(provider) = mgc_cicd_adapter::provider_from_str(request.framework) else {
+        return Ok(false);
+    };
+    if !mgc_cicd_adapter::scaffold::can_generate(provider) {
+        return Ok(false);
+    }
+    mgc_cicd_adapter::scaffold::scaffold_project(provider, project_name(request), request.target)
+        .await?;
+    Ok(true)
+}
+
+#[cfg(not(feature = "cicd"))]
+async fn try_scaffold_cicd(_request: &LocalScaffoldRequest<'_>) -> Result<bool> {
+    Ok(false)
+}
+
+#[cfg(feature = "app")]
+async fn try_scaffold_flutter(request: &LocalScaffoldRequest<'_>) -> Result<bool> {
+    // Flutter is the only App language with a MagiCore-owned dependency engine,
+    // so it is the only one the offline template covers. Every other language
+    // returns false and keeps its initializer/registry path.
+    // (Flutter là language App duy nhất có dependency engine do MagiCore sở hữu,
+    // nên cũng là language duy nhất template offline phủ. Language khác trả
+    // false và giữ đường initializer/registry.)
+    if request.framework != "flutter" {
+        return Ok(false);
+    }
+    mgc_app_adapter::scaffold::scaffold_project(project_name(request), request.target).await?;
+    Ok(true)
+}
+
+#[cfg(not(feature = "app"))]
+async fn try_scaffold_flutter(_request: &LocalScaffoldRequest<'_>) -> Result<bool> {
     Ok(false)
 }
 

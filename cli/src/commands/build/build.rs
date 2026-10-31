@@ -30,7 +30,7 @@ mod iot;
 #[path = "build/lib/mod.rs"]
 mod lib;
 #[path = "build/shared/mod.rs"]
-mod shared;
+pub(crate) mod shared;
 #[cfg(feature = "web")]
 #[path = "build/web_go_backend/mod.rs"]
 mod web_go_backend;

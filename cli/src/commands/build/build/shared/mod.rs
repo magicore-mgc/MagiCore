@@ -6,3 +6,6 @@ pub(super) use implementation::{
     should_use_legacy_rust_build,
 };
 pub(crate) use implementation::{python_cmd, tool_unavailable};
+
+#[path = "toolchain_remedy/mod.rs"]
+pub(crate) mod toolchain_remedy;

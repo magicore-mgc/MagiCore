@@ -6,6 +6,10 @@ mod adapter;
 mod provider;
 mod sbom;
 
+pub mod scaffold;
+
 pub use adapter::{CicdAdapter, adapter_for};
-pub use provider::{CicdProvider, detect_provider};
+/// Parse a canonical provider id (`github-actions`, `gitlab`, ...).
+/// Parse id provider chuẩn (`github-actions`, `gitlab`, ...).
+pub use provider::{CicdProvider, detect_provider, provider_from_str};
 pub use sbom::generate_sbom;

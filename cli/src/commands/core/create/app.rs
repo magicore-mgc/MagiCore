@@ -1,4 +1,16 @@
 //! `mgc create app` — wizard + scaffold theo framework (07 §4).
+//!
+//! Source order: an explicit `--from-local` still wins (it is resolved later and
+//! skips every branch), otherwise the Flutter SDK's own `flutter create` when
+//! the SDK is installed, then the built-in offline template, then the registry
+//! layer. The app adapter's install engine already talks to pub.dev natively, so
+//! requiring the SDK just to scaffold made `create-app flutter` fail on every
+//! machine without it.
+//! Thứ tự nguồn: `--from-local` tường minh vẫn thắng (nó được resolve sau và bỏ
+//! qua mọi nhánh), nếu không thì `flutter create` của SDK khi đã cài SDK, rồi
+//! template offline có sẵn, rồi registry layer. Engine install của adapter app đã
+//! nói chuyện pub.dev trực tiếp, nên bắt buộc có SDK chỉ để scaffold khiến
+//! `create-app flutter` hỏng trên mọi máy không có SDK.
 
 use anyhow::Result;
 
@@ -51,14 +63,56 @@ pub async fn run(
             .unwrap_or(framework);
         crate::commands::template::ensure_cache_healthy(&format!("app/{cache_framework}"))?;
     }
+    // The SDK is preferred when it is installed: `flutter create` also writes
+    // the platform folders (android/, ios/, web/) that the built-in template
+    // deliberately omits.
+    // (Ưu tiên SDK khi đã cài: `flutter create` còn ghi các thư mục nền tảng
+    // (android/, ios/, web/) mà template có sẵn cố ý bỏ qua.)
     if config.from_local.is_none()
         && let Some(framework) = parsed_framework
             .as_ref()
             .map(|spec| spec.normalized_name.as_str())
+        && framework_tool_installed(framework)
         && super::core_initializer::try_run("app", framework, std::path::Path::new(project_name))?
     {
         mgc_ui::success(&format!("Created app project: {project_name}"));
         return Ok(());
+    }
+
+    // No SDK on this machine (or the SDK is present but its initializer
+    // declined): the built-in template still writes a project the pub.dev lane
+    // manages. Install works without the SDK; build/test/dev keep failing closed
+    // with SDK guidance.
+    // (Máy không có SDK (hoặc SDK có mà initializer từ chối): template có sẵn
+    // vẫn ghi project mà lane pub.dev quản lý. Install chạy không cần SDK;
+    // build/test/dev vẫn fail-closed kèm hướng dẫn SDK.)
+    if config.from_local.is_none()
+        && let Some(fw) = config.frameworks.first()
+    {
+        let target = std::path::Path::new(project_name);
+        if super::local_generator::try_local_scaffold(
+            &super::local_generator::LocalScaffoldRequest {
+                core: "app",
+                framework: fw,
+                target,
+                board: None,
+            },
+        )
+        .await?
+        {
+            // The template already wrote the project files, so write only the
+            // metadata MagiCore owns (mgc.toml with `[app].language`, .mgc.core).
+            // (Template đã ghi file project, nên chỉ ghi metadata MagiCore sở
+            // hữu: mgc.toml với `[app].language`, .mgc.core.)
+            super::save_scaffold_metadata(target, &config)?;
+            mgc_ui::success(&format!(
+                "Created app project '{project_name}' with the built-in '{fw}' template (offline)."
+            ));
+            mgc_ui::warning(
+                "The Flutter SDK is not installed: `mgc install` works, but `mgc build`, `mgc test` and `mgc dev` need it — install it from https://docs.flutter.dev/get-started/install",
+            );
+            return Ok(());
+        }
     }
     // `--from-local` overrides every remote layer (same rule as web create).
     // (`--from-local` thắng mọi layer từ xa, cùng quy tắc route create của web.)
@@ -93,6 +147,19 @@ pub async fn run(
     super::scaffold_and_save_metadata(&config)?;
     mgc_ui::success("App project created. Run `mgc install` or `mgc dev` next.");
     Ok(())
+}
+
+/// Whether the framework's own CLI is installed, so the initializer can run.
+/// Framework có CLI riêng đã cài chưa, để initializer chạy được.
+///
+/// Only frameworks the scaffold catalog registers a host tool for are probed;
+/// a language with no registered program keeps its existing fail-closed path.
+/// (Chỉ dò framework mà catalog scaffold có đăng ký host tool; language không
+/// có chương trình đăng ký giữ nguyên đường fail-closed hiện tại.)
+fn framework_tool_installed(framework: &str) -> bool {
+    super::core_initializer::record_for("app", framework)
+        .map(|record| !crate::commands::build::tool_unavailable(record.program))
+        .unwrap_or(false)
 }
 
 #[cfg(test)]

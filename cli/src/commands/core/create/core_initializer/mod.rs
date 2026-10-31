@@ -4,6 +4,5 @@
 #[path = "core_initializer.rs"]
 mod implementation;
 
-#[cfg(test)]
 pub(crate) use implementation::record_for;
 pub(crate) use implementation::try_run;

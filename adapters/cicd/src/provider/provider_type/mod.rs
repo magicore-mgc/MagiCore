@@ -3,4 +3,4 @@
 
 mod provider_type;
 
-pub use provider_type::CicdProvider;
+pub use provider_type::{CicdProvider, provider_from_str};

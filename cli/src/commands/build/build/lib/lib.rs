@@ -1,6 +1,9 @@
 use super::super::*;
 use super::LibBuildError;
 use super::manifest::{find_local_csproj, has_java_build_manifest};
+use crate::commands::build::implementation::shared::toolchain_remedy::{
+    ToolchainContext, with_remedy,
+};
 
 /// Lib build (09 §5): rust → cargo; ts → tsc qua node_modules/.bin (npm-format,
 /// full resolver — không wrapper PM); python → isolated MGC-managed build module.
@@ -48,13 +51,32 @@ pub(in crate::commands::build::implementation) async fn build_lib(
         crate::commands::python_runtime::extend_native_python_env(&mut env, root, false)?;
         let env_opt = if env.is_empty() { None } else { Some(env) };
 
+        // A missing `build` module is a setup problem, not a code problem, so
+        // the failure is re-checked for the exact interpreter command that
+        // fixes it; other backend failures keep their own detail.
+        // (Thiếu module `build` là lỗi cài đặt chứ không phải lỗi code, nên lỗi
+        // được kiểm lại để nêu đúng lệnh sửa theo interpreter; lỗi backend khác
+        // giữ nguyên chi tiết của nó.)
         return run_allowlisted_tool_with_env(
             root,
             python,
             &["-S", "-m", "build", "--no-isolation"],
             env_opt,
         )
-        .map_err(|source| LibBuildError::PythonBackendFailed { source }.into());
+        .map_err(|source| {
+            let detail = source.to_string();
+            LibBuildError::PythonBackendFailed {
+                source: anyhow::anyhow!(with_remedy(
+                    detail.clone(),
+                    &detail,
+                    ToolchainContext {
+                        rust_target: None,
+                        python: Some(python),
+                    },
+                )),
+            }
+            .into()
+        });
     }
     // Go modules build through the go toolchain (mgc owns
     // resolve/fetch/install; compilation stays toolchain territory,

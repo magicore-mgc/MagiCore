@@ -1,25 +1,9 @@
 //! Canonical CI/CD provider name parser.
 //! Parser tên provider CI/CD chuẩn.
 
-use crate::provider::CicdProvider;
-
-/// Map a recognized canonical provider name.
-/// Ánh xạ tên provider chuẩn đã được nhận diện.
-pub(in crate::provider::detection) fn provider_from_str(name: &str) -> Option<CicdProvider> {
-    match name {
-        "github-actions" => Some(CicdProvider::GithubActions),
-        "gitlab" => Some(CicdProvider::Gitlab),
-        "circleci" => Some(CicdProvider::CircleCi),
-        "jenkins" => Some(CicdProvider::Jenkins),
-        "azure-pipelines" | "azure" => Some(CicdProvider::AzurePipelines),
-        "bitbucket-pipelines" | "bitbucket" => Some(CicdProvider::BitbucketPipelines),
-        "cloudflare" => Some(CicdProvider::Cloudflare),
-        "aws" => Some(CicdProvider::Aws),
-        "gcp" => Some(CicdProvider::Gcp),
-        "argocd" => Some(CicdProvider::Argocd),
-        _ => None,
-    }
-}
+/// Map a recognized canonical provider name (single table lives on the type).
+/// Ánh xạ tên provider chuẩn (bảng duy nhất nằm trên type).
+pub(crate) use crate::provider::provider_from_str;
 
 #[cfg(test)]
 #[path = "test/mod.rs"]

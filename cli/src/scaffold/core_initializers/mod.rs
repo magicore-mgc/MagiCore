@@ -10,5 +10,4 @@ pub(crate) mod types;
 
 pub(crate) use catalog::RECORDS;
 pub(crate) use host_tool::run as run_host_tool;
-#[cfg(test)]
 pub(crate) use types::CoreInitializer;

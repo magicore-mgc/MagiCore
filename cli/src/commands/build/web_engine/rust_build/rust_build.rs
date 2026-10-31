@@ -5,6 +5,21 @@ use std::time::Instant;
 use mgc_ui::info;
 
 use crate::commands::build::implementation::DependencyFetch;
+use crate::commands::build::implementation::shared::toolchain_remedy::{
+    ToolchainContext, with_remedy,
+};
+
+/// Cargo's own target override; it selects the compile target without any
+/// `--target` argument on the command line.
+/// Biến ghi đè target của Cargo; nó chọn target biên dịch mà không cần
+/// `--target` trên dòng lệnh.
+const CARGO_BUILD_TARGET_ENV_VAR: &str = "CARGO_BUILD_TARGET";
+
+/// Cargo's build configuration path; a `build.target` key there also selects
+/// the compile target.
+/// Đường dẫn cấu hình build của Cargo; khóa `build.target` ở đó cũng chọn
+/// target biên dịch.
+const CARGO_BUILD_CONFIG_ENV_VAR: &str = "CARGO_BUILD_CONFIG";
 
 /// Name Cargo uses for the MagiCore-managed directory source.
 /// Tên Cargo dùng cho directory source do MagiCore quản lý.
@@ -38,11 +53,20 @@ pub(crate) fn build_rust_with_env(
         execution_scope: Some(mgc_exec::allowlist::ExecutionScope::BuildRunner),
         ..Default::default()
     };
-    mgc_exec::prelude::run(
+    let rust_target = rust_target_context();
+    match mgc_exec::prelude::run(
         "cargo",
         &cargo_build_args(fetch, &[], has_lock(root)),
         &opts,
-    )?;
+    ) {
+        Ok(_) => {}
+        Err(error) => {
+            return Err(build_rust_with_managed_source_failure(
+                error,
+                rust_target.as_deref(),
+            ));
+        }
+    }
 
     let elapsed = start.elapsed();
     mgc_ui::success(&format!("Rust build completed in {:?}", elapsed));
@@ -85,12 +109,125 @@ pub(crate) fn build_rust_with_managed_source(
         execution_scope: Some(mgc_exec::allowlist::ExecutionScope::BuildRunner),
         ..Default::default()
     };
-    mgc_exec::prelude::run("cargo", &args, &opts)?;
+    let rust_target = rust_target_context();
+    match mgc_exec::prelude::run("cargo", &args, &opts) {
+        Ok(_) => {}
+        Err(error) => {
+            return Err(build_rust_with_managed_source_failure(
+                error,
+                rust_target.as_deref(),
+            ));
+        }
+    }
     mgc_ui::success(&format!(
         "Rust library build completed in {:?}",
         start.elapsed()
     ));
     Ok(())
+}
+
+/// Rewrite a failed `cargo build` so a missing Rust target names its fix.
+///
+/// A target that is not installed fails deep inside the compiler with
+/// `can't find crate for core`, which names neither the missing target nor the
+/// fix. Every Rust build lane funnels its failure through here, so `web`, `lib`,
+/// `iot` and `game` report the same `rustup target add` command; a failure the
+/// classifier does not recognise is returned unchanged.
+/// (Target chưa cài hỏng sâu trong compiler với `can't find crate for core`,
+/// không nói thiếu target nào hay sửa sao. Mọi lane build Rust đều đưa lỗi qua
+/// đây nên `web`, `lib`, `iot`, `game` báo cùng lệnh `rustup target add`; lỗi
+/// không phân loại được trả nguyên vẹn.)
+fn build_rust_with_managed_source_failure(
+    error: anyhow::Error,
+    rust_target: Option<&str>,
+) -> anyhow::Error {
+    let detail = error.to_string();
+    let context = ToolchainContext {
+        rust_target,
+        python: None,
+    };
+    anyhow::anyhow!(with_remedy(detail.clone(), &detail, context))
+}
+
+/// The Rust triple a failing `cargo build` was compiling for, if knowable.
+///
+/// Resolution happens before the spawn so the spawn itself stays a single
+/// inventoried `cargo` call. Cargo's order is `--target`, then
+/// `CARGO_BUILD_TARGET`, then `build.target` from the effective Cargo config,
+/// then the host — reading only the command line named the host triple while
+/// cargo reported the real cross target as missing.
+/// (Phân giải trước khi spawn để lệnh spawn vẫn là một lệnh `cargo` duy nhất đã
+/// vào danh mục. Thứ tự Cargo: `--target`, `CARGO_BUILD_TARGET`, `build.target`
+/// trong Cargo config hiệu lực, rồi host — chỉ đọc dòng lệnh sẽ nêu host triple
+/// trong khi cargo báo chính target chéo là thứ còn thiếu.)
+fn rust_target_context() -> Option<String> {
+    // Only a target the user or project explicitly selected is reported. Without
+    // one, cargo compiles for the host, and a missing host std is not fixable by
+    // `rustup target add <host>` — the remedy then names the command shape
+    // instead of inventing a triple.
+    // (Chỉ báo target mà user/project đã chọn rõ ràng. Không có thì cargo biên
+    // dịch cho host, và thiếu std của host không sửa được bằng
+    // `rustup target add <host>` — câu khắc phục khi đó nêu dạng lệnh, không đoán
+    // triple.)
+    requested_rust_target().or_else(configured_rust_target)
+}
+
+/// The triple the process was started with `--target` / `--target=<triple>`.
+/// Triple mà process được khởi chạy với `--target` / `--target=<triple>`.
+fn requested_rust_target() -> Option<String> {
+    let mut arguments = std::env::args().skip(1);
+    loop {
+        let argument = arguments.next()?;
+        if let Some(target) = argument.strip_prefix("--target=") {
+            return Some(target.to_string()).filter(|target| !target.is_empty());
+        }
+        if argument == "--target" {
+            return arguments.next().filter(|target| !target.is_empty());
+        }
+    }
+}
+
+/// The triple Cargo will actually compile for, when it was configured through
+/// the environment or a Cargo config file instead of `--target`.
+///
+/// Cargo resolves `--target` first, then `CARGO_BUILD_TARGET`, then
+/// `build.target` from the effective Cargo config, then the host. Reading only
+/// the command line named the host triple in the remedy while cargo reported
+/// the real cross target as missing.
+/// (Cargo ưu tiên `--target`, rồi `CARGO_BUILD_TARGET`, rồi `build.target`
+/// trong Cargo config hiệu lực, rồi host. Chỉ đọc dòng lệnh khiến câu khắc phục
+/// nêu host triple trong khi cargo báo chính target chéo là thứ còn thiếu.)
+fn configured_rust_target() -> Option<String> {
+    if let Some(target) = std::env::var_os(CARGO_BUILD_TARGET_ENV_VAR)
+        .and_then(|value| value.into_string().ok())
+        .filter(|value| !value.trim().is_empty())
+    {
+        return Some(target.trim().to_string());
+    }
+    let config_path = std::env::var_os(CARGO_BUILD_CONFIG_ENV_VAR)
+        .and_then(|value| value.into_string().ok())
+        .filter(|value| !value.trim().is_empty())
+        .map(std::path::PathBuf::from)
+        .or_else(|| Some(std::path::PathBuf::from(".cargo").join("config.toml")));
+    let config_path = config_path?;
+    let content = std::fs::read_to_string(&config_path).ok()?;
+    let value: toml::Value = toml::from_str(&content).ok()?;
+    value
+        .get("build")
+        .and_then(|build| build.get("target"))
+        // `build.target` may be a list for multi-target builds; the first entry
+        // is the one Cargo reports first, so it is the one the user must add.
+        // (`build.target` có thể là danh sách; phần tử đầu là target cargo báo
+        // trước, nên cũng là target user phải cài.)
+        .and_then(|target| match target {
+            toml::Value::String(target) => Some(target.clone()),
+            toml::Value::Array(targets) => targets
+                .first()
+                .and_then(toml::Value::as_str)
+                .map(str::to_string),
+            _ => None,
+        })
+        .filter(|target| !target.trim().is_empty())
 }
 
 /// Build the `--config` prefix that wires the managed directory source.
