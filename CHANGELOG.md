@@ -49,6 +49,18 @@ v1.2.1.
   unavailable runtimes reported honestly instead of estimated.
 - `mgc ci-generate` emits an ArgoCD `AppProject`/`Application` pair.
 - Golden files pin every generated pipeline byte-for-byte.
+- `mgc init --name <NAME> --yes` scaffolds without any prompt, so CI can create
+  a project non-interactively (it used to require a TTY).
+- Every `create-<core>` accepts `--name`/`--yes`, matching `create-web`.
+- `mgc doctor` reads the project's core and reports its required toolchain
+  (`flutter`, `gradle`, `godot`, `pio`, `west`, `terraform`, …) as CRITICAL
+  when missing; it no longer reports HEALTHY for a core it cannot build.
+- `create-iot`/`create-game`/`create-cloud`/`create-ai` scaffold offline from
+  built-in generators when the registry layer is unavailable, instead of
+  failing with a 404 or spawning `west`/`pio`.
+- Fullstack `create-web` combos (`react-express`, `vue-nestjs`, and Node-less
+  backends such as `react-fastapi`, `react-axum`, `vue-gin`) compose a real
+  server half, and `mgc dev` runs both halves in parallel.
 
 ### Changed
 - Attestations bind the core identity (core version, tool version, MSRV,
@@ -64,6 +76,24 @@ v1.2.1.
 - Godot import no longer launches the GUI editor during scaffolding.
 - The web adapter no longer takes a second project lock while the CLI guard
   already holds it, which broke installs routed through an adapter.
+- `mgc update` retargets dependency ranges in place. Previously it moved every
+  dev dependency into `dependencies`, dropped the `devDependencies` section,
+  and reported updates it never wrote.
+- `mgc dev` serves package subpaths such as `react-dom/client`. Previously the
+  request 404'd, so every React app rendered a blank screen.
+- `mgc run` and `mgc exec` inherit the caller's environment. Child processes
+  saw `PORT`, `NODE_ENV`, and other variables as undefined.
+- `mgc build` on a freshly scaffolded Rust project no longer fails: `--locked`
+  is used only when a `Cargo.lock` already exists. `cargo --offline` is now an
+  explicit opt-in, so online builds can fetch crates the store does not hold.
+- `mgc.lock` is byte-reproducible: packages, per-package dependencies, and root
+  pins are sorted before serialization, and the v3 lock records a deterministic
+  self-hash.
+- `mgc list` shows every direct dependency with its section
+  (`dependencies`/`devDependencies`/…), and one unverifiable `node_modules`
+  entry no longer aborts the whole listing.
+- `mgc audit` reports real CVE/GHSA identifiers instead of mislabelling npm's
+  internal advisory id as a CVE.
 
 ## [Unreleased]
 

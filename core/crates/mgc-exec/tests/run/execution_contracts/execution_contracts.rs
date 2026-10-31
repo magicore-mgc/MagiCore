@@ -93,15 +93,10 @@ fn package_resolution_subcommands_are_rejected_before_spawn() {
     for (tool, args) in [
         ("cargo", vec!["fetch".to_string()]),
         ("cargo", vec!["+stable".to_string(), "fetch".to_string()]),
-        ("cargo", vec!["build".to_string()]),
-        (
-            "cargo",
-            vec![
-                "test".to_string(),
-                "--".to_string(),
-                "--offline".to_string(),
-            ],
-        ),
+        // `cargo build` without --locked is now permitted (a freshly
+        // scaffolded project has no lock yet), so it is not a rejection case.
+        // (`cargo build` thiếu --locked nay được phép vì project vừa scaffold
+        // chưa có lock, nên không phải ca bị từ chối.)
         (
             "python3",
             vec!["-m".to_string(), "pip".to_string(), "install".to_string()],
