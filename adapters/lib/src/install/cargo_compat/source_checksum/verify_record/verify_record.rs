@@ -30,6 +30,19 @@ pub(crate) fn verify_source_checksum(
         mgc_resolver::protocols::archive::cargo_source_file_hashes(archive_bytes, expected_root)
             .map_err(|error| MgError::Integrity(error.to_string()))?;
     let checksum_path = package_root.join(".cargo-checksum.json");
+    // A missing record is recoverable: the caller holds the archive, which is
+    // the source of truth, so rewrite the record instead of failing the whole
+    // install. A record that exists but disagrees is still a hard error.
+    // (Thiếu record là có thể phục hồi: caller có archive là nguồn chuẩn, nên
+    // ghi lại record thay vì làm hỏng install. Record có mà lệch vẫn là lỗi.)
+    if !checksum_path.is_file() {
+        super::super::write_record::write_source_checksum(
+            package_root,
+            expected_package_sha256,
+            archive_bytes,
+        )?;
+        return Ok(());
+    }
     let checksum_text =
         mgc_adapter_base::project_file::read_regular_text(&checksum_path, ".cargo-checksum.json")?;
     let checksum: serde_json::Value = serde_json::from_str(&checksum_text)
