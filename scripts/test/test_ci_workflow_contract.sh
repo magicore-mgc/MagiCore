@@ -521,9 +521,9 @@ done
 # (Portable sed: BSD grep on macOS runners has no -P.)
 # (Tươi checksum installer: SHA-256 nhúng phải khác rỗng VÀ khớp file ở
 # commit ghim — checksum cũ làm fail pipeline nó sinh ra.)
-installer_sha="$(grep -A1 'MGC_INSTALLER_SHA: &str' "$ROOT/cli/src/commands/core/dev/cicd/templates/templates.rs" | sed -n 's/.*"\([0-9a-f][0-9a-f]*\)".*/\1/p' | head -n 1)"
+installer_sha="$(grep -A1 'MGC_INSTALLER_SHA: &str' "$ROOT/adapters/cicd/src/scaffold/templates/templates.rs" | sed -n 's/.*"\([0-9a-f][0-9a-f]*\)".*/\1/p' | head -n 1)"
 [[ -n "$installer_sha" ]] || fail "installer commit pin is missing"
-embedded_sha256="$(grep -A1 'MGC_INSTALLER_SHA256: &str' "$ROOT/cli/src/commands/core/dev/cicd/templates/templates.rs" | sed -n 's/.*"\([0-9a-f][0-9a-f]*\)".*/\1/p' | head -n 1)"
+embedded_sha256="$(grep -A1 'MGC_INSTALLER_SHA256: &str' "$ROOT/adapters/cicd/src/scaffold/templates/templates.rs" | sed -n 's/.*"\([0-9a-f][0-9a-f]*\)".*/\1/p' | head -n 1)"
 [[ -n "$embedded_sha256" ]] || fail "installer checksum is not pinned (MGC_INSTALLER_SHA256 empty)"
 installer_path="scripts/install/install-from-gh.sh"
 if ! git -C "$ROOT" cat-file -e "${installer_sha}:${installer_path}" 2>/dev/null; then
