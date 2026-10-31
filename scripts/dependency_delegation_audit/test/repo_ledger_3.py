@@ -66,11 +66,23 @@ class RepoLedgerContractPart3(unittest.TestCase):
                 for item in ledger["shell_process_calls"]
             )
         )
+        # A JavaScript process call is admissible only when it is explicitly
+        # reviewed (the npm CLI shim is the one intentional executor boundary);
+        # anything unreviewed still blocks.
+        # (Cuộc gọi process JS chỉ hợp lệ khi đã review tường minh; cái chưa
+        # review vẫn chặn.)
         self.assertTrue(
             all(
-                item["review_status"] == "unreviewed"
+                item["review_status"] in {"reviewed", "unreviewed"}
                 for item in ledger["javascript_process_calls"]
             )
+        )
+        self.assertFalse(
+            any(
+                item["review_status"] == "unreviewed"
+                for item in ledger["javascript_process_calls"]
+            ),
+            "unreviewed javascript process calls remain",
         )
         self.assertTrue(
             all(

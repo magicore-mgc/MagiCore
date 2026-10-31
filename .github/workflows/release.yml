@@ -142,6 +142,23 @@ jobs:
     secrets:
       MGC_RELEASE_SIGNING_KEY: ${{ secrets.MGC_RELEASE_SIGNING_KEY }}
 
+  # npm channel: runs after the GitHub Release exists, behind the same gates
+  # as every other publisher. Order inside the workflow is platform packages
+  # then the wrapper — see release-publish-npm.yml.
+  # Kênh npm: chạy sau khi GitHub Release tồn tại, cùng bộ gate với các
+  # publisher khác.
+  publish-npm:
+    needs: [resolve-version, publish-github-release, pre-publish-verification, audit-capability-gate, release-scoped-support-evidence-gate, release-lifecycle-evidence-gate, release-source-ci-gate]
+    if: ${{ always() && needs.resolve-version.outputs.publish == 'true' && needs.publish-github-release.result == 'success' && needs.release-scoped-support-evidence-gate.result == 'success' && needs.pre-publish-verification.result == 'success' && needs.audit-capability-gate.result == 'success' && needs.release-lifecycle-evidence-gate.result == 'success' && needs.release-source-ci-gate.result == 'success' }}
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/release-publish-npm.yml
+    with:
+      version: ${{ needs.resolve-version.outputs.version }}
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
   verify-public-download:
     needs: [resolve-version, publish-github-release]
     permissions:

@@ -1,0 +1,170 @@
+# Release job owner. / Owner riêng cho job phát hành.
+#
+# Publishes the npm channel: five platform packages first, the
+# `@magicore/cli` wrapper last. Order is the contract — a wrapper that
+# resolves to a version whose platform package is not on the registry yet
+# (`optionalDependencies` are pinned with "=") would install without a binary.
+#
+# Phát hành kênh npm: 5 gói nền tảng trước, wrapper `@magicore/cli` sau cùng.
+# Thứ tự là hợp đồng — wrapper ghim "=" vào gói nền tảng, nên gói nền tảng phải
+# có trên registry trước khi wrapper xuất hiện.
+name: Publish npm Packages
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Validated release version from the entry workflow.
+        required: true
+        type: string
+    secrets:
+      NPM_TOKEN:
+        required: true
+
+jobs:
+  publish-npm:
+    name: Publish @magicore/cli ${{ inputs.version }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # npm provenance (OIDC-signed, verifiable on npmjs.com)
+      contents: read # checkout + download this run's build artifacts
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve version
+        id: version
+        env:
+          REQUESTED_RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          VERSION="${REQUESTED_RELEASE_VERSION}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid release version: $VERSION"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Publishing npm packages for $VERSION"
+
+      # The manifests in the checkout are the reviewed source of truth; a
+      # mismatched checkout must fail here, not publish the wrong version.
+      # Manifest trong checkout là nguồn đã duyệt; lệch version phải dừng ở đây.
+      - name: Verify checked-out manifests match the release version
+        env:
+          MGC_RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          locked="$(python3 -c 'import json;print(json.load(open("npm/cli/package.json"))["version"])')"
+          if [[ "$locked" != "$MGC_RELEASE_VERSION" ]]; then
+            echo "::error::npm/cli/package.json is $locked but the release version is $MGC_RELEASE_VERSION"
+            exit 1
+          fi
+          echo "Manifests match $MGC_RELEASE_VERSION"
+
+      # Same run id, so this consumes exactly the archives that passed the
+      # release smoke/pre-publish gates — never a later re-download.
+      # Cùng run id: chỉ dùng đúng archive đã qua gate smoke/pre-publish.
+      - name: Download release build artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Setup Node for npm publish
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          registry-url: https://registry.npmjs.org
+
+      - name: Build npm packages from release archives
+        env:
+          MGC_RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          ls -la release-artifacts
+          bash scripts/release/build-npm-packages.sh \
+            --artifacts release-artifacts \
+            --version "$MGC_RELEASE_VERSION"
+
+      - name: Verify package contracts offline
+        run: bash scripts/test/test_npm_packages.sh
+
+      - name: Verify tarball contents before publishing
+        env:
+          MGC_RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          # The failure this guards against is a package that publishes but
+          # installs nothing: wrapper without bin/mgc.js, platform package
+          # without the binary. `--dry-run` lists the real tarball contents.
+          # Điều cần chặn: gói publish được nhưng cài xong không có gì chạy —
+          # wrapper thiếu bin/mgc.js, gói nền tảng thiếu binary.
+          fail() { echo "::error::$*"; exit 1; }
+
+          wrapper_contents="$(cd npm/cli && npm pack --dry-run --json)"
+          grep -q '"path": "bin/mgc.js"' <<<"$wrapper_contents" \
+            || fail "@magicore/cli tarball must contain bin/mgc.js"
+          grep -q '"path": "package.json"' <<<"$wrapper_contents" \
+            || fail "@magicore/cli tarball must contain package.json"
+
+          while read -r platform binary; do
+            contents="$(cd "npm/platforms/$platform" && npm pack --dry-run --json)"
+            grep -q "\"path\": \"$binary\"" <<<"$contents" \
+              || fail "@magicore/cli-$platform tarball must contain $binary"
+            grep -q '"path": "LICENSE"' <<<"$contents" \
+              || fail "@magicore/cli-$platform tarball must contain LICENSE"
+            echo "verified @magicore/cli-$platform ($binary)"
+          done <<'PLATFORMS'
+          linux-x64 mgc
+          linux-arm64 mgc
+          darwin-x64 mgc
+          darwin-arm64 mgc
+          win32-x64 mgc.exe
+          PLATFORMS
+
+      # Platform packages FIRST. `--tag` is the exact version, not a dist-tag
+      # name, and `--provenance` binds the tarball to this workflow run.
+      # Gói nền tảng TRƯỚC. `--tag <version>` ghim đúng bản, `--provenance`
+      # gắn tarball với run này.
+      - name: Publish platform packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          MGC_RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          for platform in linux-x64 linux-arm64 darwin-x64 darwin-arm64 win32-x64; do
+            echo "::group::npm publish @magicore/cli-$platform@$MGC_RELEASE_VERSION"
+            (cd "npm/platforms/$platform" && \
+              npm publish --access public --provenance --tag "$MGC_RELEASE_VERSION")
+            echo "::endgroup::"
+          done
+
+      # Wrapper LAST, so `npm i -g @magicore/cli` can never resolve to a
+      # wrapper whose platform package is absent.
+      # Wrapper SAU CÙNG để không bao giờ resolve tới gói nền tảng chưa có.
+      - name: Publish wrapper package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          MGC_RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd npm/cli
+          npm publish --access public --provenance --tag "$MGC_RELEASE_VERSION"
+
+      - name: Summary
+        env:
+          MGC_RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          {
+            echo "### npm channel published: \`$MGC_RELEASE_VERSION\`"
+            echo
+            echo "Install: \`npm install -g @magicore/cli@$MGC_RELEASE_VERSION\`"
+            echo
+            echo "| order | package |"
+            echo "|---|---|"
+            echo "| 1 | \`@magicore/cli-linux-x64\` |"
+            echo "| 2 | \`@magicore/cli-linux-arm64\` |"
+            echo "| 3 | \`@magicore/cli-darwin-x64\` |"
+            echo "| 4 | \`@magicore/cli-darwin-arm64\` |"
+            echo "| 5 | \`@magicore/cli-win32-x64\` |"
+            echo "| 6 (last) | \`@magicore/cli\` (wrapper) |"
+          } >> "$GITHUB_STEP_SUMMARY"

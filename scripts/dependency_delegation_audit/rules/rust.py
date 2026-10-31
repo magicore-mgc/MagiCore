@@ -372,8 +372,16 @@ SPAWN_PATTERNS = [
     (re.compile(r'\bmgc_run\s*\(\s*"([^"\n]+)"'), True),
     (re.compile(r'\bCommand::new\s*\(\s*"([^"\n]+)"'), True),
     (re.compile(r'\bwhich(?:::which)?\s*\(\s*"([^"\n]+)"'), True),
-    # (tool, args) tables — `("cdk", vec!["deploy"])`, `("uv", vec![…])`.
+    # (tool, args) tables — `("cdk", vec!["deploy"])`, `("uv", vec![…])`, or
+    # `("gradle", args.as_slice())`. The `.as_slice()`/`.as_ref()` form is a
+    # real spawn descriptor and must not slip past the route inventory.
+    # (Bảng (tool, args) gồm cả dạng `("gradle", args.as_slice())`.)
+    # The `.as_slice()`/`.as_ref()` args form is only a spawn descriptor when
+    # the leading literal is a real tool name; a generic tuple of file names is
+    # data. Restrict that branch to known tools to avoid fixture false positives.
+    # (Dạng `.as_slice()` chỉ là descriptor khi tên đầu là tool thật.)
     (re.compile(r'\(\s*"([^"\n]+)"\s*,\s*(?:&?\[|vec!)'), True),
+    (re.compile(r'\(\s*"(' + "|".join(sorted(TOOLS)) + r')"\s*,\s*[A-Za-z_][A-Za-z0-9_]*\.as_(?:slice|ref)\(\)'), True),
     # Spawn descriptor fields — `tool: "flutter".to_string()`.
     (re.compile(r'\btool\s*:\s*"([^"\n]+)"'), True),
     # A bare tool literal alone on its line (variable assignment / call arg).

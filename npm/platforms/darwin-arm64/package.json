@@ -1,0 +1,30 @@
+{
+  "name": "@magicore/cli-darwin-arm64",
+  "version": "1.2.0",
+  "description": "The MagiCore mgc binary for macOS Apple Silicon. Installed automatically by @magicore/cli; do not install directly.",
+  "homepage": "https://github.com/mingd-153/MagiCore#readme",
+  "bugs": {
+    "url": "https://github.com/mingd-153/MagiCore/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mingd-153/MagiCore"
+  },
+  "license": "MIT",
+  "author": "MagiCore Contributors",
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "mgc",
+    "mgc.exe",
+    "LICENSE"
+  ],
+  "preferUninstallGlobal": true,
+  "publishConfig": {
+    "access": "public"
+  }
+}

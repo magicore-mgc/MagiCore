@@ -34,6 +34,11 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 pnpm-lock.yaml
+# npm channel: release binaries are extracted by
+# scripts/release/build-npm-packages.sh and must never enter git history.
+# (Binary npm được script giải nén lúc phát hành, không bao giờ vào git.)
+/npm/platforms/*/mgc
+/npm/platforms/*/mgc.exe
 
 # IDE
 .vscode/

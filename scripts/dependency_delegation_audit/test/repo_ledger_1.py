@@ -189,7 +189,7 @@ class RepoLedgerContractPart1(unittest.TestCase):
             source = handle.read()
         body = function_body(source, "pub(crate) fn build_rust_with_managed_source(")
         for token in ("managed_source_config(fetch, source_path)",
-                      "cargo_build_args(fetch, &base)", 'ExecutionScope::BuildRunner',
+                      "cargo_build_args(fetch, &base, has_lock(root))", 'ExecutionScope::BuildRunner',
                       'mgc_exec::prelude::run("cargo", &args, &opts)'):
             self.assertIn(token, body)
         for token in ('"--locked"', '"--offline"'):

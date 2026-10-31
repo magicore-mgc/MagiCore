@@ -38,6 +38,20 @@ def scan_shell_text(rel_path: str, text: str, scanned_shell_paths=None) -> list:
             else {}
         )
         if parse_error is not None:
+            # An unreviewed unparsed segment stays blocking, but a source line
+            # an explicit inspection review already reviewed (SHELL_SOURCE_
+            # INSPECTION_REVIEWS) is exempt: the parser could not segment it,
+            # yet a human has audited that exact line. Without this an
+            # unparsed segment could never be cleared by any review.
+            # (Đoạn không parse được vẫn chặn nếu chưa review; nếu dòng nguồn
+            # đã có review kiểm tra tường minh thì được miễn — parser không tách
+            # được nhưng người đã soi đúng dòng đó.)
+            unparsed_source_line = text.splitlines()[line_no - 1].strip()
+            if (
+                rel_path in SHELL_SOURCE_INSPECTION_REVIEWS
+                and unparsed_source_line in SHELL_SOURCE_INSPECTION_REVIEWS[rel_path]
+            ):
+                continue
             findings.append({
                 "file": rel_path,
                 "line": line_no,

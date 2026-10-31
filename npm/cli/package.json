@@ -1,0 +1,47 @@
+{
+  "name": "@magicore/cli",
+  "version": "1.2.0",
+  "description": "MagiCore `mgc` CLI \u2014 scaffold, install, build, dev and test across 4 core families (web, ai, app, lib).",
+  "keywords": [
+    "magicore",
+    "mgc",
+    "cli",
+    "scaffold",
+    "developer-tools",
+    "toolchain"
+  ],
+  "homepage": "https://github.com/mingd-153/MagiCore#readme",
+  "bugs": {
+    "url": "https://github.com/mingd-153/MagiCore/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mingd-153/MagiCore"
+  },
+  "license": "MIT",
+  "author": "MagiCore Contributors",
+  "bin": {
+    "mgc": "bin/mgc.js",
+    "magicore": "bin/mgc.js"
+  },
+  "files": [
+    "bin/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "preferUninstallGlobal": true,
+  "optionalDependencies": {
+    "@magicore/cli-linux-x64": "=1.2.0",
+    "@magicore/cli-linux-arm64": "=1.2.0",
+    "@magicore/cli-darwin-x64": "=1.2.0",
+    "@magicore/cli-darwin-arm64": "=1.2.0",
+    "@magicore/cli-win32-x64": "=1.2.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

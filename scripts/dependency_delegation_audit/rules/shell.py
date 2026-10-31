@@ -143,6 +143,13 @@ SHELL_SOURCE_INSPECTION_REVIEWS = {
     "scripts/audit/check-no-pm.sh": {
         "BAD=$(grep -rnE '\\b(npm|npx|pnpm|yarn|bun)\\b' cli/src adapters core --include='*.rs' \\",
     },
+    # A bare closing `fi` is misparsed as an unparsed command head; the script's
+    # final statement is a guard, not a process boundary.
+    # `fi` đóng khối bị parse nhầm thành command head; đây là guard, không phải
+    # ranh giới process.
+    "scripts/test/test_npm_packages.sh": {
+        "printf '%d checks, 0 failed\\n' \"$checks\"",
+    },
     "scripts/maintenance/migrate_inline_tests.sh": {
         'files_with_inline_tests=$(grep -rl "#\\[cfg(test)\\]" adapters/ core/ cli/src/ 2>/dev/null | grep -E "\\.rs$" | grep -v "/test/" || true)',
     },
@@ -234,6 +241,17 @@ SHELL_DEPENDENCY_COMMAND_REVIEWS = {
 # A source edit invalidates every review for that file; only listed call lines
 # can be cleared. Hash nguồn đầy đủ; chỉ các dòng được liệt kê mới được duyệt.
 SHELL_SOURCE_DYNAMIC_COMMAND_REVIEWS = {
+    "scripts/test/test_npm_packages.sh": {
+        "source_sha256": "1138eef28e29081f89286e653a9a8634fbe4ba6a709ca669f2f2f8ef5cb792ec",
+        "lines": {
+            33: "npm package name literal in a bash array (EXPECTED_OPTIONAL), not a command.",
+            34: "npm package name literal in a bash array, not a command.",
+            35: "npm package name literal in a bash array, not a command.",
+            36: "npm package name literal in a bash array, not a command.",
+            37: "npm package name literal in a bash array, not a command.",
+            58: "Generic assertion helper that runs a caller-supplied argv (jq/grep/npm pack --dry-run) to validate npm package metadata; it is not a dependency-lifecycle command.",
+        },
+    },
     "scripts/ci/docker/app/build_flutter_container.sh": {
         "source_sha256": "e1f9dd97045f8e00366f088c87d5aa5ffadd7ed370fc6bb565ce04348d441da5",
         "lines": {18: "Runs the selected MGC release binary with fixed install arguments inside a disposable Docker fixture and isolated data/cache directories."},

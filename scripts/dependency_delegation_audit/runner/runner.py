@@ -3,6 +3,7 @@
 from __future__ import annotations
 from ..inventory.inventory import _iter_files_with_suffixes, _iter_python_files, _iter_rust_files, _iter_shell_files, scan_python_file, scan_shell_file
 from ..javascript.javascript import scan_javascript_text
+from ..rules.javascript import JS_PROCESS_REVIEWS
 from ..paths.paths import OUTPUT_PATH
 from ..powershell.powershell import scan_powershell_text
 from ..python.helper_review import review_python_process_helpers
@@ -13,6 +14,7 @@ from ..rules.shell import SHELL_DEPENDENCY_COMMAND_REVIEWS, SHELL_EXACT_DYNAMIC_
 from ..rust.rust import scan_file
 from ..supplemental.supplemental import scan_supplemental_file
 import datetime
+import hashlib
 import json
 import os
 import subprocess
@@ -104,6 +106,17 @@ def run_audit(repo_root: str, check_lane_gate_callback) -> int:
         for abs_path in javascript_files
         for item in scan_supplemental_file(abs_path, repo_root, scan_javascript_text)
     ]
+    for call in javascript_process_calls:
+        rel = call.get("file")
+        source = ""
+        try:
+            source = open(os.path.join(repo_root, rel), encoding="utf-8").read()
+        except OSError:
+            source = ""
+        sha = hashlib.sha256(source.encode("utf-8")).hexdigest()
+        reviewed = JS_PROCESS_REVIEWS.get(rel, {})
+        if (call.get("api"), sha) in reviewed:
+            call["review_status"] = "reviewed"
     powershell_process_calls = [
         item
         for abs_path in powershell_files
