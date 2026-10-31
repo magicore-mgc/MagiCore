@@ -74,7 +74,7 @@ pub(in crate::project_file) fn project_parent_dir(
 }
 
 #[cfg(not(unix))]
-pub(super) fn checked_project_path(
+pub(in crate::project_file) fn checked_project_path(
     project_root: &Path,
     relative_path: &Path,
 ) -> Result<PathBuf, MgError> {
