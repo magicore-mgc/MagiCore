@@ -132,7 +132,19 @@ fn materialize_importable_skips_compiled_wheel() {
     unsafe {
         std::env::set_var("MGC_PYTHON_VERSION", TEST_CONSUMER);
     }
-    let wheel = stored_zip(&[("x.so", b"fake")]);
+    // Integrity is verified before the ABI policy runs, so even a compiled
+    // wheel needs a dist-info/RECORD; the point of the test is that the ABI
+    // check still refuses to unpack it afterwards.
+    // (Integrity được kiểm tra trước policy ABI, nên wheel biên dịch vẫn cần
+    // dist-info/RECORD; mục đích test là ABI vẫn từ chối giải nén.)
+    let wheel = stored_zip(&[
+        ("x.so", b"fake"),
+        (
+            "x-1.0.dist-info/RECORD",
+            b"x.so,sha256=0000000000000000000000000000000000000000000000000000000000000000,4\n"
+                .as_slice(),
+        ),
+    ]);
     let dir = tempfile::tempdir().expect("test operation must succeed");
     let site = PypiProtocol::new("https://pypi.org").materialize_importable(
         &entry_for("https://files.pythonhosted.org/x/x-1.0-cp312-cp312-manylinux_2_17_x86_64.whl"),

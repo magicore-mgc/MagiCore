@@ -54,11 +54,16 @@ fn unset_override_uses_the_running_interpreter_for_wheel_selection() {
 
     let consumer = detected.expect("detection must succeed with the fake launcher");
     assert_eq!(consumer, Some((3, 14)));
+    // Tag the wheels for THIS host so the platform filter does not decide the
+    // outcome: the test is about the interpreter ABI, not the platform.
+    // (Gắn tag bánh xe theo host hiện tại để bộ lọc nền tảng không quyết định;
+    // test này nói về ABI interpreter, không phải nền tảng.)
+    let platform = current_platform_tag();
     let files = [
-        "jiter-0.18.0-cp310-cp310-macosx_11_0_arm64.whl",
-        "jiter-0.18.0-cp314-cp314-macosx_11_0_arm64.whl",
+        format!("jiter-0.18.0-cp310-cp310-{platform}.whl"),
+        format!("jiter-0.18.0-cp314-cp314-{platform}.whl"),
     ]
-    .map(wheel);
+    .map(|stem| wheel(&stem));
     let chosen = select_file(&files, consumer).map(|file| file.filename.as_str());
     assert_eq!(
         chosen,
@@ -86,6 +91,24 @@ fn fake_interpreter_directory() -> tempfile::TempDir {
 
 /// An ABI-specific wheel file; the test asserts the chosen filename.
 /// Một file wheel ABI; test so khớp tên file được chọn.
+/// The host wheel tag used by the interpreter tests.
+/// Tag wheel của host dùng cho test interpreter.
+fn current_platform_tag() -> &'static str {
+    if cfg!(target_os = "macos") {
+        if cfg!(target_arch = "aarch64") {
+            "macosx_11_0_arm64"
+        } else {
+            "macosx_10_12_x86_64"
+        }
+    } else if cfg!(target_os = "windows") {
+        "win_amd64"
+    } else if cfg!(target_arch = "aarch64") {
+        "manylinux2014_aarch64"
+    } else {
+        "manylinux2014_x86_64"
+    }
+}
+
 fn wheel(stem: &str) -> PypiFile {
     PypiFile {
         filename: stem.to_string(),
