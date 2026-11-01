@@ -3,6 +3,6 @@
 
 mod windows_path;
 
-pub(super) use windows_path::{
+pub(crate) use windows_path::{
     windows_cached_path_is_safe, windows_final_path, windows_opened_path_is_within,
 };
