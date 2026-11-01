@@ -37,6 +37,14 @@ fn incomplete_process_table_is_an_error_not_a_clean_process_tree() {
 }
 
 #[cfg(unix)]
+/// macOS-only: sysinfo exposes argv[0] through `name()` on macOS, so a shim
+/// that renames argv[0] to `adb` is classified. Linux reports `/proc/<pid>/comm`
+/// (the real binary, `sleep`), so the same probe cannot be observed there and
+/// the assertion is unsatisfiable inside a Linux container.
+/// (Chỉ macOS: sysinfo lấy argv[0] qua `name()` trên macOS nên shim đổi argv[0]
+/// thành `adb` được phân loại; Linux báo `/proc/<pid>/comm` (binary thật,
+/// `sleep`) nên không quan sát được trong container Linux.)
+#[cfg(target_os = "macos")]
 #[test]
 fn device_control_process_entry_requires_the_root_device_scope()
 -> Result<(), Box<dyn std::error::Error>> {
