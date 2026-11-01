@@ -79,53 +79,6 @@ SHELL_EXPLICIT_DYNAMIC_REVIEWS = {
 # Fingerprint source chính xác chỉ duyệt hẹp command động cố định trong fixture CI
 # và lệnh bootstrap SDK Flutter.
 SHELL_EXACT_DYNAMIC_COMMAND_REVIEWS = {
-    "cli/tests/scripts/runtime_full_e2e.sh": {
-        "f58a70859c54a3c4fcd092f83dffef61ffe61f1e2f4a358c094b203257afc5d2": (
-            "Invokes the selected executable MGC binary with fixed list args in an isolated directory to verify the no-project diagnostic.",
-        ),
-        "2717131da574245db1d41fd4c0b509fee1f8aa63ea9b47d7eeb618291b3cb6d6": (
-            "Invokes the selected executable MGC binary with fixed install args in an isolated compatibility fixture.",
-        ),
-        "c5aeeadebe3afe6b38651a7338cb731e204f4847645ffdbcb77ffcdf9b9a7f72": (
-            "Invokes the selected executable MGC binary with fixed native dev args to verify the Bun/Deno policy gate in an isolated fixture.",
-        ),
-        "efeea9421eb17f8500c605f932f49e40b1d7a3712e7646c2e0a14387e98dd050": (
-            "Invokes the selected executable MGC binary with only literal Bun/Deno compat values and fixed dev args; no shell re-evaluation occurs.",
-        ),
-        "86f3b5f00751343b023fa0d858c434b593a9bc49596232a6d1000a3130232bb7": (
-            "Invokes the selected executable MGC binary with fixed install args in the isolated native Node fixture.",
-        ),
-        "9277070496353c54c6229e97ae2f27c74ee4f2bb0e55a4be79291a059d0518f8": (
-            "Invokes the selected executable MGC binary with fixed native dev args in the isolated Node audit-log fixture.",
-        ),
-        "61d09974357c4a0182ec1faf890a293fd8010a27a4d22beb1931e3b4774d93d1": (
-            "Invokes the selected executable MGC binary with fixed install args in the isolated short-lived-descendant churn fixture.",
-        ),
-        "f4190a49972f376d42148f054064745781c7968afa5ce73e9dce8d974903b5f9": (
-            "Invokes the selected executable MGC binary with fixed dev args to exercise the real process scanner under short-lived Node child churn.",
-        ),
-        "adfd095ba878f353713e20b0153acd7e0bb04c780c0c1fcc02acdfbd1e2e146a": (
-            "Invokes the selected executable MGC binary with fixed install args in the isolated process-guard fixture.",
-        ),
-        "e23df9f3778da11ccfd1bfbdcbb06d22860a13c9b2584d47855d26871d9ebdfa": (
-            "Runs the test-created inert fake npm executable with only its fixed probe argument before the MGC process-guard E2E.",
-        ),
-        "31a73628b48c608a49424dbbfa63d117dd265f4b6367ff48c2bf7181c6802036": (
-            "Invokes the selected executable MGC binary with fixed dev args for the detached-child process-guard E2E; the child is a test-created fixture.",
-        ),
-        "f5f27e88f69547e715474a607c50d2106eeea730d0c1c6fd154da9924821c352": (
-            "Invokes the selected executable MGC binary with fixed optimizer args in the isolated Rust optimizer fixture.",
-        ),
-        "8916b6b1076a142a50e3955954eaa7b47a650f2b3daf5e5df8733e9fb783b5e8": (
-            "Invokes the selected executable MGC binary with fixed install args in the isolated Rust optimizer fixture.",
-        ),
-        "2ae7e042d229d4bcf39068bd0efc6d8979fbb9addede0c4416384f3fa9e1691e": (
-            "Invokes the selected executable MGC binary with fixed build args to prove optimizer profile settings reach Cargo.",
-        ),
-        "315198dbd2f5aaed76da5564d1921f99b448626e9d876c4389e950c168c108fd": (
-            "Invokes the selected executable MGC binary with fixed test args to prove optimizer profile settings reach the real test runner.",
-        ),
-    },
     "scripts/install/bootstrap_flutter_sdk.sh": {
         "4e5e71f8dd7dc89141ee3976a3c2897103f5b8c9ac9dfac4ee639b918de236b7": (
             "Resolves Pub dependencies only under Flutter SDK flutter_tools via its SDK-derived Dart executable.",
@@ -241,6 +194,26 @@ SHELL_DEPENDENCY_COMMAND_REVIEWS = {
 # A source edit invalidates every review for that file; only listed call lines
 # can be cleared. Hash nguồn đầy đủ; chỉ các dòng được liệt kê mới được duyệt.
 SHELL_SOURCE_DYNAMIC_COMMAND_REVIEWS = {
+    "cli/tests/scripts/runtime_full_e2e.sh": {
+        "source_sha256": "5f84a5899dd65a9f4310d5d3a05b2d79943a3c04415c19b37eaf17c3e83e72a0",
+        "lines": {
+            66: "Test script invokes the selected MGC release binary (or its fake npm shim) with fixed args in an isolated fixture; no dependency-lifecycle delegation.",
+            107: "Test script invokes the selected MGC release binary (or its fake npm shim) with fixed args in an isolated fixture; no dependency-lifecycle delegation.",
+            117: "Test script invokes the selected MGC release binary (or its fake npm shim) with fixed args in an isolated fixture; no dependency-lifecycle delegation.",
+            134: "Test script invokes the selected MGC release binary (or its fake npm shim) with fixed args in an isolated fixture; no dependency-lifecycle delegation.",
+            175: "Test script invokes the selected MGC release binary (or its fake npm shim) with fixed args in an isolated fixture; no dependency-lifecycle delegation.",
+            182: "Test script invokes the selected MGC release binary (or its fake npm shim) with fixed args in an isolated fixture; no dependency-lifecycle delegation.",
+            291: "Test script invokes the selected MGC release binary (or its fake npm shim) with fixed args in an isolated fixture; no dependency-lifecycle delegation.",
+            297: "Test script invokes the selected MGC release binary (or its fake npm shim) with fixed args in an isolated fixture; no dependency-lifecycle delegation.",
+            336: "Test script invokes the selected MGC release binary (or its fake npm shim) with fixed args in an isolated fixture; no dependency-lifecycle delegation.",
+            362: "Test script invokes the selected MGC release binary (or its fake npm shim) with fixed args in an isolated fixture; no dependency-lifecycle delegation.",
+            407: "Test script invokes the selected MGC release binary (or its fake npm shim) with fixed args in an isolated fixture; no dependency-lifecycle delegation.",
+            484: "Test script invokes the selected MGC release binary (or its fake npm shim) with fixed args in an isolated fixture; no dependency-lifecycle delegation.",
+            522: "Test script invokes the selected MGC release binary (or its fake npm shim) with fixed args in an isolated fixture; no dependency-lifecycle delegation.",
+            531: "Test script invokes the selected MGC release binary (or its fake npm shim) with fixed args in an isolated fixture; no dependency-lifecycle delegation.",
+            533: "Test script invokes the selected MGC release binary (or its fake npm shim) with fixed args in an isolated fixture; no dependency-lifecycle delegation.",
+        },
+    },
     "scripts/test/test_npm_packages.sh": {
         "source_sha256": "89b23fba3f77852f59974c414f4572e3be86ce253d03d0ddc186bcd0765c5c62",
         "lines": {
