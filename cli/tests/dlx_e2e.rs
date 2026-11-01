@@ -1,5 +1,7 @@
 #![allow(clippy::unwrap_used)]
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -33,7 +35,7 @@ impl RegistryFixture {
     fn new() -> Self {
         let mut server = mockito::Server::new();
         let url = server.url();
-        let metadata = serde_json::json!({
+        let mut metadata = serde_json::json!({
             "name": PACKAGE,
             "dist-tags": { "latest": VERSION },
             "versions": {
@@ -47,6 +49,13 @@ impl RegistryFixture {
                 }
             }
         });
+        // Seed publish times so the default 24h release-age quarantine does not
+        // reject the fixture as unstamped; Dlx E2E exercises the lifecycle
+        // script policy, not supply-chain ageing.
+        // (Seed thời điểm publish để quarantine 24h mặc định không loại fixture
+        // vì thiếu timestamp; test này kiểm policy lifecycle script, không phải
+        // supply-chain ageing.)
+        metadata["time"] = common::seeded_publish_times(&[VERSION]);
         let metadata_mock = server
             .mock("GET", format!("/{PACKAGE}").as_str())
             .with_status(200)
