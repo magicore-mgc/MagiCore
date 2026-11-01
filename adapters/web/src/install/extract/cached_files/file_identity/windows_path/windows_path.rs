@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 #[cfg(windows)]
 #[allow(unsafe_code)]
-pub(super) fn windows_final_path(file: &File) -> std::io::Result<PathBuf> {
+pub(crate) fn windows_final_path(file: &File) -> std::io::Result<PathBuf> {
     use std::os::windows::ffi::OsStringExt;
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::{
@@ -63,7 +63,7 @@ pub(crate) fn windows_opened_path_is_within(root: &Path, target: &Path) -> bool 
 }
 
 #[cfg(windows)]
-pub(super) fn windows_cached_path_is_safe(
+pub(crate) fn windows_cached_path_is_safe(
     package_root: &Path,
     relative_path: &Path,
 ) -> std::io::Result<bool> {
