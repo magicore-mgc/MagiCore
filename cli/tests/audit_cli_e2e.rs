@@ -661,6 +661,76 @@ fn audit_lib_go_via_cli_reports_real_osv_finding_exit_1() {
     );
 }
 
+/// A Go project whose only module is standard-library code: the resolved
+/// graph is provably clean, so the lane must report a green result rather
+/// than falling back to partial coverage.
+/// (Project Go chỉ dùng thư viện chuẩn: graph đã resolve chứng minh sạch, nên
+/// lane phải báo xanh thay vì partial.)
+#[test]
+fn audit_lib_go_via_cli_clean_fixture_exit_0() {
+    if !osv_reachable() {
+        return;
+    }
+    let mgc = find_mgc_binary();
+    let sandbox = TempDir::new().unwrap();
+    std::fs::write(
+        sandbox.path().join("mgc.toml"),
+        "name = \"go-clean-fixture\"\necosystem = \"lib\"\n\n[lib]\nlanguage = \"go\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        sandbox.path().join("go.mod"),
+        "module go-clean-fixture\n\ngo 1.26\n",
+    )
+    .unwrap();
+    std::fs::write(
+        sandbox.path().join("main.go"),
+        "package main\n\nimport \"fmt\"\n\nfunc main() { fmt.Println(\"ok\") }\n",
+    )
+    .unwrap();
+
+    let (code, output) = run_mgc_audit(&mgc, sandbox.path(), None);
+    assert_eq!(code, Some(0), "clean go fixture must exit 0:\n{output}");
+    assert!(
+        !output.contains("GO-2020-0015") && !output.contains("CVE-2020-14040"),
+        "a clean fixture must not report the vulnerable module:\n{output}"
+    );
+}
+
+/// Dead OSV endpoint: the Go lane must fail closed with the environment
+/// exit code instead of claiming the project is clean.
+/// (Endpoint OSV chết: lane Go phải fail-closed với exit môi trường thay vì
+/// báo project sạch.)
+#[test]
+fn audit_lib_go_osv_unreachable_strict_exits_2() {
+    let mgc = find_mgc_binary();
+    let sandbox = TempDir::new().unwrap();
+    vulnerable_go_project(sandbox.path());
+
+    let out = Command::new(&mgc)
+        .arg("audit")
+        .current_dir(sandbox.path())
+        .env("MGC_OSV_API_BASE", "http://127.0.0.1:1")
+        .env("MGC_AUDIT_STRICT", "1")
+        .output()
+        .expect("spawn mgc");
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "strict + dead OSV must exit 2 (environment), got {:?}:\n{text}",
+        out.status.code()
+    );
+    assert!(
+        text.contains("UNVERIFIED") || text.contains("osv"),
+        "the failure must name the unavailable scanner:\n{text}"
+    );
+}
+
 #[test]
 fn audit_lib_go_without_dependency_pins_is_partial_not_clean() {
     let mgc = find_mgc_binary();

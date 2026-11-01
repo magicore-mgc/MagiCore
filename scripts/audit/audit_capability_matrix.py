@@ -52,6 +52,8 @@ E2E_TESTS = {
     # `partial_coverage` vẫn giữ: project chưa có lock chỉ có pin `go.mod` và phải
     # tiếp tục báo Partial, không được nhận là sạch.)
     "audit_lib_go_via_cli_reports_real_osv_finding_exit_1": ("lib", "go", "mgc-go-osv", "vulnerable_fixture"),
+    "audit_lib_go_via_cli_clean_fixture_exit_0": ("lib", "go", "mgc-go-osv", "clean_fixture"),
+    "audit_lib_go_osv_unreachable_strict_exits_2": ("lib", "go", "mgc-go-osv", "tool_failure"),
     "audit_lib_go_without_dependency_pins_is_partial_not_clean": ("lib", "go", "mgc-go-osv", "partial_coverage"),
     # P2 2026-09-10 — OSV-backed lanes (network advisories, no toolchain):
     # Java (Maven ecosystem), .NET (NuGet), Swift (SwiftURL — with the
