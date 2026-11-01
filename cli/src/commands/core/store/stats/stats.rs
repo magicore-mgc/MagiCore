@@ -115,12 +115,24 @@ pub fn collect(root: &Path) -> std::io::Result<StoreStats> {
 /// (Bộ đếm memo cho một root; store chưa từng mở trong process báo 0 thay vì
 /// bịa số.)
 fn memo_counters(root: &Path) -> (u64, u64, u64) {
-    match mgc_store::ContentStore::new(root.to_path_buf()) {
-        Ok(store) => {
-            let stats = store.memo_stats();
-            (stats.hits, stats.misses, stats.evictions)
+    // The memo LRU and its counters exist only on Unix builds, so other
+    // platforms honestly report zeros instead of pretending to measure.
+    // (Memo LRU và bộ đếm chỉ có trên build Unix; nền tảng khác báo 0 trung
+    // thực thay vì giả vờ đo.)
+    #[cfg(unix)]
+    {
+        match mgc_store::ContentStore::new(root.to_path_buf()) {
+            Ok(store) => {
+                let stats = store.memo_stats();
+                (stats.hits, stats.misses, stats.evictions)
+            }
+            Err(_) => (0, 0, 0),
         }
-        Err(_) => (0, 0, 0),
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = root;
+        (0, 0, 0)
     }
 }
 
