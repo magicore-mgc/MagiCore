@@ -246,7 +246,7 @@ jobs:
           MGC_BIN: ./target/release/mgc
 
       - name: Verify Rust packages are reused across projects from the release binary
-        run: cargo test --release --locked -p mgc --test native_ownership_matrix_e2e rust_lib_reuses_verified_shared_artifacts_across_project_roots -- --exact --test-threads=1 --nocapture
+        run: cargo test --release --locked -p mgc --features fault-injection --test native_ownership_matrix_e2e rust_lib_reuses_verified_shared_artifacts_across_project_roots -- --exact --test-threads=1 --nocapture
         env:
           MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc
         timeout-minutes: 10
