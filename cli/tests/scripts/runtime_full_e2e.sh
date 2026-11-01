@@ -548,10 +548,18 @@ const samePath = (actual, expected) => {
     return false;
   }
 };
+// `mgc build` resolves online by default (--offline is opt-in), while the
+// test runner stays offline. The invariant is the reproducibility pin
+// (--locked); --offline is only required where the lane runs offline.
+// (`mgc build` mặc định online (--offline là opt-in), còn test runner vẫn
+// offline. Bất biến là pin tái lập (--locked); --offline chỉ bắt buộc ở lane
+// chạy offline.)
 for (const subcommand of ["build", "test"]) {
+  const requiresOffline = subcommand === "test";
   const found = rows.some((row) => row.cmd === "cargo"
     && Array.isArray(row.args) && row.args[0] === subcommand
-    && row.args.includes("--locked") && row.args.includes("--offline")
+    && row.args.includes("--locked")
+    && (!requiresOffline || row.args.includes("--offline"))
     && samePath(row.cwd, expectedCwd)
     && row.exit_code === 0);
   if (!found) {
