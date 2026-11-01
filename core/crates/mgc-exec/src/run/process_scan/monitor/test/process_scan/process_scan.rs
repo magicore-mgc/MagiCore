@@ -163,7 +163,7 @@ fn process_group_scan_applies_root_device_scope_after_root_exits()
 
     let mut command = std::process::Command::new("/bin/sh");
     command
-        .args(["-c", "adb 5 & /bin/sleep 0.2"])
+        .args(["-c", "adb 60 & /bin/sleep 0.2"])
         .env("PATH", &bin);
     let mut child = command.process_group(0).spawn()?;
     let root_pid = child.id();
@@ -197,10 +197,16 @@ fn process_group_scan_applies_root_device_scope_after_root_exits()
         .ok()
         .flatten()
     }
+    // The descendant must be observable as a member of the root's process
+    // group before the scan can classify it. Poll generously: on a loaded CI
+    // runner the reparented child can take a moment to appear in /proc with
+    // the group visible to sysinfo.
+    // (Descendant phải quan sát được trong process group của root trước khi
+    // scan phân loại; poll rộng vì runner tải cao cần thời gian thấy /proc.)
     let mut waited = 0u64;
-    while scan_blocked(root_pid, root.path()).is_none() && waited < 2_000 {
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        waited += 10;
+    while scan_blocked(root_pid, root.path()).is_none() && waited < 15_000 {
+        std::thread::sleep(std::time::Duration::from_millis(25));
+        waited += 25;
     }
 
     let blocked = super::find_forbidden_descendant_with_scope(
