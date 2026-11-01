@@ -65,8 +65,8 @@ ADAPTER_REGISTRY_CAPABILITIES = {
 # CLI implementation route. Runtime capabilities cross-check is still
 # required before treating this table as evidence.
 CLI_NATIVE_DEPENDENCY_ROUTES = {
-    ("game", "rust"): "cli/src/commands/core/install/game.rs -> Lib/Rust adapter",
-    ("iot", "rust"): "cli/src/commands/core/install/iot.rs -> Lib/Rust adapter",
+    ("game", "rust"): "cli/src/commands/core/install/game/game.rs -> Lib/Rust adapter",
+    ("iot", "rust"): "cli/src/commands/core/install/iot/iot.rs -> Lib/Rust adapter",
     # Cloud CDK/Pulumi embed the MGC WebAdapter for JS package lifecycle;
     # this exception is framework-scoped. Terraform/Cloudflare remain
     # unsupported and do not inherit the cloud core's embedded route.
