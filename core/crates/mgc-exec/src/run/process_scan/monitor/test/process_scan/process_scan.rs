@@ -179,6 +179,30 @@ fn process_group_scan_applies_root_device_scope_after_root_exits()
         "shell root should exit successfully"
     );
 
+    // The background `adb 5` may not be visible in the process table the
+    // instant the shell exits on a loaded runner; wait until the scan can
+    // actually see a forbidden descendant instead of racing that startup.
+    // (`adb 5` nền có thể chưa hiện trong bảng process ngay khi shell thoát
+    // trên runner tải cao; chờ tới khi scan thấy descendant trước khi assert.)
+    fn scan_blocked(
+        root_pid: u32,
+        root: &std::path::Path,
+    ) -> Option<crate::run::implementation::ForbiddenProcess> {
+        super::find_forbidden_descendant_with_scope(
+            root_pid,
+            &[],
+            root,
+            crate::allowlist::ExecutionScope::BuildRunner,
+        )
+        .ok()
+        .flatten()
+    }
+    let mut waited = 0u64;
+    while scan_blocked(root_pid, root.path()).is_none() && waited < 2_000 {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        waited += 10;
+    }
+
     let blocked = super::find_forbidden_descendant_with_scope(
         root_pid,
         &[],
