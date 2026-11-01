@@ -1,7 +1,7 @@
 //! Persistent, user-scoped CLI tools installed through MagiCore's native Web lane.
 //! CLI bền vững theo user, cài qua Web adapter của MagiCore.
 
-mod atomic_file;
+pub(super) mod atomic_file;
 mod install;
 mod json_file;
 mod list;

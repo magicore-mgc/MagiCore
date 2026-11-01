@@ -1,3 +1,4 @@
+use super::super::atomic_file::atomic_replace_file;
 use super::super::types::ToolRecord;
 use anyhow::{Context, Result, bail};
 use std::fs;

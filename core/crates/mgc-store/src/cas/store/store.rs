@@ -37,7 +37,10 @@ impl ContentStore {
     ///
     /// (Chỉ số memo quan sát được cho test (P1-2): hit/miss/eviction từ lúc
     /// dựng store. Test LRU-bound đọc; không thuộc serving API.)
-    #[cfg(unix)]
+    // Counters are plain atomics on every platform; the CLI's store-stats
+    // command reads them, so this cannot be Unix-only.
+    // (Bộ đếm là atomic trên mọi nền tảng; lệnh store-stats đọc chúng nên không
+    // thể chỉ dành cho Unix.)
     #[doc(hidden)]
     pub fn memo_stats(&self) -> MemoStats {
         let c = &self.memo_counters;
