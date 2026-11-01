@@ -173,11 +173,13 @@ fn create_keg_symlink(target: &Path, shim: &Path) -> KegResult<()> {
     }
     #[cfg(not(unix))]
     {
-        std::fs::copy(target, shim).map_err(|error| KegError::Io {
-            operation: "copy keg binary",
-            path: shim.to_path_buf(),
-            source: error,
-        })
+        std::fs::copy(target, shim)
+            .map(|_bytes| ())
+            .map_err(|error| KegError::Io {
+                operation: "copy keg binary",
+                path: shim.to_path_buf(),
+                source: error,
+            })
     }
 }
 
