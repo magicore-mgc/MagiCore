@@ -8,8 +8,12 @@ use std::path::Path;
 #[path = "windows_path/mod.rs"]
 mod windows_path;
 
+// Re-exported upward through file_identity/mod.rs, so this must be at least
+// pub(crate): a private `use` cannot be re-exported at a wider visibility.
+// (Được re-export lên trên qua file_identity/mod.rs, nên phải ít nhất
+// pub(crate): `use` private không thể re-export ở visibility rộng hơn.)
 #[cfg(windows)]
-use windows_path::{
+pub(crate) use windows_path::{
     windows_cached_path_is_safe, windows_final_path, windows_opened_path_is_within,
 };
 
