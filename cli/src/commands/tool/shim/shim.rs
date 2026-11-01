@@ -1,3 +1,6 @@
+// Only the Windows shim branch calls atomic_replace_file.
+// (Chỉ nhánh shim Windows gọi atomic_replace_file.)
+#[cfg(windows)]
 use super::super::atomic_file::atomic_replace_file;
 use super::super::types::ToolRecord;
 use anyhow::{Context, Result, bail};
