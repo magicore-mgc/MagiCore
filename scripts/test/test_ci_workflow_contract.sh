@@ -228,7 +228,7 @@ grep -Fq 'cargo test --locked -p mgc --test core_identity_cli_e2e -- --test-thre
 grep -A3 -F 'Run live IoT install and product build E2E' "$ROOT/.github/workflows/lifecycle-matrix.yml" \
   | grep -Fq 'MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc' \
   || fail "IoT lifecycle E2E must execute the release product binary"
-grep -Fq 'cargo test --release --locked -p mgc --test native_ownership_matrix_e2e rust_lib_reuses_verified_shared_artifacts_across_project_roots -- --exact --test-threads=1 --nocapture' "$ROOT/.github/workflows/lifecycle-matrix.yml" \
+grep -Fq 'cargo test --release --locked -p mgc --features fault-injection --test native_ownership_matrix_e2e rust_lib_reuses_verified_shared_artifacts_across_project_roots -- --exact --test-threads=1 --nocapture' "$ROOT/.github/workflows/lifecycle-matrix.yml" \
   || fail "lifecycle CI must prove cross-project Rust store reuse on the release binary"
 grep -A4 -F 'Verify Rust packages are reused across projects from the release binary' "$ROOT/.github/workflows/lifecycle-matrix.yml" \
   | grep -Fq 'MGC_TEST_CLI_BINARY: ${{ github.workspace }}/target/release/mgc' \
