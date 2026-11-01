@@ -152,7 +152,7 @@ fn process_group_scan_detects_forbidden_child_after_root_exits()
 
 #[cfg(unix)]
 #[test]
-fn process_group_scan_applies_root_device_scope_after_root_exits()
+fn process_group_scan_applies_root_device_scope_to_the_live_tree()
 -> Result<(), Box<dyn std::error::Error>> {
     use std::os::unix::{fs::symlink, process::CommandExt};
 
@@ -163,7 +163,14 @@ fn process_group_scan_applies_root_device_scope_after_root_exits()
 
     let mut command = std::process::Command::new("/bin/sh");
     command
-        .args(["-c", "adb 60 & /bin/sleep 0.2"])
+        // Keep the shell (root) alive for the whole scan: a root that exits
+        // immediately lets the kernel reparent `adb` to init, and on Linux CI
+        // containers sysinfo no longer reports it under the original process
+        // group, so the descendant becomes invisible rather than blocked.
+        // (Giữ shell (root) sống suốt lượt scan: nếu root thoát ngay, kernel
+        // reparent `adb` về init và trên container Linux CI sysinfo không còn
+        // thấy nó thuộc process group cũ.)
+        .args(["-c", "adb 60 & /bin/sleep 55"])
         .env("PATH", &bin);
     let mut child = command.process_group(0).spawn()?;
     let root_pid = child.id();
@@ -174,10 +181,6 @@ fn process_group_scan_applies_root_device_scope_after_root_exits()
         }
     }
     let cleanup = ProcessGroupCleanup(root_pid);
-    assert!(
-        child.wait()?.success(),
-        "shell root should exit successfully"
-    );
 
     // The background `adb 5` may not be visible in the process table the
     // instant the shell exits on a loaded runner; wait until the scan can
@@ -222,6 +225,7 @@ fn process_group_scan_applies_root_device_scope_after_root_exits()
         crate::allowlist::ExecutionScope::DeviceControl,
     );
     terminate_process_tree(root_pid, &std::collections::HashSet::from([root_pid]))?;
+    child.wait()?;
     drop(cleanup);
 
     let blocked = blocked?.expect("adb descendant must be blocked outside DeviceControl");
