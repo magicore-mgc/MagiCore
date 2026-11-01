@@ -26,6 +26,12 @@ pub(in crate::run::implementation) use environment::{
 pub(in crate::run::implementation) use environment::{
     windows_current_executable_sha256, windows_sha256_file,
 };
+// Callers address the temp-dir helper through `run::implementation`, so it must
+// be re-exported here too (it already exists behind cfg(any(windows, test))).
+// (Caller truy cập helper temp-dir qua `run::implementation`, nên phải
+// re-export ở đây; nó đã có sẵn dưới cfg(any(windows, test)).)
+#[cfg(any(windows, test))]
+pub(in crate::run::implementation) use environment::unique_temp_dir;
 
 const WAIT_POLL_INTERVAL_MS: u64 = 20;
 /// Bound Job Object re-enumeration while descendants are changing during inspection.

@@ -1,6 +1,17 @@
 // Windows npm probe authentication tests.
 // Test xác thực npm probe Windows.
 
+// The facade symbols below are re-exported by `run::implementation`; the test
+// module lives under the private `implementation` path, so name them absolutely
+// instead of through a `super` that never carried them.
+// (Các symbol facade dưới đây được re-export từ `run::implementation`; module
+// test nằm dưới đường dẫn private `implementation`, nên gọi bằng đường dẫn
+// tuyệt đối thay vì `super` vốn không chuyển tiếp chúng.)
+#[cfg(windows)]
+use crate::run::implementation::{
+    inspect_windows_job_processes_with_image_paths, unique_temp_dir,
+};
+
 #[cfg(windows)]
 #[test]
 fn windows_npm_probe_exemption_requires_authenticated_native_shim_and_safe_command_shape() {
@@ -92,13 +103,19 @@ fn windows_npm_probe_exemption_requires_authenticated_native_shim_and_safe_comma
         &actual_image,
         &shadow_path
     ));
+    use NpmProbeAuthenticationError::{ImageDigestMismatch, ImagePathUnavailable};
+
+    // The two selected variants carry exactly those messages (see `error.rs`),
+    // so compare the typed refusal instead of a string it can never equal.
+    // (Hai variant được chọn mang đúng hai thông điệp đó (xem `error.rs`), nên so
+    // sánh lỗi typed thay vì so với string mà nó không bao giờ bằng.)
     assert_eq!(
         super::windows_npm_probe_authentication(&probe, None, &shadow_path),
-        Err("process image path is unavailable")
+        Err(ImagePathUnavailable)
     );
     assert_eq!(
         super::windows_npm_probe_authentication(&probe, Some(&actual_image), &shadow_path),
-        Err("process image hash does not match the running MGC executable")
+        Err(ImageDigestMismatch)
     );
 
     let snapshots = [
@@ -112,7 +129,7 @@ fn windows_npm_probe_exemption_requires_authenticated_native_shim_and_safe_comma
         probe,
     ];
     let image_paths = std::collections::HashMap::from([(201, shim.clone())]);
-    let inspected = super::inspect_windows_job_processes_with_image_paths(
+    let inspected = inspect_windows_job_processes_with_image_paths(
         200,
         &[200, 201],
         &snapshots,
@@ -140,7 +157,7 @@ fn windows_npm_probe_exemption_requires_authenticated_native_shim_and_safe_comma
             command: vec![shim.as_os_str().to_os_string()],
         },
     ];
-    let inspected = super::inspect_windows_job_processes_with_image_paths(
+    let inspected = inspect_windows_job_processes_with_image_paths(
         200,
         &[200, 201],
         &startup_snapshots,
@@ -153,7 +170,7 @@ fn windows_npm_probe_exemption_requires_authenticated_native_shim_and_safe_comma
     assert_eq!(inspected.descendants, [(201, None)]);
 
     let spoofed_image_paths = std::collections::HashMap::from([(201, actual_image.clone())]);
-    let inspected = super::inspect_windows_job_processes_with_image_paths(
+    let inspected = inspect_windows_job_processes_with_image_paths(
         200,
         &[200, 201],
         &snapshots,
@@ -268,7 +285,7 @@ fn windows_nested_npm_probe_requires_authenticated_image_and_version_verb() {
     use std::ffi::OsString;
 
     let original_executable = std::env::current_exe().expect("resolve test executable");
-    let dir = super::unique_temp_dir("mgc-exec-shadow-path").expect("create unique temp dir");
+    let dir = unique_temp_dir("mgc-exec-shadow-path").expect("create unique temp dir");
     std::fs::create_dir(&dir).expect("create generated nested shadow directory");
     let shim = dir.join("npm.exe");
     std::fs::copy(&original_executable, &shim).expect("copy executor image as Windows npm shim");
@@ -295,7 +312,7 @@ fn windows_nested_npm_probe_requires_authenticated_image_and_version_verb() {
     // retains the private npm.exe alias used to launch it.
     // (Windows có thể báo path file gốc của hard link dù argv[0] giữ alias npm.exe.)
     let hard_link_dir =
-        super::unique_temp_dir("mgc-exec-shadow-path").expect("create unique temp dir");
+        unique_temp_dir("mgc-exec-shadow-path").expect("create unique temp dir");
     std::fs::create_dir(&hard_link_dir).expect("create generated hard-link shadow directory");
     let hard_link_image = hard_link_dir.join("mgc.exe");
     std::fs::copy(&original_executable, &hard_link_image)
@@ -336,7 +353,7 @@ fn windows_nested_npm_probe_requires_authenticated_image_and_version_verb() {
     // A forged npm path cannot authenticate executable bytes that differ from MGC.
     // (Tên file npm giả không thể xác thực binary có byte khác MagiCore.)
     let forged_dir =
-        super::unique_temp_dir("mgc-exec-shadow-path").expect("create unique temp dir");
+        unique_temp_dir("mgc-exec-shadow-path").expect("create unique temp dir");
     std::fs::create_dir(&forged_dir).expect("create forged generated-looking directory");
     let forged_shim = forged_dir.join("npm.exe");
     std::fs::write(&forged_shim, b"untrusted executable bytes")

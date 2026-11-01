@@ -3,6 +3,12 @@
 
 #[cfg(windows)]
 use anyhow::Result;
+// `WindowsProcessScan` is re-exported by `run::implementation` itself, not by this
+// test module's parent, which only forwards the ancestry type and the inspector.
+// (`WindowsProcessScan` được re-export ở chính `run::implementation`, không phải
+// module cha của test này — module cha chỉ chuyển tiếp type ancestry và inspector.)
+#[cfg(windows)]
+use crate::run::implementation::WindowsProcessScan;
 
 #[cfg(windows)]
 #[test]
@@ -41,7 +47,7 @@ fn windows_native_inspector_detects_forbidden_descendant() -> Result<(), Box<dyn
         .status();
     let _ = child.kill();
     let _ = child.wait();
-    let super::WindowsProcessScan::Forbidden(found) = found? else {
+    let WindowsProcessScan::Forbidden(found) = found? else {
         return Err("native Windows inspector must detect npm.exe".into());
     };
     assert_eq!(found.name, "npm");

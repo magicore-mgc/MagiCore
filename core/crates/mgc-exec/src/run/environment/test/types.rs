@@ -1,7 +1,17 @@
 //! Shadow-path ownership and cleanup contracts.
 //! Hợp đồng sở hữu và dọn dẹp đường dẫn tạm.
 
-use super::super::{EnvironmentError, ShadowPath, unique_temp_dir};
+// `unique_temp_dir` is owned by the shadow-path module and is only reachable
+// through the `run::implementation` re-export chain; the other two names come
+// from the public `environment` module because `run::implementation` does not
+// forward `EnvironmentError`.
+// (`unique_temp_dir` thuộc owner shadow-path và chỉ tới được qua chuỗi re-export
+// `run::implementation`; hai tên còn lại lấy từ module `environment` đã public,
+// vì `run::implementation` không chuyển tiếp `EnvironmentError`.)
+#[cfg(any(windows, test))]
+use crate::run::implementation::environment::{EnvironmentError, ShadowPath};
+#[cfg(any(windows, test))]
+use crate::run::implementation::unique_temp_dir;
 
 #[test]
 fn explicit_shadow_path_cleanup_removes_owned_directory() {
