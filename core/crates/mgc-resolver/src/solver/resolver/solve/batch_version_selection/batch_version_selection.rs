@@ -77,6 +77,7 @@ impl Resolver {
                 {
                     record_root_resolution(root_index, &name, &spec, &v, root_resolutions);
                     resolved.insert(name_str.clone(), v.clone());
+                    self.record_registry_metadata(&name_str, &v); // SEC-05
                     resolved_versions.insert((name_str.clone(), v.clone()));
                     selected.push((name, name_str, v));
                 }
@@ -128,6 +129,7 @@ impl Resolver {
                 Some(v) => {
                     record_root_resolution(root_index, &name, &spec, &v, root_resolutions);
                     resolved.insert(name_str.clone(), v.clone());
+                    self.record_registry_metadata(&name_str, &v); // SEC-05
                     resolved_versions.insert((name_str.clone(), v.clone()));
                     selected.push((name, name_str, v));
                 }

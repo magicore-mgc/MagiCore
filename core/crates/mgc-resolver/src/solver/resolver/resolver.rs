@@ -33,6 +33,10 @@ pub struct Resolver {
     /// Cache metrics (hits, misses, total lookups)
     pub(super) cache_hits: std::sync::atomic::AtomicU64,
     pub(super) cache_misses: std::sync::atomic::AtomicU64,
+    /// SEC-05: Registry metadata for dependency confusion protection.
+    /// Key: "name@version", Value: registry host (e.g. "registry.npmjs.org")
+    /// Hybrid approach: side-channel metadata until v1.3.0 data model refactor.
+    pub(super) registry_metadata: std::sync::RwLock<HashMap<String, String>>,
 }
 
 impl std::fmt::Debug for Resolver {
@@ -66,6 +70,7 @@ impl Resolver {
             dep_memo_cache: std::sync::RwLock::new(HashMap::new()),
             cache_hits: std::sync::atomic::AtomicU64::new(0),
             cache_misses: std::sync::atomic::AtomicU64::new(0),
+            registry_metadata: std::sync::RwLock::new(HashMap::new()),
         }
     }
 
@@ -102,5 +107,73 @@ impl Resolver {
             0.0
         };
         (hits, misses, hit_rate)
+    }
+
+    /// Record registry metadata for a resolved package (SEC-05 dependency confusion).
+    /// Hybrid approach: side-channel metadata tracking until v1.3.0 data model refactor.
+    /// (Ghi metadata registry cho package đã resolve — SEC-05 bảo vệ dependency confusion.)
+    pub(super) fn record_registry_metadata(&self, name: &str, version: &Version) {
+        if let Some(registry_host) = self.provider.get_registry_host() {
+            let key = format!("{}@{}", name, version);
+            if let Ok(mut guard) = self.registry_metadata.write() {
+                guard.insert(key, registry_host);
+            }
+        }
+    }
+
+    /// Check for dependency confusion attacks using hybrid metadata approach (SEC-05).
+    /// Converts Resolution + registry_metadata to DepInfo, then calls check_dependency_confusion.
+    /// (Kiểm tra tấn công dependency confusion bằng hybrid metadata — SEC-05.)
+    pub(super) fn check_dependency_confusion_hybrid(
+        &self,
+        resolutions: &[super::Resolution],
+    ) -> Result<Vec<String>, super::SolveError> {
+        use crate::solver::dependency_confusion::{DepInfo, check_dependency_confusion};
+        use std::collections::HashMap;
+
+        // Extract registry metadata snapshot.
+        let registry_snapshot = self
+            .registry_metadata
+            .read()
+            .map(|guard| guard.clone())
+            .unwrap_or_default();
+
+        // Convert resolutions to DepInfo.
+        let dependencies: Vec<DepInfo> = resolutions
+            .iter()
+            .map(|res| {
+                let name = res.package_id.name().as_str().to_string();
+                let version = Some(res.version.to_string());
+                let key = format!("{}@{}", name, res.version);
+                let registry = registry_snapshot.get(&key).cloned();
+                DepInfo {
+                    name,
+                    version,
+                    registry,
+                }
+            })
+            .collect();
+
+        // TODO: Implement workspace package detection (read from manifest/lockfile).
+        // For now, empty list (no workspace packages to check against).
+        let workspace_packages: Vec<String> = Vec::new();
+
+        // TODO: Implement scoped registry mapping (read from .magicore.toml / .npmrc).
+        // For now, empty map (no scoped registry validation).
+        let scoped_registries: HashMap<String, String> = HashMap::new();
+
+        // TODO: Implement trusted registry list (read from config).
+        // For now, empty list (all registries trusted).
+        let trusted_registries: Vec<String> = Vec::new();
+
+        // Call the dependency confusion checker.
+        let warnings = check_dependency_confusion(
+            &workspace_packages,
+            &dependencies,
+            &scoped_registries,
+            &trusted_registries,
+        );
+
+        Ok(warnings)
     }
 }

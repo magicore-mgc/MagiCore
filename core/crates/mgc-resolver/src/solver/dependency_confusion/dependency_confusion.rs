@@ -141,3 +141,7 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
     }
     prev[b_len]
 }
+
+#[cfg(test)]
+#[path = "test/mod.rs"]
+mod test;

@@ -43,6 +43,9 @@ pnpm-lock.yaml
 # IDE
 .vscode/
 .idea/
+
+# Internal documentation (local-only)
+.magicore-internal/
 *.swp
 *.swo
 

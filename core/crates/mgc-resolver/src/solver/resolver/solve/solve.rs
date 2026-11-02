@@ -126,6 +126,29 @@ impl Resolver {
         }
 
         profile.mark("solve_total", solve_started_at);
+        
+        // SEC-05: Check for dependency confusion attacks before returning results.
+        // Hybrid approach: convert registry_metadata + resolutions to DepInfo.
+        // TODO v1.3.0: Refactor to embed registry in Resolution/ResolvedDep data model.
+        let dep_warnings = self.check_dependency_confusion_hybrid(&resolutions)?;
+        if !dep_warnings.is_empty() {
+            // Fail-closed: dependency confusion detected → block resolution.
+            // User can override with MAGICORE_ALLOW_DEPENDENCY_CONFUSION env var.
+            let allowed = std::env::var("MAGICORE_ALLOW_DEPENDENCY_CONFUSION")
+                .ok()
+                .and_then(|v| v.parse::<bool>().ok())
+                .unwrap_or(false);
+            if !allowed {
+                return Err(SolveError {
+                    message: format!(
+                        "dependency confusion attack detected:\n{}\n\nSet \
+                         MAGICORE_ALLOW_DEPENDENCY_CONFUSION=true to override (NOT RECOMMENDED)",
+                        dep_warnings.join("\n")
+                    ),
+                });
+            }
+        }
+        
         if include_root_metadata {
             root_resolutions.sort_by_key(|root| root.request_index);
             if root_resolutions.len() != wanted.len()

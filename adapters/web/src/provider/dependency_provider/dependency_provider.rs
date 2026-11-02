@@ -57,4 +57,10 @@ impl DependencyProvider for NpmDependencyProvider {
     async fn on_batch_resolved(&self, _ids: &[PackageId]) -> Result<(), DependencyError> {
         Ok(())
     }
+
+    fn get_registry_host(&self) -> Option<String> {
+        // SEC-05: Extract registry host for dependency confusion protection.
+        // Returns the primary registry URL (first in chain).
+        Some(self.registry.registry_url().to_string())
+    }
 }

@@ -67,4 +67,11 @@ pub trait DependencyProvider: Send + Sync {
         let _ = packages;
         Ok(())
     }
+
+    /// Return the registry host/URL for this provider (used for dependency confusion checks).
+    /// Default implementation returns None (registry tracking not supported).
+    /// SEC-05: Dependency confusion protection — registry metadata for attack detection.
+    fn get_registry_host(&self) -> Option<String> {
+        None
+    }
 }
