@@ -5,9 +5,10 @@ use super::{
     ProcessScanSnapshot, find_forbidden_descendant, forbidden_process_entry,
     live_descendant_identities,
 };
-// Only the macOS-gated scan tests call the scope-aware variant.
-// (Chỉ các test scan gate macOS gọi biến thể có scope.)
-#[cfg(target_os = "macos")]
+// Used only by the macOS-gated scan tests; allow the Linux build to keep
+// the import without an unused warning.
+// (Chỉ test scan gate macOS dùng; allow để build Linux không cảnh báo unused.)
+#[allow(unused_imports)]
 use super::find_forbidden_descendant_with_scope;
 mod process_scan;
 use process_scan::process_group_matches;
