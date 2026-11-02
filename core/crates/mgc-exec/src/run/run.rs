@@ -110,6 +110,14 @@ use output::{OutputMode, read_stream, tail};
 #[path = "windows_job/mod.rs"]
 pub(in crate::run::implementation) mod windows_job;
 use windows_job::ProcessTreeGuard;
+// The npm-probe test suite names the image-path inspection entry point through
+// this facade, so it has to be forwarded here too — the chain is
+// policy_metadata -> inspection -> windows_job -> run.
+// (Bộ test npm-probe gọi entry point inspection image-path qua facade này, nên
+// phải chuyển tiếp cả ở đây — chuỗi là policy_metadata -> inspection ->
+// windows_job -> run.)
+#[cfg(all(windows, test))]
+pub(in crate::run::implementation) use windows_job::inspect_windows_job_processes_with_image_paths;
 
 #[path = "process_policy/mod.rs"]
 pub(in crate::run::implementation) mod process_policy;

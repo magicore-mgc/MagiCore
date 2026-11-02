@@ -9,6 +9,19 @@ use anyhow::Result;
 // module cha của test này — module cha chỉ chuyển tiếp type ancestry và inspector.)
 #[cfg(windows)]
 use crate::run::implementation::WindowsProcessScan;
+// The leaf is nested three levels deep: `test::system_snapshot` ->
+// `system_snapshot::test` -> this module. `super::` names its sibling test
+// modules, `super::super` the forwarding `system_snapshot` module, and
+// `super::super::super` the `windows` module that owns the `system_snapshot`
+// facade, which is where the ancestry type and the inspector are published.
+// (Leaf lồng ba cấp: `test::system_snapshot` -> `system_snapshot::test` -> module
+// này. `super::` trỏ các module test anh em, `super::super` trỏ module chuyển
+// tiếp `system_snapshot`, `super::super::super` trỏ module `windows` sở hữu
+// facade `system_snapshot` — nơi công khai type ancestry và inspector.)
+#[cfg(windows)]
+use super::super::super::system_snapshot::{
+    WindowsProcessAncestry, find_forbidden_descendant_with_timeout,
+};
 
 #[cfg(windows)]
 #[test]
@@ -29,8 +42,8 @@ fn windows_native_inspector_detects_forbidden_descendant() -> Result<(), Box<dyn
         .args(["/D", "/C", "ping -n 10 127.0.0.1 > NUL"])
         .creation_flags(CREATE_NO_WINDOW)
         .spawn()?;
-    let mut ancestry = super::WindowsProcessAncestry::default();
-    let found = super::find_forbidden_descendant_with_timeout(
+    let mut ancestry = WindowsProcessAncestry::default();
+    let found = find_forbidden_descendant_with_timeout(
         std::process::id(),
         &[],
         directory.path(),

@@ -103,7 +103,13 @@ fn windows_npm_probe_exemption_requires_authenticated_native_shim_and_safe_comma
         &actual_image,
         &shadow_path
     ));
-    use NpmProbeAuthenticationError::{ImageDigestMismatch, ImagePathUnavailable};
+    // The typed refusal lives in this owner's private `error` module, which the
+    // parent facade does not re-export, so name it through `super` (it is
+    // declared one level up in `npm_probe/error.rs`) rather than bare.
+    // (Lỗi typed nằm trong module private `error` của owner này, facade cha
+    // không re-export, nên gọi qua `super` (khai báo ở `npm_probe/error.rs`)
+    // thay vì gọi trần.)
+    use super::NpmProbeAuthenticationError::{ImageDigestMismatch, ImagePathUnavailable};
 
     // The two selected variants carry exactly those messages (see `error.rs`),
     // so compare the typed refusal instead of a string it can never equal.

@@ -76,7 +76,15 @@ struct CapturedWindowsJobSnapshots<T> {
 #[cfg(any(windows, test))]
 #[derive(Default)]
 pub(in crate::run::implementation) struct WindowsJobInspection {
-    descendants: Vec<(u32, Option<String>)>,
+    // Inspection tests in the `policy_metadata`, `member_capture` and
+    // `npm_probe` owners assert the inspected descendant set, so the field needs
+    // the same scope as the struct; a bare field stays private to this module
+    // and the Windows test build fails with E0616.
+    // (Test inspection ở các owner `policy_metadata`, `member_capture` và
+    // `npm_probe` assert tập descendant đã kiểm, nên field cần cùng scope với
+    // struct; field trần chỉ private trong module này và build test Windows lỗi
+    // E0616.)
+    pub(in crate::run::implementation) descendants: Vec<(u32, Option<String>)>,
     missing_command_line: Option<(u32, String)>,
     // Retain classified evidence without printing raw child arguments.
     // Giữ bằng chứng đã phân loại, không in đối số child có thể chứa secret.
