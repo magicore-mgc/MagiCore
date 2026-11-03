@@ -3234,6 +3234,7 @@ dependencies = [
  "chrono",
  "dirs",
  "futures",
+ "mgc-http",
  "mgc-platform",
  "mgc-types",
  "mockito",

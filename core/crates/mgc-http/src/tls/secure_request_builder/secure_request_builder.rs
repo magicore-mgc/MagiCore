@@ -7,11 +7,7 @@ pub fn secure_request_builder(
     builder: reqwest::RequestBuilder,
     token: Option<&str>,
 ) -> reqwest::RequestBuilder {
-    let mut b = builder
-        .header(
-            "User-Agent",
-            format!("magicore/{} (os; arch)", env!("CARGO_PKG_VERSION")),
-        )
+    let mut b = builder.header("User-Agent", crate::USER_AGENT)
         .header("Accept", "application/json");
 
     if let Some(t) = token {

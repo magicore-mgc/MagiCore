@@ -69,7 +69,7 @@ impl PyPISearchClient {
             .get(&url)
             .header(
                 "User-Agent",
-                format!("MagiCore/{}", env!("CARGO_PKG_VERSION")),
+                mgc_http::USER_AGENT,
             )
             .send()
             .await?;

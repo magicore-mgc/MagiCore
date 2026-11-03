@@ -85,7 +85,7 @@ async fn enforce_web_audit_strict_policy(
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
-        .user_agent(format!("magicore/{}", env!("CARGO_PKG_VERSION")))
+        .user_agent(mgc_http::USER_AGENT)
         .build()?;
     let advisory_registry = crate::commands::web_registry_config::web_registry_url()?;
     let advisory_url =

@@ -87,10 +87,7 @@ impl SearchClient for NpmSearchClient {
         let response = self
             .client
             .get(&url)
-            .header(
-                "User-Agent",
-                format!("MagiCore/{}", env!("CARGO_PKG_VERSION")),
-            )
+            .header("User-Agent", mgc_http::USER_AGENT)
             .send()
             .await?;
 

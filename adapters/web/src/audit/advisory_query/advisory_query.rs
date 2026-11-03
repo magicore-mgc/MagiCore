@@ -15,7 +15,7 @@ pub(in crate::audit) async fn query_npm_advisories(
     let body = mgc_js_service::audit::advisory_bulk_request_body(pins);
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
-        .user_agent(format!("magicore/{}", env!("CARGO_PKG_VERSION")))
+        .user_agent(mgc_http::USER_AGENT)
         .build()
         .map_err(AdvisoryQueryError::ClientBuild)?;
 

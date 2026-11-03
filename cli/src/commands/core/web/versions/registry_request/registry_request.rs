@@ -83,7 +83,7 @@ fn global_cli_http_client() -> &'static reqwest::Client {
             .pool_idle_timeout(std::time::Duration::from_secs(120))
             .tcp_keepalive(std::time::Duration::from_secs(30))
             .timeout(std::time::Duration::from_secs(60))
-            .user_agent(format!("MagiCore/{}", env!("CARGO_PKG_VERSION")))
+            .user_agent(mgc_http::USER_AGENT)
             .build()
             .expect("failed to build HTTP client")
     })

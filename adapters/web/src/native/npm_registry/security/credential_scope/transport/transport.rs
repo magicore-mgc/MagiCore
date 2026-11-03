@@ -33,7 +33,7 @@ impl ScopedRegistryClient {
                         reqwest::redirect::Policy::default().redirect(attempt)
                     }))
                     .timeout(Duration::from_secs(SCOPED_REGISTRY_TIMEOUT_SECONDS))
-                    .user_agent(format!("MagiCore/{}", env!("CARGO_PKG_VERSION")))
+                    .user_agent(mgc_http::USER_AGENT)
                     .build()?,
             )
         } else {

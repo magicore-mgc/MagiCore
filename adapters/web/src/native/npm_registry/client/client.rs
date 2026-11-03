@@ -24,7 +24,7 @@ pub(in crate::native::npm_registry) fn global_http_client() -> mgc_types::MgResu
                 .tcp_keepalive(Duration::from_secs(30))
                 // Metadata responses are small; 30s is plenty.
                 .timeout(Duration::from_secs(30))
-                .user_agent(format!("MagiCore/{}", env!("CARGO_PKG_VERSION")))
+                .user_agent(mgc_http::USER_AGENT)
                 // H2 stream window: 4 MiB — allows multiple concurrent streams without
                 // stalling when one response is slow.
                 .http2_initial_stream_window_size(4 * 1024 * 1024)
@@ -52,7 +52,7 @@ pub fn batch_http_client() -> mgc_types::MgResult<reqwest::Client> {
                 .tcp_keepalive(Duration::from_secs(60))
                 // Long timeout for massive tarballs like @next/swc (>200 MB).
                 .timeout(Duration::from_secs(300))
-                .user_agent(format!("MagiCore/{}/batch", env!("CARGO_PKG_VERSION")))
+                .user_agent(mgc_http::USER_AGENT_BATCH)
                 .http2_initial_stream_window_size(16 * 1024 * 1024)
                 .http2_initial_connection_window_size(64 * 1024 * 1024)
                 .build()
