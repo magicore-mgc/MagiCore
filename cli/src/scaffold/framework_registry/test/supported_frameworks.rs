@@ -43,14 +43,16 @@ fn every_fullstack_id_has_a_known_backend() {
 /// (Danh sách chẩn đoán phải là siêu tập của mọi id được nhận.)
 #[test]
 fn the_diagnostic_list_covers_every_accepted_web_id() {
+    let web_all = web_all_ids();
     for id in WEB_FRONTEND
         .iter()
         .chain(WEB_BACKEND.iter())
         .chain(WEB_FULLSTACK.iter())
+        .chain(WEB_ALIAS.iter())
     {
         assert!(
-            WEB_ALL.contains(id),
-            "'{id}' is accepted by is_supported but missing from WEB_ALL, so the error \
+            web_all.contains(id),
+            "'{id}' is accepted by is_supported but missing from web_all_ids(), so the error \
              message would omit a name the user can actually type"
         );
     }
@@ -60,9 +62,10 @@ fn the_diagnostic_list_covers_every_accepted_web_id() {
 /// (Không trùng lặp: id lặp làm số đếm trong thông điệp lỗi sai.)
 #[test]
 fn the_diagnostic_list_has_no_duplicates() {
+    let web_all = web_all_ids();
     let mut seen = std::collections::BTreeSet::new();
-    for id in WEB_ALL {
-        assert!(seen.insert(*id), "'{id}' appears twice in WEB_ALL");
+    for id in &web_all {
+        assert!(seen.insert(*id), "'{id}' appears twice in web_all_ids()");
     }
 }
 
@@ -131,7 +134,8 @@ fn names_do_not_leak_between_cores() {
 /// (Mọi id khai báo là kebab-case chữ thường, không rỗng.)
 #[test]
 fn every_id_is_kebab_case() {
-    for id in WEB_ALL
+    let web_all = web_all_ids();
+    for id in web_all
         .iter()
         .chain(APP.iter())
         .chain(LIB.iter())
@@ -177,4 +181,50 @@ fn every_alias_is_itself_accepted_and_its_target_is_too() {
             "canonical id '{canonical}' must be accepted"
         );
     }
+}
+
+/// Validation helpers catch duplicate ids within arrays.
+/// (Helper validation bắt id trùng lặp trong mảng.)
+#[test]
+fn validate_no_duplicates_catches_duplicates() {
+    assert!(validate_no_duplicates(&["a", "b", "c"]).is_ok());
+    assert_eq!(validate_no_duplicates(&["a", "b", "a"]), Err("a"));
+    assert_eq!(validate_no_duplicates(&["x", "x"]), Err("x"));
+}
+
+/// All framework IDs must be globally unique (except Web families).
+/// (Toàn bộ id framework phải unique toàn cục trừ nhóm Web.)
+#[test]
+fn all_framework_ids_are_globally_unique() {
+    match validate_all_ids_unique() {
+        Ok(()) => (),
+        Err(msg) => panic!("Framework ID validation failed: {}", msg),
+    }
+}
+
+/// Framework detection from markers works for known frameworks.
+/// (Detection framework từ marker hoạt động cho framework đã biết.)
+#[test]
+fn detect_framework_from_markers_finds_django() {
+    let temp = std::env::temp_dir().join("mgc-test-django-marker");
+    std::fs::create_dir_all(&temp).ok();
+    std::fs::write(temp.join("manage.py"), b"#!/usr/bin/env python").ok();
+
+    let detected = detect_framework_from_markers("web", &temp);
+    assert_eq!(detected, Some("django"));
+
+    std::fs::remove_dir_all(&temp).ok();
+}
+
+/// Framework detection returns None when markers don't match.
+/// (Detection trả None khi marker không khớp.)
+#[test]
+fn detect_framework_from_markers_returns_none_when_no_match() {
+    let temp = std::env::temp_dir().join("mgc-test-no-marker");
+    std::fs::create_dir_all(&temp).ok();
+
+    let detected = detect_framework_from_markers("web", &temp);
+    assert_eq!(detected, None);
+
+    std::fs::remove_dir_all(&temp).ok();
 }

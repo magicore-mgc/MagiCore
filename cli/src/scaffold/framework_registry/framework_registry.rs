@@ -93,7 +93,7 @@ pub const WEB_BACKEND: &[&str] = &[
     "actix-web",
     "axum",
     "django",
-    "dotnet",
+    "dotnet-minimal",
     "echo",
     "express",
     "fastapi",
@@ -272,6 +272,108 @@ pub fn framework_marker(ecosystem: &str, framework: &str) -> Option<&'static [&'
     }
 }
 
+/// Detect framework from markers in a directory path.
+///
+/// Checks for framework-specific marker files to identify the framework type.
+/// Returns `None` if no markers match or if the directory doesn't exist.
+/// (Nhận diện framework từ marker file trong thư mục. Trả `None` nếu không có
+/// marker khớp hoặc thư mục không tồn tại.)
+pub fn detect_framework_from_markers(
+    ecosystem: &str,
+    dir: &std::path::Path,
+) -> Option<&'static str> {
+    let frameworks = match ecosystem {
+        "web" => WEB_BACKEND,
+        "app" => APP,
+        "lib" => LIB,
+        _ => return None,
+    };
+
+    for framework in frameworks {
+        if let Some(markers) = framework_marker(ecosystem, framework) {
+            let all_exist = markers.iter().all(|marker| {
+                let path = dir.join(marker);
+                path.exists()
+            });
+            if all_exist {
+                return Some(framework);
+            }
+        }
+    }
+    None
+}
+
+/// Validate that a slice of framework ids has no duplicates.
+///
+/// Returns `Ok(())` if all ids are unique, or `Err(duplicate)` with the first
+/// duplicate found. Used in tests and at build time to catch registry bugs.
+/// (Validate slice id framework không có trùng lặp. Trả `Ok` nếu unique, `Err`
+/// với duplicate đầu tiên. Dùng trong test và build-time catch lỗi registry.)
+pub fn validate_no_duplicates<'a>(ids: &'a [&'a str]) -> Result<(), &'a str> {
+    let mut seen = std::collections::BTreeSet::new();
+    for id in ids {
+        if !seen.insert(*id) {
+            return Err(id);
+        }
+    }
+    Ok(())
+}
+
+/// Validate that all framework IDs across all cores are globally unique where
+/// they should be.
+///
+/// Web frameworks are allowed to appear in multiple families (frontend, backend,
+/// fullstack) but a framework should not leak between cores. Returns the first
+/// cross-core collision found, or `Ok(())` if validation passes.
+/// (Validate toàn bộ id framework unique toàn cục nếu cần. Web cho phép xuất
+/// hiện nhiều nhóm nhưng không leak giữa cores. Trả collision đầu hoặc `Ok`.)
+pub fn validate_all_ids_unique() -> Result<(), String> {
+    // Check within-array duplicates first.
+    for (name, ids) in [
+        ("GAME", GAME),
+        ("CLOUD", CLOUD),
+        ("CICD", CICD),
+        ("IOT", IOT),
+        ("APP", APP),
+        ("LIB", LIB),
+        ("AI", AI),
+        ("AI_RUNTIMES", AI_RUNTIMES),
+        ("HARDWARE", HARDWARE),
+        ("WEB_BACKEND", WEB_BACKEND),
+        ("WEB_FRONTEND", WEB_FRONTEND),
+        ("WEB_FULLSTACK", WEB_FULLSTACK),
+        ("WEB_ALIAS", WEB_ALIAS),
+        ("WEB_BACKEND_UNSUPPORTED", WEB_BACKEND_UNSUPPORTED),
+    ] {
+        if let Err(dup) = validate_no_duplicates(ids) {
+            return Err(format!("Duplicate id '{dup}' in {name}"));
+        }
+    }
+
+    // Check cross-core leaks (exclude Web which legitimately spans families).
+    let mut global = std::collections::BTreeMap::new();
+    for (core, ids) in [
+        ("game", GAME),
+        ("cloud", CLOUD),
+        ("cicd", CICD),
+        ("iot", IOT),
+        ("app", APP),
+        ("lib", LIB),
+        ("ai", AI),
+        ("hardware", HARDWARE),
+    ] {
+        for id in ids {
+            if let Some(first_core) = global.insert(*id, core) {
+                return Err(format!(
+                    "Id '{id}' appears in both '{first_core}' and '{core}'"
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Whether `core`/`framework` is a known AND scaffoldable pair.
 ///
 /// Returns false for an id in `WEB_BACKEND_UNSUPPORTED`: MagiCore knows the
@@ -318,18 +420,18 @@ pub fn is_known_web_unsupported(framework: &str) -> bool {
 /// scaffolding metadata for a name nobody can build.
 /// (Toàn bộ id registry chấp nhận cho `core`, thứ tự ổn định — để `create-*`
 /// fail-closed kèm danh sách thay vì scaffold metadata cho tên không build được.)
-pub fn supported_frameworks(core: &str) -> &'static [&'static str] {
+pub fn supported_frameworks(core: &str) -> Vec<&'static str> {
     match core {
-        "game" => GAME,
-        "clo" | "cloud" => CLOUD,
-        "cicd" => CICD,
-        "iot" => IOT,
-        "app" => APP,
-        "lib" | "library" => LIB,
-        "ai" => AI,
-        "hardware" => HARDWARE,
-        "web" => WEB_ALL,
-        _ => &[],
+        "game" => GAME.to_vec(),
+        "clo" | "cloud" => CLOUD.to_vec(),
+        "cicd" => CICD.to_vec(),
+        "iot" => IOT.to_vec(),
+        "app" => APP.to_vec(),
+        "lib" | "library" => LIB.to_vec(),
+        "ai" => AI.to_vec(),
+        "hardware" => HARDWARE.to_vec(),
+        "web" => web_all_ids(),
+        _ => vec![],
     }
 }
 
@@ -338,84 +440,33 @@ pub fn supported_frameworks(core: &str) -> &'static [&'static str] {
 /// Only ids `is_supported("web", ..)` accepts appear here, so the "Supported
 /// 'web' frameworks" list printed on a rejection never re-advertises a name
 /// that cannot be scaffolded.
-/// (Id Web của mọi nhóm được nhận, nối lại để báo lỗi. Chỉ id `is_supported`
-/// nhận mới có ở đây, nên danh sách "Supported 'web' frameworks" in khi từ chối
-/// không bao giờ quảng cáo lại tên không scaffold được.)
-pub const WEB_ALL: &[&str] = &[
-    // Frontend — xem WEB_FRONTEND. Giữ khớp tuyệt đối với bảng bên trên.
-    "angular",
-    "astro",
-    "docusaurus",
-    "lit",
-    "next",
-    "nextjs",
-    "nuxt",
-    "preact",
-    "qwik",
-    "react",
-    "react-vite",
-    "remix",
-    "solid",
-    "solidjs",
-    "svelte",
-    "sveltekit",
-    "tauri",
-    "turbo",
-    "vanilla",
-    "vite",
-    "vitepress",
-    "vue",
-    "vue-cli",
-    "vue-vite",
-    // Backend — xem WEB_BACKEND.
-    "actix-web",
-    "axum",
-    "django",
-    "dotnet",
-    "echo",
-    "express",
-    "fastapi",
-    "fiber",
-    "flask",
-    "gin",
-    "laravel",
-    "nest",
-    "nestjs",
-    "quarkus",
-    "spring-boot",
-    "symfony",
-    // Fullstack — xem WEB_FULLSTACK.
-    "react-actix-web",
-    "react-axum",
-    "react-django",
-    "react-echo",
-    "react-express",
-    "react-fastapi",
-    "react-fiber",
-    "react-flask",
-    "react-gin",
-    "react-nestjs",
-    "react-quarkus",
-    "react-symfony",
-    "svelte-axum",
-    "svelte-express",
-    "svelte-fastapi",
-    "svelte-gin",
-    "svelte-quarkus",
-    "vue-actix-web",
-    "vue-axum",
-    "vue-django",
-    "vue-echo",
-    "vue-express",
-    "vue-fastapi",
-    "vue-fiber",
-    "vue-flask",
-    "vue-gin",
-    "vue-laravel",
-    "vue-nestjs",
-    "vue-quarkus",
-    "vue-symfony",
-];
+///
+/// **This is generated dynamically** from WEB_FRONTEND + WEB_BACKEND +
+/// WEB_FULLSTACK + WEB_ALIAS to prevent sync issues. Use `web_all_ids()` at
+/// runtime.
+/// (Id Web của mọi nhóm được nhận, nối lại để báo lỗi. **Generated động** từ
+/// các bảng thành phần để tránh lỗi sync. Dùng `web_all_ids()` runtime.)
+#[deprecated(
+    since = "1.2.0",
+    note = "Use web_all_ids() instead - WEB_ALL is now dynamically generated"
+)]
+pub const WEB_ALL: &[&str] = &[];
+
+/// Returns all accepted Web framework ids (frontend, backend, fullstack, aliases).
+///
+/// Generated dynamically from component arrays to prevent sync issues. This is
+/// the source of truth for "Supported 'web' frameworks" diagnostics.
+/// (Trả toàn bộ id Web được nhận — generated động để tránh lỗi sync.)
+pub fn web_all_ids() -> Vec<&'static str> {
+    let mut ids = Vec::with_capacity(
+        WEB_FRONTEND.len() + WEB_BACKEND.len() + WEB_FULLSTACK.len() + WEB_ALIAS.len(),
+    );
+    ids.extend_from_slice(WEB_FRONTEND);
+    ids.extend_from_slice(WEB_BACKEND);
+    ids.extend_from_slice(WEB_FULLSTACK);
+    ids.extend_from_slice(WEB_ALIAS);
+    ids
+}
 
 #[cfg(test)]
 #[path = "test/mod.rs"]
