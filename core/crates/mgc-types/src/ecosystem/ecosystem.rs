@@ -130,6 +130,45 @@ impl Ecosystem {
             _ => self.as_str(),
         }
     }
+
+    /// Whether this ecosystem supports package installation commands.
+    ///
+    /// Returns `true` for ecosystems that have install/add/remove functionality.
+    /// Hardware and CICD cores have no package installation.
+    /// (Ecosystem có hỗ trợ lệnh cài package không. Hardware và CICD không có.)
+    pub fn has_install(&self) -> bool {
+        !matches!(self, Self::Hardware | Self::Cicd)
+    }
+
+    /// Whether this ecosystem runs a development server with a network port.
+    ///
+    /// Returns `true` for ecosystems that serve content during development.
+    /// Lib, Hardware, and CICD have no dev servers.
+    /// (Ecosystem có chạy dev server với port không. Lib/Hardware/CICD không có.)
+    pub fn has_dev_server(&self) -> bool {
+        !matches!(self, Self::Lib | Self::Hardware | Self::Cicd)
+    }
+
+    /// Whether this ecosystem uses npm registry for package resolution.
+    ///
+    /// Returns `true` for Web, Lib (TypeScript), AI (some), and App (some).
+    /// This is a HINT for registry configuration, not a comprehensive check.
+    /// (Ecosystem có dùng npm registry không. Web/Lib-TS/AI-một phần/App-một phần.)
+    pub fn may_use_npm_registry(&self) -> bool {
+        matches!(self, Self::Web | Self::Lib | Self::Ai | Self::App)
+    }
+
+    /// Whether this ecosystem has native build/compile steps.
+    ///
+    /// Returns `true` for ecosystems that compile to native binaries or require
+    /// native toolchains (not just interpreters).
+    /// (Ecosystem có bước build/compile native không. Compile sang binary native.)
+    pub fn has_native_build(&self) -> bool {
+        matches!(
+            self,
+            Self::Game | Self::Iot | Self::App | Self::Lib | Self::Hardware
+        )
+    }
 }
 
 /// The external namespace a core name is needed in.

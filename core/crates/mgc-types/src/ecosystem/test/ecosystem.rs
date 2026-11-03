@@ -152,3 +152,73 @@ fn passthrough_namespace_only_differs_where_a_host_tag_exists() {
         }
     }
 }
+
+// ── Helper method tests ─────────────────────────────────────────────────
+
+#[test]
+fn has_install_returns_true_for_package_ecosystems() {
+    assert!(Ecosystem::Web.has_install());
+    assert!(Ecosystem::Game.has_install());
+    assert!(Ecosystem::Ai.has_install());
+    assert!(Ecosystem::Cloud.has_install());
+    assert!(Ecosystem::Iot.has_install());
+    assert!(Ecosystem::App.has_install());
+    assert!(Ecosystem::Lib.has_install());
+}
+
+#[test]
+fn has_install_returns_false_for_non_package_ecosystems() {
+    assert!(!Ecosystem::Hardware.has_install());
+    assert!(!Ecosystem::Cicd.has_install());
+}
+
+#[test]
+fn has_dev_server_returns_true_for_serving_ecosystems() {
+    assert!(Ecosystem::Web.has_dev_server());
+    assert!(Ecosystem::Game.has_dev_server());
+    assert!(Ecosystem::Ai.has_dev_server());
+    assert!(Ecosystem::Cloud.has_dev_server());
+    assert!(Ecosystem::Iot.has_dev_server());
+    assert!(Ecosystem::App.has_dev_server());
+}
+
+#[test]
+fn has_dev_server_returns_false_for_non_serving_ecosystems() {
+    assert!(!Ecosystem::Lib.has_dev_server());
+    assert!(!Ecosystem::Hardware.has_dev_server());
+    assert!(!Ecosystem::Cicd.has_dev_server());
+}
+
+#[test]
+fn may_use_npm_registry_returns_true_for_js_ecosystems() {
+    assert!(Ecosystem::Web.may_use_npm_registry());
+    assert!(Ecosystem::Lib.may_use_npm_registry());
+    assert!(Ecosystem::Ai.may_use_npm_registry());
+    assert!(Ecosystem::App.may_use_npm_registry());
+}
+
+#[test]
+fn may_use_npm_registry_returns_false_for_non_js_ecosystems() {
+    assert!(!Ecosystem::Game.may_use_npm_registry());
+    assert!(!Ecosystem::Cloud.may_use_npm_registry());
+    assert!(!Ecosystem::Cicd.may_use_npm_registry());
+    assert!(!Ecosystem::Iot.may_use_npm_registry());
+    assert!(!Ecosystem::Hardware.may_use_npm_registry());
+}
+
+#[test]
+fn has_native_build_returns_true_for_compiled_ecosystems() {
+    assert!(Ecosystem::Game.has_native_build());
+    assert!(Ecosystem::Iot.has_native_build());
+    assert!(Ecosystem::App.has_native_build());
+    assert!(Ecosystem::Lib.has_native_build());
+    assert!(Ecosystem::Hardware.has_native_build());
+}
+
+#[test]
+fn has_native_build_returns_false_for_interpreted_ecosystems() {
+    assert!(!Ecosystem::Web.has_native_build());
+    assert!(!Ecosystem::Ai.has_native_build());
+    assert!(!Ecosystem::Cloud.has_native_build());
+    assert!(!Ecosystem::Cicd.has_native_build());
+}
